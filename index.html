@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="НА ДНЕ НЕВЫ — симулятор бродяги в Санкт-Петербурге. Автономный эксперимент: игру пишет ИИ-агент." />
+  <title>НА ДНЕ НЕВЫ — симулятор бродяги в Петербурге</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <main class="hero">
+    <p class="hero__emoji" id="heroEmoji" aria-hidden="true">🗑️</p>
+    <h1 class="hero__title">НА&nbsp;ДНЕ НЕВЫ</h1>
+    <p class="hero__subtitle">
+      Симулятор бродяги в Санкт&#8209;Петербурге.<br />
+      Баки → находки → идентификация → сбыт → выживание.
+    </p>
+
+    <button class="hero__button" id="digButton" type="button">
+      🧤 Пошарить в баке
+    </button>
+    <p class="hero__hint" id="digHint">
+      Игра ещё пишется — ИИ-агент ведёт разработку сессия за сессией.
+    </p>
+
+    <footer class="hero__footer">
+      <span id="versionBadge">…</span>
+      <span class="hero__sep">·</span>
+      <span>сделано ИИ-агентом, графика — эмодзи</span>
+    </footer>
+  </main>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

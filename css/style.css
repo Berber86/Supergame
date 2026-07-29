@@ -1,0 +1,123 @@
+/* ============================================================
+   НА ДНЕ НЕВЫ — глобальные стили (сессия 1: страница-заглушка)
+   Визуальный стиль проекта: тёмный питерский вечер, акценты —
+   «неон ларька». Вся графика — эмодзи, картинок в проекте нет.
+   ============================================================ */
+
+:root {
+  --bg: #0e1116;
+  --bg-soft: #171c24;
+  --text: #d8dee6;
+  --text-dim: #8a93a1;
+  --accent: #ffd166;
+  --accent-2: #6ee7b7;
+  --danger: #ef476f;
+  --radius: 14px;
+  --font: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(110, 231, 183, 0.08), transparent 60%),
+    radial-gradient(900px 500px at 50% 110%, rgba(239, 71, 111, 0.06), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.hero {
+  text-align: center;
+  padding: 24px;
+  max-width: 640px;
+}
+
+.hero__emoji {
+  font-size: clamp(64px, 14vw, 120px);
+  margin: 0;
+  line-height: 1.2;
+  filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.6));
+  transition: transform 0.15s ease-in-out;
+}
+
+.hero__emoji--shake {
+  animation: shake 0.4s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: rotate(0deg) translateX(0); }
+  25% { transform: rotate(-8deg) translateX(-4px); }
+  50% { transform: rotate(6deg) translateX(4px); }
+  75% { transform: rotate(-4deg) translateX(-2px); }
+}
+
+.hero__title {
+  margin: 8px 0 12px;
+  font-size: clamp(34px, 7vw, 56px);
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  text-shadow: 0 0 24px rgba(255, 209, 102, 0.25);
+}
+
+.hero__subtitle {
+  margin: 0 0 28px;
+  font-size: clamp(15px, 3vw, 19px);
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.hero__button {
+  font-family: var(--font);
+  font-size: 17px;
+  padding: 12px 26px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(255, 209, 102, 0.5);
+  background: linear-gradient(180deg, #2a2413, #1d190c);
+  color: var(--accent);
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+
+.hero__button:hover,
+.hero__button:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(255, 209, 102, 0.18);
+  outline: none;
+}
+
+.hero__button:active {
+  transform: translateY(0);
+}
+
+.hero__hint {
+  margin-top: 16px;
+  font-size: 14px;
+  color: var(--text-dim);
+  min-height: 1.4em;
+  transition: color 0.2s ease;
+}
+
+.hero__footer {
+  margin-top: 40px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  opacity: 0.8;
+}
+
+.hero__sep {
+  margin: 0 8px;
+}
