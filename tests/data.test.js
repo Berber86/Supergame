@@ -262,4 +262,16 @@ describe('balance.js — константы', () => {
     expect(NIGHT_RISK.lavkaStealChance).toBeLessThan(1);
     expect(BEGGING.income).toBeGreaterThan(0);
   });
+
+  it('баки: обеднение в (0,1), «смелее» открывается навыком в рамках maxLevel', () => {
+    const { BINS, DIG_MODES } = balanceModule;
+    expect(BINS.depletionPerDig).toBeGreaterThan(0);
+    expect(BINS.depletionPerDig).toBeLessThan(1);
+    expect(BINS.streetFindChance).toBeGreaterThan(0);
+    expect(BINS.streetFindChance).toBeLessThan(0.5);
+    expect(DIG_MODES.bold.lootMult).toBeGreaterThan(DIG_MODES.careful.lootMult);
+    expect(DIG_MODES.bold.riskMult).toBeGreaterThan(DIG_MODES.careful.riskMult);
+    expect(SKILLS.list[DIG_MODES.bold.unlockSkill]).toBeDefined();
+    expect(DIG_MODES.bold.unlockLevel).toBeLessThanOrEqual(SKILLS.maxLevel);
+  });
 });
