@@ -1,0 +1,390 @@
+/* ============================================================
+   НА ДНЕ НЕВЫ — стили оболочки игры (сессия 3: каркас на вкладках)
+   Тема: тёмный питерский вечер. Вся графика — эмодзи, картинок нет.
+   ============================================================ */
+
+:root {
+  --bg: #0e1116;
+  --bg-soft: #171c24;
+  --bg-card: #1b212b;
+  --bg-card-hi: #232b38;
+  --border: #2b3442;
+  --text: #d8dee6;
+  --text-dim: #8a93a1;
+  --accent: #ffd166;
+  --accent-2: #6ee7b7;
+  --danger: #ef476f;
+  --bar-bg: #10141a;
+  --radius: 14px;
+  --radius-sm: 9px;
+  --font: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; min-height: 100%; }
+
+body {
+  background:
+    radial-gradient(1100px 500px at 50% -10%, rgba(110, 231, 183, 0.07), transparent 60%),
+    radial-gradient(800px 500px at 85% 110%, rgba(239, 71, 111, 0.05), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  line-height: 1.45;
+}
+
+.app {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 16px 14px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100vh;
+}
+
+/* ---------- Верхняя панель ---------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.topbar__brand {
+  font-size: clamp(20px, 4vw, 28px);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  text-shadow: 0 0 18px rgba(255, 209, 102, 0.22);
+}
+
+.topbar__clock {
+  font-size: 15px;
+  color: var(--text-dim);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  white-space: nowrap;
+}
+
+/* ---------- Панель статов ---------- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.stat {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.stat__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.stat__value { color: var(--text); font-weight: 600; }
+
+.stat__bar {
+  margin-top: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bar-bg);
+  overflow: hidden;
+}
+
+.stat__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent-2);
+  transition: width 0.25s ease;
+}
+
+.stat--money .stat__fill { background: var(--accent); }
+.stat--low   .stat__fill { background: var(--danger); }
+
+/* ---------- Вкладки ---------- */
+
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.tab {
+  font-family: var(--font);
+  font-size: clamp(13px, 2.6vw, 15px);
+  padding: 10px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab:hover { color: var(--text); transform: translateY(-1px); }
+
+.tab--active {
+  color: var(--accent);
+  border-color: rgba(255, 209, 102, 0.55);
+  background: linear-gradient(180deg, #26200f, #1a160a);
+  box-shadow: 0 4px 14px rgba(255, 209, 102, 0.08);
+}
+
+/* ---------- Экран и карточки ---------- */
+
+.screen { display: flex; flex-direction: column; gap: 12px; }
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+
+.card--hi { background: var(--bg-card-hi); }
+
+.card__title {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.card__title .emoji { margin-right: 6px; }
+
+.card__desc { margin: 0; color: var(--text-dim); font-size: 14px; }
+
+.card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.section-title {
+  margin: 8px 2px 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-dim);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.grid--wide { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+
+/* ---------- Плашки / теги / кнопки ---------- */
+
+.tag {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  background: var(--bar-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.tag--accent { color: var(--accent); border-color: rgba(255, 209, 102, 0.4); }
+.tag--green  { color: var(--accent-2); border-color: rgba(110, 231, 183, 0.35); }
+.tag--danger { color: var(--danger); border-color: rgba(239, 71, 111, 0.4); }
+
+.btn {
+  font-family: var(--font);
+  font-size: 14px;
+  padding: 9px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 209, 102, 0.45);
+  background: linear-gradient(180deg, #2a2413, #1d190c);
+  color: var(--accent);
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.btn:hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(255, 209, 102, 0.15); }
+
+.btn--ghost {
+  border-color: var(--border);
+  background: var(--bar-bg);
+  color: var(--text-dim);
+}
+
+.btn--wide { width: 100%; margin-top: 10px; }
+
+/* ---------- Баки ---------- */
+
+.bins {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.bin {
+  background: var(--bar-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 6px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.bin__emoji { display: block; font-size: 30px; margin-bottom: 4px; }
+
+.bin:hover { border-color: rgba(255, 209, 102, 0.4); color: var(--text); }
+
+/* ---------- Предметы ---------- */
+
+.item { text-align: center; position: relative; }
+
+.item__emoji { font-size: 34px; line-height: 1.4; }
+
+.item__name { font-size: 12.5px; color: var(--text); min-height: 2.6em; }
+
+.item__value { font-size: 12.5px; color: var(--accent); }
+
+.item__value--unknown { color: var(--accent-2); }
+
+.item__qty {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 11.5px;
+  background: var(--accent);
+  color: #1a160a;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+/* ---------- Навыки / прогресс ---------- */
+
+.pips { font-size: 13px; letter-spacing: 2px; color: var(--accent); }
+
+.progress {
+  height: 8px;
+  background: var(--bar-bg);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.progress__fill {
+  height: 100%;
+  background: var(--accent-2);
+  border-radius: 999px;
+}
+
+/* ---------- Оверлей конца жизни ---------- */
+
+.death-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 8, 11, 0.86);
+  backdrop-filter: blur(4px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 100;
+}
+
+.death-overlay--visible { display: flex; }
+
+.death-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(239, 71, 111, 0.5);
+  border-radius: var(--radius);
+  padding: 24px 26px;
+  max-width: 430px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+}
+
+.death-card__emoji { font-size: 56px; }
+
+.death-card__title {
+  margin: 8px 0 6px;
+  color: var(--danger);
+  font-size: 24px;
+}
+
+.death-card__cause { color: var(--text); margin: 0 0 12px; }
+
+.death-card__line { color: var(--text-dim); font-size: 14px; margin: 4px 0; }
+
+.death-card__rules {
+  color: var(--text-dim);
+  font-size: 13px;
+  border-top: 1px dashed var(--border);
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
+.death-card__btn { margin-top: 16px; }
+
+/* ---------- Тост ---------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--bg-card-hi);
+  border: 1px solid rgba(255, 209, 102, 0.45);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 10px 20px;
+  font-size: 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  max-width: 90vw;
+  z-index: 50;
+}
+
+.toast--visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ---------- Футер ---------- */
+
+.footer {
+  margin-top: auto;
+  padding-top: 18px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  opacity: 0.85;
+}
+
+.footer__sep { margin: 0 8px; }
+
+/* ---------- Адаптив ---------- */
+
+@media (max-width: 560px) {
+  .stats { grid-template-columns: repeat(3, 1fr); }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+  .grid--wide { grid-template-columns: 1fr; }
+}
