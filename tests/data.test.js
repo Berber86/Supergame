@@ -14,6 +14,7 @@ import { EVENTS } from '../js/data/events.js';
 import { WEATHER } from '../js/data/weather.js';
 import { REBIRTH } from '../js/data/rebirth.js';
 import { TIME, ACTIONS, DECAY, START, LIVING, SKILLS, ASSESS } from '../js/data/balance.js';
+import * as balanceModule from '../js/data/balance.js';
 
 const VALID_KINDS = ['obvious', 'food', 'unidentified'];
 const VALID_CATEGORIES = ['steklotara', 'metall', 'bumaga', 'eda', 'odezhda', 'obuv', 'byt', 'instrument', 'tehnika', 'antikvariat', 'raznoe'];
@@ -251,5 +252,14 @@ describe('balance.js — константы', () => {
   it('навыков ≥4 (рамки MLP), модель оценки сходится к точной цене', () => {
     expect(Object.keys(SKILLS.list).length).toBeGreaterThanOrEqual(4);
     expect(ASSESS.exactFromLevel).toBeLessThanOrEqual(SKILLS.maxLevel);
+  });
+
+  it('ночные риски лавки — жёсткие, но в диапазоне 0..1 (выбор человека: мороз убивает)', () => {
+    const { NIGHT_RISK, BEGGING } = balanceModule;
+    expect(NIGHT_RISK.lavkaFrostDeathChance).toBeGreaterThan(0);
+    expect(NIGHT_RISK.lavkaFrostDeathChance).toBeLessThan(1);
+    expect(NIGHT_RISK.lavkaStealChance).toBeGreaterThan(0);
+    expect(NIGHT_RISK.lavkaStealChance).toBeLessThan(1);
+    expect(BEGGING.income).toBeGreaterThan(0);
   });
 });
