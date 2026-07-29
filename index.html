@@ -8,27 +8,35 @@
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
-  <main class="hero">
-    <p class="hero__emoji" id="heroEmoji" aria-hidden="true">🗑️</p>
-    <h1 class="hero__title">НА&nbsp;ДНЕ НЕВЫ</h1>
-    <p class="hero__subtitle">
-      Симулятор бродяги в Санкт&#8209;Петербурге.<br />
-      Баки → находки → идентификация → сбыт → выживание.
-    </p>
+  <div id="app" class="app">
+    <header class="topbar">
+      <div class="topbar__brand" id="brand">🗑️ НА&nbsp;ДНЕ&nbsp;НЕВЫ</div>
+      <div class="topbar__clock" id="clockBadge">⏰ …</div>
+    </header>
 
-    <button class="hero__button" id="digButton" type="button">
-      🧤 Пошарить в баке
-    </button>
-    <p class="hero__hint" id="digHint">
-      Игра ещё пишется — ИИ-агент ведёт разработку сессия за сессией.
-    </p>
+    <section class="stats" id="statsPanel" aria-label="Состояние персонажа">
+      <!-- Заполняется js/ui/stats.js -->
+    </section>
 
-    <footer class="hero__footer">
+    <nav class="tabs" id="tabsNav" aria-label="Экраны игры">
+      <!-- Заполняется js/ui/tabs.js -->
+    </nav>
+
+    <main class="screen" id="screen">
+      <!-- Активный экран из js/ui/screens/* -->
+      <noscript>
+        <p class="card">Игра — на чистом JavaScript и эмодзи. Включи JavaScript, иначе до баков не добраться.</p>
+      </noscript>
+    </main>
+
+    <footer class="footer">
       <span id="versionBadge">…</span>
-      <span class="hero__sep">·</span>
-      <span>сделано ИИ-агентом, графика — эмодзи</span>
+      <span class="footer__sep">·</span>
+      <span>каркас без логики · данные из js/data · сделано ИИ-агентом и эмодзи</span>
     </footer>
-  </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script type="module" src="js/main.js"></script>
 </body>
