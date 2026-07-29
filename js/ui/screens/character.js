@@ -1,12 +1,14 @@
 /**
- * screens/character.js — вкладка «Персонаж». Сессия 5.5: минимализм —
- * навыки/слоты/быт компактными строками, правила ребёрна за <details>.
+ * screens/character.js — вкладка «Персонаж». Сессия 8: быт ЖИВОЙ —
+ * покупная еда, мытьё, выбор ночлега на сегодня; метрика «лучшая жизнь».
+ * Снаряжение — слоты-загадки до сессии 9.
  */
 
-import { SKILLS, LIVING } from '../../data/balance.js';
+import { SKILLS, LIVING, ACTIONS, NIGHT_RISK } from '../../data/balance.js';
 import { REBIRTH } from '../../data/rebirth.js';
-import { getState } from '../session.js';
-import { percentLabel, rublesLabel } from '../format.js';
+import { buyFood, wash, chooseShelter } from '../../core/living.js';
+import { getState, applyAction } from '../session.js';
+import { percentLabel, rublesLabel, hoursLabel, plural } from '../format.js';
 import { showToast } from '../toast.js';
 
 function pips(level, max = SKILLS.maxLevel) {
@@ -54,34 +56,81 @@ function equipmentRows(state) {
   `;
 }
 
-function livingRows() {
-  const food = LIVING.food.map((f) => `
-    <div class="row">
-      <span class="row__icon">${f.emoji}</span>
-      <div class="row__main">
-        <div class="row__name">${f.name}</div>
-        <div class="row__sub">${rublesLabel(f.price)} · +${f.satiety} 🍞</div>
+function foodRows(state) {
+  const rows = LIVING.food.map((f) => {
+    const afford = state.money >= f.price;
+    const dirty = f.cleanliness ? ` · ${f.cleanliness} 🧼` : '';
+    return `
+      <div class="row">
+        <span class="row__icon">${f.emoji}</span>
+        <div class="row__main">
+          <div class="row__name">${f.name}</div>
+          <div class="row__sub">${rublesLabel(f.price)} · +${f.satiety} 🍞${dirty} · ${hoursLabel(ACTIONS.eatOut.hours)}</div>
+        </div>
+        <button class="btn btn--ghost" data-food="${f.id}" ${afford ? '' : 'disabled title="не по карману"'}>Съесть</button>
       </div>
-      <button class="btn btn--ghost" data-session="8">Купить</button>
-    </div>
-  `).join('');
-
-  const shelter = LIVING.shelter.map((s) => `
-    <div class="row">
-      <span class="row__icon">${s.emoji}</span>
-      <div class="row__main">
-        <div class="row__name">${s.name}</div>
-        <div class="row__sub">${s.price === 0 ? 'бесплатно' : rublesLabel(s.price)} · сон ${percentLabel(s.quality)}</div>
-      </div>
-      <button class="btn btn--ghost" data-session="8">Лечь</button>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 
   return `
-    <p class="section-title">Еда (сессия 8)</p>
-    <div class="rows">${food}</div>
-    <p class="section-title">Ночлег (сессия 8)</p>
-    <div class="rows">${shelter}</div>
+    <p class="section-title">Еда (горячее — счастье, которое быстро жуётся)</p>
+    <div class="rows">${rows}</div>
+  `;
+}
+
+function washRow() {
+  return `
+    <p class="section-title">Личная гидродинамика</p>
+    <div class="rows">
+      <div class="row">
+        <span class="row__icon">🚿</span>
+        <div class="row__main">
+          <div class="row__name">Умыться</div>
+          <div class="row__sub">бесплатно · +${ACTIONS.wash.cleanliness} 🧼 · ${hoursLabel(ACTIONS.wash.hours)} · нужно для 🧺 барахолки</div>
+        </div>
+        <button class="btn btn--ghost" data-wash>Умыться</button>
+      </div>
+    </div>
+  `;
+}
+
+function shelterRows(state) {
+  const rows = LIVING.shelter.map((s) => {
+    const current = state.shelterTonight === s.id;
+    const note = s.riskEvents
+      ? `морозный сон смертелен ${percentLabel(NIGHT_RISK.lavkaFrostDeathChance)} · кража ${percentLabel(NIGHT_RISK.lavkaStealChance)}`
+      : `сон ${percentLabel(s.quality)}${s.washIncluded ? ' · мойка включена' : ''}`;
+    return `
+      <div class="row">
+        <span class="row__icon">${s.emoji}</span>
+        <div class="row__main">
+          <div class="row__name">${s.name}</div>
+          <div class="row__sub">${s.price === 0 ? 'бесплатно' : `${rublesLabel(s.price)} при отбое`} · ${note}</div>
+        </div>
+        ${current
+          ? '<span class="row__meta">✓ на сегодня</span>'
+          : `<button class="btn btn--ghost" data-shelter="${s.id}">Спать тут</button>`}
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <p class="section-title">Ночлег на сегодня (деньги снимутся в полночь)</p>
+    <div class="rows">${rows}</div>
+  `;
+}
+
+function bestLifeCard(state) {
+  const b = state.bestLife;
+  if (!b || b.earned <= 0) return '';
+  return `
+    <div class="card">
+      <p class="card__desc">
+        🏆 <strong>Лучшая жизнь — №${b.life}</strong>: ${b.days} ${plural(b.days, 'день', 'дня', 'дней')},
+        заработано ${rublesLabel(b.earned)}${b.bestItemLabel ? `, находка ${b.bestItemLabel}` : ''}.
+        Рекорд не горит и не тонет. В отличие от нас с тобой.
+      </p>
+    </div>
   `;
 }
 
@@ -107,11 +156,23 @@ export function renderCharacter(root) {
   root.innerHTML = `
     ${skillsRows(state)}
     ${equipmentRows(state)}
-    ${livingRows()}
+    ${foodRows(state)}
+    ${washRow()}
+    ${shelterRows(state)}
+    ${bestLifeCard(state)}
     ${rebirthCard(state)}
   `;
 
-  root.querySelectorAll('[data-session]').forEach((btn) => {
-    btn.addEventListener('click', () => showToast(`🚧 Оживёт в сессии ${btn.dataset.session}`));
+  root.querySelectorAll('[data-food]').forEach((btn) => {
+    btn.addEventListener('click', () => applyAction((s) => buyFood(s, btn.dataset.food)));
+  });
+  root.querySelectorAll('[data-wash]').forEach((btn) => {
+    btn.addEventListener('click', () => applyAction((s) => wash(s)));
+  });
+  root.querySelectorAll('[data-shelter]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      applyAction((s) => chooseShelter(s, btn.dataset.shelter));
+      showToast('🛏️ Выбор на сегодня сделан. Полночь рассчитает.');
+    });
   });
 }

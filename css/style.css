@@ -475,6 +475,48 @@ details.info--flat { margin-top: 0; border-top: none; padding-top: 0; }
 
 .death-card__btn { margin-top: 16px; }
 
+/* ---------- Модальная карточка события (сессия 8) ---------- */
+
+.event-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 8, 11, 0.82);
+  backdrop-filter: blur(4px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 90;
+}
+
+.event-overlay--visible { display: flex; }
+
+.event-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 209, 102, 0.45); /* лампа над дверью — не катастрофа, но важно */
+  border-radius: var(--radius);
+  padding: 24px 26px;
+  max-width: 430px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+}
+
+.event-card__emoji { font-size: 48px; }
+
+.event-card__title { margin: 8px 0 6px; font-size: 22px; }
+
+.event-card__text { color: var(--text-dim); font-size: 14px; margin: 0 0 16px; }
+
+.event-card__choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.event-card__choice { width: 100%; }
+.event-card__choice:disabled { opacity: 0.45; }
+
 /* ---------- Тост ---------- */
 
 .toast {

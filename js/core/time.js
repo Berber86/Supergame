@@ -5,22 +5,23 @@
  * (events возвращается наружу — UI показывает их тостами).
  */
 
-import { DECAY, LIVING, NIGHT_RISK, TIME } from '../data/balance.js';
+import { DECAY, EVENT_DAY, LIVING, NIGHT_RISK, TIME } from '../data/balance.js';
 import { WEATHER } from '../data/weather.js';
+import { EVENTS } from '../data/events.js';
 import { findItem, findShelter, findWeather } from './lookups.js';
 import { clampStats, death, pushLog } from './state.js';
 import { makeRoller } from './rng.js';
 
 /**
  * Прошло hours часов активного времени. На каждом часу — распад статов.
- * Полночь → вынужденный сон (где придётся, лавка бесплатна и вездесуща).
- * Энергия на нуле → отключился прямо на улице (тот же вынужденный сон).
+ * Полночь → вынужденный сон (куда вечером наметил — туда и идёшь: shelterTonight).
+ * Энергия на нуле → отключился прямо на улице (тот же вынужденный сон, но лавка).
  */
 export function advanceHours(state, hours, events = []) {
   for (let i = 0; i < hours && state.status === 'alive'; i += 1) {
     if (state.hour >= 23) {
       // Час полуночи «съедается» сном: продолжаем счёт уже утренних часов.
-      nightFalls(state, 'lavka', events);
+      nightFalls(state, state.shelterTonight ?? 'lavka', events);
       continue;
     }
 
@@ -46,14 +47,36 @@ export function advanceHours(state, hours, events = []) {
       }
     }
 
-    // Отруб от усталости.
+    // Отруб от усталости — на улице, значит, без права выбора койки.
     if (state.stats.energy <= 0) {
       events.push('😴 Силы кончились — отключился там, где стоял.');
       pushLog(state, 'Отключился от усталости прямо на улице.');
       nightFalls(state, 'lavka', events);
+      continue;
+    }
+
+    // Точечное событие дня (сессия 8): час наступил — жизнь постучалась.
+    // Модальное окно выбора (UI); редьюсер-обработчик — core/events.js.
+    if (!state.pendingEvent && state.eventAtHour != null && state.hour >= state.eventAtHour) {
+      fireDailyEvent(state, events);
     }
   }
   return events;
+}
+
+/**
+ * Событие дня сработало: выбрать из пула (все EVENTS — контексты данные
+ * оставлены для будущих привязок; точечность мы получаем ЧАСОМ, а не актом),
+ * повесить pendingEvent — игру ждёт модалка. Расписание израсходовано.
+ */
+function fireDailyEvent(state, events) {
+  const roller = makeRoller(state.rngState);
+  const event = roller.weighted(EVENTS);
+  state.pendingEvent = { eventId: event.id };
+  state.eventAtHour = null;
+  state.rngState = roller.state;
+  events.push(`${event.emoji} ${event.title} — момент выбора.`);
+  pushLog(state, `Событие дня: ${event.title}.`);
 }
 
 /**
@@ -99,11 +122,16 @@ export function sleep(state, shelterId = 'lavka', events = []) {
     state.stats.health += DECAY.healthRegenAtNight * TIME.SLEEP_HOURS;
   }
 
-  // Утро: новый день, новая погода.
+  // Утро: новый день, новая погода — и расписание точечного события дня
+  // (выбор человека 2A: не чаще раза в день; тихие дни бывают — 1−dailyChance).
   state.day += 1;
   state.hour = TIME.START_HOUR;
   const weather = roller.weighted(WEATHER);
   state.weatherId = weather.id;
+  state.eventRolledForDay = state.day;
+  state.eventAtHour = roller.chance(EVENT_DAY.dailyChance)
+    ? EVENT_DAY.earliestHour + roller.int(EVENT_DAY.latestHour - EVENT_DAY.earliestHour + 1)
+    : null;
   state.rngState = roller.state;
   clampStats(state);
 

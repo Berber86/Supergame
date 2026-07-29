@@ -6,9 +6,11 @@
 
 import { createGame, newLife } from '../core/state.js';
 import { saveGame, loadGame } from '../core/persist.js';
+import { applyEventChoice } from '../core/events.js';
 import { renderStats, renderClock } from './stats.js';
 import { rerenderActive } from './tabs.js';
 import { showDeath, hideDeath } from './death.js';
+import { showEventModal, hideEventModal } from './eventModal.js';
 import { showToast } from './toast.js';
 
 let state = null;
@@ -36,7 +38,18 @@ export function refreshUi({ keepScroll = true } = {}) {
   if (keepScroll) requestAnimationFrame(() => window.scrollTo(0, y));
   if (state.status === 'dead') {
     showDeath(state, startNewLife);
+  } else {
+    maybeShowEventModal();
   }
+}
+
+/** Событие дня ждёт ответа (сессия 8): пауза в модалке до выбора. */
+function maybeShowEventModal() {
+  if (!state || state.status !== 'alive' || !state.pendingEvent) return;
+  showEventModal(state, (choiceId) => {
+    hideEventModal();
+    applyAction((s) => applyEventChoice(s, choiceId));
+  });
 }
 
 /**

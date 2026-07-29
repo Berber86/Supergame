@@ -40,13 +40,34 @@ export function deserialize(json) {
  * Нормализация старого сейва: добить поля, появившиеся в новых версиях,
  * не теряя прогресс человека. Дешевле формальных миграций версий — пока
  * изменения только «добавочные», SAVE_VERSION не трогаем.
- * (Сессия 5: + bins / digMode для сейвов сессии 4.)
+ * (Сессия 5: + bins / digMode для сейвов сессии 4.
+ *  Сессия 8: + быт/события/«лучшая жизнь» для сейвов сессий 4–7.)
  */
 export function normalizeState(state) {
   if (!state.bins || typeof state.bins !== 'object') state.bins = {};
   if (typeof state.digMode !== 'string') state.digMode = 'normal';
+  // Сессия 8: быт и события дня.
+  if (typeof state.shelterTonight !== 'string') state.shelterTonight = 'lavka';
+  if (typeof state.pendingEvent !== 'object') state.pendingEvent = null; // null ИЛИ { eventId }
+  if (state.pendingEvent && typeof findEventIdSafe(state.pendingEvent.eventId) !== 'string') state.pendingEvent = null;
+  if (typeof state.eventRolledForDay !== 'number') state.eventRolledForDay = 0;
+  if (state.eventRolledForDay !== state.day) state.eventAtHour = null; // вчерашнее расписание не переносим
+  if (typeof state.eventAtHour !== 'number') state.eventAtHour = null;
+  if (typeof state.dailyBoost !== 'object') state.dailyBoost = null;
+  if (state.dailyBoost && typeof state.dailyBoost.districtId !== 'string') state.dailyBoost = null;
+  if (!state.bestLife || typeof state.bestLife.earned !== 'number') {
+    state.bestLife = { days: 0, earned: 0, bestItemLabel: null, life: 0 };
+  }
   return state;
 }
+
+/* Сейв с сосланным на несуществующее событие (ренейм данных) — лечим, не роняем. */
+import { findEvent } from './events.js';
+function findEventIdSafe(eventId) {
+  return findEvent(eventId)?.id;
+}
+
+/** Минимальная проверка, что это наш сейв, а не чужой JSON из localStorage. */
 
 /** Минимальная проверка, что это наш сейв, а не чужой JSON из localStorage. */
 export function isValidStateShape(state) {

@@ -6,7 +6,7 @@
  * из state.rngState, состояние которого пишется обратно в конце действия.
  */
 
-import { ACTIONS, BEGGING, BINS, DIG, DIG_MODES, DIG_TROUBLES, EAT } from '../data/balance.js';
+import { ACTIONS, BEGGING, BINS, DIG, DIG_MODES, DIG_TROUBLES, EAT, EVENT_DAY } from '../data/balance.js';
 import { findDistrict, findItem, findWeather } from './lookups.js';
 import { clampStats, death, pushLog } from './state.js';
 import { advanceHours } from './time.js';
@@ -115,11 +115,16 @@ export function setDigMode(state, mode, events = []) {
  * «Богатство» бака сегодня: ОБЕДНЕНИЕ ×0.5 за каждый прошлый обыск
  * (выбор человека, сессия 4), утром бак восполняется (BINS.refillDaily).
  * Богатство текущего обыска = depletionPerDig ^ (сколько раз его уже рыли сегодня).
+ * «Слух про жирный район» (сессия 8): на завтра после события — богатство ×1.5.
  */
 export function binRichness(state, district, binIndex) {
   const rec = getBinsRecord(state, district.id);
   if (!rec) return 0;
-  return Math.pow(BINS.depletionPerDig, rec.digs[binIndex] ?? 0);
+  const base = Math.pow(BINS.depletionPerDig, rec.digs[binIndex] ?? 0);
+  const boosted = state.dailyBoost
+    && state.dailyBoost.day === state.day
+    && state.dailyBoost.districtId === district.id;
+  return boosted ? base * EVENT_DAY.rumorRichnessMult : base;
 }
 
 /**

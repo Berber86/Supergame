@@ -18,15 +18,27 @@ function ensureOverlay() {
   return overlay;
 }
 
+/**
+ * Экран итогов жизни (сессия 8 наполнила смыслом):
+ * причина, эпилог-изречение (каждый раз другое), лучшая находка,
+ * РЕКОРД «лучшей жизни» (метрика, выбор человека 3D→C), правила ребёрна.
+ */
 export function showDeath(state, onNewLife) {
   const overlay = ensureOverlay();
 
-  const epilogue = REBIRTH.epilogueLines[0]
+  // Эпилог-изречение: детерминированно разное от жизни к жизни
+  // (строка про находку выводится отдельно — в ротацию её не берём).
+  const rotatable = REBIRTH.epilogueLines.filter((l) => !l.includes('{bestItem}'));
+  const tpl = rotatable[(state.lives + state.day) % rotatable.length];
+  const epilogue = tpl
     .replace('{days}', state.day)
     .replace('{earned}', state.earnedThisLife);
   const bestItemLine = state.bestItemLabel
     ? `Лучшая находка: ${state.bestItemLabel}.`
     : 'Лучшей находки не случилось — небо задолжало тебе картину.';
+  const recordLine = state.bestLife?.life
+    ? `🏆 Рекорд дна: жизнь №${state.bestLife.life} — ${state.bestLife.days} дн. и ${rublesLabel(state.bestLife.earned)}.`
+    : '';
 
   overlay.innerHTML = `
     <div class="death-card">
@@ -35,8 +47,9 @@ export function showDeath(state, onNewLife) {
       <p class="death-card__cause">${state.deathCause ?? 'Питер забрал своё.'}</p>
       <p class="death-card__line"><em>${epilogue}</em></p>
       <p class="death-card__line">${bestItemLine}</p>
+      ${recordLine ? `<p class="death-card__line">${recordLine}</p>` : ''}
       <p class="death-card__rules">
-        Навыки останутся при тебе. Ноша и деньги — при городе.<br>
+        Навыки и рекорд останутся при тебе. Ноша и деньги — при городе.<br>
         Новая жизнь: ${rublesLabel(REBIRTH.start.money)} к существованию,
         наследие репутации +${percentLabel(REBIRTH.legacy.reputationBonusPerLife)}
         (всего +${percentLabel(state.legacyBonus + REBIRTH.legacy.reputationBonusPerLife)}).

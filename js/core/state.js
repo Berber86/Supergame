@@ -77,6 +77,14 @@ export function createGame(seed = Date.now() % 100000) {
     lives: 1,
     legacyBonus: 0,                      // наследие репутации (rebirth.js)
 
+    // Сессия 8: быт и события дня.
+    shelterTonight: 'lavka',             // куда идём спать ночью (LIVING.shelter)
+    pendingEvent: null,                  // { eventId } — ждёт выбора в модалке (core/events.js)
+    eventAtHour: null,                   // час, когда постучится событие дня (null — тихий день)
+    eventRolledForDay: 0,                // за какой день уже брошено расписание события
+    dailyBoost: null,                    // { day, districtId } — «слух про жирный район» на завтра
+    bestLife: { days: 0, earned: 0, bestItemLabel: null, life: 0 }, // метрика «лучшая жизнь» (переживает смерти)
+
     status: 'alive',                     // 'alive' | 'dead'
     deathCause: null,
     earnedThisLife: 0,                   // сколько ₽ поднял за эту жизнь (для эпилога)
@@ -89,9 +97,24 @@ export function createGame(seed = Date.now() % 100000) {
   return state;
 }
 
-/** Смерть: фиксируем конец жизни. Новую начнёт newLife() — по правилам мягкого рогалика. */
+/** Смерть: фиксируем конец жизни и рекорд. Новую начнёт newLife() — по правилам мягкого рогалика. */
 export function death(state, cause, events = []) {
   if (state.status === 'dead') return;
+
+  // «Лучшая жизнь» (выбор человека 3D→C, сессия 8): рекорд по выручке,
+  // по дням при равенстве. Живёт через смерти, как и навыки.
+  if (
+    state.earnedThisLife > state.bestLife.earned
+    || (state.earnedThisLife === state.bestLife.earned && state.day > state.bestLife.days)
+  ) {
+    state.bestLife = {
+      days: state.day,
+      earned: state.earnedThisLife,
+      bestItemLabel: state.bestItemLabel,
+      life: state.lives,
+    };
+  }
+
   state.status = 'dead';
   state.deathCause = cause;
   const line = `💀 ${cause}`;
@@ -123,6 +146,12 @@ export function newLife(state, events = []) {
   state.equipment = { gloves: null, jacket: null, cart: null };
   state.bins = {};
   state.digMode = 'normal';
+  state.shelterTonight = 'lavka';
+  state.pendingEvent = null;
+  state.eventAtHour = null;
+  state.eventRolledForDay = 0;
+  state.dailyBoost = null;
+  // bestLife НЕ сбрасываем: рекорд — он навсегда рекорд (как и навыки).
 
   state.money = REBIRTH.start.money;
   state.stats = {
