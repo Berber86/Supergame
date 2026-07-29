@@ -80,7 +80,11 @@ export const ASSESS = { spreadPerLevel: 0.125, exactFromLevel: 8 };
 export const SCAM = { baseHonestChance: 0.65, tradeBonusPerLevel: 0.03, honestChanceCap: 0.9 };
 
 /** Грузоподъёмность ноши (кг). Рюкзак/тележка поднимут — снаряжение, сессия 9. */
-export const CARRY = { baseKg: 5, staminaBonusKg: 5 }; // staminaBonusKg — за уровень Выносливости
+export const CARRY = {
+  baseKg: 5,
+  staminaBonusKg: 5,       // за уровень Выносливости
+  unidentifiedKg: 0.5,     // условный вес неопознанного (в items.js вес им не задан)
+};
 
 /**
  * Лимиты обыска баков (выбор человека, сессия 4: ОБЕДНЕНИЕ бака при повторе).
@@ -90,7 +94,50 @@ export const BINS = {
   refillDaily: true,        // утром город «выбрасывает» новое — баки восполняются
   depletionPerDig: 0.5,     // «богатство» бака: 1-й обыск ×1, 2-й ×0.5, 3-й ×0.25…
   streetFindChance: 0.1,    // шанс найти мелочь на улице при переходе между районами
+  /** Мелочь, которая валяется на улице между районами (без неопознанного — уличная магия так не работает). */
+  streetLoot: [
+    { itemId: 'butylka_steklo',     weight: 4 },
+    { itemId: 'pet_butilka',        weight: 3 },
+    { itemId: 'banka_alyuminiy',    weight: 3 },
+    { itemId: 'yabloko_pomyatoe',   weight: 2 },
+    { itemId: 'baton_zasohshiy',    weight: 2 },
+    { itemId: 'moneta_yubileynaya', weight: 1 },
+  ],
 };
+
+/**
+ * Механика находок при обыске бака (сессия 5). Стоимость обыска — ACTIONS.dig.
+ * Каждый обыск — attemptsPerDig «попыток выудить»; каждая срабатывает с шансом
+ *   baseFindChance × богатство бака (см. BINS.depletionPerDig) × lootMult режима
+ *   + бонус 🔍Поиска. Потолок — чтобы «смелее» не гарантировал лут.
+ */
+export const DIG = {
+  attemptsPerDig: 2,
+  baseFindChance: 0.6,
+  findChanceCap: 0.92,
+  searchChanceBonusPerLevel: 0.03, // + к шансу находки за уровень 🔍Поиска
+  searchRiskMultPerLevel: 0.93,    // риск ×0.93 за уровень 🔍Поиска (опыт — это аккуратность)
+  riskCap: 0.6,                    // потолок суммарного риска обыска
+};
+
+/**
+ * Неприятности при обыске (ЗАГЛУШКА до системы событий сессии 8 —
+ * тексты без выборов, эффекты малы и НЕ убивают (здоровье не ниже 1)).
+ * effects — дельты к статам (ключи = статы), применяются как есть.
+ */
+export const DIG_TROUBLES = [
+  { id: 'sobaka',    emoji: '🐕', line: 'Дворовая собака считает бак своим. Спорить — себе дороже, отступил с потерей темпа.', effects: { energy: -3, cleanliness: -2 } },
+  { id: 'ohrana',    emoji: '💂', line: 'Охрана ЖК попросила удалиться. Без увещеваний, зато и без протокола.', effects: { energy: -2 } },
+  { id: 'konkurent', emoji: '🥷', line: 'Конкурент уже «работал» этот бак. Обменялись мнениями и рентгеновскими взглядами.', effects: { energy: -2 } },
+  { id: 'steklo',    emoji: '🩸', line: 'В пакете с отходами — осколок. Рука цела, самолюбие требует перевязки.', effects: { health: -2 } },
+  { id: 'babka',     emoji: '🧓', line: 'Бабушка с третьего этажа обозвала «маргиналом»… и спустила кулёк с супом. Счёт 1:1.', effects: { satiety: +4, cleanliness: -1 } },
+];
+
+/**
+ * Рискованная еда из бака (items.js → healthRisk): если желудок проиграл
+ * лотерею — урон здоровью. Это МОЖЕТ доконать слабого: обед — твой выбор.
+ */
+export const EAT = { riskyFindDamage: 8 };
 
 /**
  * Режимы обыска (выбор человека, сессия 4): «смелее» — награда за прокачку,

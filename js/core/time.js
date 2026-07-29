@@ -7,7 +7,7 @@
 
 import { DECAY, LIVING, NIGHT_RISK, TIME } from '../data/balance.js';
 import { WEATHER } from '../data/weather.js';
-import { findShelter, findWeather } from './lookups.js';
+import { findItem, findShelter, findWeather } from './lookups.js';
 import { clampStats, death, pushLog } from './state.js';
 import { makeRoller } from './rng.js';
 
@@ -86,7 +86,8 @@ export function sleep(state, shelterId = 'lavka', events = []) {
     if (roller.chance(NIGHT_RISK.lavkaStealChance) && state.inventory.length > 0) {
       const idx = roller.int(state.inventory.length);
       const stolen = state.inventory.splice(idx, 1)[0];
-      events.push(`🥷 Ночью стащили: ${stolen.itemId}. Лавка — это общая спальня города.`);
+      const name = findItem(stolen.itemId)?.name ?? stolen.itemId;
+      events.push(`🥷 Ночью стащили: ${name}. Лавка — это общая спальня города.`);
       pushLog(state, 'Обокрали во сне на лавке.');
     }
     state.stats.warmth += NIGHT_RISK.lavkaBadSleepWarmth;

@@ -33,7 +33,19 @@ export function deserialize(json) {
   } catch {
     return null;
   }
-  return isValidStateShape(state) ? state : null;
+  return isValidStateShape(state) ? normalizeState(state) : null;
+}
+
+/**
+ * Нормализация старого сейва: добить поля, появившиеся в новых версиях,
+ * не теряя прогресс человека. Дешевле формальных миграций версий — пока
+ * изменения только «добавочные», SAVE_VERSION не трогаем.
+ * (Сессия 5: + bins / digMode для сейвов сессии 4.)
+ */
+export function normalizeState(state) {
+  if (!state.bins || typeof state.bins !== 'object') state.bins = {};
+  if (typeof state.digMode !== 'string') state.digMode = 'normal';
+  return state;
 }
 
 /** Минимальная проверка, что это наш сейв, а не чужой JSON из localStorage. */

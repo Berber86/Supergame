@@ -1,30 +1,16 @@
 /**
- * screens/inventory.js — вкладка «Инвентарь». Сессия 4: ЖИВАЯ ноша
- * (пока пустая — баки откроются в сессии 5, но экран уже честный).
+ * screens/inventory.js — вкладка «Инвентарь». Сессия 5: живая ноша из баков:
+ * вес и ёмкость считает ядро (core/inventory.js), еду можно съесть на месте.
+ * Идентификация неопознанного — сессия 6 (кнопка-плейсхолдер внизу).
  */
 
 import { EXPERTS } from '../../data/experts.js';
-import { CARRY } from '../../data/balance.js';
 import { findItem } from '../../core/lookups.js';
-import { getState } from '../session.js';
+import { capacityKg, inventoryUsedKg } from '../../core/inventory.js';
+import { eat } from '../../core/actions.js';
+import { getState, applyAction } from '../session.js';
 import { kgLabel, rublesLabel, percentLabel } from '../format.js';
 import { showToast } from '../toast.js';
-
-/** Вес стопки (у неопознанного веса нет в данных — условный 0.5 кг). */
-const UNIDENTIFIED_WEIGHT_KG = 0.5;
-
-function entryWeightKg(entry) {
-  const item = findItem(entry.itemId);
-  return (item?.weight ?? UNIDENTIFIED_WEIGHT_KG) * entry.qty;
-}
-
-function inventoryUsedKg(state) {
-  return state.inventory.reduce((sum, e) => sum + entryWeightKg(e), 0);
-}
-
-function capacityKg(state) {
-  return CARRY.baseKg + CARRY.staminaBonusKg * state.skills.stamina.level;
-}
 
 function capacityCard(state) {
   const used = inventoryUsedKg(state);
@@ -54,12 +40,17 @@ function itemCard(entry) {
     valueHtml = `<span class="item__value">${rublesLabel(value)}</span>`;
   }
 
+  const eatBtn = item.kind === 'food'
+    ? `<button class="btn btn--ghost btn--mini" data-eat="${item.id}" ${item.healthRisk ? `title="риск отравления ${percentLabel(item.healthRisk)}"` : ''}>🍽️ Съесть</button>`
+    : '';
+
   return `
     <div class="card item" title="${item.desc}">
       ${qty}
       <div class="item__emoji">${item.emoji}</div>
       <div class="item__name">${item.name}</div>
       ${valueHtml}
+      ${eatBtn}
     </div>
   `;
 }
@@ -70,7 +61,7 @@ function itemsSection(state) {
       <div class="card">
         <h3 class="card__title"><span class="emoji">🕸️</span>Пустая ноша</h3>
         <p class="card__desc">
-          Пока тут только паутина и надежды. Баки откроются в сессии 5 —
+          Пока тут только паутина и надежды. Баки открыты во вкладке «🗺️ Город» —
           приходи с пустым пакетом и тёплым нюхом.
         </p>
       </div>
@@ -108,6 +99,10 @@ export function renderInventory(root) {
   if (!state) return;
 
   root.innerHTML = `${capacityCard(state)}${itemsSection(state)}${identifyHintCard()}`;
+
+  root.querySelectorAll('[data-eat]').forEach((btn) => {
+    btn.addEventListener('click', () => applyAction((s) => eat(s, btn.dataset.eat)));
+  });
 
   root.querySelectorAll('[data-session]').forEach((btn) => {
     btn.addEventListener('click', () => showToast(`🚧 Оживёт в сессии ${btn.dataset.session} — данные уже готовы, логика в пути`));

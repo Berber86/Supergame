@@ -68,8 +68,10 @@ export function createGame(seed = Date.now() % 100000) {
     },
 
     skills: freshSkills(),
-    inventory: [],                       // [{ itemId, qty, trueValue? }] — детали с сессии 5
+    inventory: [],                       // [{ itemId, qty, trueValue?, identified? }] — см. core/inventory.js
     equipment: { gloves: null, jacket: null, cart: null },
+    bins: {},                            // обеднение баков: { [districtId]: { day, digs[] } } — core/actions.js
+    digMode: 'normal',                   // режим обыска: careful | normal | bold (см. DIG_MODES)
 
     flags: {},                           // репутационные/сюжетные флаги событий
     lives: 1,
@@ -119,6 +121,8 @@ export function newLife(state, events = []) {
   state.flags = keptFlags;
   state.inventory = [];
   state.equipment = { gloves: null, jacket: null, cart: null };
+  state.bins = {};
+  state.digMode = 'normal';
 
   state.money = REBIRTH.start.money;
   state.stats = {

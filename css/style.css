@@ -231,6 +231,8 @@ body {
 
 .btn--wide { width: 100%; margin-top: 10px; }
 
+.btn--mini { width: 100%; margin-top: 6px; padding: 5px 8px; font-size: 12.5px; }
+
 /* ---------- Баки ---------- */
 
 .bins {
@@ -254,6 +256,20 @@ body {
 .bin__emoji { display: block; font-size: 30px; margin-bottom: 4px; }
 
 .bin:hover { border-color: rgba(255, 209, 102, 0.4); color: var(--text); }
+
+/* Режимы обыска (аккуратнее/обычно/смелее) */
+
+.modes { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+.modes__btn { flex: 1 1 120px; margin: 0; padding: 8px 10px; font-size: 13px; }
+
+.modes__btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Обеднение бака */
+
+.bin__meta { display: inline-block; margin-top: 2px; color: var(--text-dim); }
+
+.bin__meta--spent { color: var(--danger); }
 
 /* ---------- Предметы ---------- */
 

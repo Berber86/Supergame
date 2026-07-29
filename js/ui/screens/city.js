@@ -1,16 +1,18 @@
 /**
- * screens/city.js — вкладка «Город»: погода, текущий район, баки,
- * попрошайничество, переходы, журнал. Сессия 4: ЖИВОЕ состояние —
- * переходы и попрошайничество уже работают, баки ждут сессию 5.
+ * screens/city.js — вкладка «Город»: погода, текущий район, БАКИ (играбельно,
+ * сессия 5), попрошайничество, переходы, журнал. Правил здесь нет: нажал
+ * кнопку — ядро решило, тосты рассказали.
  */
 
 import { DISTRICTS } from '../../data/districts.js';
-import { ACTIONS, BEGGING } from '../../data/balance.js';
+import { ACTIONS, BEGGING, DIG_MODES } from '../../data/balance.js';
 import { findDistrict, findWeather } from '../../core/lookups.js';
-import { travelTo, beg } from '../../core/actions.js';
+import {
+  travelTo, beg, dig, setDigMode,
+  availableDigModes, digModeDef, getBinsRecord, binRichness,
+} from '../../core/actions.js';
 import { getState, applyAction } from '../session.js';
 import { formatClock, hoursLabel, riskLabel, rublesLabel } from '../format.js';
-import { showToast } from '../toast.js';
 
 function weatherCard(state) {
   const w = findWeather(state.weatherId);
@@ -27,18 +29,56 @@ function weatherCard(state) {
   `;
 }
 
+const MODE_META = {
+  careful: { emoji: '🤫', label: 'Аккуратнее', hint: `лут ×${DIG_MODES.careful.lootMult} · риск ×${DIG_MODES.careful.riskMult}` },
+  normal:  { emoji: '🧢', label: 'Обычно',     hint: 'как есть' },
+  bold:    { emoji: '😤', label: 'Смелее',     hint: `лут ×${DIG_MODES.bold.lootMult} · риск ×${DIG_MODES.bold.riskMult} · 🔍${DIG_MODES.bold.unlockLevel}` },
+};
+
+/** Переключатель режима обыска (аккуратнее/обычно/смелее, DIG_MODES). */
+function digModesRow(state) {
+  const activeId = digModeDef(state).id; // учитывает и запертый «смелее» из старого сейва
+  const buttons = availableDigModes(state).map(({ id, unlocked }) => {
+    const meta = MODE_META[id];
+    const cls = activeId === id ? 'btn' : 'btn btn--ghost';
+    const lockNote = unlocked ? '' : ` 🔒 с 🔍 Поиска-${DIG_MODES.bold.unlockLevel}`;
+    return `
+      <button class="${cls} modes__btn" data-dig-mode="${id}" ${unlocked ? '' : 'disabled'}
+        title="${meta.hint}${lockNote}">
+        ${meta.emoji} ${meta.label}
+      </button>
+    `;
+  }).join('');
+  return `<div class="modes">${buttons}</div>`;
+}
+
+function binsBlock(state, district) {
+  if (district.binCount === 0) {
+    return '<p class="card__desc" style="margin-top:8px">Баков тут нет — тут ты спишь. Рабочие районы — ниже.</p>';
+  }
+  const rec = getBinsRecord(state, district.id);
+  const cost = ACTIONS.dig;
+
+  const bins = rec.digs.map((digs, i) => {
+    const richness = binRichness(state, district, i);
+    const spent = richness <= 0.125; // после 3+ обысков — тщетно всё
+    const stateLine = digs > 0
+      ? `<small class="bin__meta ${spent ? 'bin__meta--spent' : ''}">${spent ? 'пусто, хватит' : `рыт ×${digs} · лут ×${Math.round(richness * 100) / 100}`}</small>`
+      : `<small class="bin__meta">${hoursLabel(cost.hours)} · ${cost.energy}⚡ · ${cost.cleanliness}🧼</small>`;
+    return `
+      <button class="bin" data-dig-bin="${i}" title="Обыск: ${hoursLabel(cost.hours)}, ${cost.energy}⚡, ${cost.cleanliness}🧼">
+        <span class="bin__emoji">🗑️</span>
+        Бак №${i + 1}<br>
+        ${stateLine}
+      </button>
+    `;
+  }).join('');
+
+  return `${digModesRow(state)}<div class="bins">${bins}</div>`;
+}
+
 function currentDistrictCard(state) {
   const d = findDistrict(state.districtId);
-
-  const binsBlock = d.binCount > 0
-    ? `<div class="bins">${Array.from({ length: d.binCount }, (_, i) => `
-        <button class="bin" data-session="5" title="Обыск оживёт в сессии 5">
-          <span class="bin__emoji">🗑️</span>
-          Бак №${i + 1}<br>
-          <small>${hoursLabel(ACTIONS.dig.hours)} · ${ACTIONS.dig.energy}⚡</small>
-        </button>
-      `).join('')}</div>`
-    : '<p class="card__desc" style="margin-top:8px">Баков тут нет — тут ты спишь. Рабочие районы — ниже.</p>';
 
   return `
     <div class="card">
@@ -48,7 +88,7 @@ function currentDistrictCard(state) {
         <span class="tag">баков: ${d.binCount}</span>
         <span class="tag ${d.digRisk >= 0.2 ? 'tag--danger' : 'tag--green'}">риск: ${riskLabel(d.digRisk)}</span>
       </div>
-      ${binsBlock}
+      ${binsBlock(state, d)}
     </div>
   `;
 }
@@ -59,7 +99,7 @@ function beggingCard() {
       <h2 class="card__title"><span class="emoji">🧢</span>Постоять с шапкой</h2>
       <p class="card__desc">
         Стабильно, скучно, без приключений: ${hoursLabel(BEGGING.hours)} → ${rublesLabel(BEGGING.income)} гарантированно.
-        На голодный день — вариант. На счастливый — вряд ли. <strong>Работает уже сейчас.</strong>
+        На голодный день — вариант. На счастливый — вряд ли.
       </p>
       <button class="btn btn--wide" id="begBtn">🧢 Постоять (${hoursLabel(BEGGING.hours)})</button>
     </div>
@@ -126,7 +166,11 @@ export function renderCity(root) {
   const begBtn = root.querySelector('#begBtn');
   if (begBtn) begBtn.addEventListener('click', () => applyAction(beg));
 
-  root.querySelectorAll('[data-session]').forEach((btn) => {
-    btn.addEventListener('click', () => showToast(`🚧 Оживёт в сессии ${btn.dataset.session} — логика уже дышит рядом`));
+  root.querySelectorAll('[data-dig-bin]').forEach((btn) => {
+    btn.addEventListener('click', () => applyAction((s) => dig(s, Number(btn.dataset.digBin))));
+  });
+
+  root.querySelectorAll('[data-dig-mode]').forEach((btn) => {
+    btn.addEventListener('click', () => applyAction((s) => setDigMode(s, btn.dataset.digMode)));
   });
 }

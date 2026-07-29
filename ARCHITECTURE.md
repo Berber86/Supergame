@@ -34,14 +34,15 @@
 │   └── style.css           # Тёмная тема: topbar, stats, tabs, cards, toast; адаптив
 ├── js/
 │   ├── main.js             # Точка входа: поднимает сессию, вкладки, худ
-│   ├── core/               # ЧИСТАЯ ЛОГИКА (сессия 4): всё тестируется без DOM
+│   ├── core/               # ЧИСТАЯ ЛОГИКА: всё тестируется без DOM
 │   │   ├── config.js       # Константы проекта
 │   │   ├── rng.js          # mulberry32, состояние = целое rngState внутри GameState
 │   │   ├── state.js        # GameState: createGame, журнал (кап 80), death, newLife
 │   │   ├── time.js         # advanceHours (распад/полночь/отключение), sleep, НОЧНЫЕ РИСКИ
-│   │   ├── actions.js      # Редьюсеры действий: travelTo, beg (dig — сессия 5)
+│   │   ├── actions.js      # Редьюсеры действий: travelTo (+улица), beg, dig, eat, режимы обыска
+│   │   ├── inventory.js    # Ноша (сессия 5): вес/ёмкость, стопки, тайная цена неопознанного
 │   │   ├── skills.js       # Навыки: level = floor(sqrt(xp/10)), addSkillXp
-│   │   ├── persist.js      # Сейв в localStorage + чистые serialize/deserialize
+│   │   ├── persist.js      # Сейв в localStorage + serialize/deserialize + normalizeState
 │   │   └── lookups.js      # Точка доступа к справочникам js/data
 │   ├── data/               # Справочники (сессия 2+): предметы, районы, сбыт… — декларативно
 │   └── ui/                 # Presentation-слой (сессия 3): DOM, БЕЗ игровых правил
@@ -55,8 +56,10 @@
 │       └── screens/        # Экраны вкладок: city / inventory / market / character
 ├── tests/                  # Unit-тесты Vitest: js/core, js/data, чистые части js/ui
 │   ├── config.test.js      # Дымовой тест скелета (сессия 1)
-│   ├── data.test.js        # Валидация целостности справочников (сессия 2)
-│   └── ui.test.js          # Форматтеры + согласованность демо-снимка (сессия 3)
+│   ├── data.test.js        # Валидация целостности справочников (сессия 2+)
+│   ├── ui.test.js          # Форматтеры + согласованность данных (сессия 3)
+│   ├── core.test.js        # Время/распад/сон/ребёрн/сейв (сессия 4)
+│   └── dig.test.js         # Баки: находки, обеднение, режимы, еда, улица (сессия 5)
 ├── .github/workflows/
 │   └── ci.yml              # CI: тесты на каждый push (⚠️ пока не запушен — см. LESSONS)
 ├── package.json            # Только devDependencies (vitest); сайт npm не использует

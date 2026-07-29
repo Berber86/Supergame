@@ -275,3 +275,48 @@ describe('balance.js — константы', () => {
     expect(DIG_MODES.bold.unlockLevel).toBeLessThanOrEqual(SKILLS.maxLevel);
   });
 });
+
+describe('balance.js — обыск баков, уличная мелочь, неприятности (сессия 5)', () => {
+  it('streetLoot ссылается на существующие предметы (без неопознанного), веса положительны', () => {
+    const { BINS } = balanceModule;
+    expect(BINS.streetLoot.length).toBeGreaterThanOrEqual(3);
+    for (const entry of BINS.streetLoot) {
+      expect(itemIds.has(entry.itemId), entry.itemId).toBe(true);
+      expect(entry.weight, entry.itemId).toBeGreaterThan(0);
+    }
+  });
+
+  it('DIG: вероятности в (0,1], потолки адекватны, попыток ≥1', () => {
+    const { DIG } = balanceModule;
+    expect(DIG.attemptsPerDig).toBeGreaterThanOrEqual(1);
+    expect(DIG.baseFindChance).toBeGreaterThan(0);
+    expect(DIG.baseFindChance).toBeLessThanOrEqual(1);
+    expect(DIG.findChanceCap).toBeGreaterThanOrEqual(DIG.baseFindChance);
+    expect(DIG.findChanceCap).toBeLessThanOrEqual(1);
+    expect(DIG.riskCap).toBeGreaterThan(0);
+    expect(DIG.riskCap).toBeLessThanOrEqual(1);
+    expect(DIG.searchRiskMultPerLevel).toBeLessThan(1);
+  });
+
+  it('DIG_TROUBLES: эмодзи+текст на месте, эффекты ложатся только на известные статы', () => {
+    const { DIG_TROUBLES } = balanceModule;
+    const STAT_KEYS = ['satiety', 'warmth', 'health', 'energy', 'cleanliness'];
+    expect(DIG_TROUBLES.length).toBeGreaterThanOrEqual(3);
+    for (const t of DIG_TROUBLES) {
+      expect(t.emoji.length, t.id).toBeGreaterThan(0);
+      expect(t.line.length, t.id).toBeGreaterThan(10);
+      for (const [key, delta] of Object.entries(t.effects)) {
+        expect(STAT_KEYS, `${t.id}/${key}`).toContain(key);
+        expect(typeof delta, `${t.id}/${key}`).toBe('number');
+      }
+      // заглушки не убивают за раз: урона не больше 5 (clamp до 1 — в логике)
+      expect(Math.abs(t.effects.health ?? 0), t.id).toBeLessThanOrEqual(5);
+    }
+  });
+
+  it('EAT: урон за рискованную еду — ощутимый, но не смертельный для здорового', () => {
+    const { EAT } = balanceModule;
+    expect(EAT.riskyFindDamage).toBeGreaterThan(0);
+    expect(EAT.riskyFindDamage).toBeLessThan(START.health / 2);
+  });
+});
