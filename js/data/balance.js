@@ -18,6 +18,7 @@ export const ACTIONS = {
   saleInstant:  { hours: 1 },                                // ломбард/пункт приёма/перекуп
   fleaMarket:   { hours: 4, energy: -15, minCleanliness: 40 }, // сидеть на барахолке
   expertVisit:  { hours: 1 },                                // сходить к эксперту
+  assessSelf:   { hours: 1 },                                // час пристального разглядывания находки
   wash:         { hours: 1, cleanliness: +40 },              // помыться (где есть вода)
 };
 
@@ -70,14 +71,25 @@ export const SKILLS = {
 };
 
 /**
- * Формула «👁️ Оценка»: spread = max(0, 1 - level * 0.125).
- * lvl 0 — «неизвестно»; lvl 1 – [v·0.875, v·1.125]±шум... нет: spread 0.875 → честный широкий диапазон;
- * lvl 8+ — spread 0 → точная цена. Логика округления — js/core, здесь смысл.
+ * Формула «👁️ Оценка» (сессия 6, формат — усмотрение агента: АКТИВНАЯ,
+ * результат часового ритуала сохраняется на предмете как estimate {low, high}):
+ * spread = max(0, 1 - level * 0.125); центр диапазона зашумлён (до ±15% при
+ * полном spread) — низкий уровень не взламывается арифметикой.
+ * lvl 8+ — spread 0 → точная цена. Логика округления — js/core.
  */
-export const ASSESS = { spreadPerLevel: 0.125, exactFromLevel: 8 };
+export const ASSESS = {
+  spreadPerLevel: 0.125,
+  exactFromLevel: 8,
+  centerNoisePerSpread: 0.3,  // амплитуда смещения центра = 0.3 × spread (±половина)
+};
 
 /** Перекуп-жулик: база честной сделки (модифицируется Торгом: +0.03/уровень, кап 0.9). */
-export const SCAM = { baseHonestChance: 0.65, tradeBonusPerLevel: 0.03, honestChanceCap: 0.9 };
+export const SCAM = {
+  baseHonestChance: 0.65,
+  tradeBonusPerLevel: 0.03,
+  honestChanceCap: 0.9,
+  scandalCleanliness: -10,   // цена кидка: скандал, у гаражей запомнят твой вид
+};
 
 /** Грузоподъёмность ноши (кг). Рюкзак/тележка поднимут — снаряжение, сессия 9. */
 export const CARRY = {

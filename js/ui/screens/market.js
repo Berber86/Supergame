@@ -21,7 +21,7 @@ function priceLine(buyer) {
 function buyerSubline(buyer) {
   const bits = [priceLine(buyer)];
   bits.push(buyer.instant ? 'мгновенно' : 'съедает полдня');
-  if (buyer.scam) bits.push(`🕶️ кидок ${percentLabel(buyer.scam.baseChance)}`);
+  if (buyer.scam) bits.push(`🕶️ кидок ${percentLabel(buyer.scam.baseChance)} · ❓ вслепую — из инвентаря`);
   if (buyer.tradeBonus) bits.push(`+торг до ${percentLabel(buyer.tradeBonus)}`);
   if (buyer.requires?.minCleanliness) bits.push(`🧼 от ${buyer.requires.minCleanliness}`);
   return bits.join(' · ');
@@ -57,7 +57,7 @@ function expertRow(expert) {
         <div class="row__name">${expert.name}</div>
         <div class="row__sub">${specs} · ${fee}</div>
       </div>
-      <button class="btn btn--ghost" data-session="6">🔎 Опознать</button>
+      <button class="btn btn--ghost" data-goto-inventory>🎒 К вещам</button>
     </div>
   `;
 }
@@ -78,11 +78,14 @@ export function renderMarket(root) {
   root.innerHTML = `
     <p class="section-title">Кому сдать добро</p>
     <div class="rows">${BUYERS.map(buyerRow).join('')}</div>
-    <p class="section-title">Кто оценит ❓ (сессия 6)</p>
+    <p class="section-title">Кто оценит ❓ — кнопки на самих находках в «🎒 Инвентаре»</p>
     <div class="rows">${EXPERTS.map(expertRow).join('')}</div>
     ${loreDetails()}
   `;
 
+  root.querySelectorAll('[data-goto-inventory]').forEach((btn) => {
+    btn.addEventListener('click', () => showToast('❓-находки и кнопки опознания — во вкладке «🎒 Инвентарь»'));
+  });
   root.querySelectorAll('[data-session]').forEach((btn) => {
     btn.addEventListener('click', () => showToast(`🚧 Оживёт в сессии ${btn.dataset.session}`));
   });
