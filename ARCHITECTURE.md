@@ -42,6 +42,7 @@
 │   │   ├── actions.js      # Редьюсеры действий: travelTo (+улица), beg, dig, eat, режимы обыска
 │   │   ├── inventory.js    # Ноша (сессия 5): вес/ёмкость, стопки, тайная цена неопознанного
 │   │   ├── identify.js     # Идентификация (сессия 6): самооценка 👁️, эксперты, вслепую Тени
+│   │   ├── trade.js        # Сбыт (сессия 7): saleOffer (единая формула цены), sellEntry, честность Тени
 │   │   ├── skills.js       # Навыки: level = floor(sqrt(xp/10)), addSkillXp
 │   │   ├── persist.js      # Сейв в localStorage + serialize/deserialize + normalizeState
 │   │   └── lookups.js      # Точка доступа к справочникам js/data
@@ -62,6 +63,7 @@
 │   ├── core.test.js        # Время/распад/сон/ребёрн/сейв (сессия 4)
 │   ├── dig.test.js         # Баки: находки, обеднение, режимы, еда, улица (сессия 5)
 │   └── identify.test.js    # Идентификация: глазомер, эксперты, вслепую Тени (сессия 6)
+│   └── trade.test.js       # Сбыт: коэффициенты, торг, наследие, кидок, барахолка (сессия 7)
 ├── .github/workflows/
 │   └── ci.yml              # CI: тесты на каждый push (⚠️ пока не запушен — см. LESSONS)
 ├── package.json            # Только devDependencies (vitest); сайт npm не использует

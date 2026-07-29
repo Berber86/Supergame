@@ -9,6 +9,8 @@
  *     150 ₽): точная цена + флаг identified, гонорар деньгами.
  *  3. Продажа вслепую Тени — неопознанное за 110–130% истинной цены…
  *     если не кинет (P(честно) = 0.65 + 0.03×🤝, кап 0.9). Кидок = 0 ₽ + скандал.
+ *     Формула честности живёт в core/trade.js (сессия 7) — азарт един и для
+ *     вслепую, и для опознанного.
  */
 
 import { ACTIONS, ASSESS, SCAM } from '../data/balance.js';
@@ -17,6 +19,7 @@ import { clampStats, pushLog } from './state.js';
 import { advanceHours } from './time.js';
 import { addSkillXp } from './skills.js';
 import { makeRoller } from './rng.js';
+import { perekupHonestChance } from './trade.js';
 
 /** Ширина глазомера: lvl 0 → 1 (широчайший), lvl 8+ → 0 (точная цена). */
 export function assessSpread(level) {
@@ -144,10 +147,7 @@ export function blindSell(state, entryIndex, events = []) {
   if (state.status !== 'alive') return events;
 
   const roller = makeRoller(state.rngState);
-  const honestChance = Math.min(
-    SCAM.honestChanceCap,
-    SCAM.baseHonestChance + state.skills.trade.level * SCAM.tradeBonusPerLevel,
-  );
+  const honestChance = perekupHonestChance(state);
 
   state.inventory.splice(entryIndex, 1); // предмет ушёл к Тени в любом исходе
 
