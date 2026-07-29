@@ -1,6 +1,6 @@
 /**
- * screens/character.js — вкладка «Персонаж»: навыки, снаряжение,
- * быт (еда/ночлег) и правила новой жизни. Сессия 4: живые навыки/слоты/жизни.
+ * screens/character.js — вкладка «Персонаж». Сессия 5.5: минимализм —
+ * навыки/слоты/быт компактными строками, правила ребёрна за <details>.
  */
 
 import { SKILLS, LIVING } from '../../data/balance.js';
@@ -13,87 +13,89 @@ function pips(level, max = SKILLS.maxLevel) {
   return `<span class="pips">${'●'.repeat(level)}${'○'.repeat(max - level)}</span>`;
 }
 
-function skillsCard(state) {
+function skillsRows(state) {
   const rows = Object.entries(SKILLS.list).map(([key, skill]) => {
-    const progress = state.skills[key] ?? { level: 0, xp: 0 };
+    const s = state.skills[key] ?? { level: 0, xp: 0 };
     return `
-      <p class="card__desc" style="margin-top:8px">
-        ${skill.emoji} <strong>${skill.name}</strong> — ур. ${progress.level} ${pips(progress.level)}
-        <small>(${progress.xp} xp)</small><br>
-        <small>${skill.effect}</small>
-      </p>
+      <div class="row">
+        <span class="row__icon">${skill.emoji}</span>
+        <div class="row__main">
+          <div class="row__name">${skill.name}</div>
+          <div class="row__sub">${skill.effect}</div>
+        </div>
+        <span class="row__meta">ур. ${s.level} ${pips(s.level)} ${s.xp}xp</span>
+      </div>
     `;
   }).join('');
 
   return `
-    <div class="card">
-      <h2 class="card__title"><span class="emoji">📈</span>Навыки</h2>
-      <p class="card__desc">Растут от практики, а не из книг. Книги ты продаёшь (30 ₽, том 2).</p>
-      ${rows}
-    </div>
+    <p class="section-title">Навыки (растут от практики)</p>
+    <div class="rows">${rows}</div>
   `;
 }
 
-function equipmentCard(state) {
+function equipmentRows(state) {
   const slots = [
     { emoji: '🧤', name: 'Перчатки', value: state.equipment.gloves },
     { emoji: '🧥', name: 'Верхнее', value: state.equipment.jacket },
     { emoji: '🛒', name: 'Транспорт', value: state.equipment.cart },
   ];
-  const html = slots.map((s) => `
-    <div class="card item">
-      <div class="item__emoji">${s.emoji}</div>
-      <div class="item__name">${s.name}</div>
-      <span class="item__value ${s.value ? '' : 'item__value--unknown'}">${s.value ?? 'пусто'}</span>
+  const rows = slots.map((s) => `
+    <div class="row">
+      <span class="row__icon">${s.emoji}</span>
+      <div class="row__main"><div class="row__name">${s.name}</div></div>
+      <span class="row__meta">${s.value ?? 'пусто'}</span>
     </div>
   `).join('');
+
   return `
-    <div class="card">
-      <h2 class="card__title"><span class="emoji">🎽</span>Снаряжение</h2>
-      <p class="card__desc">Перчатки берегут руки, куртка — тепло, тележка — ношу. Всё это где-то там, в баках (сессия 9).</p>
-    </div>
-    <div class="grid">${html}</div>
+    <p class="section-title">Снаряжение (сессия 9)</p>
+    <div class="rows">${rows}</div>
   `;
 }
 
-function livingSection() {
+function livingRows() {
   const food = LIVING.food.map((f) => `
-    <div class="card item">
-      <div class="item__emoji">${f.emoji}</div>
-      <div class="item__name">${f.name}</div>
-      <span class="item__value">${rublesLabel(f.price)} · +${f.satiety}🍞</span>
-      <button class="btn btn--ghost btn--wide" data-session="8">Съесть</button>
+    <div class="row">
+      <span class="row__icon">${f.emoji}</span>
+      <div class="row__main">
+        <div class="row__name">${f.name}</div>
+        <div class="row__sub">${rublesLabel(f.price)} · +${f.satiety} 🍞</div>
+      </div>
+      <button class="btn btn--ghost" data-session="8">Купить</button>
     </div>
   `).join('');
 
   const shelter = LIVING.shelter.map((s) => `
-    <div class="card item">
-      <div class="item__emoji">${s.emoji}</div>
-      <div class="item__name">${s.name}</div>
-      <span class="item__value">${s.price === 0 ? 'бесплатно' : rublesLabel(s.price)} · сон ${percentLabel(s.quality)}</span>
-      <button class="btn btn--ghost btn--wide" data-session="8">Лечь спать</button>
+    <div class="row">
+      <span class="row__icon">${s.emoji}</span>
+      <div class="row__main">
+        <div class="row__name">${s.name}</div>
+        <div class="row__sub">${s.price === 0 ? 'бесплатно' : rublesLabel(s.price)} · сон ${percentLabel(s.quality)}</div>
+      </div>
+      <button class="btn btn--ghost" data-session="8">Лечь</button>
     </div>
   `).join('');
 
   return `
-    <p class="section-title">Быт: что поесть</p>
-    <div class="grid">${food}</div>
-    <p class="section-title">Быт: где переспать ночь</p>
-    <div class="grid">${shelter}</div>
+    <p class="section-title">Еда (сессия 8)</p>
+    <div class="rows">${food}</div>
+    <p class="section-title">Ночлег (сессия 8)</p>
+    <div class="rows">${shelter}</div>
   `;
 }
 
 function rebirthCard(state) {
-  const legacy = REBIRTH.legacy;
   return `
-    <div class="card card--hi">
-      <h3 class="card__title"><span class="emoji">⚰️</span>Если жизнь №${state.lives} кончится…</h3>
-      <p class="card__desc">
-        Навыки останутся при тебе, деньги и ноша — при городе. Начнёшь новую жизнь с
-        ${rublesLabel(REBIRTH.start.money)} и бонусом репутации +${percentLabel(legacy.reputationBonusPerLife)}
-        к ценам выкупа за каждую прожитую жизнь (потолок ${percentLabel(legacy.reputationBonusCap)}).
-        Сейчас у тебя: +${percentLabel(state.legacyBonus)}.
-      </p>
+    <div class="card">
+      <details class="info info--flat">
+        <summary>⚰️ Если жизнь №${state.lives} кончится… (сейчас наследие +${percentLabel(state.legacyBonus)})</summary>
+        <p class="info__body">
+          Навыки останутся при тебе, деньги и ноша — при городе. Новая жизнь:
+          ${rublesLabel(REBIRTH.start.money)} и +${percentLabel(REBIRTH.legacy.reputationBonusPerLife)}
+          к ценам выкупа за каждую прожитую жизнь (потолок ${percentLabel(REBIRTH.legacy.reputationBonusCap)}).
+        </p>
+      </details>
     </div>
   `;
 }
@@ -103,13 +105,13 @@ export function renderCharacter(root) {
   if (!state) return;
 
   root.innerHTML = `
-    ${skillsCard(state)}
-    ${equipmentCard(state)}
-    ${livingSection()}
+    ${skillsRows(state)}
+    ${equipmentRows(state)}
+    ${livingRows()}
     ${rebirthCard(state)}
   `;
 
   root.querySelectorAll('[data-session]').forEach((btn) => {
-    btn.addEventListener('click', () => showToast(`🚧 Оживёт в сессии ${btn.dataset.session} — данные уже готовы, логика в пути`));
+    btn.addEventListener('click', () => showToast(`🚧 Оживёт в сессии ${btn.dataset.session}`));
   });
 }

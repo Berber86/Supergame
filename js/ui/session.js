@@ -24,12 +24,16 @@ export function getState() {
   return state;
 }
 
-/** Перерисовать худ целиком (статы, часы, активная вкладка). */
-export function refreshUi() {
+/** Перерисовать худ целиком (статы, часы, активная вкладка).
+ *  Сессия 5.5: скролл НЕ сбрасываем после перерисовки — иначе каждый клик
+ *  по баку прыгал экраном вверх (главная UX-жалоба человека). */
+export function refreshUi({ keepScroll = true } = {}) {
   if (!state) return;
+  const y = keepScroll ? window.scrollY : 0;
   renderStats(state);
   renderClock(state);
   rerenderActive();
+  if (keepScroll) requestAnimationFrame(() => window.scrollTo(0, y));
   if (state.status === 'dead') {
     showDeath(state, startNewLife);
   }
@@ -54,6 +58,6 @@ export function startNewLife() {
   const events = newLife(state, []);
   saveGame(state);
   hideDeath();
-  refreshUi();
+  refreshUi({ keepScroll: false }); // новая жизнь — с верха страницы
   if (events.length) showToast(events.join(' · '));
 }

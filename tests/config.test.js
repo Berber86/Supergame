@@ -17,8 +17,10 @@ describe('конфигурация проекта', () => {
     expect(GAME_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  it('номер сессии — положительное целое', () => {
-    expect(Number.isInteger(SESSION_NUMBER)).toBe(true);
-    expect(SESSION_NUMBER).toBeGreaterThan(0);
+  it('номер сессии — положительное число (допускаются полусессии вроде 5.5)', () => {
+    expect(typeof SESSION_NUMBER === 'number' || typeof SESSION_NUMBER === 'string').toBe(true);
+    const n = Number(SESSION_NUMBER);
+    expect(Number.isFinite(n)).toBe(true);
+    expect(n).toBeGreaterThan(0);
   });
 });

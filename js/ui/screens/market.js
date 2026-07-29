@@ -1,6 +1,7 @@
 /**
- * screens/market.js — вкладка «Сбыт»: точки продажи и эксперты.
- * Коэффициенты/условия — из js/data (buyers.js, experts.js), не из удачи.
+ * screens/market.js — вкладка «Сбыт». Сессия 5.5: покупатели и эксперты —
+ * компактные строки, лор-справки собраны в один <details> внизу.
+ * Кнопки — плейсхолдеры до сессий 6–7.
  */
 
 import { BUYERS } from '../../data/buyers.js';
@@ -9,60 +10,66 @@ import { CATEGORY_ICONS, EXPERT_CATEGORY_ICONS } from '../icons.js';
 import { percentLabel, rublesLabel } from '../format.js';
 import { showToast } from '../toast.js';
 
-function acceptsChips(buyer) {
-  if (buyer.accepts === 'all') return '<span class="tag tag--accent">берёт всё подряд</span>';
-  return buyer.accepts.map((cat) => {
-    const c = CATEGORY_ICONS[cat];
-    return `<span class="tag">${c.emoji} ${c.label}</span>`;
-  }).join('');
-}
-
 function priceLine(buyer) {
   if (typeof buyer.priceMult === 'number') {
-    if (buyer.priceMult === 1) return 'платит честные 100% цены';
-    return `платит ${percentLabel(buyer.priceMult)} цены`;
+    if (buyer.priceMult === 1) return 'честные 100%';
+    return `${percentLabel(buyer.priceMult)} цены`;
   }
-  return `платит ${percentLabel(buyer.priceMult.min)}–${percentLabel(buyer.priceMult.max)} цены`;
+  return `${percentLabel(buyer.priceMult.min)}–${percentLabel(buyer.priceMult.max)} цены`;
 }
 
-function conditionTags(buyer) {
-  const tags = [];
-  tags.push(buyer.instant ? '<span class="tag tag--green">мгновенно</span>' : '<span class="tag">съедает полдня</span>');
-  if (buyer.tradeBonus) tags.push(`<span class="tag">+торг до ${percentLabel(buyer.tradeBonus)}</span>`);
-  if (buyer.requires?.minCleanliness) tags.push(`<span class="tag tag--danger">🧼 от ${buyer.requires.minCleanliness}</span>`);
-  if (buyer.scam) tags.push(`<span class="tag tag--danger">кидок ${percentLabel(buyer.scam.baseChance)}</span>`);
-  if (buyer.acceptsUnidentified) tags.push('<span class="tag tag--accent">берёт ❓</span>');
-  return tags.join('');
+function buyerSubline(buyer) {
+  const bits = [priceLine(buyer)];
+  bits.push(buyer.instant ? 'мгновенно' : 'съедает полдня');
+  if (buyer.scam) bits.push(`🕶️ кидок ${percentLabel(buyer.scam.baseChance)}`);
+  if (buyer.tradeBonus) bits.push(`+торг до ${percentLabel(buyer.tradeBonus)}`);
+  if (buyer.requires?.minCleanliness) bits.push(`🧼 от ${buyer.requires.minCleanliness}`);
+  return bits.join(' · ');
 }
 
-function buyerCard(buyer) {
+function acceptsLine(buyer) {
+  if (buyer.accepts === 'all') return 'берёт всё';
+  return buyer.accepts.map((cat) => CATEGORY_ICONS[cat]?.emoji ?? cat).join(' ');
+}
+
+function buyerRow(buyer) {
   return `
-    <div class="card">
-      <h3 class="card__title"><span class="emoji">${buyer.emoji}</span>${buyer.name}</h3>
-      <p class="card__desc">${buyer.desc}</p>
-      <div class="card__meta"><span class="tag tag--accent">${priceLine(buyer)}</span>${conditionTags(buyer)}</div>
-      <div class="card__meta">${acceptsChips(buyer)}</div>
-      <button class="btn btn--ghost btn--wide" data-session="7">💰 Продать</button>
+    <div class="row">
+      <span class="row__icon">${buyer.emoji}</span>
+      <div class="row__main">
+        <div class="row__name">${buyer.name}</div>
+        <div class="row__sub">${acceptsLine(buyer)} · ${buyerSubline(buyer)}</div>
+      </div>
+      <button class="btn btn--ghost" data-session="7">💰 Продать</button>
     </div>
   `;
 }
 
-function expertCard(expert) {
+function expertRow(expert) {
   const fee = expert.fee.type === 'percent'
-    ? `${percentLabel(expert.fee.value)} от сделки, мин ${rublesLabel(expert.fee.min)}`
+    ? `${percentLabel(expert.fee.value)}, мин ${rublesLabel(expert.fee.min)}`
     : rublesLabel(expert.fee.value);
-  const specs = expert.specialties.map((s) => {
-    const c = EXPERT_CATEGORY_ICONS[s];
-    return `<span class="tag">${c.emoji} ${c.label}</span>`;
-  }).join('');
+  const specs = expert.specialties.map((s) => EXPERT_CATEGORY_ICONS[s]?.emoji ?? s).join(' ');
+  return `
+    <div class="row">
+      <span class="row__icon">${expert.emoji}</span>
+      <div class="row__main">
+        <div class="row__name">${expert.name}</div>
+        <div class="row__sub">${specs} · ${fee}</div>
+      </div>
+      <button class="btn btn--ghost" data-session="6">🔎 Опознать</button>
+    </div>
+  `;
+}
 
+function loreDetails() {
+  const buyerLore = BUYERS.map((b) => `<p class="info__body"><strong>${b.emoji} ${b.name}</strong> — ${b.desc}</p>`).join('');
+  const expertLore = EXPERTS.map((e) => `<p class="info__body"><strong>${e.emoji} ${e.name}</strong> — ${e.desc} <em>«${e.quote}»</em></p>`).join('');
   return `
     <div class="card">
-      <h3 class="card__title"><span class="emoji">${expert.emoji}</span>${expert.name}</h3>
-      <p class="card__desc">${expert.desc}</p>
-      <p class="card__desc"><em>${expert.quote}</em></p>
-      <div class="card__meta">${specs}<span class="tag tag--accent">${fee}</span></div>
-      <button class="btn btn--ghost btn--wide" data-session="6">🔎 Опознать</button>
+      <details class="info info--flat"><summary>кто все эти люди</summary>
+        ${buyerLore}${expertLore}
+      </details>
     </div>
   `;
 }
@@ -70,12 +77,13 @@ function expertCard(expert) {
 export function renderMarket(root) {
   root.innerHTML = `
     <p class="section-title">Кому сдать добро</p>
-    <div class="grid grid--wide">${BUYERS.map(buyerCard).join('')}</div>
-    <p class="section-title">Кто оценит ❓ (идентификация)</p>
-    <div class="grid grid--wide">${EXPERTS.map(expertCard).join('')}</div>
+    <div class="rows">${BUYERS.map(buyerRow).join('')}</div>
+    <p class="section-title">Кто оценит ❓ (сессия 6)</p>
+    <div class="rows">${EXPERTS.map(expertRow).join('')}</div>
+    ${loreDetails()}
   `;
 
   root.querySelectorAll('[data-session]').forEach((btn) => {
-    btn.addEventListener('click', () => showToast(`🚧 Оживёт в сессии ${btn.dataset.session} — данные уже готовы, логика в пути`));
+    btn.addEventListener('click', () => showToast(`🚧 Оживёт в сессии ${btn.dataset.session}`));
   });
 }
