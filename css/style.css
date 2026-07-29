@@ -297,6 +297,55 @@ body {
   border-radius: 999px;
 }
 
+/* ---------- Оверлей конца жизни ---------- */
+
+.death-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 8, 11, 0.86);
+  backdrop-filter: blur(4px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 100;
+}
+
+.death-overlay--visible { display: flex; }
+
+.death-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(239, 71, 111, 0.5);
+  border-radius: var(--radius);
+  padding: 24px 26px;
+  max-width: 430px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+}
+
+.death-card__emoji { font-size: 56px; }
+
+.death-card__title {
+  margin: 8px 0 6px;
+  color: var(--danger);
+  font-size: 24px;
+}
+
+.death-card__cause { color: var(--text); margin: 0 0 12px; }
+
+.death-card__line { color: var(--text-dim); font-size: 14px; margin: 4px 0; }
+
+.death-card__rules {
+  color: var(--text-dim);
+  font-size: 13px;
+  border-top: 1px dashed var(--border);
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
+.death-card__btn { margin-top: 16px; }
+
 /* ---------- Тост ---------- */
 
 .toast {

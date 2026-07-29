@@ -79,6 +79,9 @@ export const ASSESS = { spreadPerLevel: 0.125, exactFromLevel: 8 };
 /** Перекуп-жулик: база честной сделки (модифицируется Торгом: +0.03/уровень, кап 0.9). */
 export const SCAM = { baseHonestChance: 0.65, tradeBonusPerLevel: 0.03, honestChanceCap: 0.9 };
 
+/** Грузоподъёмность ноши (кг). Рюкзак/тележка поднимут — снаряжение, сессия 9. */
+export const CARRY = { baseKg: 5, staminaBonusKg: 5 }; // staminaBonusKg — за уровень Выносливости
+
 /**
  * Попрошайничество (выбор человека в сессии 2: СТАБИЛЬНОЕ, без событий).
  * Гарантированный малый доход за час стояния — «подушка» на голодный день,

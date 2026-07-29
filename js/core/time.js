@@ -1,0 +1,127 @@
+/**
+ * time.js — течение времени: почасовой распад, сон, смена погоды,
+ * ночные риски лавки (выбор человека: морозная лавка СМЕРТЕЛЬНА).
+ * Все функции — редьюсеры: мутируют state + пушат строки в events[]
+ * (events возвращается наружу — UI показывает их тостами).
+ */
+
+import { DECAY, LIVING, NIGHT_RISK, TIME } from '../data/balance.js';
+import { WEATHER } from '../data/weather.js';
+import { findShelter, findWeather } from './lookups.js';
+import { clampStats, death, pushLog } from './state.js';
+import { makeRoller } from './rng.js';
+
+/**
+ * Прошло hours часов активного времени. На каждом часу — распад статов.
+ * Полночь → вынужденный сон (где придётся, лавка бесплатна и вездесуща).
+ * Энергия на нуле → отключился прямо на улице (тот же вынужденный сон).
+ */
+export function advanceHours(state, hours, events = []) {
+  for (let i = 0; i < hours && state.status === 'alive'; i += 1) {
+    if (state.hour >= 23) {
+      // Час полуночи «съедается» сном: продолжаем счёт уже утренних часов.
+      nightFalls(state, 'lavka', events);
+      continue;
+    }
+
+    state.hour += 1;
+
+    const weather = findWeather(state.weatherId);
+    state.stats.satiety += DECAY.satietyPerHour;
+    state.stats.warmth += DECAY.warmthPerHour * weather.warmthMult;
+    state.stats.energy += DECAY.energyPerHour;
+    state.stats.cleanliness += DECAY.cleanlinessPerHour;
+    clampStats(state);
+
+    // Голод или холод жрут здоровье (GDD §8).
+    if (state.stats.satiety <= 0 || state.stats.warmth <= 0) {
+      state.stats.health += DECAY.healthPerHourAtZero;
+      clampStats(state);
+      if (state.stats.health <= 0) {
+        const cause = state.stats.satiety <= 0
+          ? 'Голод довёл до конца. Петербург накормил других.'
+          : 'Холод довёл до конца. Нева приняла без обид.';
+        death(state, cause, events);
+        break;
+      }
+    }
+
+    // Отруб от усталости.
+    if (state.stats.energy <= 0) {
+      events.push('😴 Силы кончились — отключился там, где стоял.');
+      pushLog(state, 'Отключился от усталости прямо на улице.');
+      nightFalls(state, 'lavka', events);
+    }
+  }
+  return events;
+}
+
+/**
+ * Сон до утра (выбор человека — жёсткий режим лавки):
+ *  - лавка + ❄️мороз → 20% не проснуться;
+ *  - лавка → 15% потерять случайную находку за ночь;
+ *  - энергия = 100 × качество ночлега (кап 100);
+ *  - здоровье регенерит, если ложился сытым.
+ * Платный ночлег списывает деньги; не хватило → лавка.
+ */
+export function sleep(state, shelterId = 'lavka', events = []) {
+  let shelter = findShelter(shelterId);
+  if (!shelter) shelter = findShelter('lavka');
+  if (shelter.price > state.money) {
+    events.push(`💸 На «${shelter.name}» не хватило — ночуешь бесплатно.`);
+    shelter = findShelter('lavka');
+  }
+  state.money -= shelter.price;
+
+  const roller = makeRoller(state.rngState);
+
+  // Ночные риски лавки (NIGHT_RISK — решение человека из сессии 3).
+  if (shelter.riskEvents) {
+    const sleptInFrost = state.weatherId === 'frost';
+    if (sleptInFrost && roller.chance(NIGHT_RISK.lavkaFrostDeathChance)) {
+      state.rngState = roller.state;
+      death(state, 'Морозная ночь на лавке. Уснул — не проснулся. МЧС предупреждало.', events);
+      return events;
+    }
+    if (roller.chance(NIGHT_RISK.lavkaStealChance) && state.inventory.length > 0) {
+      const idx = roller.int(state.inventory.length);
+      const stolen = state.inventory.splice(idx, 1)[0];
+      events.push(`🥷 Ночью стащили: ${stolen.itemId}. Лавка — это общая спальня города.`);
+      pushLog(state, 'Обокрали во сне на лавке.');
+    }
+    state.stats.warmth += NIGHT_RISK.lavkaBadSleepWarmth;
+  }
+
+  const energyBefore = state.stats.energy;
+  state.stats.energy = Math.min(100, LIVING.energyFromSleep * shelter.quality);
+  if (state.stats.satiety > 50) {
+    state.stats.health += DECAY.healthRegenAtNight * TIME.SLEEP_HOURS;
+  }
+
+  // Утро: новый день, новая погода.
+  state.day += 1;
+  state.hour = TIME.START_HOUR;
+  const weather = roller.weighted(WEATHER);
+  state.weatherId = weather.id;
+  state.rngState = roller.state;
+  clampStats(state);
+
+  const sleptLine = shelter.quality >= 1
+    ? `🛏️ ${shelter.name}: выспался как дома (энергия ${Math.round(energyBefore)} → ${Math.round(state.stats.energy)}).`
+    : `🛏️ ${shelter.name}: энергия ${Math.round(energyBefore)} → ${Math.round(state.stats.energy)}.`;
+  events.push(sleptLine);
+  events.push(`${weather.emoji} День ${state.day}. ${weather.note}`);
+  pushLog(state, `Ночь: ${shelter.name}. Утро — ${weather.name}.`);
+  return events;
+}
+
+/** Полночь наступила сама — игрок не успел лечь. Тот же сон, но без выбора места. */
+function nightFalls(state, shelterId, events) {
+  events.push('🌙 Полночь. Город выключается раньше тебя.');
+  sleep(state, shelterId, events);
+}
+
+/** Санity-проверка: сейчас день (8..23) и жив. Хелпер для будущих действий. */
+export function isDayHour(hour) {
+  return hour >= TIME.START_HOUR && hour <= 23;
+}

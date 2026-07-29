@@ -1,14 +1,10 @@
 /**
- * main.js — точка входа оболочки игры (Сессия 3).
- * Собирает каркас: шапку, панель статов, вкладки, футер.
- * Игровой логики всё ещё нет — она придёт в сессии 4 (js/core),
- * а пока UI показывает демо-снимок из js/ui/demo.js.
+ * main.js — точка входа оболочки игры (Сессия 4).
+ * Собирает каркас + поднимает живое состояние (сейв или новая жизнь).
  */
 
 import { GAME_TITLE, GAME_VERSION, SESSION_NUMBER } from './core/config.js';
-import { DEMO, findWeather } from './ui/demo.js';
-import { formatClock } from './ui/format.js';
-import { renderStats } from './ui/stats.js';
+import { initSession, refreshUi } from './ui/session.js';
 import { initTabs } from './ui/tabs.js';
 
 function init() {
@@ -19,14 +15,9 @@ function init() {
     versionBadge.textContent = `v${GAME_VERSION} · сессия ${SESSION_NUMBER}`;
   }
 
-  const clockBadge = document.getElementById('clockBadge');
-  if (clockBadge) {
-    const w = findWeather(DEMO.weatherId);
-    clockBadge.textContent = `⏰ День ${DEMO.day} · ${formatClock(DEMO.hour, DEMO.minute)} · ${w.emoji} ${w.name}`;
-  }
-
-  renderStats();
-  initTabs();
+  initSession();
+  initTabs();      // вкладки сами дорисуют активный экран
+  refreshUi();     // статы, часы, (при загрузке с «трупом» — экран конца жизни)
 }
 
 if (document.readyState === 'loading') {

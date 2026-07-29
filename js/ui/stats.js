@@ -1,22 +1,22 @@
 /**
- * stats.js — панель статов персонажа (шапка приложения).
- * Сессия 3: рендерит демо-снимок; в сессии 4 подключится к GameState.
+ * stats.js — HUD: панель статов и часы с погодой.
+ * Сессия 4: читает живой GameState (передаётся параметром).
  */
 
 import { STAT_META } from './icons.js';
-import { DEMO } from './demo.js';
-import { rublesLabel } from './format.js';
+import { rublesLabel, formatClock } from './format.js';
+import { findWeather } from '../core/lookups.js';
 
-const LOW_THRESHOLD = 25; // ниже — красная полоска, пора паниковать
+const LOW_THRESHOLD = 25; // ниже — красная полоска, пора к столовой
 
-export function renderStats() {
+export function renderStats(state) {
   const panel = document.getElementById('statsPanel');
-  if (!panel) return;
+  if (!panel || !state) return;
   panel.innerHTML = '';
 
   for (const meta of STAT_META) {
     const isMoney = meta.kind === 'money';
-    const value = isMoney ? DEMO.money : DEMO.stats[meta.key];
+    const value = isMoney ? state.money : state.stats[meta.key];
 
     const el = document.createElement('div');
     el.className = 'stat';
@@ -35,4 +35,11 @@ export function renderStats() {
     `;
     panel.appendChild(el);
   }
+}
+
+export function renderClock(state) {
+  const badge = document.getElementById('clockBadge');
+  if (!badge || !state) return;
+  const w = findWeather(state.weatherId);
+  badge.textContent = `⏰ День ${state.day} · ${formatClock(state.hour)} · ${w.emoji} ${w.name}`;
 }

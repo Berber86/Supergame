@@ -1,11 +1,11 @@
 /**
  * screens/character.js — вкладка «Персонаж»: навыки, снаряжение,
- * быт (еда/ночлег) и правила новой жизни. Сессия 3: демо-уровни.
+ * быт (еда/ночлег) и правила новой жизни. Сессия 4: живые навыки/слоты/жизни.
  */
 
 import { SKILLS, LIVING } from '../../data/balance.js';
 import { REBIRTH } from '../../data/rebirth.js';
-import { DEMO } from '../demo.js';
+import { getState } from '../session.js';
 import { percentLabel, rublesLabel } from '../format.js';
 import { showToast } from '../toast.js';
 
@@ -13,12 +13,13 @@ function pips(level, max = SKILLS.maxLevel) {
   return `<span class="pips">${'●'.repeat(level)}${'○'.repeat(max - level)}</span>`;
 }
 
-function skillsCard() {
+function skillsCard(state) {
   const rows = Object.entries(SKILLS.list).map(([key, skill]) => {
-    const progress = DEMO.skills[key] ?? { level: 0, xp: 0 };
+    const progress = state.skills[key] ?? { level: 0, xp: 0 };
     return `
       <p class="card__desc" style="margin-top:8px">
-        ${skill.emoji} <strong>${skill.name}</strong> — ур. ${progress.level} ${pips(progress.level)}<br>
+        ${skill.emoji} <strong>${skill.name}</strong> — ур. ${progress.level} ${pips(progress.level)}
+        <small>(${progress.xp} xp)</small><br>
         <small>${skill.effect}</small>
       </p>
     `;
@@ -33,24 +34,25 @@ function skillsCard() {
   `;
 }
 
-function equipmentCard() {
-  const slot = (emoji, name) => `
+function equipmentCard(state) {
+  const slots = [
+    { emoji: '🧤', name: 'Перчатки', value: state.equipment.gloves },
+    { emoji: '🧥', name: 'Верхнее', value: state.equipment.jacket },
+    { emoji: '🛒', name: 'Транспорт', value: state.equipment.cart },
+  ];
+  const html = slots.map((s) => `
     <div class="card item">
-      <div class="item__emoji">${emoji}</div>
-      <div class="item__name">${name}</div>
-      <span class="item__value item__value--unknown">пусто</span>
+      <div class="item__emoji">${s.emoji}</div>
+      <div class="item__name">${s.name}</div>
+      <span class="item__value ${s.value ? '' : 'item__value--unknown'}">${s.value ?? 'пусто'}</span>
     </div>
-  `;
+  `).join('');
   return `
     <div class="card">
       <h2 class="card__title"><span class="emoji">🎽</span>Снаряжение</h2>
       <p class="card__desc">Перчатки берегут руки, куртка — тепло, тележка — ношу. Всё это где-то там, в баках (сессия 9).</p>
     </div>
-    <div class="grid">
-      ${slot('🧤', 'Перчатки')}
-      ${slot('🧥', 'Верхнее')}
-      ${slot('🛒', 'Транспорт')}
-    </div>
+    <div class="grid">${html}</div>
   `;
 }
 
@@ -81,27 +83,30 @@ function livingSection() {
   `;
 }
 
-function rebirthCard() {
+function rebirthCard(state) {
   const legacy = REBIRTH.legacy;
   return `
     <div class="card card--hi">
-      <h3 class="card__title"><span class="emoji">⚰️</span>Если жизнь №${DEMO.lives} кончится…</h3>
+      <h3 class="card__title"><span class="emoji">⚰️</span>Если жизнь №${state.lives} кончится…</h3>
       <p class="card__desc">
         Навыки останутся при тебе, деньги и ноша — при городе. Начнёшь новую жизнь с
         ${rublesLabel(REBIRTH.start.money)} и бонусом репутации +${percentLabel(legacy.reputationBonusPerLife)}
         к ценам выкупа за каждую прожитую жизнь (потолок ${percentLabel(legacy.reputationBonusCap)}).
+        Сейчас у тебя: +${percentLabel(state.legacyBonus)}.
       </p>
-      <p class="card__desc"><em>${REBIRTH.epilogueLines[0].replace('{days}', DEMO.lives === 1 ? '…' : 'X').replace('{earned}', '…')}</em></p>
     </div>
   `;
 }
 
 export function renderCharacter(root) {
+  const state = getState();
+  if (!state) return;
+
   root.innerHTML = `
-    ${skillsCard()}
-    ${equipmentCard()}
+    ${skillsCard(state)}
+    ${equipmentCard(state)}
     ${livingSection()}
-    ${rebirthCard()}
+    ${rebirthCard(state)}
   `;
 
   root.querySelectorAll('[data-session]').forEach((btn) => {

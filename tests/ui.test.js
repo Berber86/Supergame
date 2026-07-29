@@ -1,17 +1,18 @@
 /**
- * ui.test.js — тесты presentation-слоя каркаса (сессия 3):
- * чистые форматтеры + согласованность демо-снимка со справочниками.
- * DOM не тестируем (нет браузера), но гарантируем, что UI собирается
- * из валидных данных.
+ * ui.test.js — тесты presentation-слоя (форматтеры, иконки, вкладки)
+ * и точки доступа к данным (core/lookups.js).
+ * DOM не тестируем (нет браузера), зато гарантируем, что UI собирается
+ * из валидных данных и модулей без побочных эффектов при импорте.
  */
 
 import { describe, it, expect } from 'vitest';
 import { plural, hoursLabel, formatClock, percentLabel, rublesLabel, kgLabel, riskLabel } from '../js/ui/format.js';
 import { CATEGORY_ICONS } from '../js/ui/icons.js';
-import { DEMO, findItem, findDistrict, findWeather, inventoryUsedKg, stackWeightKg } from '../js/ui/demo.js';
 import { TABS } from '../js/ui/tabs.js';
+import { findItem, findDistrict, findWeather, findBuyer, findExpert, findShelter } from '../js/core/lookups.js';
 import { ITEMS } from '../js/data/items.js';
-import { SKILLS } from '../js/data/balance.js';
+import { DISTRICTS } from '../js/data/districts.js';
+import { WEATHER } from '../js/data/weather.js';
 
 describe('format.js — русские форматтеры', () => {
   it('plural: 1 час, 2 часа, 5 часов, 21 час, 22 часа', () => {
@@ -51,37 +52,19 @@ describe('format.js — русские форматтеры', () => {
   });
 });
 
-describe('demo.js — согласованность демо-снимка', () => {
-  it('демо-район и погода существуют в справочниках', () => {
-    expect(findDistrict(DEMO.districtId)).toBeDefined();
-    expect(findWeather(DEMO.weatherId)).toBeDefined();
+describe('core/lookups.js — доступ к справочникам', () => {
+  it('все районы, погода и предметы находятся по id', () => {
+    for (const d of DISTRICTS) expect(findDistrict(d.id), d.id).toBe(d);
+    for (const w of WEATHER) expect(findWeather(w.id), w.id).toBe(w);
+    for (const i of ITEMS) expect(findItem(i.id), i.id).toBe(i);
   });
 
-  it('все демо-предметы существуют, количества положительны', () => {
-    for (const entry of DEMO.inventory) {
-      expect(findItem(entry.itemId), entry.itemId).toBeDefined();
-      expect(entry.qty, entry.itemId).toBeGreaterThan(0);
-    }
-  });
-
-  it('вес ноши посчитан и влезает в ёмкость', () => {
-    const used = inventoryUsedKg();
-    expect(used).toBeGreaterThan(0);
-    expect(used).toBeLessThanOrEqual(DEMO.inventoryMaxKg);
-    // и руками: сумма по стопкам
-    const manual = DEMO.inventory.reduce((s, e) => s + stackWeightKg(e), 0);
-    expect(used).toBeCloseTo(manual, 10);
-  });
-
-  it('статы демо в диапазоне 0..100', () => {
-    for (const v of Object.values(DEMO.stats)) {
-      expect(v).toBeGreaterThanOrEqual(0);
-      expect(v).toBeLessThanOrEqual(100);
-    }
-  });
-
-  it('навыки демо — точно ключи из SKILLS.list', () => {
-    expect(Object.keys(DEMO.skills).sort()).toEqual(Object.keys(SKILLS.list).sort());
+  it('неизвестный id → undefined (а не исключение)', () => {
+    expect(findItem('shmot_ne_sushchestvuet')).toBeUndefined();
+    expect(findDistrict('vselennaya')).toBeUndefined();
+    expect(findBuyer('robin_gud')).toBeUndefined();
+    expect(findExpert('nostradamus')).toBeUndefined();
+    expect(findShelter('palazzo')).toBeUndefined();
   });
 });
 

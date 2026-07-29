@@ -17,20 +17,30 @@ export const TABS = [
 
 const DEFAULT_TAB = 'city';
 
+let activeTabId = DEFAULT_TAB;
+let screenEl = null;
+
+/** Перерисовать активную вкладку (когда GameState поменялся в фоне). */
+export function rerenderActive() {
+  if (!screenEl) return;
+  const tab = TABS.find((t) => t.id === activeTabId) ?? TABS[0];
+  screenEl.innerHTML = '';
+  tab.render(screenEl);
+}
+
 export function initTabs() {
   const nav = document.getElementById('tabsNav');
-  const screen = document.getElementById('screen');
-  if (!nav || !screen) return;
+  screenEl = document.getElementById('screen');
+  if (!nav || !screenEl) return;
 
   nav.innerHTML = '';
 
   const activate = (tabId) => {
+    activeTabId = tabId;
     nav.querySelectorAll('.tab').forEach((btn) => {
       btn.classList.toggle('tab--active', btn.dataset.tabId === tabId);
     });
-    const tab = TABS.find((t) => t.id === tabId) ?? TABS[0];
-    screen.innerHTML = '';
-    tab.render(screen);
+    rerenderActive();
   };
 
   for (const tab of TABS) {
