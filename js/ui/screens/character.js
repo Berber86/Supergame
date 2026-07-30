@@ -70,12 +70,13 @@ function foodRows(state) {
   const rows = LIVING.food.map((f) => {
     const afford = state.money >= f.price;
     const dirty = f.cleanliness ? ` · ${f.cleanliness} 🧼` : '';
+    const warm = f.warmth ? ` · +${f.warmth} 🔥` : '';
     return `
       <div class="row">
         <span class="row__icon">${f.emoji}</span>
         <div class="row__main">
           <div class="row__name">${f.name}</div>
-          <div class="row__sub">${rublesLabel(f.price)} · +${f.satiety} 🍞${dirty} · ${hoursLabel(ACTIONS.eatOut.hours)}</div>
+          <div class="row__sub">${rublesLabel(f.price)} · +${f.satiety} 🍞${warm}${dirty} · ${hoursLabel(ACTIONS.eatOut.hours)}</div>
         </div>
         <button class="btn btn--ghost" data-food="${f.id}" ${afford ? '' : 'disabled title="не по карману"'}>Съесть</button>
       </div>

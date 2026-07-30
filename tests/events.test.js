@@ -14,7 +14,7 @@ import { binRichness } from '../js/core/actions.js';
 import { applyEventChoice, choiceAvailability, findEvent } from '../js/core/events.js';
 import { serialize, deserialize } from '../js/core/persist.js';
 import { findDistrict, findWeather } from '../js/core/lookups.js';
-import { EVENT_DAY } from '../js/data/balance.js';
+import { EVENT_DAY, DECAY } from '../js/data/balance.js';
 
 /** Игра с навязанным событием в модалке. */
 function withEvent(eventId, seed = 21) {
@@ -133,9 +133,9 @@ describe('🃏 выборы и их последствия', () => {
     s.stats.satiety = 40;
     applyEventChoice(s, 'sup');
     expect(s.stats.satiety).toBeCloseTo(40 + 20 - 2.5, 5); // еда минус распад часа
-    // тепло: +10 супа минус часовой распад с погодным множителем
+    // тепло: +10 супа минус часовой распад (DECAY.warmthPerHour × погода)
     const w = findWeather(s.weatherId);
-    expect(s.stats.warmth).toBeCloseTo(80 + 10 - 1.6 * w.warmthMult, 5);
+    expect(s.stats.warmth).toBeCloseTo(80 + 10 + DECAY.warmthPerHour * w.warmthMult, 5);
     expect(s.hour).toBe(9);
     expect(s.flags.grandma_smile).toBe(true);
   });

@@ -5,12 +5,14 @@
  */
 
 import { EXPERTS } from '../../data/experts.js';
+import { BUYERS } from '../../data/buyers.js';
 import { ACTIONS } from '../../data/balance.js';
 import { EQUIPMENT_SLOTS } from '../../data/equipment.js';
 import { findItem } from '../../core/lookups.js';
-import { capacityKg, inventoryUsedKg } from '../../core/inventory.js';
+import { capacityKg, inventoryUsedKg, dropEntry } from '../../core/inventory.js';
 import { assessSelf, expertAssess, blindSell } from '../../core/identify.js';
 import { equipFromInventory, slotForItem } from '../../core/equipment.js';
+import { saleOffer } from '../../core/trade.js';
 import { eat } from '../../core/actions.js';
 import { getState, applyAction } from '../session.js';
 import { kgLabel, rublesLabel, percentLabel, hoursLabel } from '../format.js';
@@ -69,6 +71,13 @@ function cardButtons(state, entry, item, idx) {
       const def = EQUIPMENT_SLOTS[slot];
       return `<button class="btn btn--ghost btn--mini" data-equip="${idx}"
         title="${def.effectDesc}. Надел — навсегда, обратно не снять">${def.emoji} Надеть</button>`;
+    }
+    // Хлам за 0 ₽, что не возьмут нигде (сессия 10): путь один — контейнер.
+    const nobodyTakes = entry.identified
+      && BUYERS.every((b) => saleOffer(state, entry, b) == null);
+    if (nobodyTakes) {
+      return `<button class="btn btn--ghost btn--mini" data-drop="${idx}"
+        title="никто не возьмёт даже даром — отпусти в контейнер, город найдёт ему новые надежды">🗑️ Выбросить</button>`;
     }
     return '';
   }
@@ -143,6 +152,9 @@ export function renderInventory(root) {
   });
   root.querySelectorAll('[data-equip]').forEach((btn) => {
     btn.addEventListener('click', () => applyAction((s) => equipFromInventory(s, Number(btn.dataset.equip))));
+  });
+  root.querySelectorAll('[data-drop]').forEach((btn) => {
+    btn.addEventListener('click', () => applyAction((s) => dropEntry(s, Number(btn.dataset.drop))));
   });
   root.querySelectorAll('[data-assess]').forEach((btn) => {
     btn.addEventListener('click', () => applyAction((s) => assessSelf(s, Number(btn.dataset.assess))));

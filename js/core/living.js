@@ -36,11 +36,13 @@ export function buyFood(state, foodId, events = []) {
   state.money -= food.price;
   const satietyBefore = state.stats.satiety;
   state.stats.satiety += food.satiety;
+  if (food.warmth) state.stats.warmth += food.warmth; // горячее греет (баланс-пас, сессия 10)
   if (food.cleanliness) state.stats.cleanliness += food.cleanliness;
   clampStats(state);
 
+  const warmNote = food.warmth ? ` · ${food.warmth > 0 ? '+' : ''}${food.warmth} 🔥` : '';
   const cleanNote = food.cleanliness ? ` (руки в соусе: ${food.cleanliness} 🧼)` : '';
-  const line = `${food.emoji} ${food.name} (−${food.price} ₽): 🍞 ${Math.round(satietyBefore)} → ${Math.round(state.stats.satiety)}${cleanNote}. Горячее — это счастье, которое не надо жевать долго.`;
+  const line = `${food.emoji} ${food.name} (−${food.price} ₽): 🍞 ${Math.round(satietyBefore)} → ${Math.round(state.stats.satiety)}${warmNote}${cleanNote}. Горячее — это счастье, которое не надо жевать долго.`;
   events.push(line);
   pushLog(state, `Поел: ${food.name} за ${food.price} ₽.`);
   return events;

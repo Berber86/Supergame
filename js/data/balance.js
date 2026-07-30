@@ -26,7 +26,10 @@ export const ACTIONS = {
 /** ---- Распад статов (в час; логика выборки — js/core) ---- */
 export const DECAY = {
   satietyPerHour: -2.5,
-  warmthPerHour: -1.6,          // множится на погоду (js/data/weather.js)
+  // Баланс-пас (сессия 10): было −1.6 — стена смерти к дню 5. Горячее и тёплые
+  // койки (LIVING) закрывают средний дождь; мороз остаётся задачей на деньги.
+  // Множится на погоду (js/data/weather.js).
+  warmthPerHour: -0.8,
   energyPerHour: -0.8,          // пассивная усталость, сверху — стоимость действий
   cleanlinessPerHour: -0.6,
   healthPerHourAtZero: -3,      // если сытость=0 ИЛИ тепло=0 — тает здоровье
@@ -46,14 +49,16 @@ export const START = {
 /** ---- Быт: еда и ночлег (покупка, не находки) ---- */
 export const LIVING = {
   food: [
-    { id: 'doshik',    name: 'Доширак у ларька',   emoji: '🍜', price: 35,  satiety: +25 },
-    { id: 'stolovaya', name: 'Обед в столовой',    emoji: '🍲', price: 120, satiety: +55 },
-    { id: 'pir_na_dnu',name: 'Пир на дне (шаверма)',emoji: '🌯', price: 200, satiety: +80, cleanliness: -5 },
+    // Сессия 10, баланс-пас: горячее ГРЕЕТ — иначе тепло было дорогой в один конец.
+    { id: 'doshik',    name: 'Доширак у ларька',   emoji: '🍜', price: 35,  satiety: +25, warmth: +10 },
+    { id: 'stolovaya', name: 'Обед в столовой',    emoji: '🍲', price: 120, satiety: +55, warmth: +25 },
+    { id: 'pir_na_dnu',name: 'Пир на дне (шаверма)',emoji: '🌯', price: 200, satiety: +80, warmth: +15, cleanliness: -5 },
   ],
   shelter: [
-    { id: 'lavka',     name: 'Лавка в парке',  emoji: '🥶', price: 0,   quality: 0.5, riskEvents: true },
-    { id: 'nochlezhka',name: 'Ночлежка «У Анны»', emoji: '🛏️', price: 100, quality: 0.85, washIncluded: true },
-    { id: 'ugol',      name: 'Съёмный угол',   emoji: '🚪', price: 350, quality: 1.1, note: 'пост-MLP цель' },
+    // Сессия 10, баланс-пас: тёплая койка греет ночью — страховка не только от МЧС.
+    { id: 'lavka',     name: 'Лавка в парке',  emoji: '🥶', price: 0,   quality: 0.5, warmthBonus: 0,  riskEvents: true },
+    { id: 'nochlezhka',name: 'Ночлежка «У Анны»', emoji: '🛏️', price: 100, quality: 0.85, warmthBonus: +25, washIncluded: true },
+    { id: 'ugol',      name: 'Съёмный угол',   emoji: '🚪', price: 350, quality: 1.1, warmthBonus: +30, note: 'пост-MLP цель' },
   ],
   energyFromSleep: 100,    // база восстановления энергии за ночь (× качество ночлега, кап 100)
 };

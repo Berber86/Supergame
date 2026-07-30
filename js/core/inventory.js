@@ -12,6 +12,7 @@
 import { CARRY } from '../data/balance.js';
 import { findItem } from './lookups.js';
 import { carryBonusEquipKg } from './equipment.js';
+import { pushLog } from './state.js';
 
 /** Вес одной записи ноши (кг). Неопознанному — условный вес из CARRY. */
 export function entryWeightKg(entry) {
@@ -82,4 +83,24 @@ export function addItem(state, itemId, { qty = 1, trueValue = null } = {}) {
   }
 
   return { added: qty, fit: true, entry };
+}
+
+/**
+ * Выбросить запись из ноши (сессия 10): единственный достойный выход для
+ * «хлама», который после опознания оказался ровно ничем (trueValue 0 —
+ * ни одна точка не берёт). Решение, не действие: без времени и денег.
+ * Выброшенное исчезает навсегда — город найдёт ему новые надежды.
+ */
+export function dropEntry(state, entryIndex, events = []) {
+  if (state.status !== 'alive' || !Number.isInteger(entryIndex)) return events;
+  const entry = state.inventory[entryIndex];
+  if (!entry) return events;
+  const item = findItem(entry.itemId);
+  state.inventory.splice(entryIndex, 1);
+  const line = item
+    ? `🗑️ Выбросил: «${item.name}»${entry.qty > 1 ? ` ×${entry.qty}` : ''}. Гордость немного похудела — зато пакет дышит.`
+    : '🗑️ Выбросил ненужное.';
+  events.push(line);
+  pushLog(state, `Выброшено: ${item?.name ?? entry.itemId}.`);
+  return events;
 }

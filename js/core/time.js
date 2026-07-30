@@ -120,6 +120,9 @@ export function sleep(state, shelterId = 'lavka', events = []) {
 
   const energyBefore = state.stats.energy;
   state.stats.energy = Math.min(100, LIVING.energyFromSleep * shelter.quality);
+  if (shelter.warmthBonus) {
+    state.stats.warmth += shelter.warmthBonus; // тёплая койка греет ночью (баланс-пас, сессия 10)
+  }
   if (state.stats.satiety > 50) {
     state.stats.health += DECAY.healthRegenAtNight * TIME.SLEEP_HOURS;
   }
