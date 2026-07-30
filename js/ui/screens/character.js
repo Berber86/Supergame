@@ -6,7 +6,9 @@
 
 import { SKILLS, LIVING, ACTIONS, NIGHT_RISK } from '../../data/balance.js';
 import { REBIRTH } from '../../data/rebirth.js';
+import { EQUIPMENT_SLOTS } from '../../data/equipment.js';
 import { buyFood, wash, chooseShelter } from '../../core/living.js';
+import { equipmentSourceLabel } from '../../core/equipment.js';
 import { getState, applyAction } from '../session.js';
 import { percentLabel, rublesLabel, hoursLabel, plural } from '../format.js';
 import { showToast } from '../toast.js';
@@ -37,21 +39,29 @@ function skillsRows(state) {
 }
 
 function equipmentRows(state) {
-  const slots = [
-    { emoji: '🧤', name: 'Перчатки', value: state.equipment.gloves },
-    { emoji: '🧥', name: 'Верхнее', value: state.equipment.jacket },
-    { emoji: '🛒', name: 'Транспорт', value: state.equipment.cart },
-  ];
-  const rows = slots.map((s) => `
-    <div class="row">
-      <span class="row__icon">${s.emoji}</span>
-      <div class="row__main"><div class="row__name">${s.name}</div></div>
-      <span class="row__meta">${s.value ?? 'пусто'}</span>
-    </div>
-  `).join('');
+  const rows = Object.entries(EQUIPMENT_SLOTS).map(([slot, def]) => {
+    const source = state.equipment[slot];
+    const hint = def.fromItems.length > 0
+      ? 'приспособить находку из инвентаря или купить'
+      : 'только купить у торговца';
+    return `
+      <div class="row">
+        <span class="row__icon">${def.emoji}</span>
+        <div class="row__main">
+          <div class="row__name">${def.name}</div>
+          <div class="row__sub">${source
+            ? `${equipmentSourceLabel(slot, source)} — ${def.effectDesc}`
+            : `пусто · ${def.effectDesc} · источник: ${hint}`}</div>
+        </div>
+        ${source
+          ? '<span class="row__meta">✓ надето</span>'
+          : '<span class="row__meta">в 🧰 магазине</span>'}
+      </div>
+    `;
+  }).join('');
 
   return `
-    <p class="section-title">Снаряжение (сессия 9)</p>
+    <p class="section-title">Снаряжение (надел — навсегда, до смерти или замены)</p>
     <div class="rows">${rows}</div>
   `;
 }

@@ -9,6 +9,7 @@ import { DECAY, EVENT_DAY, LIVING, NIGHT_RISK, TIME } from '../data/balance.js';
 import { WEATHER } from '../data/weather.js';
 import { EVENTS } from '../data/events.js';
 import { findItem, findShelter, findWeather } from './lookups.js';
+import { warmthDecayEquipMult } from './equipment.js';
 import { clampStats, death, pushLog } from './state.js';
 import { makeRoller } from './rng.js';
 
@@ -28,8 +29,9 @@ export function advanceHours(state, hours, events = []) {
     state.hour += 1;
 
     const weather = findWeather(state.weatherId);
+    const equipWarmth = warmthDecayEquipMult(state); // 🧥 сессия 9: куртка против Невы
     state.stats.satiety += DECAY.satietyPerHour;
-    state.stats.warmth += DECAY.warmthPerHour * weather.warmthMult;
+    state.stats.warmth += DECAY.warmthPerHour * weather.warmthMult * equipWarmth;
     state.stats.energy += DECAY.energyPerHour;
     state.stats.cleanliness += DECAY.cleanlinessPerHour;
     clampStats(state);

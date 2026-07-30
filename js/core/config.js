@@ -7,7 +7,7 @@
 export const GAME_TITLE = 'НА ДНЕ НЕВЫ';
 
 /** Версия проекта (semver, поднимается по мере сессий). */
-export const GAME_VERSION = '0.9.0';
+export const GAME_VERSION = '0.10.0';
 
 /** Номер текущей сессии разработки. */
-export const SESSION_NUMBER = 8;
+export const SESSION_NUMBER = 9;

@@ -45,6 +45,7 @@
 │   │   ├── trade.js        # Сбыт (сессия 7): saleOffer (единая формула цены), sellEntry, честность Тени
 │   │   ├── living.js       # Быт (сессия 8): покупная еда, мытьё, выбор ночлега на сегодня
 │   │   ├── events.js       # Модальные события (сессия 8): applyEventChoice, доступность вариантов
+│   │   ├── equipment.js    # Снаряжение (сессия 9): приспособить находку / купить у Петровны, эффекты
 │   │   ├── skills.js       # Навыки: level = floor(sqrt(xp/10)), addSkillXp
 │   │   ├── persist.js      # Сейв в localStorage + serialize/deserialize + normalizeState
 │   │   └── lookups.js      # Точка доступа к справочникам js/data
@@ -69,6 +70,7 @@
 │   └── trade.test.js       # Сбыт: коэффициенты, торг, наследие, кидок, барахолка (сессия 7)
 │   └── living.test.js      # Быт: еда, мытьё, ночлег при отбое (сессия 8)
 │   └── events.test.js      # События: расписание, выборы, смерть от риска, сейв (сессия 8)
+│   └── equipment.test.js   # Снаряжение: приспособление, покупка, эффекты, 💪-рост (сессия 9)
 ├── .github/workflows/
 │   └── ci.yml              # CI: тесты на каждый push (⚠️ пока не запушен — см. LESSONS)
 ├── package.json            # Только devDependencies (vitest); сайт npm не использует

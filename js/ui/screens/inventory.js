@@ -6,9 +6,11 @@
 
 import { EXPERTS } from '../../data/experts.js';
 import { ACTIONS } from '../../data/balance.js';
+import { EQUIPMENT_SLOTS } from '../../data/equipment.js';
 import { findItem } from '../../core/lookups.js';
 import { capacityKg, inventoryUsedKg } from '../../core/inventory.js';
 import { assessSelf, expertAssess, blindSell } from '../../core/identify.js';
+import { equipFromInventory, slotForItem } from '../../core/equipment.js';
 import { eat } from '../../core/actions.js';
 import { getState, applyAction } from '../session.js';
 import { kgLabel, rublesLabel, percentLabel, hoursLabel } from '../format.js';
@@ -60,7 +62,16 @@ function cardButtons(state, entry, item, idx) {
   if (item.kind === 'food') {
     return `<button class="btn btn--ghost btn--mini" data-eat="${item.id}" ${item.healthRisk ? `title="риск отравления ${percentLabel(item.healthRisk)}"` : ''}>🍽️ Съесть</button>`;
   }
-  if (item.kind !== 'unidentified' || entry.identified) return '';
+  if (item.kind !== 'unidentified' || entry.identified) {
+    // Очевидное, годное к приспособлению (сессия 9): «надел — навсегда».
+    const slot = slotForItem(item.id);
+    if (slot) {
+      const def = EQUIPMENT_SLOTS[slot];
+      return `<button class="btn btn--ghost btn--mini" data-equip="${idx}"
+        title="${def.effectDesc}. Надел — навсегда, обратно не снять">${def.emoji} Надеть</button>`;
+    }
+    return '';
+  }
 
   const expert = expertFor(item);
   const expertBtn = expert && state.money >= expertMinMoney(expert)
@@ -129,6 +140,9 @@ export function renderInventory(root) {
 
   root.querySelectorAll('[data-eat]').forEach((btn) => {
     btn.addEventListener('click', () => applyAction((s) => eat(s, btn.dataset.eat)));
+  });
+  root.querySelectorAll('[data-equip]').forEach((btn) => {
+    btn.addEventListener('click', () => applyAction((s) => equipFromInventory(s, Number(btn.dataset.equip))));
   });
   root.querySelectorAll('[data-assess]').forEach((btn) => {
     btn.addEventListener('click', () => applyAction((s) => assessSelf(s, Number(btn.dataset.assess))));

@@ -9,6 +9,7 @@
 
 import { BUYERS } from '../../data/buyers.js';
 import { EXPERTS } from '../../data/experts.js';
+import { EQUIPMENT_SLOTS, EQUIPMENT_SHOP } from '../../data/equipment.js';
 import { ACTIONS, SCAM } from '../../data/balance.js';
 import { CATEGORY_ICONS, EXPERT_CATEGORY_ICONS } from '../icons.js';
 import { percentLabel, rublesLabel, hoursLabel } from '../format.js';
@@ -17,6 +18,7 @@ import { findItem } from '../../core/lookups.js';
 import {
   sellableEntries, sellEntry, tradeMult, perekupHonestChance, passesGate,
 } from '../../core/trade.js';
+import { buyEquipment } from '../../core/equipment.js';
 import { getState, applyAction } from '../session.js';
 
 function priceLine(buyer) {
@@ -120,6 +122,33 @@ function buyerBlock(buyer, state) {
   return `${buyerRow(buyer, state)}${rows.join('')}`;
 }
 
+/** Секция хозтоваров Тещи Петровны (снаряжение, сессия 9). */
+function shopBlock(state) {
+  const rows = Object.entries(EQUIPMENT_SLOTS).map(([slot, def]) => {
+    const owned = Boolean(state.equipment[slot]);
+    const afford = state.money >= def.shop.price;
+    const btn = owned
+      ? '<span class="row__meta">✓ есть</span>'
+      : `<button class="btn btn--ghost btn--mini" data-buy-equip="${slot}"
+          title="${def.shop.desc}" ${afford ? '' : 'disabled'}>Купить ${rublesLabel(def.shop.price)}</button>`;
+    return `
+      <div class="row">
+        <span class="row__icon">${def.emoji}</span>
+        <div class="row__main">
+          <div class="row__name">${def.shop.name}</div>
+          <div class="row__sub">${def.effectDesc} · ${hoursLabel(ACTIONS.saleInstant.hours)}</div>
+        </div>
+        ${btn}
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <p class="section-title">${EQUIPMENT_SHOP.emoji} ${EQUIPMENT_SHOP.name}</p>
+    <div class="rows">${rows}</div>
+  `;
+}
+
 function expertRow(expert) {
   const fee = expert.fee.type === 'percent'
     ? `${percentLabel(expert.fee.value)}, мин ${rublesLabel(expert.fee.min)}`
@@ -140,10 +169,11 @@ function expertRow(expert) {
 function loreDetails() {
   const buyerLore = BUYERS.map((b) => `<p class="info__body"><strong>${b.emoji} ${b.name}</strong> — ${b.desc}</p>`).join('');
   const expertLore = EXPERTS.map((e) => `<p class="info__body"><strong>${e.emoji} ${e.name}</strong> — ${e.desc} <em>«${e.quote}»</em></p>`).join('');
+  const shopLore = `<p class="info__body"><strong>${EQUIPMENT_SHOP.emoji} ${EQUIPMENT_SHOP.name}</strong> — ${EQUIPMENT_SHOP.desc}</p>`;
   return `
     <div class="card">
       <details class="info info--flat"><summary>кто все эти люди</summary>
-        ${buyerLore}${expertLore}
+        ${buyerLore}${expertLore}${shopLore}
       </details>
     </div>
   `;
@@ -166,6 +196,7 @@ export function renderMarket(root) {
     <p class="section-title">Кому сдать добро</p>
     ${emptyNoshaCard(state)}
     <div class="rows">${BUYERS.map((b) => buyerBlock(b, state)).join('')}</div>
+    ${shopBlock(state)}
     <p class="section-title">Кто оценит ❓ — кнопки на самих находках в «🎒 Инвентаре»</p>
     <div class="rows">${EXPERTS.map(expertRow).join('')}</div>
     ${loreDetails()}
@@ -174,6 +205,11 @@ export function renderMarket(root) {
   root.querySelectorAll('[data-sell]').forEach((btn) => {
     btn.addEventListener('click', () => {
       applyAction((s) => sellEntry(s, Number(btn.dataset.sell), btn.dataset.buyer));
+    });
+  });
+  root.querySelectorAll('[data-buy-equip]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      applyAction((s) => buyEquipment(s, btn.dataset.buyEquip));
     });
   });
   root.querySelectorAll('[data-goto-inventory]').forEach((btn) => {

@@ -12,6 +12,7 @@ import { clampStats, death, pushLog } from './state.js';
 import { advanceHours } from './time.js';
 import { addItem, rollTrueValue } from './inventory.js';
 import { addSkillXp } from './skills.js';
+import { digRiskEquipMult } from './equipment.js';
 import { makeRoller } from './rng.js';
 
 /** ---- Переходы ---- */
@@ -36,6 +37,12 @@ export function travelTo(state, toDistrictId, events = []) {
 
   if (state.status === 'alive') {
     state.districtId = to.id;
+
+    // 💪 Ходьба с пакетом — тоже спортзал (сессия 9): +1 опыт за переход.
+    if (addSkillXp(state, 'stamina')) {
+      events.push(`⬆️ 💪 Выносливость выросла до уровня ${state.skills.stamina.level}!`);
+    }
+
     const line = `🚶 ${from.name} → ${to.name} (${hours} ч пути)`;
     events.push(line);
     pushLog(state, line);
@@ -142,14 +149,15 @@ export function getBinsRecord(state, districtId) {
   return state.bins[districtId];
 }
 
-/** Вероятность неприятности за обыск: риск района × погода × режим × навык. */
+/** Вероятность неприятности за обыск: район × погода × режим × навык × перчатки. */
 export function digRiskChance(state, district, mode) {
   const weather = findWeather(state.weatherId);
   const searchLevel = state.skills.search.level;
   const p = district.digRisk
     * weather.digRiskMult
     * mode.riskMult
-    * Math.pow(DIG.searchRiskMultPerLevel, searchLevel);
+    * Math.pow(DIG.searchRiskMultPerLevel, searchLevel)
+    * digRiskEquipMult(state); // 🧤 сессия 9: руки в перчатках — руки в безопасности
   return Math.min(DIG.riskCap, p);
 }
 
@@ -224,6 +232,11 @@ export function dig(state, binIndex, events = []) {
     const lvl = state.skills.search.level;
     events.push(`⬆️ 🔍 Поиск вырос до уровня ${lvl}!`);
     if (lvl === DIG_MODES.bold.unlockLevel) events.push('😤 Открылся режим «смелее» — баки вздрогнули.');
+  }
+
+  // 💪 Выносливость качается об лопату: рытьё — физическая работа (сессия 9).
+  if (addSkillXp(state, 'stamina')) {
+    events.push(`⬆️ 💪 Выносливость выросла до уровня ${state.skills.stamina.level}!`);
   }
 
   pushLog(state, `Обыск бака №${binIndex + 1} в районе «${district.name}»: ${foundLine}.`);

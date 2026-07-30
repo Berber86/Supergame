@@ -11,6 +11,7 @@
 
 import { CARRY } from '../data/balance.js';
 import { findItem } from './lookups.js';
+import { carryBonusEquipKg } from './equipment.js';
 
 /** Вес одной записи ноши (кг). Неопознанному — условный вес из CARRY. */
 export function entryWeightKg(entry) {
@@ -23,9 +24,9 @@ export function inventoryUsedKg(state) {
   return state.inventory.reduce((sum, e) => sum + entryWeightKg(e), 0);
 }
 
-/** Ёмкость ноши (кг): база + бонус за уровни 💪Выносливости. */
+/** Ёмкость ноши (кг): база + бонус за уровни 💪Выносливости + тележка 🛒. */
 export function capacityKg(state) {
-  return CARRY.baseKg + CARRY.staminaBonusKg * state.skills.stamina.level;
+  return CARRY.baseKg + CARRY.staminaBonusKg * state.skills.stamina.level + carryBonusEquipKg(state);
 }
 
 /**
