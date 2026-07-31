@@ -9,5 +9,7 @@ export default defineConfig(({ mode }) => {
   return {
     base,
     plugins: [react()],
+    // Narrative content compresses heavily; the authored island catalog is intentionally shipped with the game.
+    build: { chunkSizeWarningLimit: 600 },
   }
 })

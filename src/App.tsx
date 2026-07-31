@@ -52,8 +52,10 @@ import { acts, bosses, endings as endingDefinitions, godInfo, legacyBoons, norma
 import { Dialog } from './components/Dialog'
 import { TabPanel, Tabs, type TabOption } from './components/Tabs'
 import { Toggle } from './components/Toggle'
-import { encounters, skillLabels } from './data'
+import { skillLabels } from './data'
+import { encounters } from './encounterCatalog'
 import { difficulties, difficultyDefinition } from './difficulty'
+import { authoredIslands } from './islands'
 import {
   DEFAULT_META,
   RESOURCE_MAX,
@@ -67,11 +69,13 @@ import {
   createRun,
   currentBossDefinition,
   currentEncounter,
+  currentIsland,
   effectiveSkill,
   equipItem,
   equippedItem,
   formatEffects,
   getPortStock,
+  orderedEncounterChoices,
   portServices,
   purchaseLegacy,
   resolveBossAction,
@@ -105,8 +109,9 @@ import type {
 } from './types'
 import { bossScenes, defaultScene, endingScenes, sceneForEncounter, uiScenes } from './visuals'
 
-const SAVE_KEY = 'odyssey-shadow-save-v5'
-const LEGACY_SAVE_KEY = 'odyssey-shadow-save-v4'
+const SAVE_KEY = 'odyssey-shadow-save-v6'
+const LEGACY_SAVE_KEY = 'odyssey-shadow-save-v5'
+const FOURTH_SAVE_KEY = 'odyssey-shadow-save-v4'
 const THIRD_SAVE_KEY = 'odyssey-shadow-save-v3'
 const SECOND_SAVE_KEY = 'odyssey-shadow-save-v2'
 const FIRST_SAVE_KEY = 'odyssey-shadow-save-v1'
@@ -183,14 +188,15 @@ function migrateSavedRun(legacy: RunState) {
     } : migrated.ship,
     debts: legacy.debts ?? [],
     crewCrisis: null,
-    portNotice: 'Старая песнь перенесена в систему памяти команды.',
+    portNotice: 'Старая песнь перенесена на авторский маршрут двенадцати островов.',
   }
 }
 
 function loadSavedRun() {
   const current = readStorage<RunState | null>(SAVE_KEY, null)
-  if (current?.version === 5) return current
+  if (current?.version === 6) return current
   const legacy = readStorage<RunState | null>(LEGACY_SAVE_KEY, null)
+    ?? readStorage<RunState | null>(FOURTH_SAVE_KEY, null)
     ?? readStorage<RunState | null>(THIRD_SAVE_KEY, null)
     ?? readStorage<RunState | null>(SECOND_SAVE_KEY, null)
     ?? readStorage<RunState | null>(FIRST_SAVE_KEY, null)
@@ -266,7 +272,7 @@ function App() {
       ...parsed.payload.preferences,
     }
     const restoredRun = parsed.payload.run
-      ? parsed.payload.run.version === 5 ? parsed.payload.run : migrateSavedRun(parsed.payload.run)
+      ? parsed.payload.run.version === 6 ? parsed.payload.run : migrateSavedRun(parsed.payload.run)
       : null
     setMeta(restoredMeta)
     setRun(restoredRun)
@@ -402,6 +408,7 @@ function App() {
           <EncounterPanel
             run={run}
             onChoose={(choice) => commitRun(resolveChoice(run, choice))}
+            onBlindChoose={(choice) => commitRun(resolveChoice(run, choice, true))}
             onContinue={(stance) => commitRun(continueVoyage(run, stance))}
           />
         )}
@@ -523,7 +530,7 @@ function TitleScreen({ savedRun, meta, onContinue, onNew, onRules, onLegacy, onA
           </button>
         </div>
         <div className="title-features">
-          <div><Map size={17} /><span><b>187 островов</b>Процедурный архипелаг</span></div>
+          <div><Map size={17} /><span><b>22 авторских острова</b>7 в каждом походе</span></div>
           <div><Skull size={17} /><span><b>Одна жизнь</b>Решения имеют цену</span></div>
           <div><Sparkles size={17} /><span><b>{meta.endings.length} из 4 финалов</b>{meta.codex.length} записей кодекса</span></div>
         </div>
@@ -535,7 +542,7 @@ function TitleScreen({ savedRun, meta, onContinue, onNew, onRules, onLegacy, onA
       </div>
       <div className="title-footer">
         <span>Кампания · Три акта · Четыре финала</span>
-        <span className="title-seed">ВЕРСИЯ 0.8.0 · ПОХОДОВ: {String(meta.voyages).padStart(2, '0')}</span>
+        <span className="title-seed">ВЕРСИЯ 1.0.0 · ПОХОДОВ: {String(meta.voyages).padStart(2, '0')}</span>
       </div>
     </div>
   )
@@ -755,13 +762,21 @@ function ResourceTile({ resourceKey, value }: { resourceKey: 'food' | 'water'; v
 interface EncounterPanelProps {
   run: RunState
   onChoose: (choice: Choice) => void
+  onBlindChoose: (choice: Choice) => void
   onContinue: (stance: TravelStance) => void
 }
 
-function EncounterPanel({ run, onChoose, onContinue }: EncounterPanelProps) {
+function EncounterPanel({ run, onChoose, onBlindChoose, onContinue }: EncounterPanelProps) {
   const encounter = currentEncounter(run)
-  const scene = sceneForEncounter(encounter)
+  const island = currentIsland(run)
+  const encounterScene = sceneForEncounter(encounter)
+  const scene = island?.scene
+    ? { ...encounterScene, src: island.scene, caption: `${island.name} · ${island.subtitle}` }
+    : encounterScene
   const isResolution = run.phase === 'resolution'
+  const orderedChoices = orderedEncounterChoices(run)
+  const visibleChoices = orderedChoices.slice(0, 2)
+  const hiddenChoice = orderedChoices[2]
   const [showScene, setShowScene] = useState(false)
   return (
     <section className={`encounter-panel panel accent-${encounter.accent}`}>
@@ -778,10 +793,11 @@ function EncounterPanel({ run, onChoose, onContinue }: EncounterPanelProps) {
       </div>
 
       <div className="encounter-copy">
-        <span className="eyebrow">{encounter.eyebrow} · {biomeInfo[run.route[run.nodeIndex].biome].name}</span>
+        <span className="eyebrow">{island?.subtitle ?? encounter.eyebrow} · {biomeInfo[run.route[run.nodeIndex].biome].name}</span>
         <h1>{encounter.title}</h1>
         <div className="ornament"><span /><i>◆</i><span /></div>
-        <p>{encounter.description}</p>
+        <p>{island?.introduction ?? encounter.description}</p>
+        {island?.atmosphere && <div className="island-atmosphere"><Waves size={14} /><span>{island.atmosphere}</span></div>}
         {encounter.quote && <blockquote>{encounter.quote}</blockquote>}
       </div>
 
@@ -790,11 +806,11 @@ function EncounterPanel({ run, onChoose, onContinue }: EncounterPanelProps) {
       ) : (
         <div className="choices-area">
           <div className="choices-heading">
-            <span>ВАШЕ РЕШЕНИЕ</span>
-            <small>Выбор нельзя отменить</small>
+            <span>ДВА ОТКРЫТЫХ РЕШЕНИЯ</span>
+            <small>Третий путь останется неизвестным до выбора</small>
           </div>
           <div className="choices-list">
-            {encounter.choices.map((choice, index) => (
+            {visibleChoices.map((choice, index) => (
               <ChoiceButton
                 key={choice.id}
                 index={index}
@@ -803,6 +819,14 @@ function EncounterPanel({ run, onChoose, onContinue }: EncounterPanelProps) {
                 onClick={() => onChoose(choice)}
               />
             ))}
+            {hiddenChoice && (
+              <button className="blind-choice-button" onClick={() => onBlindChoose(hiddenChoice)}>
+                <span className="choice-index">III</span>
+                <span><strong>Первые два решения мне не подходят</strong><small>Отвергнуть оба и немедленно выбрать неизвестный третий путь. Его шанс, цена и последствия откроются только после решения.</small></span>
+                <span className="blind-choice-mark">?</span>
+                <ChevronRight size={18} />
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -878,8 +902,16 @@ function ResolutionCard({ run, onContinue }: { run: RunState; onContinue: (stanc
       <div className="resolution-body">
         <span>{resolution.success ? 'ИСХОД · УСПЕХ' : 'ИСХОД · НЕУДАЧА'}</span>
         <h3>{resolution.title}</h3>
-        <p>{resolution.text}</p>
-        {resolution.omen && <blockquote>{resolution.omen}</blockquote>}
+        <p className="resolution-immediate">{resolution.text}</p>
+        {resolution.aftermath && (
+          <section className="aftermath-reading">
+            <span>ПОСЛЕДСТВИЯ РЕШЕНИЯ</span>
+            <p>{resolution.aftermath}</p>
+            {resolution.crewVoice && <blockquote>{resolution.crewVoice}</blockquote>}
+            {resolution.consequence && <div><History size={12} /><b>{resolution.consequence}</b></div>}
+          </section>
+        )}
+        {resolution.omen && <blockquote className="resolution-omen">{resolution.omen}</blockquote>}
         <div className="effect-row">
           {formatEffects(resolution.effects).map(({ key, value }) => {
             const Icon = resourceConfig[key].Icon
@@ -890,7 +922,7 @@ function ResolutionCard({ run, onContinue }: { run: RunState; onContinue: (stanc
             )
           })}
           {resolution.xp !== undefined && <span className="positive"><Star size={13} /> +{resolution.xp} опыта</span>}
-          {resolution.coins !== undefined && <span className="positive"><Coins size={13} /> +{resolution.coins}</span>}
+          {resolution.coins !== undefined && <span className="coin-reward"><Coins size={13} /> {resolution.coins >= 0 ? `Добыто +${resolution.coins}` : `Потрачено ${Math.abs(resolution.coins)}`} драхм</span>}
           {resolution.divineChange && (Object.entries(resolution.divineChange) as [GodId, number][]).map(([god, value]) => (
             <span className={value > 0 ? 'divine-positive' : 'divine-negative'} key={god}>{godInfo[god].symbol} {value > 0 ? '+' : ''}{value}</span>
           ))}
@@ -1055,6 +1087,14 @@ function PortPanel({
 
       {run.portNotice && <div className="port-notice"><Check size={14} /> {run.portNotice}</div>}
 
+      <div className="port-sail-banner">
+        <div><Anchor size={18} /><span><small>КОРАБЛЬ ГОТОВ К ОТПЛЫТИЮ</small><b>Следующий курс — {run.route[run.nodeIndex + 1]?.name ?? 'Итака'}</b></span></div>
+        <div>
+          <button className="secondary-button" onClick={() => onDepart('cautious')}><Shield size={14} /> Уплыть осторожно</button>
+          <button className="primary-button" onClick={() => onDepart('bold')}>Уплыть прямым курсом <Wind size={15} /></button>
+        </div>
+      </div>
+
       <div className="port-content">
         <section className="market-section services-market">
           <div className="market-heading">
@@ -1135,8 +1175,8 @@ function PortPanel({
       <div className="port-departure">
         <div><Wind size={17} /><span><small>ВЕТЕР: ЗАПАДНЫЙ</small><b>Следующий курс — {run.route[run.nodeIndex + 1]?.name}</b></span></div>
         <div className="port-route-buttons">
-          <button className="secondary-button" onClick={() => onDepart('cautious')}><Shield size={14} /> Осторожно</button>
-          <button className="primary-button" onClick={() => onDepart('bold')}>Прямой курс <Wind size={15} /></button>
+          <button className="secondary-button" onClick={() => onDepart('cautious')}><Shield size={14} /> Уплыть осторожно</button>
+          <button className="primary-button" onClick={() => onDepart('bold')}>Уплыть прямым курсом <Wind size={15} /></button>
         </div>
       </div>
     </section>
@@ -1187,15 +1227,19 @@ function CodexPanel({ run, meta }: { run: RunState; meta: MetaState }) {
   const currentId = run.phase === 'boss' ? run.boss?.id : run.route[run.nodeIndex]?.encounterId
   const discovered = new Set([...meta.codex, ...(currentId ? [currentId] : [])])
   const entries = [
-    ...encounters.map((encounter) => ({
-      id: encounter.id,
-      kind: 'myth' as const,
-      title: encounter.title,
-      subtitle: encounter.eyebrow,
-      description: encounter.description,
-      scene: sceneForEncounter(encounter),
-      tag: encounter.threat,
-    })),
+    ...authoredIslands.map((island) => {
+      const encounter = encounters.find((entry) => entry.id === island.encounterId)!
+      const baseScene = sceneForEncounter(encounter)
+      return {
+        id: encounter.id,
+        kind: 'myth' as const,
+        title: island.name,
+        subtitle: island.subtitle,
+        description: island.introduction,
+        scene: island.scene ? { ...baseScene, src: island.scene, caption: `${island.name} · ${island.subtitle}` } : baseScene,
+        tag: encounter.threat,
+      }
+    }),
     ...bosses.map((boss) => ({
       id: boss.id,
       kind: 'guardian' as const,
@@ -1212,6 +1256,7 @@ function CodexPanel({ run, meta }: { run: RunState; meta: MetaState }) {
   const selected = entries.find((entry) => entry.id === selectedId && discovered.has(entry.id)) ?? firstDiscovered
   const visibleEntries = category === 'all' ? entries : entries.filter((entry) => entry.kind === category)
   const illustratedCount = entries.filter((entry) => discovered.has(entry.id) && entry.scene.src !== defaultScene.src).length
+  const collectedCount = entries.filter((entry) => meta.codex.includes(entry.id)).length
 
   return (
     <div className="codex-content">
@@ -1219,7 +1264,7 @@ function CodexPanel({ run, meta }: { run: RunState; meta: MetaState }) {
         <span className="eyebrow">ПАМЯТЬ СТРАНСТВИЙ</span>
         <h3>Кодекс мифов</h3>
         <p>Записи и образы сохраняются между экспедициями, даже когда море забирает героя.</p>
-        <div className="codex-progress"><i style={{ width: `${(meta.codex.length / entries.length) * 100}%` }} /><span>{meta.codex.length} / {entries.length}</span></div>
+        <div className="codex-progress"><i style={{ width: `${(collectedCount / entries.length) * 100}%` }} /><span>{collectedCount} / {entries.length}</span></div>
       </div>
 
       {selected ? (
@@ -1421,7 +1466,7 @@ function RouteMap({ run }: { run: RunState }) {
           <span className="eyebrow">ПУТЬ ЧЕРЕЗ АРХИПЕЛАГ</span>
           <h3>Курс на Итаку</h3>
         </div>
-        <div className="world-count"><b>{run.world.length}</b><small>ОСТРОВОВ В МИРЕ</small></div>
+        <div className="world-count"><b>{authoredIslands.length}</b><small>АВТОРСКИХ ОСТРОВОВ</small></div>
       </div>
       <div className="map-wrap">
         <svg className="route-map" viewBox="0 0 100 90" role="img" aria-label="Карта пути до Итаки">
@@ -1590,6 +1635,8 @@ function ChronicleModal({
   const [importMessage, setImportMessage] = useState('')
   const stats = chronicleStats(meta)
   const favoriteDifficulty = difficultyDefinition(stats.favoriteDifficulty as DifficultyId)
+  const activeCodexIds = new Set([...authoredIslands.map((island) => island.encounterId), ...bosses.map((boss) => boss.id)])
+  const activeCodexCount = meta.codex.filter((id) => activeCodexIds.has(id)).length
   const tabOptions: TabOption<typeof tab>[] = [
     { id: 'overview', label: 'Обзор', icon: <BarChart3 size={14} aria-hidden="true" /> },
     { id: 'achievements', label: 'Достижения', icon: <Award size={14} aria-hidden="true" /> },
@@ -1649,7 +1696,7 @@ function ChronicleModal({
                   })}
                 </div>
               </section>
-              <div className="collection-summary"><BookOpen size={16} /><span><b>{meta.codex.length} / {encounters.length + bosses.length} записей кодекса</b><small>{meta.prophecies.length} пророчеств · {meta.legacy.length} даров наследия</small></span></div>
+              <div className="collection-summary"><BookOpen size={16} /><span><b>{activeCodexCount} / {authoredIslands.length + bosses.length} записей кодекса</b><small>{meta.prophecies.length} пророчеств · {meta.legacy.length} даров наследия</small></span></div>
             </>
           )}
 
@@ -1802,6 +1849,8 @@ function LegacyModal({
   onBuy: (boonId: string) => void
   onClose: () => void
 }) {
+  const activeCodexIds = new Set([...authoredIslands.map((island) => island.encounterId), ...bosses.map((boss) => boss.id)])
+  const activeCodexCount = meta.codex.filter((id) => activeCodexIds.has(id)).length
   return (
     <Dialog
       className="legacy-modal"
@@ -1820,7 +1869,7 @@ function LegacyModal({
           <div><small>ДАРЫ</small><b>{meta.legacy.length} / {legacyBoons.length}</b></div>
           <div><small>ФИНАЛЫ</small><b>{meta.endings.length} / 4</b></div>
           <div><small>ПРОРОЧЕСТВА</small><b>{meta.prophecies.length} / 4</b></div>
-          <div><small>КОДЕКС</small><b>{meta.codex.length} / {encounters.length + bosses.length}</b></div>
+          <div><small>КОДЕКС</small><b>{activeCodexCount} / {authoredIslands.length + bosses.length}</b></div>
         </div>
         <div className="legacy-grid">
           {legacyBoons.map((boon) => {
@@ -1868,6 +1917,7 @@ function RulesModal({ onClose }: { onClose: () => void }) {
     { Icon: Eye, title: 'Спорьте с судьбой', text: 'Решения меняют отношение богов, рок, личное пророчество и доступный финал.' },
     { Icon: Wind, title: 'Выбирайте курс', text: 'Прямой путь экономит дни, осторожный снижает вероятность и силу штормов.' },
     { Icon: BookOpen, title: 'Собирайте кодекс', text: 'Пережитые мифы и их иллюстрации навсегда сохраняются между песнями.' },
+    { Icon: Coins, title: 'Добывайте драхмы', text: 'Каждый исход приносит деньги, успешные рискованные решения — больше. Стражи дают крупную награду.' },
     { Icon: Sparkles, title: 'Оставляйте наследие', text: 'κλέος после экспедиции покупает постоянные дары для следующих попыток.' },
   ]
   return (

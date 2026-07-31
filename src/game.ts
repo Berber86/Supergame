@@ -1,6 +1,8 @@
 import { bosses, endings, legacyBoons, prophecies } from './campaign'
-import { encounters, regionNames } from './data'
+import { regionNames } from './data'
+import { encounters } from './encounterCatalog'
 import { difficultyDefinition } from './difficulty'
+import { authoredIslandByEncounter, authoredIslands, islandOutcomeNarrative } from './islands'
 import {
   equipment,
   recruitableCompanions,
@@ -146,9 +148,9 @@ export function generateWorld(seed: number, size = WORLD_SIZE): WorldLocation[] 
   })
 }
 
-function createRoute(seed: number, world: WorldLocation[]): RouteNode[] {
+function createRoute(seed: number): RouteNode[] {
   const random = seededRandom(seed)
-  const encounterOrder = shuffle(encounters.map((encounter) => encounter.id), random)
+  const islandOrder = shuffle(authoredIslands, random)
   const positions = [
     [7, 79], [15, 65], [25, 74], [33, 56], [42, 64], [50, 45],
     [59, 54], [67, 35], [76, 43], [84, 24], [91, 31],
@@ -156,33 +158,32 @@ function createRoute(seed: number, world: WorldLocation[]): RouteNode[] {
   let encounterIndex = 0
 
   const route: RouteNode[] = positions.map(([x, y], index) => {
-    const location = world[(index * 17 + Math.floor(random() * 13)) % world.length]
     const isPort = index === 3 || index === 7
     const bossId = index === 5 ? 'scylla' : index === 10 ? 'poseidon-avatar' : undefined
     const isBoss = Boolean(bossId)
-    const name = index === 0
-      ? 'Берег киконов'
-      : isPort
-        ? index === 3 ? 'Навпакт' : 'Гавань Алкиноя'
-        : bossId === 'scylla'
-          ? 'Пролив шести пастей'
-          : bossId === 'poseidon-avatar'
-            ? 'Врата Итаки'
-            : location.name
+    const island = !isPort && !isBoss ? islandOrder[encounterIndex] : undefined
+    const name = isPort
+      ? index === 3 ? 'Навпакт' : 'Гавань Алкиноя'
+      : bossId === 'scylla'
+        ? 'Пролив шести пастей'
+        : bossId === 'poseidon-avatar'
+          ? 'Врата Итаки'
+          : island?.name ?? 'Безымянный берег'
     const node: RouteNode = {
       id: `route-${seed}-${index}`,
       name,
-      region: isPort ? 'Земли свободных полисов' : isBoss ? 'Владения Посейдона' : location.region,
-      encounterId: isPort || isBoss ? '' : encounterOrder[encounterIndex],
+      region: isPort ? 'Земли свободных полисов' : isBoss ? 'Владения Посейдона' : island?.region ?? 'Безымянные воды',
+      encounterId: island?.encounterId ?? '',
+      islandId: island?.id,
       bossId,
       distance: index === 0 ? 0 : 70 + Math.floor(random() * 115),
       x,
       y,
-      kind: index === 0 ? 'origin' : isPort ? 'port' : isBoss ? 'boss' : location.danger === 5 ? 'danger' : 'island',
-      biome: isPort ? 'civilized' : isBoss ? 'storm' : location.biome,
-      danger: isPort ? 1 : isBoss ? 5 : location.danger,
+      kind: isPort ? 'port' : isBoss ? 'boss' : (island?.danger ?? 1) >= 5 ? 'danger' : index === 0 ? 'origin' : 'island',
+      biome: isPort ? 'civilized' : isBoss ? 'storm' : island?.biome ?? 'open-sea',
+      danger: isPort ? 1 : isBoss ? 5 : island?.danger ?? 1,
     }
-    if (!isPort && !isBoss) encounterIndex += 1
+    if (island) encounterIndex += 1
     return node
   })
 
@@ -220,14 +221,14 @@ export function createRun(seed = Date.now(), legacy: string[] = [], difficulty: 
   }, { ...baseResources })
   const prophecy = { ...prophecies[Math.floor(seededRandom(seed + 404)() * prophecies.length)] }
   return {
-    version: 5,
+    version: 6,
     seed,
     difficulty,
     divineRescueUsed: false,
     day: 1,
     nodeIndex: 0,
     world,
-    route: createRoute(seed, world),
+    route: createRoute(seed),
     resources,
     skills: {
       cunning: hasBoon('owl-memory') ? 6 : 5,
@@ -285,6 +286,20 @@ export function createRun(seed = Date.now(), legacy: string[] = [], difficulty: 
 export function currentEncounter(run: RunState) {
   const encounterId = run.route[run.nodeIndex]?.encounterId
   return encounters.find((encounter) => encounter.id === encounterId) ?? encounters[0]
+}
+
+export function currentIsland(run: RunState) {
+  const encounterId = run.route[run.nodeIndex]?.encounterId
+  return authoredIslandByEncounter.get(encounterId)
+}
+
+export function orderedEncounterChoices(run: RunState) {
+  const encounter = currentEncounter(run)
+  let encounterHash = 0
+  for (let index = 0; index < encounter.id.length; index += 1) {
+    encounterHash = (encounterHash * 31 + encounter.id.charCodeAt(index)) | 0
+  }
+  return shuffle(encounter.choices, seededRandom(run.seed + run.nodeIndex * 2029 + encounterHash))
 }
 
 export function effectiveSkill(run: RunState, skill: Skill) {
@@ -544,12 +559,12 @@ function rememberChoice(
   return { companions, reactions, riskDelta, cohesionDelta }
 }
 
-export function resolveChoice(run: RunState, choice: Choice): RunState {
+export function resolveChoice(run: RunState, choice: Choice, forceDeferredCost = false): RunState {
   if (run.phase !== 'encounter') return run
   const affordable = canAfford(run.resources, choice.cost)
   const hasAffordableChoice = currentEncounter(run).choices.some((entry) => canAfford(run.resources, entry.cost))
-  if (!affordable && hasAffordableChoice) return run
-  const debtCreated = !affordable && !hasAffordableChoice && choice.cost
+  if (!affordable && hasAffordableChoice && !forceDeferredCost) return run
+  const debtCreated = !affordable && (!hasAffordableChoice || forceDeferredCost) && choice.cost
     ? createDeferredDebt(run, choice.title, choice.cost)
     : undefined
   const chargedCost = affordable ? choice.cost : undefined
@@ -557,6 +572,8 @@ export function resolveChoice(run: RunState, choice: Choice): RunState {
   const paidResources = applyEffects(run.resources, chargedCost ?? {})
   const success = deterministicRoll(run, choice) <= choiceChance(run, choice)
   const outcome = success ? choice.success : choice.failure
+  const encounter = currentEncounter(run)
+  const authoredNarrative = islandOutcomeNarrative(encounter.id, choice.id, success)
   const resources = applyEffects(paidResources, outcome.effects)
   const baseXp = outcome.xp ?? (success ? 22 + choice.difficulty * 4 : 11 + choice.difficulty * 2)
   const xp = Math.round(baseXp * (run.legacyBoons.includes('black-sail-legend') && success ? 1.2 : 1))
@@ -574,7 +591,7 @@ export function resolveChoice(run: RunState, choice: Choice): RunState {
       {
         id: `decision-${run.seed}-${run.nodeIndex}-${choice.id}`,
         day: run.day,
-        encounterId: currentEncounter(run).id,
+        encounterId: encounter.id,
         choiceId: choice.id,
         title: choice.title,
         skill: choice.skill,
@@ -594,6 +611,9 @@ export function resolveChoice(run: RunState, choice: Choice): RunState {
     divineChange,
     crewReactions: remembered.reactions,
     debtCreated,
+    aftermath: authoredNarrative?.aftermath,
+    crewVoice: authoredNarrative?.crewVoice,
+    consequence: authoredNarrative?.consequence,
   }
   const next: RunState = {
     ...run,
@@ -614,8 +634,8 @@ export function resolveChoice(run: RunState, choice: Choice): RunState {
       {
         id: `log-${run.seed}-${run.day}-${choice.id}`,
         day: run.day,
-        title: currentEncounter(run).title,
-        text: outcome.text,
+        title: encounter.title,
+        text: `${outcome.text} Добыто ${coins} ${coins === 1 ? 'драхма' : 'драхм'}.`,
         tone: success ? ('good' as const) : ('bad' as const),
       },
       ...run.log,

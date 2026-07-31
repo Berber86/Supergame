@@ -1,4 +1,4 @@
-const CACHE_NAME = 'odyssey-shadow-v0.8.0'
+const CACHE_NAME = 'odyssey-shadow-v1.0.0'
 const SCOPE_URL = self.registration.scope
 const scopedUrl = (path = './') => new URL(path, SCOPE_URL).toString()
 const APP_SHELL = [
@@ -16,7 +16,13 @@ const APP_SHELL = [
   'art/companion-sinon.jpg',
   'art/companion-idmon.jpg',
   'art/ui-hermes-guide.jpg',
-  'art/ui-offline-ithaca.jpg'
+  'art/ui-offline-ithaca.jpg',
+  'art/island-erebria.jpg',
+  'art/island-orthos.jpg',
+  'art/island-cyclops.jpg',
+  'art/island-hecate.jpg',
+  'art/island-lotus.jpg',
+  'art/island-talos.jpg'
 ].map(scopedUrl)
 
 async function precacheApplication() {

@@ -13,6 +13,8 @@ test('mobile game uses three compact screens instead of one long page', async ({
 
   await expect(page.getByRole('navigation', { name: 'Разделы игры' })).toBeVisible()
   await expect(page.locator('.encounter-panel')).toBeVisible()
+  await expect(page.locator('.choice-button')).toHaveCount(2)
+  await expect(page.getByRole('button', { name: /Первые два решения мне не подходят/i })).toBeVisible()
   await expect(page.locator('.hero-panel')).toBeHidden()
   await expect(page.locator('.world-panel')).toBeHidden()
 
@@ -29,6 +31,26 @@ test('mobile game uses three compact screens instead of one long page', async ({
   await page.keyboard.press('ArrowRight')
   await expect(page.getByRole('tab', { name: 'Судно' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('tabpanel')).toContainText('Чёрная ласточка')
+})
+
+test('port exposes an explicit departure action above the market', async ({ page }) => {
+  await page.getByRole('button', { name: /Начать путешествие/i }).click()
+  await page.getByRole('button', { name: /Начать путешествие/i }).click()
+  await page.waitForFunction(() => Boolean(localStorage.getItem('odyssey-shadow-save-v6')))
+  await page.evaluate(() => {
+    const key = 'odyssey-shadow-save-v6'
+    const run = JSON.parse(localStorage.getItem(key)!)
+    run.nodeIndex = 3
+    run.phase = 'port'
+    run.resolution = null
+    localStorage.setItem(key, JSON.stringify(run))
+  })
+  await page.reload()
+  await page.getByRole('button', { name: /Продолжить путь/i }).click()
+
+  await expect(page.getByText('КОРАБЛЬ ГОТОВ К ОТПЛЫТИЮ')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Уплыть прямым курсом/i }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /Уплыть осторожно/i }).first()).toBeVisible()
 })
 
 test('dialog traps focus, closes with Escape and restores the trigger', async ({ page }) => {

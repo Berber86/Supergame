@@ -129,6 +129,7 @@ export interface RouteNode {
   name: string
   region: string
   encounterId: string
+  islandId?: string
   bossId?: string
   distance: number
   x: number
@@ -158,6 +159,9 @@ export interface Resolution {
   divineChange?: Partial<Record<GodId, number>>
   crewReactions?: CrewReaction[]
   debtCreated?: DeferredDebt
+  aftermath?: string
+  crewVoice?: string
+  consequence?: string
 }
 
 export interface EquipmentDefinition {
