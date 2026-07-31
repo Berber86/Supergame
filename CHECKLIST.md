@@ -12,4 +12,5 @@
 6. **Сборка зелёная:** `npm run build` завершается без ошибок.
 7. **CI зелёный** (после пуша в main): GitHub Actions → вкладка Actions → «CI» → успех.
 8. ***(шаг человека)*** Подключить автодеплой: в панели Vercel импортировать репозиторий `Berber86/Supergame`, framework Vite определяется автоматически; деплой из main.
-9. ***(шаг человека)*** Включить CI: скопировать `ci.workflow.example.yml` в `.github/workflows/ci.yml` (команда в шапке файла) **или** выдать GitHub App `arena-ai-coding-agent` разрешение `Workflows` — тогда агент сделает это сам. Без этого GitHub Actions не запускается.
+9. ***(шаг человека)*** Включить CI: создать `.github/workflows/ci.yml` — содержимое готово в `ci.workflow.example.yml` (шапка-комментарий не нужна). Проще всего через веб: https://github.com/Berber86/Supergame/new/main?filename=.github/workflows/ci.yml → вставить содержимое → Commit changes в `main`.
+   **Агент сделать этого не может** (проверено дважды, сессии 3 и 13): пуш отклоняется с `refusing to allow a GitHub App to create or update workflow ... without 'workflows' permission`. Выдать это право через настройки установки нельзя — список permissions задаёт разработчик GitHub App (Arena), владелец аккаунта может лишь одобрить запрос, если приложение его пришлёт. Пункт «выдайте App разрешение Workflows» в прежней редакции чек-листа был ошибочным.
