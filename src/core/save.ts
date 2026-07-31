@@ -23,7 +23,7 @@ export function createInitialState(now: number = Date.now()): GameState {
     prestige: 0,
     achievements: [],
     journal: [],
-    raid: { kingdomId: null, stage: 0, relics: [] },
+    raid: { kingdomId: null, stage: 0, relics: [], offer: [], atBoss: false },
     lastSavedAt: now,
   };
 }
@@ -41,7 +41,7 @@ export function loadState(storage: Storage = localStorage): GameState | null {
   try {
     const parsed = JSON.parse(raw) as GameState;
     if (!isValidState(parsed)) return null;
-    return parsed;
+    return migrateState(parsed);
   } catch {
     return null;
   }
@@ -59,6 +59,25 @@ export function clearState(storage: Storage = localStorage): void {
 export function computeOfflineMs(lastSavedAt: number, now: number): number {
   if (now <= lastSavedAt) return 0;
   return Math.min(now - lastSavedAt, OFFLINE_CAP_MS);
+}
+
+/**
+ * Мягкая миграция старых сейвов (S6: у рейда появились поля `offer` и `atBoss`).
+ * Ключ сейва не меняем — старый прогресс игрока не теряется.
+ */
+export function migrateState(state: GameState): GameState {
+  const raid = state.raid ?? { kingdomId: null, stage: 0, relics: [] };
+  return {
+    ...state,
+    relics: Array.isArray(state.relics) ? state.relics : [],
+    raid: {
+      kingdomId: raid.kingdomId ?? null,
+      stage: typeof raid.stage === 'number' ? raid.stage : 0,
+      relics: Array.isArray(raid.relics) ? raid.relics : [],
+      offer: Array.isArray(raid.offer) ? raid.offer : [],
+      atBoss: raid.atBoss === true,
+    },
+  };
 }
 
 /** Минимальная проверка структуры сейва. */

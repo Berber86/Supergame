@@ -1,13 +1,21 @@
 # ⚠️ ЭТО ПРИМЕР CI-ВОРКФЛОУ. Он НЕ выполняется GitHub Actions.
 #
-# GitHub App (arena-ai-coding-agent) в текущей конфигурации не имеет разрешения
-# `workflows`, поэтому агент не может создать/обновить `.github/workflows/ci.yml`.
-# Чтобы включить CI: скопируйте этот файл в `.github/workflows/ci.yml`
-# (или дайте GitHub App разрешение `Workflows` и попросите агента сделать это).
+# Файл должен лежать в `.github/workflows/ci.yml`, но агент туда его положить НЕ МОЖЕТ:
+# GitHub отклоняет пуш от GitHub App без разрешения `workflows`
+#   remote rejected ... refusing to allow a GitHub App to create or update workflow
+# Это право нельзя выдать в настройках установки приложения: список permissions
+# определяет разработчик App (Arena), владелец аккаунта может только одобрить запрос,
+# если приложение его пришлёт. Проверено в сессиях 3 и 13 — оба раза отказ.
 #
-# Пример команды для человека (выполняется в корне репозитория):
-#   mkdir -p .github/workflows && cp ci.workflow.example.yml .github/workflows/ci.yml
-#   git add .github/workflows/ci.yml && git commit -m "[infra] включён CI" && git push origin main
+# Включить CI может только человек, одним из двух способов:
+#
+# 1) Через веб (удобно с телефона):
+#    https://github.com/Berber86/Supergame/new/main?filename=.github/workflows/ci.yml
+#    вставить содержимое ниже (без этой шапки) и нажать Commit changes в ветку main.
+#
+# 2) Через консоль в корне репозитория:
+#    mkdir -p .github/workflows && tail -n +19 ci.workflow.example.yml > .github/workflows/ci.yml
+#    git add .github/workflows/ci.yml && git commit -m "[infra] включён CI" && git push origin main
 name: CI
 
 on:

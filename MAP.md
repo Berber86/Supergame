@@ -16,10 +16,12 @@
 | `ARCHITECTURE.md` | Стек (Vite + TypeScript + Vitest), структура файлов, ключевые технические решения — создан в сессии 3 (Coder). |
 | `ROLE_STATE.md` | Счётчики ролевой ротации и номер следующей карточки хаоса — создан в сессии 3 (Coder). |
 | `CHECKLIST.md` | Ручной чек-лист для человека, обновляется только на вехах (сейчас: веха «Инфраструктура»). |
-| `index.html`, `src/` | Код игры. Точка входа — `src/main.ts`; логика — `src/core`, `src/economy`, `src/content`; рейд — `src/raid` (S5+); рендер — `src/ui` (S4+). |
+| `index.html`, `src/` | Код игры. Точка входа — `src/main.ts`; логика — `src/core`, `src/economy`, `src/content`; рейд и синергии — `src/raid`; разметка панелей рейда — `src/ui/raid-panel.ts`. |
+| `src/raid/raid.ts` | Рейд-петля: вылет (стоит золота), этапы, выбор реликвий, расчёт урона/добычи, бой с боссом, победа/поражение. |
+| `src/raid/synergies.ts` | Синергии реликвий (S6): комбо семейств (2+/4+) и именованные пары, множители урона и добычи. |
+| `src/raid/raid-ui.ts` | Текстовые хелперы рейда (без DOM). |
+| `src/ui/raid-panel.ts` | HTML-разметка панели рейда, синергий и коллекции реликвий. |
+| `src/raid/*.test.ts` | Тесты: логика рейда, синергии, баланс (`balance.test.ts`), полный цикл (`full-loop.test.ts`). |
 | `.github/workflows/ci.yml` | CI: тесты + сборка на push в main / PR. **Не запушен** — GitHub App без права `workflows`; готовый файл лежит в `ci.workflow.example.yml` (см. CHECKLIST п.9). |
 | `ci.workflow.example.yml` | Пример CI-воркфлоу (тесты + сборка); скопировать в `.github/workflows/ci.yml` для включения. |
 | `package.json`, `vite.config.ts`, `tsconfig.json`, `vercel.json` | Конфигурация сборки, тестов и деплоя. |
-| `ARCHITECTURE.md` | Стек и структура — **будет создан в сессии 3 (Coder)**. |
-| `ROLE_STATE.md` | Счётчики ролевой ротации и индекс карточек хаоса — **будет создан в сессии 3 (Coder)**. |
-| `CHECKLIST.md` | Ручной чек-лист для человека, обновляется только на вехах. |
