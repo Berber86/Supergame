@@ -17,7 +17,8 @@
 | `ROLE_STATE.md` | Счётчики ролевой ротации и номер следующей карточки хаоса — создан в сессии 3 (Coder). |
 | `CHECKLIST.md` | Ручной чек-лист для человека, обновляется только на вехах (сейчас: веха «Инфраструктура»). |
 | `index.html`, `src/` | Код игры. Точка входа — `src/main.ts`; логика — `src/core`, `src/economy`, `src/content`; рейд — `src/raid` (S5+); рендер — `src/ui` (S4+). |
-| `.github/workflows/ci.yml` | CI: тесты + сборка на push в main / PR. |
+| `.github/workflows/ci.yml` | CI: тесты + сборка на push в main / PR. **Не запушен** — GitHub App без права `workflows`; готовый файл лежит в `ci.workflow.example.yml` (см. CHECKLIST п.9). |
+| `ci.workflow.example.yml` | Пример CI-воркфлоу (тесты + сборка); скопировать в `.github/workflows/ci.yml` для включения. |
 | `package.json`, `vite.config.ts`, `tsconfig.json`, `vercel.json` | Конфигурация сборки, тестов и деплоя. |
 | `ARCHITECTURE.md` | Стек и структура — **будет создан в сессии 3 (Coder)**. |
 | `ROLE_STATE.md` | Счётчики ролевой ротации и индекс карточек хаоса — **будет создан в сессии 3 (Coder)**. |

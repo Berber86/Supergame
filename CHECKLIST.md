@@ -12,3 +12,4 @@
 6. **Сборка зелёная:** `npm run build` завершается без ошибок.
 7. **CI зелёный** (после пуша в main): GitHub Actions → вкладка Actions → «CI» → успех.
 8. ***(шаг человека)*** Подключить автодеплой: в панели Vercel импортировать репозиторий `Berber86/Supergame`, framework Vite определяется автоматически; деплой из main.
+9. ***(шаг человека)*** Включить CI: скопировать `ci.workflow.example.yml` в `.github/workflows/ci.yml` (команда в шапке файла) **или** выдать GitHub App `arena-ai-coding-agent` разрешение `Workflows` — тогда агент сделает это сам. Без этого GitHub Actions не запускается.
