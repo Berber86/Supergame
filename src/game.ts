@@ -12,11 +12,16 @@ import type {
   BossAction,
   BossState,
   Choice,
+  Companion,
+  CrewCrisisApproach,
+  CrewReaction,
+  DeferredDebt,
   DifficultyId,
   Effects,
   EquipmentSlot,
   GodId,
   MetaState,
+  Outcome,
   Progression,
   ResourceKey,
   Resources,
@@ -215,7 +220,7 @@ export function createRun(seed = Date.now(), legacy: string[] = [], difficulty: 
   }, { ...baseResources })
   const prophecy = { ...prophecies[Math.floor(seededRandom(seed + 404)() * prophecies.length)] }
   return {
-    version: 4,
+    version: 5,
     seed,
     difficulty,
     divineRescueUsed: false,
@@ -242,7 +247,11 @@ export function createRun(seed = Date.now(), legacy: string[] = [], difficulty: 
     ship: {
       name: 'Чёрная ласточка',
       upgrades: [],
-      companions: [startingCompanion],
+      companions: [{ ...startingCompanion, memories: [] }],
+      departedCompanions: [],
+      cohesion: 72,
+      mutinyRisk: 8,
+      lastCrisisDay: -10,
     },
     campaign: {
       act: 1,
@@ -254,6 +263,8 @@ export function createRun(seed = Date.now(), legacy: string[] = [], difficulty: 
       ending: null,
     },
     boss: null,
+    crewCrisis: null,
+    debts: [],
     legacyBoons: [...legacy],
     log: [
       {
@@ -406,11 +417,11 @@ function withDeathCheck(run: RunState): RunState {
       divineRescueUsed: true,
       resources: rescuedResources,
       resolution: run.phase === 'resolution' ? {
+        ...(run.resolution ?? { effects: {} }),
         success: false,
         title: 'Сова пролетела над мачтой',
         text: `${reason} Но Афина один раз переплела оборванную нить и вернула корабль из-за края гибели.`,
         omen: 'Следующего спасения не будет.',
-        effects: {},
       } : run.resolution,
       log: [
         { id: `rescue-${run.seed}-${run.day}`, day: run.day, title: 'Вмешательство Афины', text: 'Гибель отступила, но божественная милость исчерпана.', tone: 'good' as const },
@@ -433,11 +444,114 @@ function withDeathCheck(run: RunState): RunState {
   }
 }
 
+function createDeferredDebt(run: RunState, source: string, cost: Effects): DeferredDebt {
+  const effects: Effects = { ...cost }
+  effects.morale = (effects.morale ?? 0) - 3
+  const largestCost = (Object.entries(cost) as [ResourceKey, number][])
+    .filter(([, value]) => value < 0)
+    .sort((left, right) => left[1] - right[1])[0]?.[0]
+  const titles: Partial<Record<ResourceKey, string>> = {
+    health: 'Кровная цена',
+    food: 'Заём из общего котла',
+    water: 'Долг хранителю амфор',
+    morale: 'Нарушенная клятва',
+    crew: 'Обещание новых гребцов',
+    hull: 'Долг корабельщикам',
+  }
+  return {
+    id: `debt-${run.seed}-${run.day}-${run.nodeIndex}-${run.debts.length}`,
+    title: titles[largestCost ?? 'morale'] ?? 'Отложенная цена',
+    description: `Цена решения «${source}» будет взыскана через два дня пути вместе с потерей доверия команды.`,
+    source,
+    createdDay: run.day,
+    dueDay: run.day + 2,
+    effects,
+    status: 'pending',
+  }
+}
+
+function companionReactionText(
+  companion: Companion,
+  choice: Choice,
+  success: boolean,
+  crewLoss: number,
+  debtCreated: boolean,
+  loyaltyDelta: number,
+) {
+  if (crewLoss < 0) return `${companion.name} не забудет людей, заплативших за решение «${choice.title}».`
+  if (debtCreated) {
+    if (companion.temperament === 'trickster') return `${companion.name} признаёт ловкость хода, но уже прикидывает цену обещания.`
+    return `${companion.name} запоминает долг, который Одиссей переложил на команду.`
+  }
+  if (choice.skill === companion.skill && success) return `${companion.name} открыто поддерживает выбранный способ действий.`
+  if (!success) return `${companion.name} видит ошибку царя и становится осторожнее в своей верности.`
+  if (loyaltyDelta > 0) return `${companion.name} считает исход доказательством права Одиссея командовать.`
+  return `${companion.name} принимает исход, но не разделяет уверенности царя.`
+}
+
+function rememberChoice(
+  run: RunState,
+  choice: Choice,
+  outcome: Outcome,
+  success: boolean,
+  debtCreated: boolean,
+) {
+  const crewLoss = Math.min(0, outcome.effects.crew ?? 0)
+  const hullLoss = Math.min(0, outcome.effects.hull ?? 0)
+  const reactions: CrewReaction[] = []
+  const companions = run.ship.companions.map((companion) => {
+    let loyaltyDelta = success ? 1 : -2
+    if (choice.skill === companion.skill) loyaltyDelta += success ? 4 : -1
+    if (crewLoss < 0) loyaltyDelta -= Math.abs(crewLoss) * 3
+    if (hullLoss < 0 && companion.temperament === 'seafarer') loyaltyDelta -= 4
+    if (debtCreated) loyaltyDelta += companion.temperament === 'trickster' ? 1 : -5
+    if (choice.skill === 'valor' && companion.temperament === 'cautious') loyaltyDelta -= 2
+    if (choice.skill === 'cunning' && companion.temperament === 'trickster') loyaltyDelta += 2
+    loyaltyDelta = Math.max(-12, Math.min(8, loyaltyDelta))
+
+    const fearDelta = (success ? -1 : 3) + Math.abs(crewLoss) * 2 + (debtCreated ? 2 : 0)
+    const respectDelta = (success ? 2 : -1) + (choice.skill === companion.skill ? 2 : 0)
+    const reaction: CrewReaction['reaction'] = crewLoss < 0 || loyaltyDelta <= -5
+      ? 'fear'
+      : loyaltyDelta >= 4
+        ? 'admire'
+        : loyaltyDelta > 0
+          ? 'approve'
+          : 'disapprove'
+    const text = companionReactionText(companion, choice, success, crewLoss, debtCreated, loyaltyDelta)
+    reactions.push({ companionId: companion.id, name: companion.name, text, loyaltyDelta, reaction })
+    return {
+      ...companion,
+      loyalty: Math.max(0, Math.min(100, companion.loyalty + loyaltyDelta)),
+      fear: Math.max(0, Math.min(100, companion.fear + fearDelta)),
+      respect: Math.max(0, Math.min(100, companion.respect + respectDelta)),
+      memories: [
+        {
+          id: `memory-${run.seed}-${run.day}-${choice.id}-${companion.id}`,
+          day: run.day,
+          choiceId: choice.id,
+          title: choice.title,
+          reaction,
+          text,
+          loyaltyDelta,
+        },
+        ...companion.memories,
+      ].slice(0, 8),
+    }
+  })
+  const riskDelta = (success ? -2 : 5) + Math.abs(crewLoss) * 7 + (debtCreated ? 10 : 0)
+  const cohesionDelta = (success ? 2 : -4) + crewLoss * 4 + (debtCreated ? -6 : 0)
+  return { companions, reactions, riskDelta, cohesionDelta }
+}
+
 export function resolveChoice(run: RunState, choice: Choice): RunState {
   if (run.phase !== 'encounter') return run
   const affordable = canAfford(run.resources, choice.cost)
   const hasAffordableChoice = currentEncounter(run).choices.some((entry) => canAfford(run.resources, entry.cost))
   if (!affordable && hasAffordableChoice) return run
+  const debtCreated = !affordable && !hasAffordableChoice && choice.cost
+    ? createDeferredDebt(run, choice.title, choice.cost)
+    : undefined
   const chargedCost = affordable ? choice.cost : undefined
 
   const paidResources = applyEffects(run.resources, chargedCost ?? {})
@@ -450,6 +564,7 @@ export function resolveChoice(run: RunState, choice: Choice): RunState {
   const gained = gainExperience(run.progression, xp, coins)
   const divineChange = divineChangesForChoice(choice, success)
   const crewLoss = Math.min(0, outcome.effects.crew ?? 0)
+  const remembered = rememberChoice(run, choice, outcome, success, Boolean(debtCreated))
   const campaign = {
     ...run.campaign,
     gods: applyDivineChanges(run.campaign.gods, divineChange),
@@ -477,12 +592,21 @@ export function resolveChoice(run: RunState, choice: Choice): RunState {
     coins,
     levelUp: gained.levelUp,
     divineChange,
+    crewReactions: remembered.reactions,
+    debtCreated,
   }
   const next: RunState = {
     ...run,
     resources,
     progression: gained.progression,
     campaign,
+    ship: {
+      ...run.ship,
+      companions: remembered.companions,
+      cohesion: Math.max(0, Math.min(100, run.ship.cohesion + remembered.cohesionDelta)),
+      mutinyRisk: Math.max(0, Math.min(100, run.ship.mutinyRisk + remembered.riskDelta)),
+    },
+    debts: debtCreated ? [debtCreated, ...run.debts].slice(0, 16) : run.debts,
     phase: 'resolution',
     resolution,
     portNotice: null,
@@ -592,7 +716,11 @@ export function buyPortOffer(run: RunState, offerId: string): RunState {
     const purchased = {
       ...run,
       progression: { ...run.progression, coins: run.progression.coins - cost },
-      ship: { ...run.ship, companions: [...run.ship.companions, companion] },
+      ship: {
+        ...run.ship,
+        companions: [...run.ship.companions, { ...companion, memories: [] }],
+        cohesion: Math.min(100, run.ship.cohesion + 5),
+      },
     }
     return addPortLog(purchased, 'Новый спутник', `${companion.name}, ${companion.role.toLowerCase()}, присоединяется к походу.`)
   }
@@ -611,6 +739,29 @@ export function equipItem(run: RunState, itemId: string): RunState {
       equipment: { ...run.progression.equipment, [item.slot]: item.id },
     },
     portNotice: `${item.name} экипирован.`,
+  }
+}
+
+export function settleDebt(run: RunState, debtId: string): RunState {
+  const debt = run.debts.find((entry) => entry.id === debtId && entry.status === 'pending')
+  if (!debt) return run
+  if (!canAfford(run.resources, debt.effects)) {
+    return { ...run, portNotice: 'Сейчас выплата этого долга погубит экспедицию. Нужны дополнительные ресурсы.' }
+  }
+  return {
+    ...run,
+    resources: applyEffects(run.resources, debt.effects),
+    debts: run.debts.map((entry) => entry.id === debt.id ? { ...entry, status: 'paid' as const } : entry),
+    ship: {
+      ...run.ship,
+      cohesion: Math.min(100, run.ship.cohesion + 4),
+      mutinyRisk: Math.max(0, run.ship.mutinyRisk - 6),
+    },
+    portNotice: `Долг «${debt.title}» выплачен до срока.`,
+    log: [
+      { id: `debt-paid-${debt.id}`, day: run.day, title: 'Долг выплачен', text: debt.description, tone: 'good' as const },
+      ...run.log,
+    ].slice(0, 32),
   }
 }
 
@@ -658,6 +809,9 @@ export function resolveBossAction(run: RunState, action: BossAction): RunState {
   const affordable = canAfford(run.resources, action.cost)
   const hasAffordableAction = definition.actions.some((entry) => canAfford(run.resources, entry.cost))
   if (!affordable && hasAffordableAction) return run
+  const debtCreated = !affordable && !hasAffordableAction && action.cost
+    ? createDeferredDebt(run, action.title, action.cost)
+    : undefined
   const chargedCost = affordable ? action.cost : undefined
   const intent = definition.intents[run.boss.intentIndex % definition.intents.length]
   const success = bossRoll(run, action) <= bossActionChance(run, action)
@@ -673,6 +827,24 @@ export function resolveBossAction(run: RunState, action: BossAction): RunState {
   const resultText = success
     ? `${action.title}: замысел удался. ${definition.name} теряет ${damage} стойкости, а удар «${intent.title}» ослаблен.`
     : `${action.title}: мойры отвернулись. Нанесено лишь ${damage} урона; ${intent.title.toLowerCase()} обрушивается в полную силу.`
+  const combatChoice: Choice = {
+    id: action.id,
+    title: action.title,
+    description: action.description,
+    skill: action.skill,
+    difficulty: action.difficulty,
+    cost: action.cost,
+    success: { text: resultText, effects: retaliation },
+    failure: { text: resultText, effects: retaliation },
+  }
+  const remembered = rememberChoice(run, combatChoice, { text: resultText, effects: retaliation }, success, Boolean(debtCreated))
+  const shipAfterRound = {
+    ...run.ship,
+    companions: remembered.companions,
+    cohesion: Math.max(0, Math.min(100, run.ship.cohesion + remembered.cohesionDelta)),
+    mutinyRisk: Math.max(0, Math.min(100, run.ship.mutinyRisk + remembered.riskDelta)),
+  }
+  const debtsAfterRound = debtCreated ? [debtCreated, ...run.debts].slice(0, 16) : run.debts
 
   if (remainingHealth <= 0) {
     const xp = Math.round(definition.rewardXp * (run.legacyBoons.includes('black-sail-legend') ? 1.2 : 1))
@@ -682,6 +854,8 @@ export function resolveBossAction(run: RunState, action: BossAction): RunState {
       ...run,
       resources,
       progression: gained.progression,
+      ship: shipAfterRound,
+      debts: debtsAfterRound,
       campaign: {
         ...run.campaign,
         gods: applyDivineChanges(run.campaign.gods, divineChange),
@@ -700,6 +874,8 @@ export function resolveBossAction(run: RunState, action: BossAction): RunState {
         coins: definition.rewardCoins,
         levelUp: gained.levelUp,
         divineChange,
+        crewReactions: remembered.reactions,
+        debtCreated,
       },
       log: [
         { id: `boss-win-${run.seed}-${definition.id}`, day: run.day, title: `${definition.name} повержена`, text: resultText, tone: 'good' as const },
@@ -712,6 +888,8 @@ export function resolveBossAction(run: RunState, action: BossAction): RunState {
   const fighting: RunState = {
     ...run,
     resources,
+    ship: shipAfterRound,
+    debts: debtsAfterRound,
     boss: {
       ...run.boss,
       health: remainingHealth,
@@ -750,32 +928,181 @@ function chooseEnding(run: RunState, fulfilled: boolean) {
   return endings.hollow
 }
 
+const crisisApproaches: Record<CrewCrisisApproach, { skill: Skill; difficulty: number; title: string }> = {
+  council: { skill: 'will', difficulty: 5, title: 'Созвать совет у мачты' },
+  bribe: { skill: 'cunning', difficulty: 4, title: 'Купить верность долями добычи' },
+  punish: { skill: 'valor', difficulty: 5, title: 'Показательно наказать зачинщиков' },
+}
+
+export function crewCrisisChance(run: RunState, approach: CrewCrisisApproach) {
+  const definition = crisisApproaches[approach]
+  const chance = 0.44
+    + effectiveSkill(run, definition.skill) * 0.07
+    - definition.difficulty * 0.07
+    + (run.ship.cohesion - 50) / 500
+    + difficultyDefinition(run.difficulty).chanceModifier
+  return Math.max(0.12, Math.min(0.9, chance))
+}
+
+export function resolveCrewCrisis(run: RunState, approach: CrewCrisisApproach): RunState {
+  if (run.phase !== 'crew-crisis' || !run.crewCrisis) return run
+  if (approach === 'bribe' && run.progression.coins < 15) return run
+  if (approach === 'punish' && run.resources.crew <= 2) return run
+  const definition = crisisApproaches[approach]
+  const roll = seededRandom(run.seed + run.day * 1877 + approach.length * 97)()
+  const success = roll <= crewCrisisChance(run, approach)
+  const leaderId = run.crewCrisis.leaderId
+  const leader = run.ship.companions.find((companion) => companion.id === leaderId) ?? run.ship.companions[0]
+  const coins = run.progression.coins - (approach === 'bribe' ? 15 : 0)
+  const baseEffects: Effects = approach === 'punish' ? { crew: -1, morale: -4 } : {}
+  const failureEffects: Effects = success ? {} : approach === 'punish' ? { crew: -1, morale: -10 } : { morale: -9 }
+  const effects = mergeEffects(baseEffects, failureEffects)
+  const resources = applyEffects(run.resources, effects)
+  const loyaltyDelta = success
+    ? approach === 'council' ? 12 : approach === 'bribe' ? 7 : -4
+    : approach === 'punish' ? -14 : -9
+  const reaction: CrewReaction = {
+    companionId: leader.id,
+    name: leader.name,
+    loyaltyDelta,
+    reaction: success && approach !== 'punish' ? 'approve' : approach === 'punish' ? 'fear' : 'disapprove',
+    text: success
+      ? approach === 'council'
+        ? `${leader.name} получает право высказать претензии и признаёт ответ царя.`
+        : approach === 'bribe'
+          ? `${leader.name} принимает новую долю добычи, хотя доверие остаётся купленным.`
+          : `${leader.name} отступает перед силой, но запоминает унижение.`
+      : `${leader.name} считает ответ Одиссея новым доказательством того, что царю нельзя доверять.`,
+  }
+  let companions = run.ship.companions.map((companion) => companion.id === leader.id ? {
+    ...companion,
+    loyalty: Math.max(0, Math.min(100, companion.loyalty + loyaltyDelta)),
+    fear: Math.max(0, Math.min(100, companion.fear + (approach === 'punish' ? 15 : success ? -2 : 6))),
+    respect: Math.max(0, Math.min(100, companion.respect + (success ? 5 : -5))),
+    memories: [{
+      id: `crisis-memory-${run.seed}-${run.day}-${companion.id}`,
+      day: run.day,
+      choiceId: `crisis-${approach}`,
+      title: definition.title,
+      reaction: reaction.reaction,
+      text: reaction.text,
+      loyaltyDelta,
+    }, ...companion.memories].slice(0, 8),
+  } : companion)
+  const departing = !success && (leader.loyalty + loyaltyDelta <= 20)
+  const departedCompanions = departing
+    ? [...run.ship.departedCompanions, ...companions.filter((companion) => companion.id === leader.id)]
+    : run.ship.departedCompanions
+  if (departing) companions = companions.filter((companion) => companion.id !== leader.id)
+  const riskChange = success ? approach === 'council' ? -45 : -32 : 18
+  const cohesionChange = success ? approach === 'council' ? 18 : approach === 'bribe' ? 8 : -5 : -14
+  const text = success
+    ? `${definition.title}: кризис на время улажен.${departing ? ` ${leader.name} всё равно покидает команду.` : ''}`
+    : `${definition.title}: зачинщики не приняли ответ.${departing ? ` ${leader.name} отказывается дальше служить Одиссею.` : ''}`
+  const next: RunState = {
+    ...run,
+    resources,
+    progression: { ...run.progression, coins },
+    ship: {
+      ...run.ship,
+      companions,
+      departedCompanions,
+      cohesion: Math.max(0, Math.min(100, run.ship.cohesion + cohesionChange)),
+      mutinyRisk: Math.max(0, Math.min(100, run.ship.mutinyRisk + riskChange)),
+      lastCrisisDay: run.day,
+    },
+    crewCrisis: null,
+    phase: 'resolution',
+    resolution: {
+      success,
+      title: success ? 'Команда снова берётся за вёсла' : 'Раскол на нижней палубе',
+      text,
+      effects,
+      coins: approach === 'bribe' ? -15 : undefined,
+      crewReactions: [reaction],
+    },
+    log: [
+      { id: `crisis-${run.seed}-${run.day}`, day: run.day, title: 'Кризис команды', text, tone: success ? 'good' as const : 'bad' as const },
+      ...run.log,
+    ].slice(0, 32),
+  }
+  return withDeathCheck(next)
+}
+
+function collectDueDebts(run: RunState, day: number, resources: Resources) {
+  const due = run.debts.filter((debt) => debt.status === 'pending' && debt.dueDay <= day)
+  if (!due.length) return { resources, debts: run.debts, collected: [] as DeferredDebt[] }
+  let nextResources = resources
+  due.forEach((debt) => { nextResources = applyEffects(nextResources, debt.effects) })
+  const dueIds = new Set(due.map((debt) => debt.id))
+  return {
+    resources: nextResources,
+    debts: run.debts.map((debt) => dueIds.has(debt.id) ? { ...debt, status: 'collected' as const } : debt),
+    collected: due,
+  }
+}
+
 export function continueVoyage(run: RunState, stance: TravelStance = 'bold'): RunState {
   if (run.phase !== 'resolution' && run.phase !== 'port') return run
-  const nextIndex = run.nodeIndex + 1
-  if (nextIndex >= run.route.length - 1) {
-    const fulfilled = prophecyFulfilled(run)
-    const ending = chooseEnding(run, fulfilled)
-    const rankReward = ending.rank === 'божественный' ? 25 : ending.rank === 'героический' ? 16 : ending.rank === 'тайный' ? 12 : 5
-    const kleosEarned = Math.round((45 + run.campaign.bossesDefeated.length * 8 + (fulfilled ? 20 : 0) + rankReward) * difficultyDefinition(run.difficulty).kleosMultiplier)
+  if (
+    run.phase === 'resolution'
+    && run.ship.mutinyRisk >= 65
+    && run.day - run.ship.lastCrisisDay >= 3
+    && run.ship.companions.length > 0
+  ) {
+    const leader = [...run.ship.companions].sort((left, right) => left.loyalty - right.loyalty)[0]
     return {
       ...run,
-      nodeIndex: run.route.length - 1,
-      day: run.day + 2,
+      phase: 'crew-crisis',
+      crewCrisis: {
+        leaderId: leader.id,
+        title: `${leader.name} требует ответа`,
+        description: `Верность команды истощена. ${leader.name} собрал недовольных у мачты и требует изменить путь или власть на корабле.`,
+      },
+      resolution: null,
+    }
+  }
+  const nextIndex = run.nodeIndex + 1
+  if (nextIndex >= run.route.length - 1) {
+    const homeDay = run.day + 2
+    const debtCollection = collectDueDebts(run, homeDay, run.resources)
+    const beforeHome: RunState = {
+      ...run,
+      day: homeDay,
+      resources: debtCollection.resources,
+      debts: debtCollection.debts,
+      ship: {
+        ...run.ship,
+        cohesion: Math.max(0, run.ship.cohesion - debtCollection.collected.length * 6),
+        mutinyRisk: Math.min(100, run.ship.mutinyRisk + debtCollection.collected.length * 11),
+      },
+      campaign: {
+        ...run.campaign,
+        doom: Math.min(100, run.campaign.doom + debtCollection.collected.length * 4),
+      },
+    }
+    if (deathReason(beforeHome.resources)) return withDeathCheck(beforeHome)
+    const fulfilled = prophecyFulfilled(beforeHome)
+    const ending = chooseEnding(beforeHome, fulfilled)
+    const rankReward = ending.rank === 'божественный' ? 25 : ending.rank === 'героический' ? 16 : ending.rank === 'тайный' ? 12 : 5
+    const kleosEarned = Math.round((45 + beforeHome.campaign.bossesDefeated.length * 8 + (fulfilled ? 20 : 0) + rankReward) * difficultyDefinition(beforeHome.difficulty).kleosMultiplier)
+    return {
+      ...beforeHome,
+      nodeIndex: beforeHome.route.length - 1,
       phase: 'home',
       boss: null,
       kleosEarned,
       campaign: {
-        ...run.campaign,
+        ...beforeHome.campaign,
         act: 3,
-        prophecy: { ...run.campaign.prophecy, fulfilled },
+        prophecy: { ...beforeHome.campaign.prophecy, fulfilled },
         ending,
       },
       resolution: {
         success: true,
         title: ending.title,
         text: ending.text,
-        omen: fulfilled ? `Пророчество «${run.campaign.prophecy.title}» исполнено.` : 'Пророчество осталось незавершённым и последует за следующей песнью.',
+        omen: fulfilled ? `Пророчество «${beforeHome.campaign.prophecy.title}» исполнено.` : 'Пророчество осталось незавершённым и последует за следующей песнью.',
         effects: {},
       },
     }
@@ -815,7 +1142,37 @@ export function continueVoyage(run: RunState, stance: TravelStance = 'bold'): Ru
   if (nextNode.biome === 'sacred') attrition.morale = (attrition.morale ?? 0) + 2
   if (run.resources.crew < 10) attrition.morale = (attrition.morale ?? 0) - 3
 
-  const resources = applyEffects(run.resources, attrition)
+  const arrivalDay = run.day + travelDays
+  let resources = applyEffects(run.resources, attrition)
+  const debtCollection = collectDueDebts(run, arrivalDay, resources)
+  resources = debtCollection.resources
+  let ship = {
+    ...run.ship,
+    cohesion: Math.max(0, run.ship.cohesion - debtCollection.collected.length * 6),
+    mutinyRisk: Math.min(100, run.ship.mutinyRisk + debtCollection.collected.length * 11),
+  }
+  let progression = run.progression
+  if (debtCollection.collected.length) {
+    travelText += ` Настал срок ${debtCollection.collected.length} ${debtCollection.collected.length === 1 ? 'долга' : 'долгов'}; команда взыскала обещанную цену.`
+  }
+  if (nextNode.kind === 'port') {
+    const leaving = ship.companions.filter((companion) => companion.loyalty <= 18)
+    if (leaving.length) {
+      const leavingIds = new Set(leaving.map((companion) => companion.id))
+      ship = {
+        ...ship,
+        companions: ship.companions.filter((companion) => !leavingIds.has(companion.id)),
+        departedCompanions: [...ship.departedCompanions, ...leaving],
+        cohesion: Math.max(0, ship.cohesion - leaving.length * 8),
+      }
+      const sinonLeaves = leaving.some((companion) => companion.id === 'sinon')
+      progression = sinonLeaves
+        ? { ...progression, coins: Math.max(0, progression.coins - 12) }
+        : progression
+      resources = applyEffects(resources, { morale: -leaving.length * 5 })
+      travelText += ` ${leaving.map((companion) => companion.name).join(', ')} ${leaving.length === 1 ? 'покидает' : 'покидают'} корабль в гавани.${sinonLeaves ? ' Вместе с Синоном исчезает часть драхм.' : ''}`
+    }
+  }
   const nextAct = actForNode(nextIndex)
   const actChanged = nextAct !== run.campaign.act
   const nextBossDefinition = nextNode.bossId ? bosses.find((boss) => boss.id === nextNode.bossId) : undefined
@@ -835,9 +1192,16 @@ export function continueVoyage(run: RunState, stance: TravelStance = 'bold'): Ru
   const next: RunState = {
     ...run,
     nodeIndex: nextIndex,
-    day: run.day + travelDays,
+    day: arrivalDay,
     resources,
-    campaign: { ...run.campaign, act: nextAct },
+    progression,
+    ship,
+    debts: debtCollection.debts,
+    campaign: {
+      ...run.campaign,
+      act: nextAct,
+      doom: Math.min(100, run.campaign.doom + debtCollection.collected.length * 4),
+    },
     boss,
     phase,
     resolution: null,

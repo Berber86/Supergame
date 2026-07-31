@@ -30,7 +30,10 @@ export function parseBackup(text: string): BackupParseResult {
       return { ok: false, message: 'Коллекции резервной копии имеют неверный формат.' }
     }
     if (candidate.run !== undefined && candidate.run !== null) {
-      if (typeof candidate.run !== 'object' || Array.isArray(candidate.run) || (candidate.run as Record<string, unknown>).version !== 4) {
+      const runVersion = typeof candidate.run === 'object' && !Array.isArray(candidate.run)
+        ? (candidate.run as Record<string, unknown>).version
+        : undefined
+      if (runVersion !== 4 && runVersion !== 5) {
         return { ok: false, message: 'Экспедиция создана несовместимой версией игры.' }
       }
     }

@@ -10,6 +10,7 @@ import {
   currentEncounter,
   resolveBossAction,
   resolveChoice,
+  resolveCrewCrisis,
 } from './game'
 import type { DifficultyId, RunState } from './types'
 
@@ -61,6 +62,9 @@ export function simulateVoyage(seed: number, difficulty: DifficultyId): Simulati
           return rightValue - leftValue
         })[0]
       run = resolveBossAction(run, action)
+    } else if (run.phase === 'crew-crisis') {
+      const approach = run.progression.coins >= 15 ? 'bribe' : 'council'
+      run = resolveCrewCrisis(run, approach)
     } else if (run.phase === 'port') {
       run = continueVoyage(servicePort(run), difficulty === 'wrath' ? 'cautious' : 'bold')
     } else if (run.phase === 'resolution') {

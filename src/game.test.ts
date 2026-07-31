@@ -16,6 +16,7 @@ import {
   purchaseLegacy,
   resolveBossAction,
   resolveChoice,
+  resolveCrewCrisis,
   upgradeSkill,
 } from './game'
 
@@ -65,6 +66,8 @@ describe('procedural world and voyage', () => {
           .filter((entry) => canAfford(run.resources, entry.cost))
           .sort((left, right) => bossActionChance(run, right) - bossActionChance(run, left))[0]
         run = resolveBossAction(run, action)
+      } else if (run.phase === 'crew-crisis') {
+        run = resolveCrewCrisis(run, 'council')
       } else if (run.phase === 'resolution' || run.phase === 'port') {
         if (run.phase === 'port') sawPort = true
         run = continueVoyage(run, turns % 2 === 0 ? 'bold' : 'cautious')

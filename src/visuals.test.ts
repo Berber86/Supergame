@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeMeta } from './campaign'
 import { encounters } from './data'
-import { bossScenes, encounterScenes, endingScenes, sceneForEncounter } from './visuals'
+import { allCompanionDefinitions } from './progression'
+import { bossScenes, encounterScenes, endingScenes, sceneForEncounter, uiScenes } from './visuals'
 
 describe('illustrated narrative scenes', () => {
   it('connects every specific visual scene to an existing encounter', () => {
@@ -34,6 +35,18 @@ describe('illustrated narrative scenes', () => {
     expect(Object.keys(endingScenes).sort()).toEqual(['divine', 'hero', 'hollow', 'shadow'])
     expect(new Set(Object.values(endingScenes).map((scene) => scene.src)).size).toBe(4)
     Object.values(endingScenes).forEach((scene) => expect(scene.src).toMatch(/^\/art\/ending-.+\.jpg$/))
+  })
+
+  it('provides generated guidance and offline scenes for version 0.8', () => {
+    expect(Object.keys(uiScenes)).toEqual(['accessibility', 'offline'])
+    expect(new Set(Object.values(uiScenes).map((scene) => scene.src)).size).toBe(2)
+    Object.values(uiScenes).forEach((scene) => expect(scene.src).toMatch(/\/art\/ui-.+\.jpg$/))
+  })
+
+  it('gives every named companion an original portrait', () => {
+    expect(allCompanionDefinitions).toHaveLength(4)
+    expect(new Set(allCompanionDefinitions.map((companion) => companion.portrait)).size).toBe(4)
+    allCompanionDefinitions.forEach((companion) => expect(companion.portrait).toMatch(/^\/art\/companion-.+\.jpg$/))
   })
 })
 

@@ -1,3 +1,4 @@
+import { assetPath } from './assets'
 import type {
   Biome,
   Companion,
@@ -165,6 +166,11 @@ export const recruitableCompanions: Companion[] = [
     role: 'Кормчий аргонавтов',
     trait: 'Читает течения по цвету пены',
     loyalty: 62,
+    fear: 18,
+    respect: 58,
+    temperament: 'seafarer',
+    portrait: assetPath('art/companion-tiphys.jpg'),
+    memories: [],
     skill: 'seamanship',
     bonus: 1,
   },
@@ -174,6 +180,11 @@ export const recruitableCompanions: Companion[] = [
     role: 'Лжец из Трои',
     trait: 'Узнаёт ложь, потому что сам живёт ею',
     loyalty: 41,
+    fear: 24,
+    respect: 46,
+    temperament: 'trickster',
+    portrait: assetPath('art/companion-sinon.jpg'),
+    memories: [],
     skill: 'cunning',
     bonus: 1,
   },
@@ -183,6 +194,11 @@ export const recruitableCompanions: Companion[] = [
     role: 'Слепой прорицатель',
     trait: 'Слышит мойр во сне',
     loyalty: 55,
+    fear: 12,
+    respect: 64,
+    temperament: 'prophet',
+    portrait: assetPath('art/companion-idmon.jpg'),
+    memories: [],
     skill: 'will',
     bonus: 1,
   },
@@ -194,8 +210,19 @@ export const startingCompanion: Companion = {
   role: 'Заместитель царя',
   trait: 'Сдерживает панику среди гребцов',
   loyalty: 68,
+  fear: 22,
+  respect: 55,
+  temperament: 'cautious',
+  portrait: assetPath('art/companion-eurylochus.jpg'),
+  memories: [],
   skill: 'valor',
   bonus: 0,
+}
+
+export const allCompanionDefinitions = [startingCompanion, ...recruitableCompanions]
+
+export function companionDefinition(id: string) {
+  return allCompanionDefinitions.find((companion) => companion.id === id)
 }
 
 export const equipmentSlotLabels = {

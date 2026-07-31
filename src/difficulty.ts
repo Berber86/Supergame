@@ -1,3 +1,4 @@
+import { assetPath } from './assets'
 import type { DifficultyId } from './types'
 
 export interface DifficultyDefinition {
@@ -22,7 +23,7 @@ export const difficulties: DifficultyDefinition[] = [
     name: 'Сказание',
     subtitle: 'История прежде наказания',
     description: 'Больше припасов, мягче проверки и одно вмешательство Афины, способное спасти погибающий поход.',
-    art: '/art/difficulty-tale.jpg',
+    art: assetPath('art/difficulty-tale.jpg'),
     chanceModifier: 0.09,
     resourceMultiplier: 1.18,
     travelMultiplier: 0.78,
@@ -37,7 +38,7 @@ export const difficulties: DifficultyDefinition[] = [
     name: 'Одиссея',
     subtitle: 'Каноническое испытание',
     description: 'Исходный баланс сурового путешествия. Ресурсы, боги и ошибки одинаково важны.',
-    art: '/art/difficulty-odyssey.jpg',
+    art: assetPath('art/difficulty-odyssey.jpg'),
     chanceModifier: 0,
     resourceMultiplier: 1,
     travelMultiplier: 1,
@@ -52,7 +53,7 @@ export const difficulties: DifficultyDefinition[] = [
     name: 'Гнев богов',
     subtitle: 'Для тех, кто бросает вызов морю',
     description: 'Меньше припасов, сильнее стражи, чаще штормы и более жестокие проверки. Слава за риск значительно выше.',
-    art: '/art/difficulty-wrath.jpg',
+    art: assetPath('art/difficulty-wrath.jpg'),
     chanceModifier: -0.065,
     resourceMultiplier: 0.84,
     travelMultiplier: 1.22,

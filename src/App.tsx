@@ -47,7 +47,11 @@ import {
   X,
   Zap,
 } from 'lucide-react'
+import { assetPath } from './assets'
 import { acts, bosses, endings as endingDefinitions, godInfo, legacyBoons, normalizeMeta } from './campaign'
+import { Dialog } from './components/Dialog'
+import { TabPanel, Tabs, type TabOption } from './components/Tabs'
+import { Toggle } from './components/Toggle'
 import { encounters, skillLabels } from './data'
 import { difficulties, difficultyDefinition } from './difficulty'
 import {
@@ -55,6 +59,7 @@ import {
   RESOURCE_MAX,
   bossActionChance,
   buyPortOffer,
+  crewCrisisChance,
   canAfford,
   choiceChance,
   completedDistance,
@@ -71,11 +76,14 @@ import {
   purchaseLegacy,
   resolveBossAction,
   resolveChoice,
+  resolveCrewCrisis,
   routeDistance,
+  settleDebt,
   upgradeSkill,
 } from './game'
 import {
   biomeInfo,
+  companionDefinition,
   equipment,
   equipmentSlotLabels,
   shipUpgrades,
@@ -84,6 +92,7 @@ import { achievements, chronicleStats, parseBackup, unlockAchievements, voyageRe
 import type {
   BossAction,
   Choice,
+  CrewCrisisApproach,
   DifficultyId,
   EquipmentSlot,
   GodId,
@@ -94,10 +103,11 @@ import type {
   TravelStance,
   UiPreferences,
 } from './types'
-import { bossScenes, endingScenes, sceneForEncounter } from './visuals'
+import { bossScenes, defaultScene, endingScenes, sceneForEncounter, uiScenes } from './visuals'
 
-const SAVE_KEY = 'odyssey-shadow-save-v4'
-const LEGACY_SAVE_KEY = 'odyssey-shadow-save-v3'
+const SAVE_KEY = 'odyssey-shadow-save-v5'
+const LEGACY_SAVE_KEY = 'odyssey-shadow-save-v4'
+const THIRD_SAVE_KEY = 'odyssey-shadow-save-v3'
 const SECOND_SAVE_KEY = 'odyssey-shadow-save-v2'
 const FIRST_SAVE_KEY = 'odyssey-shadow-save-v1'
 const META_KEY = 'odyssey-shadow-meta-v1'
@@ -137,15 +147,21 @@ function readStorage<T>(key: string, fallback: T): T {
   }
 }
 
-function loadSavedRun() {
-  const current = readStorage<RunState | null>(SAVE_KEY, null)
-  if (current?.version === 4) return current
-
-  const legacy = readStorage<RunState | null>(LEGACY_SAVE_KEY, null)
-    ?? readStorage<RunState | null>(SECOND_SAVE_KEY, null)
-    ?? readStorage<RunState | null>(FIRST_SAVE_KEY, null)
-  if (!legacy) return null
+function migrateSavedRun(legacy: RunState) {
   const migrated = createRun(legacy.seed, legacy.legacyBoons ?? [], legacy.difficulty ?? 'odyssey')
+  const legacyShip = legacy.ship
+  const normalizeCompanion = (companion: RunState['ship']['companions'][number]) => {
+    const definition = companionDefinition(companion.id)
+    return {
+      ...(definition ?? migrated.ship.companions[0]),
+      ...companion,
+      fear: companion.fear ?? definition?.fear ?? 20,
+      respect: companion.respect ?? definition?.respect ?? 50,
+      temperament: companion.temperament ?? definition?.temperament ?? 'cautious' as const,
+      portrait: companion.portrait ?? definition?.portrait ?? assetPath('art/companion-eurylochus.jpg'),
+      memories: companion.memories ?? [],
+    }
+  }
   return {
     ...migrated,
     day: legacy.day,
@@ -156,9 +172,29 @@ function loadSavedRun() {
       ...migrated.progression,
       coins: migrated.progression.coins + legacy.nodeIndex * 4,
     },
-    ship: legacy.ship ?? migrated.ship,
-    portNotice: 'Путь из прошлой версии перенесён в трёхактную кампанию.',
+    ship: legacyShip ? {
+      ...migrated.ship,
+      ...legacyShip,
+      companions: (legacyShip.companions ?? []).map(normalizeCompanion),
+      departedCompanions: (legacyShip.departedCompanions ?? []).map(normalizeCompanion),
+      cohesion: legacyShip.cohesion ?? 72,
+      mutinyRisk: legacyShip.mutinyRisk ?? 8,
+      lastCrisisDay: legacyShip.lastCrisisDay ?? -10,
+    } : migrated.ship,
+    debts: legacy.debts ?? [],
+    crewCrisis: null,
+    portNotice: 'Старая песнь перенесена в систему памяти команды.',
   }
+}
+
+function loadSavedRun() {
+  const current = readStorage<RunState | null>(SAVE_KEY, null)
+  if (current?.version === 5) return current
+  const legacy = readStorage<RunState | null>(LEGACY_SAVE_KEY, null)
+    ?? readStorage<RunState | null>(THIRD_SAVE_KEY, null)
+    ?? readStorage<RunState | null>(SECOND_SAVE_KEY, null)
+    ?? readStorage<RunState | null>(FIRST_SAVE_KEY, null)
+  return legacy ? migrateSavedRun(legacy) : null
 }
 
 function App() {
@@ -229,11 +265,14 @@ function App() {
       ...DEFAULT_PREFERENCES,
       ...parsed.payload.preferences,
     }
+    const restoredRun = parsed.payload.run
+      ? parsed.payload.run.version === 5 ? parsed.payload.run : migrateSavedRun(parsed.payload.run)
+      : null
     setMeta(restoredMeta)
-    setRun(parsed.payload.run ?? null)
+    setRun(restoredRun)
     setPreferences(restoredPreferences)
     setMobileView('story')
-    if (!parsed.payload.run) setScreen('menu')
+    if (!restoredRun) setScreen('menu')
     return `Восстановлено походов: ${restoredMeta.voyages}; записей кодекса: ${restoredMeta.codex.length}.`
   }
 
@@ -343,7 +382,12 @@ function App() {
           run={run}
           onUpgrade={(skill) => commitRun(upgradeSkill(run, skill))}
         />
-        {run.phase === 'boss' ? (
+        {run.phase === 'crew-crisis' ? (
+          <CrewCrisisPanel
+            run={run}
+            onResolve={(approach) => commitRun(resolveCrewCrisis(run, approach))}
+          />
+        ) : run.phase === 'boss' ? (
           <BossPanel
             run={run}
             onAction={(action) => commitRun(resolveBossAction(run, action))}
@@ -365,6 +409,7 @@ function App() {
           run={run}
           meta={meta}
           onEquip={(itemId) => commitRun(equipItem(run, itemId))}
+          onPayDebt={(debtId) => commitRun(settleDebt(run, debtId))}
         />
       </main>
       <nav className="mobile-dock" aria-label="Разделы игры">
@@ -375,12 +420,12 @@ function App() {
           <span><Shield size={11} /> {run.resources.hull}%</span>
         </div>
         <div className="mobile-tabs">
-          <button className={mobileView === 'story' ? 'active' : ''} onClick={() => setMobileView('story')}><ScrollText size={17} /><span>Сюжет</span></button>
-          <button className={mobileView === 'hero' ? 'active' : ''} onClick={() => setMobileView('hero')}><Crown size={17} /><span>Герой</span></button>
-          <button className={mobileView === 'world' ? 'active' : ''} onClick={() => setMobileView('world')}><Map size={17} /><span>Мир</span></button>
+          <button aria-pressed={mobileView === 'story'} className={mobileView === 'story' ? 'active' : ''} onClick={() => setMobileView('story')}><ScrollText size={17} aria-hidden="true" /><span>Сюжет</span></button>
+          <button aria-pressed={mobileView === 'hero'} className={mobileView === 'hero' ? 'active' : ''} onClick={() => setMobileView('hero')}><Crown size={17} aria-hidden="true" /><span>Герой</span></button>
+          <button aria-pressed={mobileView === 'world'} className={mobileView === 'world' ? 'active' : ''} onClick={() => setMobileView('world')}><Map size={17} aria-hidden="true" /><span>Мир</span></button>
         </div>
       </nav>
-      {(run.phase === 'dead' || run.phase === 'home') && (
+      {(run.phase === 'dead' || run.phase === 'home') && !showDifficulty && (
         <EndingOverlay
           run={run}
           meta={meta}
@@ -490,7 +535,7 @@ function TitleScreen({ savedRun, meta, onContinue, onNew, onRules, onLegacy, onA
       </div>
       <div className="title-footer">
         <span>Кампания · Три акта · Четыре финала</span>
-        <span className="title-seed">ВЕРСИЯ 0.6.0 · ПОХОДОВ: {String(meta.voyages).padStart(2, '0')}</span>
+        <span className="title-seed">ВЕРСИЯ 0.8.0 · ПОХОДОВ: {String(meta.voyages).padStart(2, '0')}</span>
       </div>
     </div>
   )
@@ -762,13 +807,17 @@ function EncounterPanel({ run, onChoose, onContinue }: EncounterPanelProps) {
         </div>
       )}
       {showScene && (
-        <div className="scene-lightbox" onClick={() => setShowScene(false)}>
-          <div className="scene-lightbox-card" onClick={(event) => event.stopPropagation()}>
-            <button className="scene-close" onClick={() => setShowScene(false)}><X size={18} /></button>
-            <img src={scene.src} alt={`${encounter.title}: ${scene.caption}`} />
-            <div><span className="eyebrow">ОТКРЫТО В КОДЕКСЕ</span><h2>{encounter.title}</h2><p>{scene.caption}</p></div>
-          </div>
-        </div>
+        <Dialog
+          className="scene-lightbox-card"
+          backdropClassName="scene-lightbox"
+          titleId={`scene-title-${encounter.id}`}
+          descriptionId={`scene-caption-${encounter.id}`}
+          closeLabel="Закрыть иллюстрацию"
+          onClose={() => setShowScene(false)}
+        >
+          <img src={scene.src} alt={`${encounter.title}: ${scene.caption}`} />
+          <div><span className="eyebrow">ОТКРЫТО В КОДЕКСЕ</span><h2 id={`scene-title-${encounter.id}`}>{encounter.title}</h2><p id={`scene-caption-${encounter.id}`}>{scene.caption}</p></div>
+        </Dialog>
       )}
     </section>
   )
@@ -805,7 +854,7 @@ function ChoiceButton({
             const CostIcon = resourceConfig[cost.key].Icon
             return <span className="choice-cost" key={cost.key}><CostIcon size={12} /> {cost.value}</span>
           })}
-          {desperate && <em>Последний выход · цена отменена</em>}
+          {desperate && <em>Последний выход · цена записана в долг</em>}
           {!affordable && hasAffordableChoice && <em>Недостаточно ресурсов</em>}
         </span>
       </span>
@@ -847,6 +896,17 @@ function ResolutionCard({ run, onContinue }: { run: RunState; onContinue: (stanc
           ))}
           {resolution.levelUp && <span className="level-up-chip"><Sparkles size={13} /> Новый уровень</span>}
         </div>
+        {resolution.debtCreated && (
+          <div className="resolution-debt"><History size={13} /><span><small>ЦЕНА ОТЛОЖЕНА ДО ДНЯ {resolution.debtCreated.dueDay}</small><b>{resolution.debtCreated.title}</b></span></div>
+        )}
+        {resolution.crewReactions && resolution.crewReactions.length > 0 && (
+          <div className="resolution-reactions">
+            <small>КОМАНДА ЗАПОМНИТ</small>
+            {resolution.crewReactions.slice(0, 2).map((reaction) => (
+              <p className={reaction.loyaltyDelta >= 0 ? 'positive' : 'negative'} key={reaction.companionId}><Users size={11} /><span><b>{reaction.name} {reaction.loyaltyDelta >= 0 ? '+' : ''}{reaction.loyaltyDelta}</b>{reaction.text}</span></p>
+            ))}
+          </div>
+        )}
       </div>
       <div className="travel-options">
         <small>КУРС: {nextNode?.name ?? 'Итака'}</small>
@@ -860,6 +920,51 @@ function ResolutionCard({ run, onContinue }: { run: RunState; onContinue: (stanc
         </button>
       </div>
     </div>
+  )
+}
+
+function CrewCrisisPanel({
+  run,
+  onResolve,
+}: {
+  run: RunState
+  onResolve: (approach: CrewCrisisApproach) => void
+}) {
+  const crisis = run.crewCrisis!
+  const leader = run.ship.companions.find((companion) => companion.id === crisis.leaderId) ?? run.ship.companions[0]
+  const approaches: Array<{ id: CrewCrisisApproach; title: string; description: string; Icon: typeof Brain; disabled: boolean; cost: string }> = [
+    { id: 'council', title: 'Созвать совет у мачты', description: 'Выслушать претензии и ответить без царских угроз.', Icon: Brain, disabled: false, cost: 'Воля · без цены' },
+    { id: 'bribe', title: 'Купить верность добычей', description: 'Увеличить доли зачинщиков и отложить настоящий спор.', Icon: Coins, disabled: run.progression.coins < 15, cost: '15 драхм' },
+    { id: 'punish', title: 'Наказать зачинщиков', description: 'Сохранить власть страхом и потерять ещё одного гребца.', Icon: Swords, disabled: run.resources.crew <= 2, cost: '1 человек · мораль' },
+  ]
+  return (
+    <section className="crew-crisis-panel panel">
+      <div className="crisis-hero" style={{ backgroundImage: `url(${leader.portrait})` }}>
+        <div className="crisis-vignette" />
+        <div><span className="eyebrow">КРИЗИС НА ЧЁРНОМ КОРАБЛЕ</span><h1>{crisis.title}</h1><p>{leader.role}</p></div>
+        <div className="crisis-risk"><small>РИСК МЯТЕЖА</small><b>{run.ship.mutinyRisk}%</b></div>
+      </div>
+      <div className="crisis-body">
+        <p>{crisis.description}</p>
+        <div className="crisis-leader-state">
+          <span>Верность <b>{leader.loyalty}%</b></span><span>Уважение <b>{leader.respect}%</b></span><span>Страх <b>{leader.fear}%</b></span><span>Сплочённость <b>{run.ship.cohesion}%</b></span>
+        </div>
+        {leader.memories[0] && <blockquote>«{leader.memories[0].text}»</blockquote>}
+        <div className="crisis-actions-heading"><span>ОТВЕТ ОДИССЕЯ</span><small>Неудача может привести к уходу спутника</small></div>
+        <div className="crisis-actions">
+          {approaches.map(({ id, title, description, Icon, disabled, cost }) => {
+            const chance = Math.round(crewCrisisChance(run, id) * 100)
+            return (
+              <button key={id} onClick={() => onResolve(id)} disabled={disabled}>
+                <span className="crisis-action-icon"><Icon size={19} /></span>
+                <span><b>{title}</b><small>{description}</small><em>{cost}</em></span>
+                <span className={`chance ${chance >= 60 ? 'good' : chance >= 40 ? 'risky' : 'danger'}`}><small>ШАНС</small><b>{chance}%</b></span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -913,7 +1018,7 @@ function BossPanel({ run, onAction }: { run: RunState; onAction: (action: BossAc
             return (
               <button key={action.id} className={`boss-action ${desperate ? 'desperate' : ''}`} onClick={() => onAction(action)} disabled={!affordable && hasAffordableAction}>
                 <span className="boss-action-icon"><SkillIcon size={18} /></span>
-                <span className="boss-action-copy"><b>{action.title}</b><small>{action.description}</small><em>{skillLabels[action.skill]} {effectiveSkill(run, action.skill)} · урон {action.damage} · защита {Math.round(action.mitigation * 100)}%{desperate ? ' · цена отменена' : ''}</em></span>
+                <span className="boss-action-copy"><b>{action.title}</b><small>{action.description}</small><em>{skillLabels[action.skill]} {effectiveSkill(run, action.skill)} · урон {action.damage} · защита {Math.round(action.mitigation * 100)}%{desperate ? ' · цена станет долгом' : ''}</em></span>
                 <span className={`chance ${chance >= 60 ? 'good' : chance >= 40 ? 'risky' : 'danger'}`}><small>ШАНС</small><b>{chance}%</b></span>
                 {action.cost && <span className="boss-action-cost">{formatEffects(action.cost).map(({ key, value }) => { const Icon = resourceConfig[key].Icon; return <i key={key}><Icon size={11} />{value}</i> })}</span>}
               </button>
@@ -1017,7 +1122,7 @@ function PortPanel({
           <section className="market-section companion-offer">
             <div className="market-heading small"><div><span className="eyebrow">ТРАКТИР</span><h3>Именованный спутник</h3></div><UserPlus size={18} /></div>
             <div className="companion-card">
-              <div className="companion-avatar">{stock.companion.name[0]}</div>
+              <div className="companion-avatar portrait" style={{ backgroundImage: `url(${stock.companion.portrait})` }} />
               <div><b>{stock.companion.name}</b><small>{stock.companion.role}</small><p>{stock.companion.trait}. +{stock.companion.bonus} к {skillLabels[stock.companion.skill].toLowerCase()}.</p></div>
               <button onClick={() => onBuy(stock.companion.id)} disabled={run.ship.companions.some((entry) => entry.id === stock.companion.id) || run.progression.coins < 28}>
                 {run.ship.companions.some((entry) => entry.id === stock.companion.id) ? 'В команде' : <><Coins size={11} /> 28</>}
@@ -1038,32 +1143,42 @@ function PortPanel({
   )
 }
 
-function WorldPanel({ run, meta, onEquip }: { run: RunState; meta: MetaState; onEquip: (itemId: string) => void }) {
+function WorldPanel({
+  run,
+  meta,
+  onEquip,
+  onPayDebt,
+}: {
+  run: RunState
+  meta: MetaState
+  onEquip: (itemId: string) => void
+  onPayDebt: (debtId: string) => void
+}) {
   const [tab, setTab] = useState<'map' | 'ship' | 'fate' | 'codex' | 'log'>('map')
+  const tabOptions: TabOption<typeof tab>[] = [
+    { id: 'map', label: 'Карта', icon: <Map size={13} aria-hidden="true" /> },
+    { id: 'ship', label: 'Судно', icon: <Ship size={13} aria-hidden="true" /> },
+    { id: 'fate', label: 'Судьба', icon: <Eye size={13} aria-hidden="true" /> },
+    { id: 'codex', label: 'Кодекс', icon: <BookOpen size={13} aria-hidden="true" /> },
+    { id: 'log', label: 'Журнал', icon: <History size={13} aria-hidden="true" /> },
+  ]
   return (
     <aside className="world-panel panel">
-      <div className="world-tabs five-tabs">
-        <button className={tab === 'map' ? 'active' : ''} onClick={() => setTab('map')}>
-          <Map size={13} /> Карта
-        </button>
-        <button className={tab === 'ship' ? 'active' : ''} onClick={() => setTab('ship')}>
-          <Ship size={13} /> Судно
-        </button>
-        <button className={tab === 'fate' ? 'active' : ''} onClick={() => setTab('fate')}>
-          <Eye size={13} /> Судьба
-        </button>
-        <button className={tab === 'codex' ? 'active' : ''} onClick={() => setTab('codex')}>
-          <BookOpen size={13} /> Кодекс
-        </button>
-        <button className={tab === 'log' ? 'active' : ''} onClick={() => setTab('log')}>
-          <History size={13} /> Журнал
-        </button>
-      </div>
-      {tab === 'map' && <RouteMap run={run} />}
-      {tab === 'ship' && <ShipPanel run={run} onEquip={onEquip} />}
-      {tab === 'fate' && <FatePanel run={run} />}
-      {tab === 'codex' && <CodexPanel run={run} meta={meta} />}
-      {tab === 'log' && <VoyageLog run={run} />}
+      <Tabs
+        idBase="world"
+        className="world-tabs five-tabs"
+        value={tab}
+        options={tabOptions}
+        onChange={setTab}
+        ariaLabel="Разделы мира"
+      />
+      <TabPanel idBase="world" tabId={tab} className="world-tab-panel">
+        {tab === 'map' && <RouteMap run={run} />}
+        {tab === 'ship' && <ShipPanel run={run} onEquip={onEquip} onPayDebt={onPayDebt} />}
+        {tab === 'fate' && <FatePanel run={run} />}
+        {tab === 'codex' && <CodexPanel run={run} meta={meta} />}
+        {tab === 'log' && <VoyageLog run={run} />}
+      </TabPanel>
     </aside>
   )
 }
@@ -1096,7 +1211,7 @@ function CodexPanel({ run, meta }: { run: RunState; meta: MetaState }) {
   const [selectedId, setSelectedId] = useState(currentId ?? firstDiscovered?.id ?? entries[0].id)
   const selected = entries.find((entry) => entry.id === selectedId && discovered.has(entry.id)) ?? firstDiscovered
   const visibleEntries = category === 'all' ? entries : entries.filter((entry) => entry.kind === category)
-  const illustratedCount = entries.filter((entry) => discovered.has(entry.id) && entry.scene.src !== '/art/odyssey-storm.jpg').length
+  const illustratedCount = entries.filter((entry) => discovered.has(entry.id) && entry.scene.src !== defaultScene.src).length
 
   return (
     <div className="codex-content">
@@ -1190,13 +1305,21 @@ function FatePanel({ run }: { run: RunState }) {
   )
 }
 
-function ShipPanel({ run, onEquip }: { run: RunState; onEquip: (itemId: string) => void }) {
+function ShipPanel({
+  run,
+  onEquip,
+  onPayDebt,
+}: {
+  run: RunState
+  onEquip: (itemId: string) => void
+  onPayDebt: (debtId: string) => void
+}) {
   const slots: EquipmentSlot[] = ['weapon', 'armor', 'talisman']
   return (
     <div className="ship-content">
       <div className="ship-heading">
         <div className="ship-emblem"><Ship size={24} /></div>
-        <div><span className="eyebrow">АХЕЙСКАЯ ПЕНТЕКОНТЕРА</span><h3>{run.ship.name}</h3><p>{run.resources.crew} гребцов · {run.ship.upgrades.length} улучшений</p></div>
+        <div><span className="eyebrow">АХЕЙСКАЯ ПЕНТЕКОНТЕРА</span><h3>{run.ship.name}</h3><p>{run.resources.crew} гребцов · сплочённость {run.ship.cohesion}% · риск мятежа {run.ship.mutinyRisk}%</p></div>
       </div>
 
       <section className="loadout-section">
@@ -1236,19 +1359,53 @@ function ShipPanel({ run, onEquip }: { run: RunState; onEquip: (itemId: string) 
         </div>
       </section>
 
+      <section className="crew-state-section">
+        <div className="section-heading"><span>СОСТОЯНИЕ КОМАНДЫ</span><small>{run.ship.mutinyRisk >= 65 ? 'КРИЗИС БЛИЗКО' : 'ПОД КОНТРОЛЕМ'}</small></div>
+        <div className="crew-state-bars">
+          <div><span>Сплочённость <b>{run.ship.cohesion}%</b></span><i><em style={{ width: `${run.ship.cohesion}%` }} /></i></div>
+          <div className={run.ship.mutinyRisk >= 65 ? 'danger' : ''}><span>Риск мятежа <b>{run.ship.mutinyRisk}%</b></span><i><em style={{ width: `${run.ship.mutinyRisk}%` }} /></i></div>
+        </div>
+      </section>
+
       <section className="companions-section">
-        <div className="section-heading"><span>СПУТНИКИ</span><small>{run.ship.companions.length} НА БОРТУ</small></div>
-        <div className="companions-list">
-          {run.ship.companions.map((companion) => (
-            <div className="crew-companion" key={companion.id}>
-              <div className="companion-avatar small">{companion.name[0]}</div>
-              <span><b>{companion.name}</b><small>{companion.role}</small></span>
-              <em>{companion.bonus > 0 ? `+${companion.bonus} ${skillLabels[companion.skill].toLowerCase()}` : `${companion.loyalty}% верности`}</em>
-            </div>
+        <div className="section-heading"><span>СПУТНИКИ И ИХ ПАМЯТЬ</span><small>{run.ship.companions.length} НА БОРТУ</small></div>
+        <div className="companions-list memory-list">
+          {run.ship.companions.map((companion) => {
+            const memory = companion.memories[0]
+            return (
+              <details className={`crew-companion-card loyalty-${companion.loyalty <= 25 ? 'low' : companion.loyalty >= 70 ? 'high' : 'mid'}`} key={companion.id}>
+                <summary>
+                  <div className="companion-portrait" style={{ backgroundImage: `url(${companion.portrait})` }} />
+                  <span><small>{companion.role}</small><b>{companion.name}</b><em>{companion.trait}</em></span>
+                  <div className="companion-numbers"><i>В {companion.loyalty}</i><i>У {companion.respect}</i><i>С {companion.fear}</i></div>
+                </summary>
+                <div className="companion-memory-body">
+                  <div className="memory-stats"><span>Верность <b>{companion.loyalty}%</b></span><span>Уважение <b>{companion.respect}%</b></span><span>Страх <b>{companion.fear}%</b></span></div>
+                  {memory ? <blockquote><small>ДЕНЬ {memory.day} · {memory.reaction.toUpperCase()}</small>{memory.text}</blockquote> : <p>Пока не успел составить суждение о решениях Одиссея.</p>}
+                  {companion.memories.length > 1 && <small className="memory-count">Запомнено решений: {companion.memories.length}</small>}
+                </div>
+              </details>
+            )
+          })}
+        </div>
+        {run.ship.departedCompanions.length > 0 && <p className="departed-note"><Users size={12} /> Покинули песнь: {run.ship.departedCompanions.map((companion) => companion.name).join(', ')}</p>}
+      </section>
+
+      <section className="debts-section">
+        <div className="section-heading"><span>ОТЛОЖЕННЫЕ ЦЕНЫ</span><small>{run.debts.filter((debt) => debt.status === 'pending').length} АКТИВНО</small></div>
+        <div className="debts-list">
+          {run.debts.filter((debt) => debt.status === 'pending').length === 0 ? (
+            <p className="empty-state">Команда не держит неоплаченных обещаний.</p>
+          ) : run.debts.filter((debt) => debt.status === 'pending').map((debt) => (
+            <article key={debt.id}>
+              <div><small>СРОК: ДЕНЬ {debt.dueDay}</small><b>{debt.title}</b><p>{debt.description}</p></div>
+              <div className="debt-effects">{formatEffects(debt.effects).map(({ key, value }) => { const Icon = resourceConfig[key].Icon; return <span key={key}><Icon size={10} />{value}</span> })}</div>
+              <button onClick={() => onPayDebt(debt.id)}>Выплатить сейчас</button>
+            </article>
           ))}
         </div>
       </section>
-      <p className="ship-hint"><ShoppingBag size={13} /> Снаряжение, спутников и улучшения можно найти в двух портах текущего маршрута.</p>
+      <p className="ship-hint"><ShoppingBag size={13} /> Поступки меняют верность спутников. Невыплаченные цены взыскиваются в день срока.</p>
     </div>
   )
 }
@@ -1378,8 +1535,14 @@ function EndingOverlay({
   const victory = run.phase === 'home'
   const endingScene = victory && run.campaign.ending ? endingScenes[run.campaign.ending.id] : null
   return (
-    <div className="ending-overlay">
-      <div className="ending-card">
+    <Dialog
+      className="ending-card"
+      backdropClassName="ending-overlay"
+      titleId="ending-title"
+      descriptionId="ending-description"
+      onClose={onMenu}
+      showClose={false}
+    >
         {endingScene && (
           <div className="ending-visual" style={{ backgroundImage: `url(${endingScene.src})` }}>
             <span><Eye size={12} /> {endingScene.caption}</span>
@@ -1389,9 +1552,9 @@ function EndingOverlay({
           {victory ? <Crown size={32} /> : <Skull size={32} />}
         </div>
         <span className="eyebrow">{victory ? run.campaign.ending?.subtitle ?? 'ПЕСНЬ ЗАВЕРШЕНА' : 'ПОХОД ОКОНЧЕН'}</span>
-        <h2>{victory ? run.campaign.ending?.title ?? 'Итака на рассвете' : 'Море не знает могил'}</h2>
+        <h2 id="ending-title">{victory ? run.campaign.ending?.title ?? 'Итака на рассвете' : 'Море не знает могил'}</h2>
         {victory && run.campaign.ending && <div className={`ending-rank rank-${run.campaign.ending.rank}`}>{run.campaign.ending.rank} финал</div>}
-        <p>{run.resolution?.text}</p>
+        <p id="ending-description">{run.resolution?.text}</p>
         {run.resolution?.omen && <blockquote>{run.resolution.omen}</blockquote>}
         <div className="ending-stats">
           <div><small>ДНЕЙ В МОРЕ</small><b>{run.day}</b></div>
@@ -1407,9 +1570,8 @@ function EndingOverlay({
         <button className="primary-button large" onClick={onNew}>
           <span><small>МИР ИЗМЕНИТСЯ</small>Начать новую песнь</span><RotateCcw size={19} />
         </button>
-        <button className="text-button" onClick={onMenu}><ArrowLeft size={15} /> Вернуться в главное меню</button>
-      </div>
-    </div>
+      <button className="text-button" onClick={onMenu}><ArrowLeft size={15} /> Вернуться в главное меню</button>
+    </Dialog>
   )
 }
 
@@ -1428,6 +1590,12 @@ function ChronicleModal({
   const [importMessage, setImportMessage] = useState('')
   const stats = chronicleStats(meta)
   const favoriteDifficulty = difficultyDefinition(stats.favoriteDifficulty as DifficultyId)
+  const tabOptions: TabOption<typeof tab>[] = [
+    { id: 'overview', label: 'Обзор', icon: <BarChart3 size={14} aria-hidden="true" /> },
+    { id: 'achievements', label: 'Достижения', icon: <Award size={14} aria-hidden="true" /> },
+    { id: 'history', label: 'Походы', icon: <ScrollText size={14} aria-hidden="true" /> },
+    { id: 'data', label: 'Данные', icon: <Database size={14} aria-hidden="true" /> },
+  ]
 
   const handleImport = async (file?: File) => {
     if (!file) return
@@ -1435,23 +1603,28 @@ function ChronicleModal({
   }
 
   return (
-    <div className="modal-backdrop">
-      <div className="modal-card chronicle-modal">
-        <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        <div className="chronicle-heading">
-          <div className="chronicle-emblem"><BarChart3 size={24} /></div>
-          <span className="eyebrow">ПЕСНИ, КОТОРЫЕ ПОМНИТ МОРЕ</span>
-          <h2>Летопись Одиссея</h2>
-          <p>Все завершённые экспедиции, открытые судьбы и достижения хранятся между попытками.</p>
-        </div>
-        <div className="chronicle-tabs">
-          <button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}><BarChart3 size={14} /> Обзор</button>
-          <button className={tab === 'achievements' ? 'active' : ''} onClick={() => setTab('achievements')}><Award size={14} /> Достижения</button>
-          <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}><ScrollText size={14} /> Походы</button>
-          <button className={tab === 'data' ? 'active' : ''} onClick={() => setTab('data')}><Database size={14} /> Данные</button>
-        </div>
+    <Dialog
+      className="chronicle-modal"
+      titleId="chronicle-title"
+      descriptionId="chronicle-description"
+      onClose={onClose}
+    >
+      <div className="chronicle-heading">
+        <div className="chronicle-emblem"><BarChart3 size={24} aria-hidden="true" /></div>
+        <span className="eyebrow">ПЕСНИ, КОТОРЫЕ ПОМНИТ МОРЕ</span>
+        <h2 id="chronicle-title">Летопись Одиссея</h2>
+        <p id="chronicle-description">Все завершённые экспедиции, открытые судьбы и достижения хранятся между попытками.</p>
+      </div>
+      <Tabs
+        idBase="chronicle"
+        className="chronicle-tabs"
+        value={tab}
+        options={tabOptions}
+        onChange={setTab}
+        ariaLabel="Разделы летописи"
+      />
 
-        <div className="chronicle-body">
+      <TabPanel idBase="chronicle" tabId={tab} className="chronicle-body">
           {tab === 'overview' && (
             <>
               <div className="chronicle-stats">
@@ -1514,6 +1687,7 @@ function ChronicleModal({
 
           {tab === 'data' && (
             <div className="data-management">
+              <div className="offline-visual" style={{ backgroundImage: `url(${uiScenes.offline.src})` }}><span>{uiScenes.offline.caption}</span></div>
               <div className="data-card">
                 <div><Download size={22} /></div>
                 <span><b>Экспортировать летопись</b><p>Сохранить текущую экспедицию, наследие, кодекс, историю и настройки в один JSON-файл.</p></span>
@@ -1528,9 +1702,8 @@ function ChronicleModal({
               <div className="offline-note"><Check size={15} /><span><b>Офлайн-режим включён</b><small>После первого открытия приложение и загруженные иллюстрации доступны без сети.</small></span></div>
             </div>
           )}
-        </div>
-      </div>
-    </div>
+      </TabPanel>
+    </Dialog>
   )
 }
 
@@ -1544,12 +1717,15 @@ function DifficultyModal({
   const [selected, setSelected] = useState<DifficultyId>('odyssey')
   const active = difficultyDefinition(selected)
   return (
-    <div className="modal-backdrop">
-      <div className="modal-card difficulty-modal">
-        <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        <span className="eyebrow">НОВАЯ ПЕСНЬ</span>
-        <h2>Как мойры сплетут ваш путь?</h2>
-        <p>Режим нельзя изменить во время экспедиции. Он влияет на припасы, проверки, штормы, стражей и получаемую славу.</p>
+    <Dialog
+      className="difficulty-modal"
+      titleId="difficulty-title"
+      descriptionId="difficulty-description"
+      onClose={onClose}
+    >
+      <span className="eyebrow">НОВАЯ ПЕСНЬ</span>
+      <h2 id="difficulty-title">Как мойры сплетут ваш путь?</h2>
+      <p id="difficulty-description">Режим нельзя изменить во время экспедиции. Он влияет на припасы, проверки, штормы, стражей и получаемую славу.</p>
         <div className="difficulty-cards">
           {difficulties.map((difficulty) => (
             <button
@@ -1564,12 +1740,11 @@ function DifficultyModal({
             </button>
           ))}
         </div>
-        <div className="difficulty-confirm">
-          <div><small>ВЫБРАНО</small><b>{active.name}</b><span>Множитель славы: ×{active.kleosMultiplier}</span></div>
-          <button className="primary-button" onClick={() => onStart(selected)}>Начать путешествие <ChevronRight size={16} /></button>
-        </div>
+      <div className="difficulty-confirm">
+        <div><small>ВЫБРАНО</small><b>{active.name}</b><span>Множитель славы: ×{active.kleosMultiplier}</span></div>
+        <button className="primary-button" onClick={() => onStart(selected)}>Начать путешествие <ChevronRight size={16} /></button>
       </div>
-    </div>
+    </Dialog>
   )
 }
 
@@ -1583,35 +1758,38 @@ function AccessibilityModal({
   onClose: () => void
 }) {
   return (
-    <div className="modal-backdrop">
-      <div className="modal-card accessibility-modal">
-        <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        <span className="eyebrow">ИНТЕРФЕЙС И ДОСТУПНОСТЬ</span>
-        <h2>Настройки чтения</h2>
-        <p>Параметры применяются сразу и сохраняются отдельно от игрового прогресса.</p>
+    <Dialog
+      className="accessibility-modal"
+      titleId="accessibility-title"
+      descriptionId="accessibility-description"
+      onClose={onClose}
+    >
+      <div className="accessibility-visual" style={{ backgroundImage: `url(${uiScenes.accessibility.src})` }}><span>{uiScenes.accessibility.caption}</span></div>
+      <span className="eyebrow">ИНТЕРФЕЙС И ДОСТУПНОСТЬ</span>
+      <h2 id="accessibility-title">Настройки чтения</h2>
+      <p id="accessibility-description">Параметры применяются сразу и сохраняются отдельно от игрового прогресса.</p>
         <section className="accessibility-setting">
           <div className="setting-icon"><Type size={20} /></div>
           <div><b>Размер текста</b><small>Увеличивает основной текст событий, решений и кодекса.</small></div>
-          <div className="segmented-control">
+          <div className="segmented-control" role="group" aria-label="Размер текста">
             {(['normal', 'large', 'xlarge'] as const).map((scale, index) => (
-              <button key={scale} className={preferences.textScale === scale ? 'active' : ''} onClick={() => onChange({ ...preferences, textScale: scale })}>{['A', 'A+', 'A++'][index]}</button>
+              <button key={scale} aria-pressed={preferences.textScale === scale} aria-label={['Обычный текст', 'Крупный текст', 'Максимальный текст'][index]} className={preferences.textScale === scale ? 'active' : ''} onClick={() => onChange({ ...preferences, textScale: scale })}>{['A', 'A+', 'A++'][index]}</button>
             ))}
           </div>
         </section>
         <section className="accessibility-setting">
           <div className="setting-icon"><Contrast size={20} /></div>
           <div><b>Высокий контраст</b><small>Усиливает границы, текст и различия состояний.</small></div>
-          <button className={`toggle-control ${preferences.highContrast ? 'active' : ''}`} aria-pressed={preferences.highContrast} onClick={() => onChange({ ...preferences, highContrast: !preferences.highContrast })}><i /></button>
+          <Toggle checked={preferences.highContrast} onChange={(checked) => onChange({ ...preferences, highContrast: checked })} label="Высокий контраст" />
         </section>
         <section className="accessibility-setting">
           <div className="setting-icon"><Wind size={20} /></div>
           <div><b>Уменьшить движение</b><small>Отключает пульсацию, панорамирование и переходы.</small></div>
-          <button className={`toggle-control ${preferences.reduceMotion ? 'active' : ''}`} aria-pressed={preferences.reduceMotion} onClick={() => onChange({ ...preferences, reduceMotion: !preferences.reduceMotion })}><i /></button>
+          <Toggle checked={preferences.reduceMotion} onChange={(checked) => onChange({ ...preferences, reduceMotion: checked })} label="Уменьшить движение" />
         </section>
-        <div className="accessibility-preview"><span className="eyebrow">ПРИМЕР</span><p>Море помнит каждую клятву, но теперь эту строку легче прочитать.</p></div>
-        <button className="primary-button" onClick={onClose}>Сохранить настройки</button>
-      </div>
-    </div>
+      <div className="accessibility-preview"><span className="eyebrow">ПРИМЕР</span><p>Море помнит каждую клятву, но теперь эту строку легче прочитать.</p></div>
+      <button className="primary-button" onClick={onClose}>Сохранить настройки</button>
+    </Dialog>
   )
 }
 
@@ -1625,14 +1803,17 @@ function LegacyModal({
   onClose: () => void
 }) {
   return (
-    <div className="modal-backdrop">
-      <div className="modal-card legacy-modal">
-        <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        <div className="legacy-modal-heading">
+    <Dialog
+      className="legacy-modal"
+      titleId="legacy-title"
+      descriptionId="legacy-description"
+      onClose={onClose}
+    >
+      <div className="legacy-modal-heading">
           <div className="legacy-emblem"><Trophy size={25} /></div>
           <span className="eyebrow">МЕЖДУ ПЕСНЯМИ</span>
-          <h2>Наследие Одиссея</h2>
-          <p>Слава переживает гибель. Купленные дары навсегда изменяют начало каждой новой экспедиции.</p>
+          <h2 id="legacy-title">Наследие Одиссея</h2>
+          <p id="legacy-description">Слава переживает гибель. Купленные дары навсегда изменяют начало каждой новой экспедиции.</p>
           <div className="kleos-purse"><Sparkles size={15} /><span><small>ДОСТУПНО</small><b>{meta.kleos} κλέος</b></span></div>
         </div>
         <div className="legacy-progress">
@@ -1654,27 +1835,28 @@ function LegacyModal({
             )
           })}
         </div>
-        <button className="primary-button" onClick={onClose}>Вернуться к песням</button>
-      </div>
-    </div>
+      <button className="primary-button" onClick={onClose}>Вернуться к песням</button>
+    </Dialog>
   )
 }
 
 function ConfirmModal({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
   return (
-    <div className="modal-backdrop">
-      <div className="modal-card confirm-card">
-        <button className="modal-close" onClick={onCancel}><X size={18} /></button>
-        <Skull className="modal-symbol" size={29} />
-        <span className="eyebrow">ПРЕРВАТЬ ПУТЬ</span>
-        <h2>Начать новую песнь?</h2>
-        <p>Текущий поход и все принятые решения будут потеряны. Слава за незавершённый путь не сохранится.</p>
-        <div className="modal-actions">
-          <button className="secondary-button" onClick={onCancel}>Остаться в море</button>
-          <button className="danger-button" onClick={onConfirm}>Начать заново</button>
-        </div>
+    <Dialog
+      className="confirm-card"
+      titleId="confirm-title"
+      descriptionId="confirm-description"
+      onClose={onCancel}
+    >
+      <Skull className="modal-symbol" size={29} aria-hidden="true" />
+      <span className="eyebrow">ПРЕРВАТЬ ПУТЬ</span>
+      <h2 id="confirm-title">Начать новую песнь?</h2>
+      <p id="confirm-description">Текущий поход и все принятые решения будут потеряны. Слава за незавершённый путь не сохранится.</p>
+      <div className="modal-actions">
+        <button className="secondary-button" onClick={onCancel}>Остаться в море</button>
+        <button className="danger-button" onClick={onConfirm}>Начать заново</button>
       </div>
-    </div>
+    </Dialog>
   )
 }
 
@@ -1689,11 +1871,9 @@ function RulesModal({ onClose }: { onClose: () => void }) {
     { Icon: Sparkles, title: 'Оставляйте наследие', text: 'κλέος после экспедиции покупает постоянные дары для следующих попыток.' },
   ]
   return (
-    <div className="modal-backdrop">
-      <div className="modal-card rules-card">
-        <button className="modal-close" onClick={onClose}><X size={18} /></button>
-        <span className="eyebrow">КАК ИГРАТЬ</span>
-        <h2>Законы чёрного моря</h2>
+    <Dialog className="rules-card" titleId="rules-title" onClose={onClose}>
+      <span className="eyebrow">КАК ИГРАТЬ</span>
+      <h2 id="rules-title">Законы чёрного моря</h2>
         <div className="rules-list">
           {rules.map(({ Icon, title, text }) => (
             <div key={title}><span><Icon size={19} /></span><div><h4>{title}</h4><p>{text}</p></div></div>
@@ -1703,9 +1883,8 @@ function RulesModal({ onClose }: { onClose: () => void }) {
           <Brain size={17} />
           <span><b>Шанс проверки</b> зависит от навыка, сложности выбора, здоровья и духа команды.</span>
         </div>
-        <button className="primary-button" onClick={onClose}>Понятно</button>
-      </div>
-    </div>
+      <button className="primary-button" onClick={onClose}>Понятно</button>
+    </Dialog>
   )
 }
 

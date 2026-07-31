@@ -44,6 +44,45 @@ export interface Skills {
 
 export type Effects = Partial<Record<ResourceKey, number>>
 
+export type CompanionTemperament = 'cautious' | 'seafarer' | 'trickster' | 'prophet'
+
+export interface CompanionMemory {
+  id: string
+  day: number
+  choiceId: string
+  title: string
+  reaction: 'approve' | 'disapprove' | 'fear' | 'admire'
+  text: string
+  loyaltyDelta: number
+}
+
+export interface CrewReaction {
+  companionId: string
+  name: string
+  text: string
+  loyaltyDelta: number
+  reaction: CompanionMemory['reaction']
+}
+
+export interface DeferredDebt {
+  id: string
+  title: string
+  description: string
+  source: string
+  createdDay: number
+  dueDay: number
+  effects: Effects
+  status: 'pending' | 'paid' | 'collected'
+}
+
+export interface CrewCrisisState {
+  leaderId: string
+  title: string
+  description: string
+}
+
+export type CrewCrisisApproach = 'council' | 'bribe' | 'punish'
+
 export interface Outcome {
   text: string
   effects: Effects
@@ -117,6 +156,8 @@ export interface Resolution {
   coins?: number
   levelUp?: boolean
   divineChange?: Partial<Record<GodId, number>>
+  crewReactions?: CrewReaction[]
+  debtCreated?: DeferredDebt
 }
 
 export interface EquipmentDefinition {
@@ -143,6 +184,11 @@ export interface Companion {
   role: string
   trait: string
   loyalty: number
+  fear: number
+  respect: number
+  temperament: CompanionTemperament
+  portrait: string
+  memories: CompanionMemory[]
   skill: Skill
   bonus: number
 }
@@ -161,6 +207,10 @@ export interface ShipState {
   name: string
   upgrades: string[]
   companions: Companion[]
+  departedCompanions: Companion[]
+  cohesion: number
+  mutinyRisk: number
+  lastCrisisDay: number
 }
 
 export interface DecisionRecord {
@@ -235,9 +285,11 @@ export interface RunState {
   ship: ShipState
   campaign: CampaignState
   boss: BossState | null
+  crewCrisis: CrewCrisisState | null
+  debts: DeferredDebt[]
   legacyBoons: string[]
   log: LogEntry[]
-  phase: 'encounter' | 'resolution' | 'port' | 'boss' | 'dead' | 'home'
+  phase: 'encounter' | 'resolution' | 'port' | 'boss' | 'crew-crisis' | 'dead' | 'home'
   resolution: Resolution | null
   portNotice: string | null
   kleosEarned: number

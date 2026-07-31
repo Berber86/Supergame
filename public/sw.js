@@ -1,23 +1,32 @@
-const CACHE_NAME = 'odyssey-shadow-v0.6.0'
+const CACHE_NAME = 'odyssey-shadow-v0.8.0'
+const SCOPE_URL = self.registration.scope
+const scopedUrl = (path = './') => new URL(path, SCOPE_URL).toString()
 const APP_SHELL = [
-  '/',
-  '/index.html',
-  '/manifest.webmanifest',
-  '/art/app-icon-192.png',
-  '/art/app-icon-512.png',
-  '/art/odyssey-storm.jpg',
-  '/art/greek-port.jpg',
-  '/art/boss-scylla.jpg',
-  '/art/boss-poseidon.jpg'
-]
+  './',
+  'index.html',
+  'manifest.webmanifest',
+  'art/app-icon-192.png',
+  'art/app-icon-512.png',
+  'art/odyssey-storm.jpg',
+  'art/greek-port.jpg',
+  'art/boss-scylla.jpg',
+  'art/boss-poseidon.jpg',
+  'art/companion-eurylochus.jpg',
+  'art/companion-tiphys.jpg',
+  'art/companion-sinon.jpg',
+  'art/companion-idmon.jpg',
+  'art/ui-hermes-guide.jpg',
+  'art/ui-offline-ithaca.jpg'
+].map(scopedUrl)
 
 async function precacheApplication() {
   const cache = await caches.open(CACHE_NAME)
   await cache.addAll(APP_SHELL)
-  const response = await fetch('/')
+  const response = await fetch(scopedUrl())
   const html = await response.clone().text()
-  await cache.put('/', response)
-  const assetUrls = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((match) => match[1])
+  await cache.put(scopedUrl(), response)
+  const assetUrls = [...html.matchAll(/(?:src|href)="([^"]*\/assets\/[^"]+)"/g)]
+    .map((match) => new URL(match[1], self.location.origin).toString())
   if (assetUrls.length) await cache.addAll(assetUrls)
 }
 
@@ -36,17 +45,17 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return
   const requestUrl = new URL(event.request.url)
-  if (requestUrl.origin !== self.location.origin) return
+  if (requestUrl.origin !== self.location.origin || !requestUrl.href.startsWith(SCOPE_URL)) return
 
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
           const copy = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put('/', copy))
+          caches.open(CACHE_NAME).then((cache) => cache.put(scopedUrl(), copy))
           return response
         })
-        .catch(() => caches.match('/'))
+        .catch(() => caches.match(scopedUrl()))
     )
     return
   }

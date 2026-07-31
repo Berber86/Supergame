@@ -1,0 +1,63 @@
+import { expect, test } from '@playwright/test'
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.clear())
+  await page.goto('/')
+})
+
+test('mobile game uses three compact screens instead of one long page', async ({ page }) => {
+  await page.getByRole('button', { name: /Начать путешествие/i }).click()
+  await expect(page.getByRole('dialog', { name: /Как мойры сплетут ваш путь/i })).toBeVisible()
+  await page.getByRole('button', { name: /Одиссея Каноническое испытание/i }).click()
+  await page.getByRole('button', { name: /Начать путешествие/i }).click()
+
+  await expect(page.getByRole('navigation', { name: 'Разделы игры' })).toBeVisible()
+  await expect(page.locator('.encounter-panel')).toBeVisible()
+  await expect(page.locator('.hero-panel')).toBeHidden()
+  await expect(page.locator('.world-panel')).toBeHidden()
+
+  await page.getByRole('button', { name: 'Герой' }).click()
+  await expect(page.locator('.hero-panel')).toBeVisible()
+  await expect(page.locator('.encounter-panel')).toBeHidden()
+
+  await page.getByRole('button', { name: 'Мир' }).click()
+  await expect(page.locator('.world-panel')).toBeVisible()
+  await expect(page.locator('.hero-panel')).toBeHidden()
+
+  const mapTab = page.getByRole('tab', { name: 'Карта' })
+  await mapTab.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByRole('tab', { name: 'Судно' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tabpanel')).toContainText('Чёрная ласточка')
+})
+
+test('dialog traps focus, closes with Escape and restores the trigger', async ({ page }) => {
+  const settingsButton = page.getByRole('button', { name: 'Настройки интерфейса' })
+  await settingsButton.click()
+
+  const dialog = page.getByRole('dialog', { name: 'Настройки чтения' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toHaveAttribute('aria-modal', 'true')
+
+  const firstButton = dialog.getByRole('button').first()
+  const lastButton = dialog.getByRole('button').last()
+  await lastButton.focus()
+  await page.keyboard.press('Tab')
+  await expect(firstButton).toBeFocused()
+
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  await expect(settingsButton).toBeFocused()
+})
+
+test('chronicle exposes semantic tabs navigable with arrow keys', async ({ page }) => {
+  await page.getByRole('button', { name: /Летопись/i }).click()
+  const dialog = page.getByRole('dialog', { name: 'Летопись Одиссея' })
+  await expect(dialog).toBeVisible()
+
+  const overview = dialog.getByRole('tab', { name: 'Обзор' })
+  await overview.focus()
+  await page.keyboard.press('End')
+  await expect(dialog.getByRole('tab', { name: 'Данные' })).toHaveAttribute('aria-selected', 'true')
+  await expect(dialog.getByRole('tabpanel')).toContainText('Экспортировать летопись')
+})

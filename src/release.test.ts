@@ -87,6 +87,13 @@ describe('safe backup parsing and release migration', () => {
     expect(parsed.ok).toBe(true)
   })
 
+  it('accepts a 0.6 expedition so the application can migrate it', () => {
+    const legacyRun = { ...createRun(7002), version: 4 }
+    const parsed = parseBackup(JSON.stringify({ schema: 'odyssey-shadow-backup', version: 1, run: legacyRun, meta: DEFAULT_META }))
+
+    expect(parsed.ok).toBe(true)
+  })
+
   it('rejects incompatible runs and malformed collections', () => {
     const wrongRun = parseBackup(JSON.stringify({ schema: 'odyssey-shadow-backup', version: 1, run: { version: 2 }, meta: {} }))
     const wrongCollections = parseBackup(JSON.stringify({ schema: 'odyssey-shadow-backup', version: 1, meta: { codex: 'not-an-array' } }))
