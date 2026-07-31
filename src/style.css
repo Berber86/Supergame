@@ -1,0 +1,97 @@
+/* Яркий мультяшный стиль (установка человека, сессия 1).
+   Временный каркас — финальный арт-дизайн в сессии 8. */
+
+:root {
+  --bg: #ffe8b0;
+  --panel: #fff6dd;
+  --ink: #3d2b1f;
+  --accent: #ff7a1a;
+  --accent-dark: #c94f00;
+  --muted: #8a6d4f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Comic Sans MS', 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.shell {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.hero {
+  text-align: center;
+  padding: 12px 0 4px;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: 2.2rem;
+  color: var(--accent-dark);
+}
+
+.subtitle {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.panel {
+  background: var(--panel);
+  border: 3px solid var(--accent);
+  border-radius: 18px;
+  padding: 14px 16px;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.08);
+}
+
+.panel h2 {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-left: 8px;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.big-btn {
+  font: inherit;
+  font-size: 1.1rem;
+  background: linear-gradient(180deg, var(--accent), var(--accent-dark));
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  padding: 12px 22px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #8f3a00;
+}
+
+.big-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #8f3a00;
+}
+
+.list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.list li {
+  margin: 4px 0;
+}
