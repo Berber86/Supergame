@@ -190,3 +190,51 @@ body {
   color: var(--muted);
   margin-top: 8px;
 }
+
+/* Сессия 6: панель рейда, синергии, экран победы */
+.raid-panel {
+  border-color: #d64a00;
+  background: linear-gradient(180deg, #fff6dd, #ffeccb);
+}
+
+.synergy-list {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.synergy {
+  background: #fff3c9;
+  border: 2px dashed #e0942a;
+  border-radius: 10px;
+  padding: 6px 10px;
+}
+
+.synergy strong {
+  color: #b8480a;
+}
+
+.victory {
+  text-align: center;
+  background: #fff3c9;
+  border: 3px solid var(--accent);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.victory h3 {
+  margin: 0 0 6px;
+  font-size: 1.4rem;
+  color: var(--accent-dark);
+}
+
+#raid-panel .big-btn {
+  margin-top: 10px;
+}
+
+#raid-panel .reset-btn {
+  margin-left: 8px;
+}

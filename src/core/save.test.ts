@@ -4,8 +4,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import type { GameState } from './types';
+import { SAVE_KEY } from './types';
 import {
   computeOfflineMs,
+  migrateState,
   createInitialState,
   isValidState,
   loadState,
@@ -81,5 +84,32 @@ describe('сейв-система', () => {
   it('короткая отлучка засчитывается полностью', () => {
     const minutes = 5 * 60_000;
     expect(computeOfflineMs(10_000, 10_000 + minutes)).toBe(minutes);
+  });
+});
+
+describe('миграция старых сейвов (S6)', () => {
+  it('добавляет поля offer/atBoss старому рейду, не теряя прогресс', () => {
+    const old = {
+      ...createInitialState(),
+      gold: 123,
+      raid: { kingdomId: 'duchy-of-donuts', stage: 2, relics: ['ember'] },
+    } as unknown as GameState;
+
+    const migrated = migrateState(old);
+    expect(migrated.gold).toBe(123);
+    expect(migrated.raid.kingdomId).toBe('duchy-of-donuts');
+    expect(migrated.raid.stage).toBe(2);
+    expect(migrated.raid.relics).toEqual(['ember']);
+    expect(migrated.raid.offer).toEqual([]);
+    expect(migrated.raid.atBoss).toBe(false);
+  });
+
+  it('loadState возвращает мигрированное состояние', () => {
+    const storage = memoryStorage();
+    const old = { ...createInitialState(), raid: { kingdomId: null, stage: 0, relics: [] } };
+    storage.setItem(SAVE_KEY, JSON.stringify(old));
+    const loaded = loadState(storage);
+    expect(loaded?.raid.offer).toEqual([]);
+    expect(loaded?.raid.atBoss).toBe(false);
   });
 });

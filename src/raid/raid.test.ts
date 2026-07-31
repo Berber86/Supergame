@@ -1,103 +1,177 @@
 /**
- * Тесты рейд-петли v1 (S5).
+ * Тесты рейд-петли (S5 v1 + S6: синергии, стоимость вылета, добыча, победа).
  */
 
 import { describe, expect, it, beforeEach } from 'vitest';
 import {
+  BASE_DAMAGE,
+  canAffordRaid,
   canStartRaid,
-  startRaid,
-  getStageRelicChoices,
   chooseRelic,
-  resolveBoss,
+  computeLoot,
+  computeRaidPower,
   endRaid,
+  getCavePower,
   getCurrentKingdom,
+  getStageRelicChoices,
   getTotalStages,
+  isVictory,
+  resolveBoss,
+  retreat,
+  startRaid,
 } from './raid';
 import type { GameState } from '../core/types';
 import { createInitialState } from '../core/save';
 import { KINGDOMS } from '../content/kingdoms';
 
-function freshState(): GameState {
-  return createInitialState();
+function freshState(gold = 500): GameState {
+  const state = createInitialState();
+  state.gold = gold;
+  return state;
 }
 
-describe('рейд-петля v1', () => {
+describe('рейд-петля', () => {
   let state: GameState;
 
   beforeEach(() => {
     state = freshState();
   });
 
-  it('можно начать рейд только когда нет активного', () => {
+  it('начать рейд можно только когда нет активного', () => {
     expect(canStartRaid(state)).toBe(true);
     startRaid(state, KINGDOMS[0].id);
     expect(canStartRaid(state)).toBe(false);
   });
 
-  it('startRaid устанавливает состояние и пишет в журнал', () => {
-    const ok = startRaid(state, 'duchy-of-donuts');
-    expect(ok).toBe(true);
-    expect(state.raid.kingdomId).toBe('duchy-of-donuts');
-    expect(state.raid.stage).toBe(1);
-    expect(state.raid.relics).toEqual([]);
-    expect(state.journal[0]).toContain('вылетел в рейд');
+  it('вылет стоит золота и без золота невозможен', () => {
+    const poor = freshState(0);
+    expect(canAffordRaid(poor, 'duchy-of-donuts')).toBe(false);
+    expect(startRaid(poor, 'duchy-of-donuts')).toBe(false);
+    expect(poor.raid.kingdomId).toBeNull();
+
+    const cost = KINGDOMS[0].cost;
+    expect(startRaid(state, 'duchy-of-donuts')).toBe(true);
+    expect(state.gold).toBe(500 - cost);
   });
 
-  it('getStageRelicChoices возвращает до 3 реликвий', () => {
-    startRaid(state, KINGDOMS[0].id);
-    const choices = getStageRelicChoices(state);
-    expect(choices.length).toBeGreaterThan(0);
-    expect(choices.length).toBeLessThanOrEqual(3);
-  });
-
-  it('chooseRelic продвигает этап и сохраняет реликвию', () => {
-    startRaid(state, 'kingdom-of-moles');
-    const choices = getStageRelicChoices(state);
-    const first = choices[0].id;
-
-    const ok = chooseRelic(state, first);
-    expect(ok).toBe(true);
-    expect(state.raid.relics).toContain(first);
-    expect(state.raid.stage).toBe(2); // продвинулись
-  });
-
-  it('resolveBoss при победе захватывает королевство', () => {
+  it('startRaid готовит этап 1 и предложение реликвий', () => {
     startRaid(state, 'duchy-of-donuts');
-    // Добавим достаточно реликвий для победы (bossHp=50, base+эффекты)
-    state.raid.relics = [
-      'ember', 'dragon-tea', 'charcoal-socks', 'fireworks', 'lava-lamp',
-      'ember', 'dragon-tea', 'charcoal-socks', 'fireworks', 'lava-lamp',
-      'ember', 'dragon-tea'
-    ];
+    expect(state.raid.stage).toBe(1);
+    expect(state.raid.atBoss).toBe(false);
+    expect(state.raid.offer.length).toBe(3);
+    expect(getStageRelicChoices(state)).toHaveLength(3);
+    expect(state.journal[0]).toContain('вылетел');
+  });
+
+  it('нельзя взять реликвию не из предложения', () => {
+    startRaid(state, 'duchy-of-donuts');
+    const notOffered = ['ember', 'magnet', 'tent', 'megaphone', 'purse'].find(
+      (id) => !state.raid.offer.includes(id),
+    )!;
+    expect(chooseRelic(state, notOffered)).toBe(false);
+  });
+
+  it('выбор реликвии продвигает этап, пополняет коллекцию и обновляет предложение', () => {
+    startRaid(state, 'kingdom-of-moles');
+    const first = state.raid.offer[0];
+
+    expect(chooseRelic(state, first)).toBe(true);
+    expect(state.raid.relics).toContain(first);
+    expect(state.relics).toContain(first); // коллекция навсегда
+    expect(state.raid.stage).toBe(2);
+    expect(state.raid.offer).not.toContain(first);
+  });
+
+  it('после последнего этапа рейд переходит к боссу', () => {
+    startRaid(state, 'duchy-of-donuts'); // 3 этапа
+    for (let i = 0; i < getTotalStages(state); i += 1) {
+      chooseRelic(state, state.raid.offer[0]);
+    }
+    expect(state.raid.atBoss).toBe(true);
+    expect(state.raid.offer).toEqual([]);
+    expect(chooseRelic(state, 'ember')).toBe(false);
+  });
+
+  it('сила пещеры входит в урон рейда', () => {
+    startRaid(state, 'duchy-of-donuts');
+    const bare = computeRaidPower(state).damage;
+
+    state.servants = [{ id: 'gnome-prospector', count: 5 }];
+    state.buildings = [{ id: 'forge', level: 2 }];
+    expect(getCavePower(state)).toBe(5 + 4);
+    expect(computeRaidPower(state).damage).toBeGreaterThan(bare);
+    expect(computeRaidPower(state).base).toBe(BASE_DAMAGE + 9);
+  });
+
+  it('синергии умножают урон', () => {
+    startRaid(state, 'duchy-of-donuts');
+    state.raid.relics = ['ember', 'lava-lamp']; // 🔥×2 → +25%
+    const power = computeRaidPower(state);
+    expect(power.multiplier).toBeCloseTo(1.25);
+    expect(power.damage).toBe(Math.floor((power.base + power.fromRelics) * 1.25));
+    expect(power.synergies.map((s) => s.id)).toContain('fire-combo');
+  });
+
+  it('добыча растёт от реликвий жадности и их комбо', () => {
+    const kingdom = KINGDOMS[0];
+    startRaid(state, kingdom.id);
+    expect(computeLoot(state, kingdom)).toBe(kingdom.loot);
+
+    state.raid.relics = ['royal-tax', 'magnet']; // +40% реликвии, +30% комбо
+    expect(computeLoot(state, kingdom)).toBe(Math.floor(kingdom.loot * 1.4 * 1.3));
+  });
+
+  it('победа над боссом захватывает королевство и даёт добычу', () => {
+    state.servants = [{ id: 'gnome-prospector', count: 12 }];
+    state.buildings = [{ id: 'forge', level: 3 }];
+    startRaid(state, 'duchy-of-donuts');
+    state.raid.relics = ['lava-lamp', 'fireworks', 'dragon-tea'];
+    state.raid.atBoss = true;
+    const goldBefore = state.gold;
 
     const result = resolveBoss(state);
     expect(result.win).toBe(true);
+    expect(result.loot).toBeGreaterThan(0);
+    expect(state.gold).toBe(goldBefore + result.loot);
     expect(state.kingdomProgress['duchy-of-donuts']).toBe(true);
-    expect(state.raid.kingdomId).toBeNull(); // рейд завершён
+    expect(state.raid.kingdomId).toBeNull();
     expect(state.journal[0]).toContain('Победа');
   });
 
-  it('resolveBoss при поражении отнимает золото и завершает рейд', () => {
-    state.gold = 100;
-    startRaid(state, 'county-of-kettles');
-    state.raid.relics = []; // почти нет урона
+  it('поражение отнимает 15% золота и завершает рейд', () => {
+    const weak = freshState(200);
+    startRaid(weak, 'county-of-kettles'); // босс 90 HP, пещера пустая
+    weak.raid.atBoss = true;
+    const goldBefore = weak.gold;
 
-    const result = resolveBoss(state);
+    const result = resolveBoss(weak);
     expect(result.win).toBe(false);
-    expect(state.gold).toBeLessThan(100);
-    expect(state.raid.kingdomId).toBeNull();
-    expect(state.journal[0]).toContain('провалился');
+    expect(result.remainingHp).toBeGreaterThan(0);
+    expect(weak.gold).toBe(goldBefore - Math.floor(goldBefore * 0.15));
+    expect(weak.raid.kingdomId).toBeNull();
+    expect(weak.journal[0]).toContain('устоял');
   });
 
-  it('getCurrentKingdom и getTotalStages работают', () => {
+  it('победа во всех королевствах = победа в игре', () => {
+    expect(isVictory(state)).toBe(false);
+    for (const k of KINGDOMS) state.kingdomProgress[k.id] = true;
+    expect(isVictory(state)).toBe(true);
+  });
+
+  it('отступление завершает рейд, но реликвии остаются в коллекции', () => {
+    startRaid(state, 'kingdom-of-moles');
+    const taken = state.raid.offer[0];
+    chooseRelic(state, taken);
+    retreat(state);
+    expect(state.raid.kingdomId).toBeNull();
+    expect(state.relics).toContain(taken);
+  });
+
+  it('getCurrentKingdom, getTotalStages и endRaid работают', () => {
     startRaid(state, 'kingdom-of-moles');
     expect(getCurrentKingdom(state)?.id).toBe('kingdom-of-moles');
     expect(getTotalStages(state)).toBe(4);
-  });
-
-  it('endRaid сбрасывает рейд', () => {
-    startRaid(state, KINGDOMS[0].id);
     endRaid(state);
-    expect(state.raid.kingdomId).toBeNull();
+    expect(getCurrentKingdom(state)).toBeNull();
   });
 });

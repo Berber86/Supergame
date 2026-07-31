@@ -1,8 +1,8 @@
 /**
  * Точка входа приложения.
- * Сессия 4: полная idle-петля — найм слуг, покупка зданий,
- * динамический UI, сейв/лоад, офлайн-уведомления.
- * Критерий: можно копить золото; перезагрузка сохраняет прогресс.
+ * S4: idle-петля (клик, слуги, здания, сейв/офлайн-доход).
+ * S6: рейд-петля в UI — вылет, выбор реликвий, синергии, босс, победа/поражение.
+ * Разметка рейда вынесена в `ui/raid-panel.ts`, логика — в `raid/`.
  */
 
 import './style.css';
@@ -15,6 +15,9 @@ import { buyBuilding, buyServant, getBuildingCost, getServantCost } from './econ
 import { BUILDINGS } from './content/buildings';
 import { SERVANTS } from './content/servants';
 import { KINGDOMS } from './content/kingdoms';
+import { chooseRelic, isVictory, resolveBoss, retreat, startRaid } from './raid/raid';
+import { renderCollection, renderRaidPanel } from './ui/raid-panel';
+import { formatSynergyBonus } from './raid/raid-ui';
 import type { GameState } from './core/types';
 
 const bus = new EventBus();
@@ -79,6 +82,45 @@ function onReset(): void {
   if (!confirm('Начать новую пещеру? Весь прогресс будет потерян.')) return;
   clearState();
   state = createInitialState();
+  render();
+  saveState(state);
+}
+
+function onStartRaid(kingdomId: string): void {
+  if (startRaid(state, kingdomId)) commit();
+}
+
+function onChooseRelic(relicId: string): void {
+  if (chooseRelic(state, relicId)) commit();
+}
+
+function onBoss(): void {
+  const result = resolveBoss(state);
+  commit();
+
+  const synergyText =
+    result.synergies.length > 0
+      ? `\nСработали синергии: ${result.synergies.map((s) => `${s.name} (${formatSynergyBonus(s)})`).join(', ')}.`
+      : '';
+
+  if (result.win) {
+    const victory = result.allKingdomsTaken
+      ? '\n\n👑 Все три королевства захвачены. Ты — Повелитель Области!'
+      : '';
+    alert(`Победа! Урон ${result.damageDealt} против ${result.bossHp} HP. Добыча: ${result.loot} золота.${synergyText}${victory}`);
+  } else {
+    alert(`Поражение. Урон ${result.damageDealt}, у босса осталось ${result.remainingHp} HP. Потеряно ${result.goldLost} золота.${synergyText}\n\nСовет: подкачай пещеру и собирай реликвии одного семейства — синергии решают.`);
+  }
+}
+
+function onRetreat(): void {
+  retreat(state);
+  commit();
+}
+
+/** Общий пост-экшн: перерисовать и сохранить. */
+function commit(): void {
+  bus.emit(GameEvents.stateChanged, state);
   render();
   saveState(state);
 }
@@ -158,11 +200,20 @@ function render(): void {
     }).join('');
   }
 
+  // Панель рейда и коллекция реликвий
+  const raidEl = document.getElementById('raid-panel');
+  if (raidEl) raidEl.innerHTML = renderRaidPanel(state);
+
+  const collectionEl = document.getElementById('collection');
+  if (collectionEl) collectionEl.innerHTML = renderCollection(state);
+
   // Прогресс королевств (превью)
   const kingdomsEl = document.getElementById('kingdoms-preview');
   if (kingdomsEl) {
     const done = KINGDOMS.filter((k) => state.kingdomProgress[k.id]).length;
-    kingdomsEl.textContent = `${done} / ${KINGDOMS.length} захвачено`;
+    kingdomsEl.textContent = isVictory(state)
+      ? `${done} / ${KINGDOMS.length} — победа!`
+      : `${done} / ${KINGDOMS.length} захвачено`;
   }
 }
 
@@ -197,6 +248,16 @@ function mount(): void {
         <ul id="buildings-list" class="shop-list"></ul>
       </section>
 
+      <section class="panel raid-panel">
+        <h2>🗺️ Рейды</h2>
+        <div id="raid-panel"></div>
+      </section>
+
+      <section class="panel">
+        <h2>🏺 Коллекция реликвий</h2>
+        <div id="collection"></div>
+      </section>
+
       <section class="panel">
         <h2>📜 Дневник дракона</h2>
         <ul id="journal" class="list"></ul>
@@ -217,11 +278,15 @@ function mount(): void {
     const target = e.target as HTMLElement;
     const servantId = target.getAttribute('data-servant');
     const buildingId = target.getAttribute('data-building');
-    if (servantId) {
-      onBuyServant(servantId);
-    } else if (buildingId) {
-      onBuyBuilding(buildingId);
-    }
+    const raidId = target.getAttribute('data-raid');
+    const relicId = target.getAttribute('data-relic');
+
+    if (servantId) onBuyServant(servantId);
+    else if (buildingId) onBuyBuilding(buildingId);
+    else if (raidId) onStartRaid(raidId);
+    else if (relicId) onChooseRelic(relicId);
+    else if (target.id === 'boss-btn') onBoss();
+    else if (target.id === 'retreat-btn') onRetreat();
   });
 
   render();

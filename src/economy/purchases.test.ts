@@ -26,7 +26,7 @@ function stateWith(partial: Partial<GameState> = {}): GameState {
     prestige: 0,
     achievements: [],
     journal: [],
-    raid: { kingdomId: null, stage: 0, relics: [] },
+    raid: { kingdomId: null, stage: 0, relics: [], offer: [], atBoss: false },
     lastSavedAt: Date.now(),
     ...partial,
   };
