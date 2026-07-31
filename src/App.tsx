@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import {
   Anchor,
   ArrowLeft,
+  Award,
+  BarChart3,
   BookOpen,
   Brain,
   Check,
@@ -9,7 +11,10 @@ import {
   CircleHelp,
   Coins,
   Compass,
+  Contrast,
   Crown,
+  Database,
+  Download,
   Droplets,
   Eye,
   Flame,
@@ -23,6 +28,7 @@ import {
   RotateCcw,
   Save,
   ScrollText,
+  Settings,
   Shield,
   Ship,
   ShoppingBag,
@@ -31,6 +37,8 @@ import {
   Star,
   Swords,
   Trophy,
+  Type,
+  Upload,
   UserPlus,
   Users,
   Waves,
@@ -39,8 +47,9 @@ import {
   X,
   Zap,
 } from 'lucide-react'
-import { acts, godInfo, legacyBoons, normalizeMeta } from './campaign'
-import { skillLabels } from './data'
+import { acts, bosses, endings as endingDefinitions, godInfo, legacyBoons, normalizeMeta } from './campaign'
+import { encounters, skillLabels } from './data'
+import { difficulties, difficultyDefinition } from './difficulty'
 import {
   DEFAULT_META,
   RESOURCE_MAX,
@@ -71,9 +80,11 @@ import {
   equipmentSlotLabels,
   shipUpgrades,
 } from './progression'
+import { achievements, chronicleStats, parseBackup, unlockAchievements, voyageRecord } from './release'
 import type {
   BossAction,
   Choice,
+  DifficultyId,
   EquipmentSlot,
   GodId,
   MetaState,
@@ -81,12 +92,22 @@ import type {
   RunState,
   Skill,
   TravelStance,
+  UiPreferences,
 } from './types'
+import { bossScenes, endingScenes, sceneForEncounter } from './visuals'
 
-const SAVE_KEY = 'odyssey-shadow-save-v3'
-const LEGACY_SAVE_KEY = 'odyssey-shadow-save-v2'
+const SAVE_KEY = 'odyssey-shadow-save-v4'
+const LEGACY_SAVE_KEY = 'odyssey-shadow-save-v3'
+const SECOND_SAVE_KEY = 'odyssey-shadow-save-v2'
 const FIRST_SAVE_KEY = 'odyssey-shadow-save-v1'
 const META_KEY = 'odyssey-shadow-meta-v1'
+const PREFERENCES_KEY = 'odyssey-ui-preferences-v1'
+
+const DEFAULT_PREFERENCES: UiPreferences = {
+  textScale: 'normal',
+  highContrast: false,
+  reduceMotion: false,
+}
 
 const resourceConfig: Record<
   ResourceKey,
@@ -118,12 +139,13 @@ function readStorage<T>(key: string, fallback: T): T {
 
 function loadSavedRun() {
   const current = readStorage<RunState | null>(SAVE_KEY, null)
-  if (current?.version === 3) return current
+  if (current?.version === 4) return current
 
   const legacy = readStorage<RunState | null>(LEGACY_SAVE_KEY, null)
+    ?? readStorage<RunState | null>(SECOND_SAVE_KEY, null)
     ?? readStorage<RunState | null>(FIRST_SAVE_KEY, null)
   if (!legacy) return null
-  const migrated = createRun(legacy.seed)
+  const migrated = createRun(legacy.seed, legacy.legacyBoons ?? [], legacy.difficulty ?? 'odyssey')
   return {
     ...migrated,
     day: legacy.day,
@@ -146,6 +168,11 @@ function App() {
   const [confirmNew, setConfirmNew] = useState(false)
   const [showRules, setShowRules] = useState(false)
   const [showLegacy, setShowLegacy] = useState(false)
+  const [showDifficulty, setShowDifficulty] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [showArchive, setShowArchive] = useState(false)
+  const [mobileView, setMobileView] = useState<'story' | 'hero' | 'world'>('story')
+  const [preferences, setPreferences] = useState<UiPreferences>(() => readStorage(PREFERENCES_KEY, DEFAULT_PREFERENCES))
 
   useEffect(() => {
     localStorage.setItem(META_KEY, JSON.stringify(meta))
@@ -155,17 +182,59 @@ function App() {
     if (run) localStorage.setItem(SAVE_KEY, JSON.stringify(run))
   }, [run])
 
-  const startNewRun = () => {
-    const nextRun = createRun(Date.now(), meta.legacy)
+  useEffect(() => {
+    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences))
+  }, [preferences])
+
+  const startNewRun = (difficulty: DifficultyId) => {
+    const nextRun = createRun(Date.now(), meta.legacy, difficulty)
     setRun(nextRun)
     setMeta((current) => ({ ...current, voyages: current.voyages + 1 }))
     setConfirmNew(false)
+    setShowDifficulty(false)
+    setMobileView('story')
     setScreen('game')
   }
 
   const requestNewRun = () => {
     if (run && run.phase !== 'dead' && run.phase !== 'home') setConfirmNew(true)
-    else startNewRun()
+    else setShowDifficulty(true)
+  }
+
+  const preferenceClasses = `ui-text-${preferences.textScale} ${preferences.highContrast ? 'ui-high-contrast' : ''} ${preferences.reduceMotion ? 'ui-reduce-motion' : ''}`
+
+  const exportBackup = () => {
+    const payload = {
+      schema: 'odyssey-shadow-backup',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      run,
+      meta,
+      preferences,
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `odyssey-shadow-${new Date().toISOString().slice(0, 10)}.json`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const importBackup = async (file: File) => {
+    const parsed = parseBackup(await file.text())
+    if (!parsed.ok) return parsed.message
+    const restoredMeta = normalizeMeta(parsed.payload.meta)
+    const restoredPreferences: UiPreferences = {
+      ...DEFAULT_PREFERENCES,
+      ...parsed.payload.preferences,
+    }
+    setMeta(restoredMeta)
+    setRun(parsed.payload.run ?? null)
+    setPreferences(restoredPreferences)
+    setMobileView('story')
+    if (!parsed.payload.run) setScreen('menu')
+    return `Восстановлено походов: ${restoredMeta.voyages}; записей кодекса: ${restoredMeta.codex.length}.`
   }
 
   const commitRun = (next: RunState) => {
@@ -174,25 +243,41 @@ function App() {
       (next.phase === 'dead' || next.phase === 'home') &&
       run.phase !== 'dead' &&
       run.phase !== 'home'
-    if (endedNow) {
-      setMeta((current) => ({
-        ...current,
-        kleos: current.kleos + next.kleosEarned,
-        bestDistance: Math.max(current.bestDistance, next.nodeIndex),
-        endings: next.campaign.ending && !current.endings.includes(next.campaign.ending.id)
-          ? [...current.endings, next.campaign.ending.id]
-          : current.endings,
-        prophecies: next.campaign.prophecy.fulfilled && !current.prophecies.includes(next.campaign.prophecy.id)
-          ? [...current.prophecies, next.campaign.prophecy.id]
-          : current.prophecies,
-      }))
-    }
+    const discoveries = [
+      ...next.campaign.decisions.map((decision) => decision.encounterId),
+      ...next.campaign.bossesDefeated,
+      ...(next.phase === 'boss' && next.boss ? [next.boss.id] : []),
+    ]
+    setMeta((current) => {
+      const codex = [...new Set([...current.codex, ...discoveries])]
+      let updated: MetaState = codex.length === current.codex.length ? current : { ...current, codex }
+      if (endedNow) {
+        const record = voyageRecord(next)
+        const history = current.history.some((voyage) => voyage.id === record.id)
+          ? current.history
+          : [record, ...current.history].slice(0, 50)
+        updated = {
+          ...updated,
+          history,
+          kleos: current.kleos + next.kleosEarned,
+          bestDistance: Math.max(current.bestDistance, next.nodeIndex),
+          endings: next.campaign.ending && !current.endings.includes(next.campaign.ending.id)
+            ? [...current.endings, next.campaign.ending.id]
+            : current.endings,
+          prophecies: next.campaign.prophecy.fulfilled && !current.prophecies.includes(next.campaign.prophecy.id)
+            ? [...current.prophecies, next.campaign.prophecy.id]
+            : current.prophecies,
+        }
+      }
+      const unlocked = unlockAchievements(updated)
+      return unlocked.length === updated.achievements.length ? updated : { ...updated, achievements: unlocked }
+    })
     setRun(next)
   }
 
   if (screen === 'menu') {
     return (
-      <>
+      <div className={preferenceClasses}>
         <TitleScreen
           savedRun={run}
           meta={meta}
@@ -200,11 +285,16 @@ function App() {
           onNew={requestNewRun}
           onRules={() => setShowRules(true)}
           onLegacy={() => setShowLegacy(true)}
+          onArchive={() => setShowArchive(true)}
+          onSettings={() => setShowSettings(true)}
         />
         {confirmNew && (
           <ConfirmModal
             onCancel={() => setConfirmNew(false)}
-            onConfirm={startNewRun}
+            onConfirm={() => {
+              setConfirmNew(false)
+              setShowDifficulty(true)
+            }}
           />
         )}
         {showRules && <RulesModal onClose={() => setShowRules(false)} />}
@@ -215,22 +305,40 @@ function App() {
             onClose={() => setShowLegacy(false)}
           />
         )}
-      </>
+        {showDifficulty && <DifficultyModal onStart={startNewRun} onClose={() => setShowDifficulty(false)} />}
+        {showSettings && (
+          <AccessibilityModal
+            preferences={preferences}
+            onChange={setPreferences}
+            onClose={() => setShowSettings(false)}
+          />
+        )}
+        {showArchive && (
+          <ChronicleModal
+            meta={meta}
+            onExport={exportBackup}
+            onImport={importBackup}
+            onClose={() => setShowArchive(false)}
+          />
+        )}
+      </div>
     )
   }
 
   if (!run) return null
 
   return (
-    <div className="game-app">
+    <div className={`game-app ${preferenceClasses}`}>
       <GameHeader
         run={run}
         saving={false}
         onMenu={() => setScreen('menu')}
         onRules={() => setShowRules(true)}
+        onArchive={() => setShowArchive(true)}
+        onSettings={() => setShowSettings(true)}
         onRestart={requestNewRun}
       />
-      <main className="game-grid">
+      <main className={`game-grid mobile-view-${mobileView}`}>
         <HeroPanel
           run={run}
           onUpgrade={(skill) => commitRun(upgradeSkill(run, skill))}
@@ -255,27 +363,57 @@ function App() {
         )}
         <WorldPanel
           run={run}
+          meta={meta}
           onEquip={(itemId) => commitRun(equipItem(run, itemId))}
         />
       </main>
-      <div className="mobile-status">
-        <span><Wheat size={14} /> {run.resources.food}</span>
-        <span><Droplets size={14} /> {run.resources.water}</span>
-        <span><Users size={14} /> {run.resources.crew}</span>
-        <span><Shield size={14} /> {run.resources.hull}%</span>
-      </div>
+      <nav className="mobile-dock" aria-label="Разделы игры">
+        <div className="mobile-resources">
+          <span><Wheat size={11} /> {run.resources.food}</span>
+          <span><Droplets size={11} /> {run.resources.water}</span>
+          <span><Users size={11} /> {run.resources.crew}</span>
+          <span><Shield size={11} /> {run.resources.hull}%</span>
+        </div>
+        <div className="mobile-tabs">
+          <button className={mobileView === 'story' ? 'active' : ''} onClick={() => setMobileView('story')}><ScrollText size={17} /><span>Сюжет</span></button>
+          <button className={mobileView === 'hero' ? 'active' : ''} onClick={() => setMobileView('hero')}><Crown size={17} /><span>Герой</span></button>
+          <button className={mobileView === 'world' ? 'active' : ''} onClick={() => setMobileView('world')}><Map size={17} /><span>Мир</span></button>
+        </div>
+      </nav>
       {(run.phase === 'dead' || run.phase === 'home') && (
         <EndingOverlay
           run={run}
           meta={meta}
-          onNew={startNewRun}
+          onNew={() => setShowDifficulty(true)}
           onMenu={() => setScreen('menu')}
         />
       )}
       {confirmNew && (
-        <ConfirmModal onCancel={() => setConfirmNew(false)} onConfirm={startNewRun} />
+        <ConfirmModal
+          onCancel={() => setConfirmNew(false)}
+          onConfirm={() => {
+            setConfirmNew(false)
+            setShowDifficulty(true)
+          }}
+        />
       )}
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
+      {showDifficulty && <DifficultyModal onStart={startNewRun} onClose={() => setShowDifficulty(false)} />}
+      {showSettings && (
+        <AccessibilityModal
+          preferences={preferences}
+          onChange={setPreferences}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+      {showArchive && (
+        <ChronicleModal
+          meta={meta}
+          onExport={exportBackup}
+          onImport={importBackup}
+          onClose={() => setShowArchive(false)}
+        />
+      )}
     </div>
   )
 }
@@ -287,9 +425,11 @@ interface TitleScreenProps {
   onNew: () => void
   onRules: () => void
   onLegacy: () => void
+  onArchive: () => void
+  onSettings: () => void
 }
 
-function TitleScreen({ savedRun, meta, onContinue, onNew, onRules, onLegacy }: TitleScreenProps) {
+function TitleScreen({ savedRun, meta, onContinue, onNew, onRules, onLegacy, onArchive, onSettings }: TitleScreenProps) {
   return (
     <div className="title-screen">
       <div className="title-art" />
@@ -300,8 +440,14 @@ function TitleScreen({ savedRun, meta, onContinue, onNew, onRules, onLegacy }: T
           <button className="ghost-button legacy-button" onClick={onLegacy}>
             <Trophy size={17} /> Наследие <b>{meta.kleos} κ</b>
           </button>
+          <button className="ghost-button archive-title-button" onClick={onArchive}>
+            <BarChart3 size={17} /> Летопись
+          </button>
           <button className="ghost-button" onClick={onRules}>
             <CircleHelp size={17} /> Как играть
+          </button>
+          <button className="ghost-button settings-title-button" onClick={onSettings} aria-label="Настройки интерфейса">
+            <Settings size={17} />
           </button>
         </div>
       </header>
@@ -334,7 +480,7 @@ function TitleScreen({ savedRun, meta, onContinue, onNew, onRules, onLegacy }: T
         <div className="title-features">
           <div><Map size={17} /><span><b>187 островов</b>Процедурный архипелаг</span></div>
           <div><Skull size={17} /><span><b>Одна жизнь</b>Решения имеют цену</span></div>
-          <div><Sparkles size={17} /><span><b>{meta.endings.length} из 4 финалов</b>{meta.legacy.length} даров наследия</span></div>
+          <div><Sparkles size={17} /><span><b>{meta.endings.length} из 4 финалов</b>{meta.codex.length} записей кодекса</span></div>
         </div>
       </section>
 
@@ -344,7 +490,7 @@ function TitleScreen({ savedRun, meta, onContinue, onNew, onRules, onLegacy }: T
       </div>
       <div className="title-footer">
         <span>Кампания · Три акта · Четыре финала</span>
-        <span className="title-seed">ПОХОДОВ: {String(meta.voyages).padStart(2, '0')}</span>
+        <span className="title-seed">ВЕРСИЯ 0.6.0 · ПОХОДОВ: {String(meta.voyages).padStart(2, '0')}</span>
       </div>
     </div>
   )
@@ -367,11 +513,14 @@ interface HeaderProps {
   saving: boolean
   onMenu: () => void
   onRules: () => void
+  onArchive: () => void
+  onSettings: () => void
   onRestart: () => void
 }
 
-function GameHeader({ run, saving, onMenu, onRules, onRestart }: HeaderProps) {
+function GameHeader({ run, saving, onMenu, onRules, onArchive, onSettings, onRestart }: HeaderProps) {
   const act = acts[run.campaign.act - 1]
+  const difficulty = difficultyDefinition(run.difficulty)
   return (
     <header className="game-header">
       <button className="icon-button menu-button" onClick={onMenu} aria-label="Главное меню">
@@ -383,6 +532,7 @@ function GameHeader({ run, saving, onMenu, onRules, onRestart }: HeaderProps) {
         <span>АКТ {run.campaign.act} · КАМПАНИЯ</span>
         <strong>{act.name}</strong>
       </div>
+      <div className={`difficulty-pill difficulty-${run.difficulty}`}>{difficulty.name}</div>
       <div className="header-journey">
         <div><Wind size={16} /><span>ДЕНЬ <b>{run.day}</b></span></div>
         <div><Compass size={16} /><span>ДО ИТАКИ <b>{routeDistance(run)} стадиев</b></span></div>
@@ -392,6 +542,12 @@ function GameHeader({ run, saving, onMenu, onRules, onRestart }: HeaderProps) {
         {saving ? <Check size={15} /> : <Save size={15} />}
         {saving ? 'Сохранено' : 'Автосохранение'}
       </div>
+      <button className="icon-button archive-button" onClick={onArchive} aria-label="Летопись и данные">
+        <BarChart3 size={18} />
+      </button>
+      <button className="icon-button settings-button" onClick={onSettings} aria-label="Настройки интерфейса">
+        <Settings size={18} />
+      </button>
       <button className="icon-button" onClick={onRules} aria-label="Правила">
         <BookOpen size={18} />
       </button>
@@ -559,10 +715,13 @@ interface EncounterPanelProps {
 
 function EncounterPanel({ run, onChoose, onContinue }: EncounterPanelProps) {
   const encounter = currentEncounter(run)
+  const scene = sceneForEncounter(encounter)
   const isResolution = run.phase === 'resolution'
+  const [showScene, setShowScene] = useState(false)
   return (
     <section className={`encounter-panel panel accent-${encounter.accent}`}>
-      <div className="encounter-art">
+      <div className="encounter-art illustrated-scene" style={{ backgroundImage: `url(${scene.src})` }}>
+        <button className="scene-expand" onClick={() => setShowScene(true)}><Eye size={13} /> Рассмотреть сцену</button>
         <div className="encounter-art-overlay" />
         <div className="encounter-location">
           <span><Map size={13} /> {run.route[run.nodeIndex].name} · {run.route[run.nodeIndex].region}</span>
@@ -602,6 +761,15 @@ function EncounterPanel({ run, onChoose, onContinue }: EncounterPanelProps) {
           </div>
         </div>
       )}
+      {showScene && (
+        <div className="scene-lightbox" onClick={() => setShowScene(false)}>
+          <div className="scene-lightbox-card" onClick={(event) => event.stopPropagation()}>
+            <button className="scene-close" onClick={() => setShowScene(false)}><X size={18} /></button>
+            <img src={scene.src} alt={`${encounter.title}: ${scene.caption}`} />
+            <div><span className="eyebrow">ОТКРЫТО В КОДЕКСЕ</span><h2>{encounter.title}</h2><p>{scene.caption}</p></div>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
@@ -619,12 +787,14 @@ function ChoiceButton({
 }) {
   const chance = Math.round(choiceChance(run, choice) * 100)
   const affordable = canAfford(run.resources, choice.cost)
+  const hasAffordableChoice = currentEncounter(run).choices.some((entry) => canAfford(run.resources, entry.cost))
+  const desperate = !affordable && !hasAffordableChoice
   const { Icon } = skillConfig[choice.skill]
   const chanceTone = chance >= 65 ? 'good' : chance >= 42 ? 'risky' : 'danger'
   const costs = formatEffects(choice.cost).filter((effect) => effect.value < 0)
 
   return (
-    <button className="choice-button" onClick={onClick} disabled={!affordable}>
+    <button className={`choice-button ${desperate ? 'desperate' : ''}`} onClick={onClick} disabled={!affordable && hasAffordableChoice}>
       <span className="choice-index">{['I', 'II', 'III'][index]}</span>
       <span className="choice-main">
         <strong>{choice.title}</strong>
@@ -635,7 +805,8 @@ function ChoiceButton({
             const CostIcon = resourceConfig[cost.key].Icon
             return <span className="choice-cost" key={cost.key}><CostIcon size={12} /> {cost.value}</span>
           })}
-          {!affordable && <em>Недостаточно ресурсов</em>}
+          {desperate && <em>Последний выход · цена отменена</em>}
+          {!affordable && hasAffordableChoice && <em>Недостаточно ресурсов</em>}
         </span>
       </span>
       <span className={`chance ${chanceTone}`}>
@@ -697,6 +868,7 @@ function BossPanel({ run, onAction }: { run: RunState; onAction: (action: BossAc
   const boss = run.boss!
   const intent = definition.intents[boss.intentIndex % definition.intents.length]
   const healthPercent = (boss.health / boss.maxHealth) * 100
+  const hasAffordableAction = definition.actions.some((action) => canAfford(run.resources, action.cost))
   return (
     <section className={`boss-panel panel boss-${definition.id} boss-stage-${boss.stage}`}>
       <div className="boss-hero">
@@ -736,11 +908,12 @@ function BossPanel({ run, onAction }: { run: RunState; onAction: (action: BossAc
           {definition.actions.map((action) => {
             const chance = Math.round(bossActionChance(run, action) * 100)
             const affordable = canAfford(run.resources, action.cost)
+            const desperate = !affordable && !hasAffordableAction
             const SkillIcon = skillConfig[action.skill].Icon
             return (
-              <button key={action.id} className="boss-action" onClick={() => onAction(action)} disabled={!affordable}>
+              <button key={action.id} className={`boss-action ${desperate ? 'desperate' : ''}`} onClick={() => onAction(action)} disabled={!affordable && hasAffordableAction}>
                 <span className="boss-action-icon"><SkillIcon size={18} /></span>
-                <span className="boss-action-copy"><b>{action.title}</b><small>{action.description}</small><em>{skillLabels[action.skill]} {effectiveSkill(run, action.skill)} · урон {action.damage} · защита {Math.round(action.mitigation * 100)}%</em></span>
+                <span className="boss-action-copy"><b>{action.title}</b><small>{action.description}</small><em>{skillLabels[action.skill]} {effectiveSkill(run, action.skill)} · урон {action.damage} · защита {Math.round(action.mitigation * 100)}%{desperate ? ' · цена отменена' : ''}</em></span>
                 <span className={`chance ${chance >= 60 ? 'good' : chance >= 40 ? 'risky' : 'danger'}`}><small>ШАНС</small><b>{chance}%</b></span>
                 {action.cost && <span className="boss-action-cost">{formatEffects(action.cost).map(({ key, value }) => { const Icon = resourceConfig[key].Icon; return <i key={key}><Icon size={11} />{value}</i> })}</span>}
               </button>
@@ -865,11 +1038,11 @@ function PortPanel({
   )
 }
 
-function WorldPanel({ run, onEquip }: { run: RunState; onEquip: (itemId: string) => void }) {
-  const [tab, setTab] = useState<'map' | 'ship' | 'fate' | 'log'>('map')
+function WorldPanel({ run, meta, onEquip }: { run: RunState; meta: MetaState; onEquip: (itemId: string) => void }) {
+  const [tab, setTab] = useState<'map' | 'ship' | 'fate' | 'codex' | 'log'>('map')
   return (
     <aside className="world-panel panel">
-      <div className="world-tabs four-tabs">
+      <div className="world-tabs five-tabs">
         <button className={tab === 'map' ? 'active' : ''} onClick={() => setTab('map')}>
           <Map size={13} /> Карта
         </button>
@@ -879,6 +1052,9 @@ function WorldPanel({ run, onEquip }: { run: RunState; onEquip: (itemId: string)
         <button className={tab === 'fate' ? 'active' : ''} onClick={() => setTab('fate')}>
           <Eye size={13} /> Судьба
         </button>
+        <button className={tab === 'codex' ? 'active' : ''} onClick={() => setTab('codex')}>
+          <BookOpen size={13} /> Кодекс
+        </button>
         <button className={tab === 'log' ? 'active' : ''} onClick={() => setTab('log')}>
           <History size={13} /> Журнал
         </button>
@@ -886,8 +1062,81 @@ function WorldPanel({ run, onEquip }: { run: RunState; onEquip: (itemId: string)
       {tab === 'map' && <RouteMap run={run} />}
       {tab === 'ship' && <ShipPanel run={run} onEquip={onEquip} />}
       {tab === 'fate' && <FatePanel run={run} />}
+      {tab === 'codex' && <CodexPanel run={run} meta={meta} />}
       {tab === 'log' && <VoyageLog run={run} />}
     </aside>
+  )
+}
+
+function CodexPanel({ run, meta }: { run: RunState; meta: MetaState }) {
+  const currentId = run.phase === 'boss' ? run.boss?.id : run.route[run.nodeIndex]?.encounterId
+  const discovered = new Set([...meta.codex, ...(currentId ? [currentId] : [])])
+  const entries = [
+    ...encounters.map((encounter) => ({
+      id: encounter.id,
+      kind: 'myth' as const,
+      title: encounter.title,
+      subtitle: encounter.eyebrow,
+      description: encounter.description,
+      scene: sceneForEncounter(encounter),
+      tag: encounter.threat,
+    })),
+    ...bosses.map((boss) => ({
+      id: boss.id,
+      kind: 'guardian' as const,
+      title: boss.name,
+      subtitle: boss.epithet,
+      description: boss.description,
+      scene: bossScenes[boss.id],
+      tag: 'Страж пути',
+    })),
+  ]
+  const firstDiscovered = entries.find((entry) => discovered.has(entry.id))
+  const [category, setCategory] = useState<'all' | 'myth' | 'guardian'>('all')
+  const [selectedId, setSelectedId] = useState(currentId ?? firstDiscovered?.id ?? entries[0].id)
+  const selected = entries.find((entry) => entry.id === selectedId && discovered.has(entry.id)) ?? firstDiscovered
+  const visibleEntries = category === 'all' ? entries : entries.filter((entry) => entry.kind === category)
+  const illustratedCount = entries.filter((entry) => discovered.has(entry.id) && entry.scene.src !== '/art/odyssey-storm.jpg').length
+
+  return (
+    <div className="codex-content">
+      <div className="codex-heading">
+        <span className="eyebrow">ПАМЯТЬ СТРАНСТВИЙ</span>
+        <h3>Кодекс мифов</h3>
+        <p>Записи и образы сохраняются между экспедициями, даже когда море забирает героя.</p>
+        <div className="codex-progress"><i style={{ width: `${(meta.codex.length / entries.length) * 100}%` }} /><span>{meta.codex.length} / {entries.length}</span></div>
+      </div>
+
+      {selected ? (
+        <article className={`codex-feature palette-${selected.scene.palette}`}>
+          <div className="codex-feature-art" style={{ backgroundImage: `url(${selected.scene.src})` }}>
+            <span>{selected.tag}</span>
+          </div>
+          <div><small>{selected.subtitle}</small><h4>{selected.title}</h4><p>{selected.description}</p><em><Eye size={11} /> {selected.scene.caption}</em></div>
+        </article>
+      ) : (
+        <div className="codex-empty"><BookOpen size={25} /><span><b>Кодекс пока пуст</b><small>Примите первое решение, чтобы сохранить миф.</small></span></div>
+      )}
+
+      <div className="codex-filters">
+        <button className={category === 'all' ? 'active' : ''} onClick={() => setCategory('all')}>Все</button>
+        <button className={category === 'myth' ? 'active' : ''} onClick={() => setCategory('myth')}>Мифы</button>
+        <button className={category === 'guardian' ? 'active' : ''} onClick={() => setCategory('guardian')}>Стражи</button>
+      </div>
+
+      <div className="codex-grid">
+        {visibleEntries.map((entry) => {
+          const unlocked = discovered.has(entry.id)
+          return (
+            <button className={`${unlocked ? 'unlocked' : 'locked'} ${selected?.id === entry.id ? 'active' : ''}`} key={entry.id} onClick={() => unlocked && setSelectedId(entry.id)} disabled={!unlocked}>
+              <span className="codex-thumb" style={unlocked ? { backgroundImage: `url(${entry.scene.src})` } : undefined}>{!unlocked && '?'}</span>
+              <span><small>{entry.kind === 'guardian' ? 'СТРАЖ' : 'МИФ'}</small><b>{unlocked ? entry.title : 'Неизвестная песнь'}</b></span>
+            </button>
+          )
+        })}
+      </div>
+      <div className="codex-visual-count"><Sparkles size={12} /> Иллюстрированных записей открыто: <b>{illustratedCount}</b></div>
+    </div>
   )
 }
 
@@ -1127,9 +1376,15 @@ function EndingOverlay({
   onMenu: () => void
 }) {
   const victory = run.phase === 'home'
+  const endingScene = victory && run.campaign.ending ? endingScenes[run.campaign.ending.id] : null
   return (
     <div className="ending-overlay">
       <div className="ending-card">
+        {endingScene && (
+          <div className="ending-visual" style={{ backgroundImage: `url(${endingScene.src})` }}>
+            <span><Eye size={12} /> {endingScene.caption}</span>
+          </div>
+        )}
         <div className={`ending-emblem ${victory ? 'victory' : ''}`}>
           {victory ? <Crown size={32} /> : <Skull size={32} />}
         </div>
@@ -1153,6 +1408,208 @@ function EndingOverlay({
           <span><small>МИР ИЗМЕНИТСЯ</small>Начать новую песнь</span><RotateCcw size={19} />
         </button>
         <button className="text-button" onClick={onMenu}><ArrowLeft size={15} /> Вернуться в главное меню</button>
+      </div>
+    </div>
+  )
+}
+
+function ChronicleModal({
+  meta,
+  onExport,
+  onImport,
+  onClose,
+}: {
+  meta: MetaState
+  onExport: () => void
+  onImport: (file: File) => Promise<string>
+  onClose: () => void
+}) {
+  const [tab, setTab] = useState<'overview' | 'achievements' | 'history' | 'data'>('overview')
+  const [importMessage, setImportMessage] = useState('')
+  const stats = chronicleStats(meta)
+  const favoriteDifficulty = difficultyDefinition(stats.favoriteDifficulty as DifficultyId)
+
+  const handleImport = async (file?: File) => {
+    if (!file) return
+    setImportMessage(await onImport(file))
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-card chronicle-modal">
+        <button className="modal-close" onClick={onClose}><X size={18} /></button>
+        <div className="chronicle-heading">
+          <div className="chronicle-emblem"><BarChart3 size={24} /></div>
+          <span className="eyebrow">ПЕСНИ, КОТОРЫЕ ПОМНИТ МОРЕ</span>
+          <h2>Летопись Одиссея</h2>
+          <p>Все завершённые экспедиции, открытые судьбы и достижения хранятся между попытками.</p>
+        </div>
+        <div className="chronicle-tabs">
+          <button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}><BarChart3 size={14} /> Обзор</button>
+          <button className={tab === 'achievements' ? 'active' : ''} onClick={() => setTab('achievements')}><Award size={14} /> Достижения</button>
+          <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}><ScrollText size={14} /> Походы</button>
+          <button className={tab === 'data' ? 'active' : ''} onClick={() => setTab('data')}><Database size={14} /> Данные</button>
+        </div>
+
+        <div className="chronicle-body">
+          {tab === 'overview' && (
+            <>
+              <div className="chronicle-stats">
+                <div><small>ЗАВЕРШЕНО</small><b>{stats.finished}</b><span>экспедиций</span></div>
+                <div><small>ВОЗВРАЩЕНИЯ</small><b>{stats.homecomings}</b><span>{Math.round(stats.completionRate * 100)}% успеха</span></div>
+                <div><small>СРЕДНИЙ ПУТЬ</small><b>{stats.averageDays.toFixed(1)}</b><span>дней</span></div>
+                <div><small>ЛЮБИМЫЙ РЕЖИМ</small><b>{favoriteDifficulty.name}</b><span>{stats.totalKleos} κ заработано</span></div>
+              </div>
+              <section className="ending-gallery">
+                <div className="section-heading"><span>СУДЬБЫ ЦАРЯ</span><small>{meta.endings.length} / 4</small></div>
+                <div>
+                  {Object.entries(endingScenes).map(([id, scene]) => {
+                    const unlocked = meta.endings.includes(id)
+                    const ending = endingDefinitions[id]
+                    return (
+                      <article className={unlocked ? 'unlocked' : 'locked'} key={id}>
+                        <div style={unlocked ? { backgroundImage: `url(${scene.src})` } : undefined}>{!unlocked && <span>?</span>}</div>
+                        <small>{unlocked ? ending.subtitle : 'СУДЬБА СКРЫТА'}</small>
+                        <b>{unlocked ? ending.title : 'Неизвестный финал'}</b>
+                      </article>
+                    )
+                  })}
+                </div>
+              </section>
+              <div className="collection-summary"><BookOpen size={16} /><span><b>{meta.codex.length} / {encounters.length + bosses.length} записей кодекса</b><small>{meta.prophecies.length} пророчеств · {meta.legacy.length} даров наследия</small></span></div>
+            </>
+          )}
+
+          {tab === 'achievements' && (
+            <div className="achievement-grid">
+              {achievements.map((achievement) => {
+                const unlocked = meta.achievements.includes(achievement.id)
+                return (
+                  <article className={unlocked ? 'unlocked' : 'locked'} key={achievement.id}>
+                    <div className="achievement-symbol">{unlocked ? achievement.symbol : '?'}</div>
+                    <span><small>{unlocked ? 'ОТКРЫТО' : achievement.hidden ? 'ТАЙНОЕ' : 'НЕ ВЫПОЛНЕНО'}</small><b>{unlocked || !achievement.hidden ? achievement.title : 'Скрытое достижение'}</b><p>{unlocked || !achievement.hidden ? achievement.description : 'Условие откроется вместе с наградой.'}</p></span>
+                  </article>
+                )
+              })}
+            </div>
+          )}
+
+          {tab === 'history' && (
+            <div className="voyage-history">
+              {meta.history.length === 0 ? (
+                <div className="chronicle-empty"><ScrollText size={28} /><b>Первая песнь ещё не завершена</b><p>Гибель или возвращение на Итаку появятся здесь.</p></div>
+              ) : meta.history.map((voyage) => {
+                const difficulty = difficultyDefinition(voyage.difficulty)
+                const date = voyage.finishedAt.slice(0, 10).split('-').reverse().join('.')
+                return (
+                  <article className={voyage.outcome} key={voyage.id}>
+                    <div className="voyage-outcome">{voyage.outcome === 'home' ? <Crown size={18} /> : <Skull size={18} />}</div>
+                    <span><small>{date} · {difficulty.name.toUpperCase()}</small><b>{voyage.outcome === 'home' ? endingDefinitions[voyage.endingId ?? 'hero']?.title ?? 'Возвращение на Итаку' : 'Море не знает могил'}</b><p>День {voyage.day} · узел {voyage.nodeIndex + 1} · стражей {voyage.bossesDefeated}/2 · команда {voyage.crew}</p></span>
+                    <em>+{voyage.kleosEarned} κ</em>
+                  </article>
+                )
+              })}
+            </div>
+          )}
+
+          {tab === 'data' && (
+            <div className="data-management">
+              <div className="data-card">
+                <div><Download size={22} /></div>
+                <span><b>Экспортировать летопись</b><p>Сохранить текущую экспедицию, наследие, кодекс, историю и настройки в один JSON-файл.</p></span>
+                <button className="secondary-button" onClick={onExport}>Скачать</button>
+              </div>
+              <div className="data-card">
+                <div><Upload size={22} /></div>
+                <span><b>Восстановить из файла</b><p>Текущие локальные данные будут заменены содержимым выбранной резервной копии.</p></span>
+                <label className="secondary-button">Выбрать<input type="file" accept="application/json,.json" onChange={(event) => handleImport(event.target.files?.[0])} /></label>
+              </div>
+              {importMessage && <div className="import-message"><Database size={14} /> {importMessage}</div>}
+              <div className="offline-note"><Check size={15} /><span><b>Офлайн-режим включён</b><small>После первого открытия приложение и загруженные иллюстрации доступны без сети.</small></span></div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DifficultyModal({
+  onStart,
+  onClose,
+}: {
+  onStart: (difficulty: DifficultyId) => void
+  onClose: () => void
+}) {
+  const [selected, setSelected] = useState<DifficultyId>('odyssey')
+  const active = difficultyDefinition(selected)
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-card difficulty-modal">
+        <button className="modal-close" onClick={onClose}><X size={18} /></button>
+        <span className="eyebrow">НОВАЯ ПЕСНЬ</span>
+        <h2>Как мойры сплетут ваш путь?</h2>
+        <p>Режим нельзя изменить во время экспедиции. Он влияет на припасы, проверки, штормы, стражей и получаемую славу.</p>
+        <div className="difficulty-cards">
+          {difficulties.map((difficulty) => (
+            <button
+              className={`difficulty-card difficulty-${difficulty.id} ${selected === difficulty.id ? 'active' : ''}`}
+              key={difficulty.id}
+              onClick={() => setSelected(difficulty.id)}
+              aria-pressed={selected === difficulty.id}
+            >
+              <span className="difficulty-art" style={{ backgroundImage: `url(${difficulty.art})` }}><i>{selected === difficulty.id && <Check size={14} />}</i></span>
+              <span className="difficulty-copy"><small>{difficulty.subtitle}</small><b>{difficulty.name}</b><p>{difficulty.description}</p></span>
+              <span className="difficulty-tags">{difficulty.tags.map((tag) => <em key={tag}>{tag}</em>)}</span>
+            </button>
+          ))}
+        </div>
+        <div className="difficulty-confirm">
+          <div><small>ВЫБРАНО</small><b>{active.name}</b><span>Множитель славы: ×{active.kleosMultiplier}</span></div>
+          <button className="primary-button" onClick={() => onStart(selected)}>Начать путешествие <ChevronRight size={16} /></button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AccessibilityModal({
+  preferences,
+  onChange,
+  onClose,
+}: {
+  preferences: UiPreferences
+  onChange: (preferences: UiPreferences) => void
+  onClose: () => void
+}) {
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-card accessibility-modal">
+        <button className="modal-close" onClick={onClose}><X size={18} /></button>
+        <span className="eyebrow">ИНТЕРФЕЙС И ДОСТУПНОСТЬ</span>
+        <h2>Настройки чтения</h2>
+        <p>Параметры применяются сразу и сохраняются отдельно от игрового прогресса.</p>
+        <section className="accessibility-setting">
+          <div className="setting-icon"><Type size={20} /></div>
+          <div><b>Размер текста</b><small>Увеличивает основной текст событий, решений и кодекса.</small></div>
+          <div className="segmented-control">
+            {(['normal', 'large', 'xlarge'] as const).map((scale, index) => (
+              <button key={scale} className={preferences.textScale === scale ? 'active' : ''} onClick={() => onChange({ ...preferences, textScale: scale })}>{['A', 'A+', 'A++'][index]}</button>
+            ))}
+          </div>
+        </section>
+        <section className="accessibility-setting">
+          <div className="setting-icon"><Contrast size={20} /></div>
+          <div><b>Высокий контраст</b><small>Усиливает границы, текст и различия состояний.</small></div>
+          <button className={`toggle-control ${preferences.highContrast ? 'active' : ''}`} aria-pressed={preferences.highContrast} onClick={() => onChange({ ...preferences, highContrast: !preferences.highContrast })}><i /></button>
+        </section>
+        <section className="accessibility-setting">
+          <div className="setting-icon"><Wind size={20} /></div>
+          <div><b>Уменьшить движение</b><small>Отключает пульсацию, панорамирование и переходы.</small></div>
+          <button className={`toggle-control ${preferences.reduceMotion ? 'active' : ''}`} aria-pressed={preferences.reduceMotion} onClick={() => onChange({ ...preferences, reduceMotion: !preferences.reduceMotion })}><i /></button>
+        </section>
+        <div className="accessibility-preview"><span className="eyebrow">ПРИМЕР</span><p>Море помнит каждую клятву, но теперь эту строку легче прочитать.</p></div>
+        <button className="primary-button" onClick={onClose}>Сохранить настройки</button>
       </div>
     </div>
   )
@@ -1182,6 +1639,7 @@ function LegacyModal({
           <div><small>ДАРЫ</small><b>{meta.legacy.length} / {legacyBoons.length}</b></div>
           <div><small>ФИНАЛЫ</small><b>{meta.endings.length} / 4</b></div>
           <div><small>ПРОРОЧЕСТВА</small><b>{meta.prophecies.length} / 4</b></div>
+          <div><small>КОДЕКС</small><b>{meta.codex.length} / {encounters.length + bosses.length}</b></div>
         </div>
         <div className="legacy-grid">
           {legacyBoons.map((boon) => {
@@ -1227,6 +1685,7 @@ function RulesModal({ onClose }: { onClose: () => void }) {
     { Icon: Skull, title: 'Читайте намерения', text: 'Стражи показывают следующую атаку. Подбирайте ответ с подходящей защитой.' },
     { Icon: Eye, title: 'Спорьте с судьбой', text: 'Решения меняют отношение богов, рок, личное пророчество и доступный финал.' },
     { Icon: Wind, title: 'Выбирайте курс', text: 'Прямой путь экономит дни, осторожный снижает вероятность и силу штормов.' },
+    { Icon: BookOpen, title: 'Собирайте кодекс', text: 'Пережитые мифы и их иллюстрации навсегда сохраняются между песнями.' },
     { Icon: Sparkles, title: 'Оставляйте наследие', text: 'κλέος после экспедиции покупает постоянные дары для следующих попыток.' },
   ]
   return (

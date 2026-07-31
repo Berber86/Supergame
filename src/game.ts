@@ -1,5 +1,6 @@
 import { bosses, endings, legacyBoons, prophecies } from './campaign'
 import { encounters, regionNames } from './data'
+import { difficultyDefinition } from './difficulty'
 import {
   equipment,
   recruitableCompanions,
@@ -11,6 +12,7 @@ import type {
   BossAction,
   BossState,
   Choice,
+  DifficultyId,
   Effects,
   EquipmentSlot,
   GodId,
@@ -43,6 +45,9 @@ export const DEFAULT_META: MetaState = {
   legacy: [],
   endings: [],
   prophecies: [],
+  codex: [],
+  history: [],
+  achievements: [],
 }
 
 export interface PortService {
@@ -192,10 +197,11 @@ function createRoute(seed: number, world: WorldLocation[]): RouteNode[] {
   return route
 }
 
-export function createRun(seed = Date.now(), legacy: string[] = []): RunState {
+export function createRun(seed = Date.now(), legacy: string[] = [], difficulty: DifficultyId = 'odyssey'): RunState {
   const world = generateWorld(seed)
   const hasBoon = (id: string) => legacy.includes(id)
-  const resources: Resources = {
+  const difficultyConfig = difficultyDefinition(difficulty)
+  const baseResources: Resources = {
     health: hasBoon('scarred-king') ? 100 : 88,
     food: hasBoon('sacred-casks') ? 48 : 38,
     water: hasBoon('sacred-casks') ? 54 : 44,
@@ -203,10 +209,16 @@ export function createRun(seed = Date.now(), legacy: string[] = []): RunState {
     crew: hasBoon('veteran-oars') ? 20 : 18,
     hull: hasBoon('hardened-keel') ? 100 : 92,
   }
+  const resources = (Object.keys(baseResources) as ResourceKey[]).reduce<Resources>((scaled, key) => {
+    scaled[key] = Math.max(1, Math.min(RESOURCE_MAX[key], Math.round(baseResources[key] * difficultyConfig.resourceMultiplier)))
+    return scaled
+  }, { ...baseResources })
   const prophecy = { ...prophecies[Math.floor(seededRandom(seed + 404)() * prophecies.length)] }
   return {
-    version: 3,
+    version: 4,
     seed,
+    difficulty,
+    divineRescueUsed: false,
     day: 1,
     nodeIndex: 0,
     world,
@@ -248,7 +260,7 @@ export function createRun(seed = Date.now(), legacy: string[] = []): RunState {
         id: `log-${seed}-0`,
         day: 1,
         title: 'Троя осталась за кормой',
-        text: `Восемнадцать людей присягнули пройти с вами весь путь до Итаки. Тиресий оставил пророчество: «${prophecy.title}».`,
+        text: `${resources.crew} людей присягнули пройти с вами весь путь до Итаки. Песнь начата в режиме «${difficultyConfig.name}». Тиресий оставил пророчество: «${prophecy.title}».`,
         tone: 'neutral',
       },
     ],
@@ -288,7 +300,8 @@ export function choiceChance(run: RunState, choice: Choice) {
   const moraleModifier = (run.resources.morale - 50) / 500
   const healthModifier = run.resources.health < 35 ? -0.08 : 0
   const legacyModifier = run.legacyBoons.includes('thread-of-moira') ? 0.04 : 0
-  const chance = 0.46 + skill * 0.075 - choice.difficulty * 0.08 + moraleModifier + healthModifier + divineSkillModifier(run, choice.skill) + legacyModifier
+  const difficultyModifier = difficultyDefinition(run.difficulty).chanceModifier
+  const chance = 0.46 + skill * 0.075 - choice.difficulty * 0.08 + moraleModifier + healthModifier + divineSkillModifier(run, choice.skill) + legacyModifier + difficultyModifier
   return Math.max(0.08, Math.min(0.94, chance))
 }
 
@@ -378,7 +391,34 @@ function deathReason(resources: Resources) {
 function withDeathCheck(run: RunState): RunState {
   const reason = deathReason(run.resources)
   if (!reason) return run
-  const earned = Math.max(3, run.nodeIndex * 4 + 3)
+  const difficulty = difficultyDefinition(run.difficulty)
+  if (difficulty.divineRescue && !run.divineRescueUsed) {
+    const rescuedResources: Resources = {
+      health: Math.max(18, run.resources.health),
+      food: Math.max(5, run.resources.food),
+      water: Math.max(7, run.resources.water),
+      morale: Math.max(18, run.resources.morale),
+      crew: Math.max(2, run.resources.crew),
+      hull: Math.max(18, run.resources.hull),
+    }
+    return {
+      ...run,
+      divineRescueUsed: true,
+      resources: rescuedResources,
+      resolution: run.phase === 'resolution' ? {
+        success: false,
+        title: 'Сова пролетела над мачтой',
+        text: `${reason} Но Афина один раз переплела оборванную нить и вернула корабль из-за края гибели.`,
+        omen: 'Следующего спасения не будет.',
+        effects: {},
+      } : run.resolution,
+      log: [
+        { id: `rescue-${run.seed}-${run.day}`, day: run.day, title: 'Вмешательство Афины', text: 'Гибель отступила, но божественная милость исчерпана.', tone: 'good' as const },
+        ...run.log,
+      ].slice(0, 32),
+    }
+  }
+  const earned = Math.round(Math.max(3, run.nodeIndex * 4 + 3) * difficulty.kleosMultiplier)
   return {
     ...run,
     phase: 'dead',
@@ -394,9 +434,13 @@ function withDeathCheck(run: RunState): RunState {
 }
 
 export function resolveChoice(run: RunState, choice: Choice): RunState {
-  if (run.phase !== 'encounter' || !canAfford(run.resources, choice.cost)) return run
+  if (run.phase !== 'encounter') return run
+  const affordable = canAfford(run.resources, choice.cost)
+  const hasAffordableChoice = currentEncounter(run).choices.some((entry) => canAfford(run.resources, entry.cost))
+  if (!affordable && hasAffordableChoice) return run
+  const chargedCost = affordable ? choice.cost : undefined
 
-  const paidResources = applyEffects(run.resources, choice.cost ?? {})
+  const paidResources = applyEffects(run.resources, chargedCost ?? {})
   const success = deterministicRoll(run, choice) <= choiceChance(run, choice)
   const outcome = success ? choice.success : choice.failure
   const resources = applyEffects(paidResources, outcome.effects)
@@ -428,7 +472,7 @@ export function resolveChoice(run: RunState, choice: Choice): RunState {
     title: gained.levelUp ? 'Имя становится легендой' : success ? 'Мойры благосклонны' : 'Цена ошибки',
     text: outcome.text,
     omen: outcome.omen,
-    effects: mergeEffects(choice.cost, outcome.effects),
+    effects: mergeEffects(chargedCost, outcome.effects),
     xp,
     coins,
     levelUp: gained.levelUp,
@@ -590,7 +634,8 @@ export function bossActionChance(run: RunState, action: BossAction) {
   const stagePenalty = (run.boss?.stage ?? 1) * 0.025
   const healthPenalty = run.resources.health < 30 ? 0.08 : 0
   const legacyModifier = run.legacyBoons.includes('thread-of-moira') ? 0.04 : 0
-  const chance = 0.48 + skill * 0.065 - action.difficulty * 0.065 - stagePenalty - healthPenalty + divineSkillModifier(run, action.skill) + legacyModifier
+  const difficultyModifier = difficultyDefinition(run.difficulty).chanceModifier
+  const chance = 0.48 + skill * 0.065 - action.difficulty * 0.065 - stagePenalty - healthPenalty + divineSkillModifier(run, action.skill) + legacyModifier + difficultyModifier
   return Math.max(0.1, Math.min(0.9, chance))
 }
 
@@ -608,11 +653,15 @@ function bossRoll(run: RunState, action: BossAction) {
 }
 
 export function resolveBossAction(run: RunState, action: BossAction): RunState {
-  if (run.phase !== 'boss' || !run.boss || !canAfford(run.resources, action.cost)) return run
+  if (run.phase !== 'boss' || !run.boss) return run
   const definition = currentBossDefinition(run)
+  const affordable = canAfford(run.resources, action.cost)
+  const hasAffordableAction = definition.actions.some((entry) => canAfford(run.resources, entry.cost))
+  if (!affordable && hasAffordableAction) return run
+  const chargedCost = affordable ? action.cost : undefined
   const intent = definition.intents[run.boss.intentIndex % definition.intents.length]
   const success = bossRoll(run, action) <= bossActionChance(run, action)
-  const paidResources = applyEffects(run.resources, action.cost ?? {})
+  const paidResources = applyEffects(run.resources, chargedCost ?? {})
   const damage = success
     ? action.damage + Math.max(0, effectiveSkill(run, action.skill) - 4) * 2
     : Math.max(3, Math.round(action.damage * 0.16))
@@ -646,7 +695,7 @@ export function resolveBossAction(run: RunState, action: BossAction): RunState {
         title: `${definition.name} повержена`,
         text: `${resultText} Путь через владения чудовища открыт.`,
         omen: `Победа услышана на Олимпе. ${definition.god === 'poseidon' ? 'Посейдон запомнил вызов.' : 'Боги запомнили имя.'}`,
-        effects: mergeEffects(action.cost, retaliation),
+        effects: mergeEffects(chargedCost, retaliation),
         xp,
         coins: definition.rewardCoins,
         levelUp: gained.levelUp,
@@ -708,7 +757,7 @@ export function continueVoyage(run: RunState, stance: TravelStance = 'bold'): Ru
     const fulfilled = prophecyFulfilled(run)
     const ending = chooseEnding(run, fulfilled)
     const rankReward = ending.rank === 'божественный' ? 25 : ending.rank === 'героический' ? 16 : ending.rank === 'тайный' ? 12 : 5
-    const kleosEarned = 45 + run.campaign.bossesDefeated.length * 8 + (fulfilled ? 20 : 0) + rankReward
+    const kleosEarned = Math.round((45 + run.campaign.bossesDefeated.length * 8 + (fulfilled ? 20 : 0) + rankReward) * difficultyDefinition(run.difficulty).kleosMultiplier)
     return {
       ...run,
       nodeIndex: run.route.length - 1,
@@ -738,18 +787,19 @@ export function continueVoyage(run: RunState, stance: TravelStance = 'bold'): Ru
   const stanceDays = stance === 'bold' ? -1 : 1
   const travelDays = Math.max(1, baseDays - (hasUpgrade('broad-sail') ? 1 : 0) + stanceDays)
   const random = seededRandom(run.seed + nextIndex * 1301 + (stance === 'bold' ? 17 : 41))
+  const difficultyConfig = difficultyDefinition(run.difficulty)
   const foodRate = nextNode.biome === 'verdant' ? 1 : 2
   const waterRate = (hasUpgrade('deep-cisterns') ? 2 : 3) + (nextNode.biome === 'volcanic' ? 1 : 0)
   const attrition: Effects = {
-    food: -(travelDays * foodRate),
-    water: -(travelDays * waterRate),
+    food: -Math.max(1, Math.round(travelDays * foodRate * difficultyConfig.travelMultiplier)),
+    water: -Math.max(1, Math.round(travelDays * waterRate * difficultyConfig.travelMultiplier)),
     morale: stance === 'bold' ? 2 : 0,
   }
   let travelText = stance === 'bold'
     ? `Вы выбрали прямой курс: ${travelDays} ${travelDays === 1 ? 'день' : 'дня'} под полным парусом.`
     : `Осторожный обход занял ${travelDays} дня, но кормчий держался вдали от худших течений.`
   const baseStormChance = nextNode.biome === 'storm' ? 0.68 : nextNode.biome === 'civilized' ? 0.14 : 0.36
-  const stormChance = Math.max(0.05, Math.min(0.88, baseStormChance + (stance === 'bold' ? 0.16 : -0.2)))
+  const stormChance = Math.max(0.03, Math.min(0.94, baseStormChance + (stance === 'bold' ? 0.16 : -0.2) + difficultyConfig.stormModifier))
   const roll = random()
   if (roll < stormChance) {
     const rawDamage = (5 + Math.floor(random() * 9)) * (stance === 'bold' ? 1.2 : 0.72)
@@ -769,10 +819,13 @@ export function continueVoyage(run: RunState, stance: TravelStance = 'bold'): Ru
   const nextAct = actForNode(nextIndex)
   const actChanged = nextAct !== run.campaign.act
   const nextBossDefinition = nextNode.bossId ? bosses.find((boss) => boss.id === nextNode.bossId) : undefined
+  const bossMaxHealth = nextBossDefinition
+    ? Math.round(nextBossDefinition.maxHealth * difficultyDefinition(run.difficulty).bossHealthMultiplier)
+    : 0
   const boss: BossState | null = nextBossDefinition ? {
     id: nextBossDefinition.id,
-    health: nextBossDefinition.maxHealth,
-    maxHealth: nextBossDefinition.maxHealth,
+    health: bossMaxHealth,
+    maxHealth: bossMaxHealth,
     turn: 1,
     stage: 1,
     intentIndex: 0,

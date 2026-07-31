@@ -6,6 +6,14 @@ export type GodId = 'athena' | 'poseidon' | 'hermes' | 'hades'
 
 export type TravelStance = 'bold' | 'cautious'
 
+export type DifficultyId = 'tale' | 'odyssey' | 'wrath'
+
+export interface UiPreferences {
+  textScale: 'normal' | 'large' | 'xlarge'
+  highContrast: boolean
+  reduceMotion: boolean
+}
+
 export type Biome =
   | 'open-sea'
   | 'storm'
@@ -215,6 +223,8 @@ export interface BossAction {
 export interface RunState {
   version: number
   seed: number
+  difficulty: DifficultyId
+  divineRescueUsed: boolean
   day: number
   nodeIndex: number
   world: WorldLocation[]
@@ -233,6 +243,20 @@ export interface RunState {
   kleosEarned: number
 }
 
+export interface VoyageRecord {
+  id: string
+  finishedAt: string
+  outcome: 'home' | 'dead'
+  endingId: string | null
+  difficulty: DifficultyId
+  day: number
+  nodeIndex: number
+  bossesDefeated: number
+  prophecyFulfilled: boolean
+  crew: number
+  kleosEarned: number
+}
+
 export interface MetaState {
   voyages: number
   bestDistance: number
@@ -240,4 +264,7 @@ export interface MetaState {
   legacy: string[]
   endings: string[]
   prophecies: string[]
+  codex: string[]
+  history: VoyageRecord[]
+  achievements: string[]
 }
