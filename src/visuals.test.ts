@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeMeta } from './campaign'
+import { finaleForCompanion } from './companionSagas'
 import { encounters } from './data'
 import { allCompanionDefinitions } from './progression'
 import { storyFlagScenes } from './storyFlags'
@@ -61,6 +62,12 @@ describe('illustrated narrative scenes', () => {
     expect(allCompanionDefinitions).toHaveLength(4)
     expect(new Set(allCompanionDefinitions.map((companion) => companion.portrait)).size).toBe(4)
     allCompanionDefinitions.forEach((companion) => expect(companion.portrait).toMatch(/^\/art\/companion-.+\.jpg$/))
+  })
+
+  it('gives all four personal finales an original panorama', () => {
+    const finales = ['eurylochus', 'tiphys', 'sinon', 'idmon'].map((companionId) => finaleForCompanion(companionId as 'eurylochus' | 'tiphys' | 'sinon' | 'idmon', 'trusted'))
+    expect(new Set(finales.map((finale) => finale.scene)).size).toBe(4)
+    finales.forEach((finale) => expect(finale.scene).toMatch(/^\/art\/finale-.+\.jpg$/))
   })
 })
 

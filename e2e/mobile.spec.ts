@@ -52,9 +52,9 @@ test('event consequence leads directly to the relevant crew screen', async ({ pa
 test('port exposes an explicit departure action above the market', async ({ page }) => {
   await page.getByRole('button', { name: /Начать путешествие/i }).click()
   await page.getByRole('button', { name: /Начать путешествие/i }).click()
-  await page.waitForFunction(() => Boolean(localStorage.getItem('odyssey-shadow-save-v9')))
+  await page.waitForFunction(() => Boolean(localStorage.getItem('odyssey-shadow-save-v10')))
   await page.evaluate(() => {
-    const key = 'odyssey-shadow-save-v9'
+    const key = 'odyssey-shadow-save-v10'
     const run = JSON.parse(localStorage.getItem(key)!)
     run.nodeIndex = 3
     run.phase = 'port'
@@ -65,6 +65,7 @@ test('port exposes an explicit departure action above the market', async ({ page
   await page.getByRole('button', { name: /Продолжить путь/i }).click()
 
   await expect(page.getByText('КОРАБЛЬ ГОТОВ К ОТПЛЫТИЮ')).toBeVisible()
+  await expect(page.getByLabel('Сравнение морских стоек')).toBeVisible()
   await expect(page.getByRole('button', { name: /Уплыть прямым курсом/i }).first()).toBeVisible()
   await expect(page.getByRole('button', { name: /Уплыть осторожно/i }).first()).toBeVisible()
 })

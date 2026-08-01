@@ -112,6 +112,6 @@ describe('crew crises and departures', () => {
 
     expect(port.phase).toBe('port')
     expect(port.ship.companions).toHaveLength(0)
-    expect(port.ship.departedCompanions).toHaveLength(1)
+    expect(port.ship.departedCompanions).toHaveLength(run.ship.companions.length)
   })
 })

@@ -15,7 +15,7 @@ import {
   trainSkill,
   activateCompanionAbility,
 } from './game'
-import { recruitableCompanions } from './progression'
+import { recruitableCompanions, startingCompanion } from './progression'
 
 describe('hero preparation', () => {
   it('rests once per node and pays real supplies', () => {
@@ -60,7 +60,10 @@ describe('ship council', () => {
   })
 
   it('uses a companion ability only once per act', () => {
-    const run = createRun(12103)
+    const base = createRun(12103)
+    const run = base.ship.companions.some((companion) => companion.id === 'eurylochus')
+      ? base
+      : { ...base, ship: { ...base.ship, companions: [...base.ship.companions, { ...startingCompanion, memories: [] }] } }
     const used = activateCompanionAbility(run, 'eurylochus')
     const repeated = activateCompanionAbility(used, 'eurylochus')
 

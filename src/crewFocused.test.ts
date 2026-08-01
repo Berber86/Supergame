@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { encounters } from './encounterCatalog'
 import { createRun, resolveChoice } from './game'
 import { authoredIslands } from './islands'
-import { recruitableCompanions } from './progression'
+import { recruitableCompanions, startingCompanion } from './progression'
 
 describe('companion-focused islands', () => {
   const focusedIds = ['eurylochus-council', 'tiphys-starless', 'sinon-witnesses', 'idmon-eclipse', 'oarsmen-assembly']
@@ -36,13 +36,17 @@ describe('companion-focused islands', () => {
     let result: ReturnType<typeof resolveChoice> | null = null
     for (let seed = 0; seed < 100 && !result; seed += 1) {
       const base = createRun(seed)
-      const run = { ...base, route: base.route.map((node, index) => index === 0 ? { ...node, encounterId: encounter.id } : node) }
+      const companions = base.ship.companions.some((companion) => companion.id === 'eurylochus')
+        ? base.ship.companions
+        : [...base.ship.companions, { ...startingCompanion, memories: [] }]
+      const run = { ...base, route: base.route.map((node, index) => index === 0 ? { ...node, encounterId: encounter.id } : node), ship: { ...base.ship, companions } }
       const candidate = resolveChoice(run, choice)
       if (candidate.resolution?.success) result = candidate
     }
     expect(result).not.toBeNull()
-    expect(result!.ship.companions[0].memories[0].id).toContain('authored-memory')
-    expect(result!.ship.companions[0].loyalty).toBeGreaterThan(68)
+    const eurylochus = result!.ship.companions.find((companion) => companion.id === 'eurylochus')!
+    expect(eurylochus.memories[0].id).toContain('authored-memory')
+    expect(eurylochus.loyalty).toBeGreaterThan(68)
   })
 
   it('can permanently remove Sinon when his surrender succeeds', () => {

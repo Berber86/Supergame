@@ -1,15 +1,22 @@
 import { bosses, endings, legacyBoons, prophecies } from './campaign'
-import { companionStoryEpisodes, nextStoryEpisode, storyEpisodeForEncounter } from './companionSagas'
+import {
+  companionStoryEpisodes,
+  finaleForCompanion,
+  finaleStance,
+  nextStoryEpisode,
+  reactiveSagaContext,
+  sagaForCompanion,
+  storyEpisodeForEncounter,
+} from './companionSagas'
 import { regionNames } from './data'
 import { encounters } from './encounterCatalog'
 import { difficultyDefinition } from './difficulty'
 import { authoredIslandByEncounter, authoredIslands, islandOutcomeNarrative } from './islands'
 import { flagsForOutcome, storyFlagModifiers } from './storyFlags'
 import {
+  allCompanionDefinitions,
   equipment,
-  recruitableCompanions,
   shipUpgrades,
-  startingCompanion,
 } from './progression'
 import type {
   Biome,
@@ -35,6 +42,7 @@ import type {
   RouteNode,
   RunState,
   Skill,
+  TravelPreview,
   TravelStance,
   WatchMode,
   WorldLocation,
@@ -155,24 +163,35 @@ export function generateWorld(seed: number, size = WORLD_SIZE): WorldLocation[] 
   })
 }
 
-function heardCompanionEpisodes(meta: MetaState) {
-  return meta.companionChronicles.flatMap((chronicle) => chronicle.episodes.map((episode) => episode.episodeId))
+function heardCompanionMarks(meta: MetaState) {
+  return meta.companionChronicles.flatMap((chronicle) => chronicle.episodes)
 }
 
-function plannedCompanionEpisodes(seed: number, meta: MetaState) {
+function heardCompanionEpisodes(meta: MetaState) {
+  return heardCompanionMarks(meta).map((episode) => episode.episodeId)
+}
+
+function heardCompanionFinales(meta: MetaState) {
+  return heardCompanionMarks(meta).filter((mark) => mark.chapter === 4).map((mark) => mark.episodeId)
+}
+
+export function startingNamedCompanions(seed: number) {
+  const random = seededRandom(seed ^ 0x6b8b4567)
+  return shuffle(allCompanionDefinitions, random).slice(0, 2).map((companion) => ({ ...companion, memories: [] }))
+}
+
+function plannedCompanionEpisodes(seed: number, meta: MetaState, companionIds: NamedCompanionId[]) {
   const knownEpisodes = heardCompanionEpisodes(meta)
   const random = seededRandom(seed ^ 0x27d4eb2d)
-  const otherCompanions = shuffle<NamedCompanionId>(['tiphys', 'sinon', 'idmon'], random)
-  const companionOrder: NamedCompanionId[] = ['eurylochus', ...otherCompanions]
-  return companionOrder
+  return shuffle(companionIds, random)
     .map((companionId) => nextStoryEpisode(companionId, knownEpisodes))
     .filter((episode): episode is NonNullable<typeof episode> => Boolean(episode))
     .slice(0, 2)
 }
 
-function createRoute(seed: number, meta: MetaState = DEFAULT_META): RouteNode[] {
+function createRoute(seed: number, meta: MetaState = DEFAULT_META, companionIds: NamedCompanionId[] = []): RouteNode[] {
   const random = seededRandom(seed)
-  const plannedEpisodes = plannedCompanionEpisodes(seed, meta)
+  const plannedEpisodes = plannedCompanionEpisodes(seed, meta, companionIds)
   const episodeIslandIds = new Set(companionStoryEpisodes.map((episode) => episode.encounterId))
   const genericIslands = shuffle(authoredIslands.filter((island) => !episodeIslandIds.has(island.encounterId)), random)
   const islandSlots = [0, 1, 2, 4, 6, 8, 9]
@@ -254,15 +273,16 @@ export function createRun(seed = Date.now(), legacy: string[] = [], difficulty: 
     return scaled
   }, { ...baseResources })
   const prophecy = { ...prophecies[Math.floor(seededRandom(seed + 404)() * prophecies.length)] }
+  const companions = startingNamedCompanions(seed)
   return {
-    version: 9,
+    version: 10,
     seed,
     difficulty,
     divineRescueUsed: false,
     day: 1,
     nodeIndex: 0,
     world,
-    route: createRoute(seed, meta),
+    route: createRoute(seed, meta, companions.map((companion) => companion.id as NamedCompanionId)),
     resources,
     skills: {
       cunning: hasBoon('owl-memory') ? 6 : 5,
@@ -282,7 +302,7 @@ export function createRun(seed = Date.now(), legacy: string[] = [], difficulty: 
     ship: {
       name: 'Чёрная ласточка',
       upgrades: [],
-      companions: [{ ...startingCompanion, memories: [] }],
+      companions,
       departedCompanions: [],
       cohesion: 72,
       mutinyRisk: 8,
@@ -307,13 +327,16 @@ export function createRun(seed = Date.now(), legacy: string[] = [], difficulty: 
       decisions: [],
       storyFlags: [],
       knownCompanionEpisodes: heardCompanionEpisodes(meta),
+      knownCompanionStoryMarks: heardCompanionMarks(meta),
       companionStoryMarks: [],
+      completedCompanionFinales: heardCompanionFinales(meta),
       storyFocus: null,
       prophecy,
       bossesDefeated: [],
       ending: null,
     },
     boss: null,
+    companionFinale: null,
     crewCrisis: null,
     debts: [],
     legacyBoons: [...legacy],
@@ -322,7 +345,7 @@ export function createRun(seed = Date.now(), legacy: string[] = [], difficulty: 
         id: `log-${seed}-0`,
         day: 1,
         title: 'Троя осталась за кормой',
-        text: `${resources.crew} людей присягнули пройти с вами весь путь до Итаки. Песнь начата в режиме «${difficultyConfig.name}». Тиресий оставил пророчество: «${prophecy.title}».`,
+        text: `${resources.crew} людей присягнули пройти с вами весь путь до Итаки. Рядом с Одиссеем с первого дня идут ${companions.map((companion) => companion.name).join(' и ')}. Песнь начата в режиме «${difficultyConfig.name}». Тиресий оставил пророчество: «${prophecy.title}».`,
         tone: 'neutral',
       },
     ],
@@ -333,14 +356,44 @@ export function createRun(seed = Date.now(), legacy: string[] = [], difficulty: 
   }
 }
 
+export function companionSagaContext(run: RunState) {
+  const encounterId = run.route[run.nodeIndex]?.encounterId
+  const episode = storyEpisodeForEncounter(encounterId)
+  if (!episode || episode.chapter === 1) return undefined
+  const marks = [
+    ...(run.campaign.knownCompanionStoryMarks ?? []),
+    ...(run.campaign.companionStoryMarks ?? []),
+  ]
+  const previousMark = marks.filter((mark) => mark.companionId === episode.companionId && mark.chapter < episode.chapter).at(-1)
+  return previousMark ? reactiveSagaContext(previousMark.stance) : undefined
+}
+
 export function currentEncounter(run: RunState) {
   const encounterId = run.route[run.nodeIndex]?.encounterId
-  return encounters.find((encounter) => encounter.id === encounterId) ?? encounters[0]
+  const encounter = encounters.find((entry) => entry.id === encounterId) ?? encounters[0]
+  const context = companionSagaContext(run)
+  if (!context) return encounter
+  return {
+    ...encounter,
+    description: `${encounter.description}\n\n${context.arrival}`,
+    choices: encounter.choices.map((choice, index) => index === 0 ? {
+      ...choice,
+      title: context.choiceTitle,
+      description: context.choiceDescription,
+    } : choice),
+  }
 }
 
 export function currentIsland(run: RunState) {
   const encounterId = run.route[run.nodeIndex]?.encounterId
-  return authoredIslandByEncounter.get(encounterId)
+  const island = authoredIslandByEncounter.get(encounterId)
+  const context = companionSagaContext(run)
+  if (!island || !context) return island
+  return {
+    ...island,
+    introduction: `${island.introduction}\n\n${context.arrival}`,
+    companionHook: `${island.companionHook ?? ''}\n\n${context.hook}`,
+  }
 }
 
 export function orderedEncounterChoices(run: RunState) {
@@ -628,7 +681,22 @@ export function resolveChoice(run: RunState, choice: Choice, forceDeferredCost =
   const success = deterministicRoll(run, choice) <= choiceChance(run, choice)
   const outcome = success ? choice.success : choice.failure
   const encounter = currentEncounter(run)
-  const authoredNarrative = islandOutcomeNarrative(encounter.id, choice.id, success)
+  const authoredNarrativeBase = islandOutcomeNarrative(encounter.id, choice.id, success)
+  const reactiveContext = companionSagaContext(run)
+  const reactiveEpisode = storyEpisodeForEncounter(encounter.id)
+  const authoredNarrative = authoredNarrativeBase && reactiveContext && reactiveEpisode
+    ? {
+        ...authoredNarrativeBase,
+        aftermath: `${authoredNarrativeBase.aftermath}\n\n${reactiveContext.aftermath}`,
+        companionImpacts: (authoredNarrativeBase.companionImpacts ?? []).map((impact) => impact.companionId !== reactiveEpisode.companionId ? impact : {
+          ...impact,
+          loyalty: impact.loyalty + reactiveContext.loyalty,
+          respect: impact.respect + reactiveContext.respect,
+          fear: impact.fear + reactiveContext.fear,
+          memory: `${impact.memory} ${reactiveContext.aftermath}`,
+        }),
+      }
+    : authoredNarrativeBase
   const resources = applyEffects(paidResources, outcome.effects)
   const baseXp = outcome.xp ?? (success ? 22 + choice.difficulty * 4 : 11 + choice.difficulty * 2)
   const xp = Math.round(baseXp * (run.legacyBoons.includes('black-sail-legend') && success ? 1.2 : 1))
@@ -1025,10 +1093,12 @@ function consumeMarketBoon(run: RunState) {
 
 export function getPortStock(run: RunState) {
   const random = seededRandom(run.seed + run.nodeIndex * 7919)
+  const knownIds = new Set([...run.ship.companions, ...run.ship.departedCompanions].map((companion) => companion.id))
+  const missingCompanions = allCompanionDefinitions.filter((companion) => !knownIds.has(companion.id))
   return {
     equipment: shuffle(equipment, random).slice(0, 3),
     upgrades: shuffle(shipUpgrades, random).slice(0, 2),
-    companion: shuffle(recruitableCompanions, random)[0],
+    companion: shuffle(missingCompanions.length ? missingCompanions : allCompanionDefinitions, random)[0],
   }
 }
 
@@ -1094,7 +1164,7 @@ export function buyPortOffer(run: RunState, offerId: string): RunState {
     return addPortLog(purchased, 'Корабль укреплён', `${upgrade.name}: ${upgrade.description}`)
   }
 
-  const companion = recruitableCompanions.find((entry) => entry.id === offerId)
+  const companion = allCompanionDefinitions.find((entry) => entry.id === offerId)
   if (companion) {
     const cost = portOfferCost(run, 28)
     if (run.ship.companions.some((entry) => entry.id === companion.id)) return { ...run, portNotice: 'Этот спутник уже на борту.' }
@@ -1446,6 +1516,147 @@ function collectDueDebts(run: RunState, day: number, resources: Resources) {
   }
 }
 
+export function travelPreview(run: RunState, stance: TravelStance): TravelPreview | null {
+  const nextNode = run.route[run.nodeIndex + 1]
+  if (!nextNode || nextNode.kind === 'destination') return null
+  const hasUpgrade = (id: string) => run.ship.upgrades.includes(id)
+  const baseDays = Math.max(1, Math.ceil(nextNode.distance / 95))
+  const stanceDays = stance === 'bold' ? -1 : 1
+  const travelDays = Math.max(1, baseDays - (hasUpgrade('broad-sail') ? 1 : 0) + stanceDays - (run.preparation.activeBoons.includes('hermes-speed') ? 1 : 0))
+  const difficultyConfig = difficultyDefinition(run.difficulty)
+  const flagModifiers = storyFlagModifiers(run.campaign.storyFlags)
+  const rationMultiplier = run.preparation.rations === 'strict' ? 0.75 : run.preparation.rations === 'generous' ? 1.25 : 1
+  const watchMultiplier = run.preparation.watch === 'forage' ? 0.85 : 1
+  const foodRate = nextNode.biome === 'verdant' ? 1 : 2
+  const waterRate = (hasUpgrade('deep-cisterns') ? 2 : 3) + (nextNode.biome === 'volcanic' ? 1 : 0)
+  const foodBase = Math.max(1, Math.round(travelDays * foodRate * difficultyConfig.travelMultiplier * rationMultiplier * watchMultiplier))
+  const waterBase = Math.max(1, Math.round(travelDays * waterRate * difficultyConfig.travelMultiplier * rationMultiplier * watchMultiplier))
+  const assignedCompanion = run.ship.companions.find((companion) => companion.id === run.preparation.assignedCompanionId)
+  const preparationStormModifier = (run.preparation.watch === 'storm' ? -0.1 : run.preparation.watch === 'forage' ? 0.05 : 0)
+    + (assignedCompanion?.temperament === 'seafarer' ? -0.05 : 0)
+    + (run.preparation.activeBoons.includes('tiphys-guidance') ? -0.12 : 0)
+    + (run.preparation.activeBoons.includes('poseidon-calm') ? -0.1 : 0)
+  const baseStormChance = nextNode.biome === 'storm' ? 0.68 : nextNode.biome === 'civilized' ? 0.14 : 0.36
+  const stormChance = Math.max(0.03, Math.min(0.94, baseStormChance + (stance === 'bold' ? 0.16 : -0.2) + difficultyConfig.stormModifier + flagModifiers.stormModifier + preparationStormModifier))
+  const multiplier = stance === 'bold' ? 1.2 : 0.72
+  const stormDamageRange: [number, number] = [5, 13].map((damage) => Math.max(1, Math.round(damage * multiplier) - (hasUpgrade('reinforced-hull') ? 4 : 0))) as [number, number]
+  const moraleChange = (stance === 'bold' ? 2 : 0)
+    + (run.preparation.rations === 'strict' ? -4 : run.preparation.rations === 'generous' ? 4 : 0)
+    + (run.preparation.watch === 'storm' ? -1 : 0)
+    + (flagModifiers.travelEffects.morale ?? 0)
+  const arrivalDay = run.day + travelDays
+  return {
+    stance,
+    days: travelDays,
+    foodCost: foodBase - (flagModifiers.travelEffects.food ?? 0),
+    waterCost: waterBase - (flagModifiers.travelEffects.water ?? 0),
+    moraleChange,
+    stormChance: Math.round(stormChance * 100),
+    stormDamageRange,
+    dueDebts: run.debts.filter((debt) => debt.status === 'pending' && debt.dueDay <= arrivalDay).length,
+  }
+}
+
+function allSagaMarks(run: RunState) {
+  return [...(run.campaign.knownCompanionStoryMarks ?? []), ...run.campaign.companionStoryMarks]
+}
+
+export function eligibleCompanionFinales(run: RunState): NamedCompanionId[] {
+  return run.ship.companions
+    .map((companion) => companion.id as NamedCompanionId)
+    .filter((companionId) => {
+      const saga = sagaForCompanion(companionId)
+      if (!saga || run.campaign.completedCompanionFinales.includes(saga.chapters[3].id)) return false
+      const heard = new Set(allSagaMarks(run).filter((mark) => mark.companionId === companionId).map((mark) => mark.episodeId))
+      return saga.chapters.slice(0, 3).every((chapter) => heard.has(chapter.id))
+    })
+}
+
+export function selectCompanionFinale(run: RunState, companionId: NamedCompanionId): RunState {
+  if (run.phase !== 'companion-finale' || !run.companionFinale?.eligibleCompanionIds.includes(companionId)) return run
+  return {
+    ...run,
+    companionFinale: { ...run.companionFinale, selectedCompanionId: companionId },
+  }
+}
+
+export function resolveCompanionFinale(run: RunState, choice: Choice): RunState {
+  const selectedCompanionId = run.companionFinale?.selectedCompanionId
+  if (run.phase !== 'companion-finale' || !selectedCompanionId) return run
+  const priorMark = allSagaMarks(run).filter((mark) => mark.companionId === selectedCompanionId).at(-1)
+  const definition = finaleForCompanion(selectedCompanionId, priorMark?.stance ?? 'trusted')
+  const selectedChoice = definition.choices.find((entry) => entry.id === choice.id)
+  if (!selectedChoice) return run
+  const success = deterministicRoll(run, selectedChoice) <= choiceChance(run, selectedChoice)
+  const outcome = success ? selectedChoice.success : selectedChoice.failure
+  const stance = finaleStance(selectedChoice.id, success)
+  const resources = applyEffects(run.resources, outcome.effects)
+  const companion = run.ship.companions.find((entry) => entry.id === selectedCompanionId)
+  const finaleMark: CompanionStoryMark = {
+    companionId: selectedCompanionId,
+    episodeId: definition.id,
+    encounterId: definition.id,
+    chapter: 4,
+    title: definition.title,
+    stance,
+    choiceId: selectedChoice.id,
+    success,
+    day: run.day,
+  }
+  const companions = run.ship.companions.map((entry) => entry.id !== selectedCompanionId ? entry : {
+    ...entry,
+    loyalty: Math.max(0, Math.min(100, entry.loyalty + (success ? 10 : -4))),
+    respect: Math.max(0, Math.min(100, entry.respect + (success ? 9 : -2))),
+    fear: Math.max(0, Math.min(100, entry.fear + (success ? -5 : 5))),
+    memories: [{
+      id: `finale-memory-${run.seed}-${selectedChoice.id}-${entry.id}`,
+      day: run.day,
+      choiceId: selectedChoice.id,
+      title: definition.title,
+      reaction: success ? 'admire' as const : 'fear' as const,
+      text: success
+        ? `${entry.name} завершает свою песнь у Итаки: ${outcome.text}`
+        : `${entry.name} помнит последнюю цену своей песни: ${outcome.text}`,
+      loyaltyDelta: success ? 10 : -4,
+    }, ...entry.memories].slice(0, 8),
+  })
+  const xp = success ? 58 : 32
+  const gained = gainExperience(run.progression, xp, outcome.coins ?? 0)
+  const next: RunState = {
+    ...run,
+    resources,
+    progression: gained.progression,
+    ship: {
+      ...run.ship,
+      companions,
+      cohesion: Math.max(0, Math.min(100, run.ship.cohesion + (success ? 8 : -4))),
+      mutinyRisk: Math.max(0, Math.min(100, run.ship.mutinyRisk + (success ? -7 : 5))),
+    },
+    campaign: {
+      ...run.campaign,
+      companionStoryMarks: [...run.campaign.companionStoryMarks, finaleMark],
+      completedCompanionFinales: [...run.campaign.completedCompanionFinales, definition.id],
+    },
+    companionFinale: null,
+    phase: 'resolution',
+    resolution: {
+      success,
+      title: success ? `Песнь завершена: ${definition.title}` : `Последняя цена: ${definition.title}`,
+      text: outcome.text,
+      effects: outcome.effects,
+      xp,
+      coins: outcome.coins,
+      levelUp: gained.levelUp,
+      companionStoryMark: finaleMark,
+      aftermath: `${definition.description}\n\n${companion?.name ?? 'Спутник'} уходит от этого разговора через состояние «${stance === 'trusted' ? 'доверие' : stance === 'controlled' ? 'контроль' : stance === 'complicit' ? 'общая тайна' : stance === 'forgiven' ? 'непростое прощение' : 'обиду'}». Эта песнь больше не откроется в прежнем виде.`,
+      crewVoice: success ? 'Команда не устраивает праздника: люди просто понимают, что рядом с ними домой вернулся не тот же человек, который отплывал из-под Трои.' : 'Даже перед домом море оставляет не все долги оплаченными. Команда слышит это в тишине после последнего решения.',
+      consequence: 'Личная развязка сохранена в архиве спутников и повлияет на его эпилог у Итаки.',
+    },
+    log: [{ id: `finale-${run.seed}-${definition.id}`, day: run.day, title: `Последняя песнь: ${companion?.name ?? definition.title}`, text: outcome.text, tone: success ? 'good' as const : 'bad' as const }, ...run.log].slice(0, 32),
+  }
+  return withDeathCheck(next)
+}
+
 export function continueVoyage(run: RunState, stance: TravelStance = 'bold'): RunState {
   if (run.phase !== 'resolution' && run.phase !== 'port') return run
   if (
@@ -1468,6 +1679,16 @@ export function continueVoyage(run: RunState, stance: TravelStance = 'bold'): Ru
   }
   const nextIndex = run.nodeIndex + 1
   if (nextIndex >= run.route.length - 1) {
+    const eligibleFinales = eligibleCompanionFinales(run)
+    if (eligibleFinales.length > 0) {
+      return {
+        ...run,
+        phase: 'companion-finale',
+        companionFinale: { eligibleCompanionIds: eligibleFinales, selectedCompanionId: eligibleFinales.length === 1 ? eligibleFinales[0] : null },
+        resolution: null,
+        portNotice: 'Перед Итакой одна незавершённая песнь требует последнего ответа.',
+      }
+    }
     const homeDay = run.day + 2
     const debtCollection = collectDueDebts(run, homeDay, run.resources)
     const beforeHome: RunState = {

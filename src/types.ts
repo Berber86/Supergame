@@ -313,10 +313,13 @@ export interface CampaignState {
   doom: number
   decisions: DecisionRecord[]
   storyFlags: StoryFlag[]
-  /** Episodes heard in earlier voyages; used by the story director to avoid repeating a song. */
+  /** Episodes and their consequences heard in earlier voyages. */
   knownCompanionEpisodes: string[]
+  knownCompanionStoryMarks: CompanionStoryMark[]
   /** The personal consequences created during this voyage. */
   companionStoryMarks: CompanionStoryMark[]
+  /** Final personal songs completed at the threshold of Ithaca. */
+  completedCompanionFinales: string[]
   /** A port decision can ask the route director to favour one companion's next chapter. */
   storyFocus: NamedCompanionId | null
   prophecy: ProphecyState
@@ -345,6 +348,22 @@ export interface BossAction {
   mitigation: number
 }
 
+export interface CompanionFinaleState {
+  eligibleCompanionIds: NamedCompanionId[]
+  selectedCompanionId: NamedCompanionId | null
+}
+
+export interface TravelPreview {
+  stance: TravelStance
+  days: number
+  foodCost: number
+  waterCost: number
+  moraleChange: number
+  stormChance: number
+  stormDamageRange: [number, number]
+  dueDebts: number
+}
+
 export interface RunState {
   version: number
   seed: number
@@ -361,11 +380,12 @@ export interface RunState {
   preparation: PreparationState
   campaign: CampaignState
   boss: BossState | null
+  companionFinale: CompanionFinaleState | null
   crewCrisis: CrewCrisisState | null
   debts: DeferredDebt[]
   legacyBoons: string[]
   log: LogEntry[]
-  phase: 'encounter' | 'resolution' | 'port' | 'boss' | 'crew-crisis' | 'dead' | 'home'
+  phase: 'encounter' | 'resolution' | 'port' | 'boss' | 'companion-finale' | 'crew-crisis' | 'dead' | 'home'
   resolution: Resolution | null
   portNotice: string | null
   kleosEarned: number

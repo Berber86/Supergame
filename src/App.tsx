@@ -49,7 +49,7 @@ import {
 } from 'lucide-react'
 import { assetPath } from './assets'
 import { acts, bosses, endings as endingDefinitions, godInfo, legacyBoons, normalizeMeta } from './campaign'
-import { companionSagas } from './companionSagas'
+import { companionSagas, finaleForCompanion } from './companionSagas'
 import { Dialog } from './components/Dialog'
 import { TabPanel, Tabs, type TabOption } from './components/Tabs'
 import { Toggle } from './components/Toggle'
@@ -83,15 +83,18 @@ import {
   purchaseLegacy,
   resolveBossAction,
   resolveChoice,
+  resolveCompanionFinale,
   resolveCrewCrisis,
   restHero,
   routeDistance,
   scoutNextRoute,
   seekCompanionStory,
+  selectCompanionFinale,
   setRationMode,
   setWatchMode,
   settleDebt,
   trainSkill,
+  travelPreview,
   upgradeSkill,
   activateCompanionAbility,
   makeOffering,
@@ -123,7 +126,8 @@ import type {
 } from './types'
 import { bossScenes, defaultScene, endingScenes, preparationScenes, sceneForEncounter, uiScenes } from './visuals'
 
-const SAVE_KEY = 'odyssey-shadow-save-v9'
+const SAVE_KEY = 'odyssey-shadow-save-v10'
+const NINTH_SAVE_KEY = 'odyssey-shadow-save-v9'
 const EIGHTH_SAVE_KEY = 'odyssey-shadow-save-v8'
 const LEGACY_SAVE_KEY = 'odyssey-shadow-save-v7'
 const SIXTH_SAVE_KEY = 'odyssey-shadow-save-v6'
@@ -190,7 +194,9 @@ function migrateSavedRun(legacy: RunState, meta: MetaState = DEFAULT_META) {
     ...migrated,
     divineRescueUsed: legacy.divineRescueUsed ?? false,
     day: legacy.day,
-    nodeIndex: Math.max(0, Math.min(legacy.nodeIndex ?? 0, migrated.route.length - 1)),
+    world: legacy.version >= 9 && legacy.world?.length ? legacy.world : migrated.world,
+    route: legacy.version >= 9 && legacy.route?.length ? legacy.route : migrated.route,
+    nodeIndex: Math.max(0, Math.min(legacy.nodeIndex ?? 0, (legacy.version >= 9 && legacy.route?.length ? legacy.route : migrated.route).length - 1)),
     resources: legacy.resources,
     skills: legacy.skills,
     log: legacy.log,
@@ -211,7 +217,9 @@ function migrateSavedRun(legacy: RunState, meta: MetaState = DEFAULT_META) {
       ...migrated.campaign,
       ...legacy.campaign,
       knownCompanionEpisodes: legacy.campaign?.knownCompanionEpisodes ?? migrated.campaign.knownCompanionEpisodes,
+      knownCompanionStoryMarks: legacy.campaign?.knownCompanionStoryMarks ?? migrated.campaign.knownCompanionStoryMarks,
       companionStoryMarks: legacy.campaign?.companionStoryMarks ?? [],
+      completedCompanionFinales: legacy.campaign?.completedCompanionFinales ?? [],
       storyFocus: legacy.campaign?.storyFocus ?? null,
     },
     preparation: {
@@ -226,6 +234,7 @@ function migrateSavedRun(legacy: RunState, meta: MetaState = DEFAULT_META) {
     },
     debts: legacy.debts ?? [],
     boss: legacy.boss ?? null,
+    companionFinale: legacy.companionFinale ?? null,
     crewCrisis: legacy.crewCrisis ?? null,
     phase: legacy.phase ?? 'encounter',
     resolution: legacy.resolution ?? null,
@@ -236,8 +245,9 @@ function migrateSavedRun(legacy: RunState, meta: MetaState = DEFAULT_META) {
 
 function loadSavedRun() {
   const current = readStorage<RunState | null>(SAVE_KEY, null)
-  if (current?.version === 9) return current
-  const legacy = readStorage<RunState | null>(EIGHTH_SAVE_KEY, null)
+  if (current?.version === 10) return current
+  const legacy = readStorage<RunState | null>(NINTH_SAVE_KEY, null)
+    ?? readStorage<RunState | null>(EIGHTH_SAVE_KEY, null)
     ?? readStorage<RunState | null>(LEGACY_SAVE_KEY, null)
     ?? readStorage<RunState | null>(SIXTH_SAVE_KEY, null)
     ?? readStorage<RunState | null>(FIFTH_SAVE_KEY, null)
@@ -318,7 +328,7 @@ function App() {
       ...parsed.payload.preferences,
     }
     const restoredRun = parsed.payload.run
-      ? parsed.payload.run.version === 9 ? parsed.payload.run : migrateSavedRun(parsed.payload.run, restoredMeta)
+      ? parsed.payload.run.version === 10 ? parsed.payload.run : migrateSavedRun(parsed.payload.run, restoredMeta)
       : null
     setMeta(restoredMeta)
     setRun(restoredRun)
@@ -481,6 +491,12 @@ function App() {
             run={run}
             onAction={(action) => commitRun(resolveBossAction(run, action))}
           />
+        ) : run.phase === 'companion-finale' ? (
+          <CompanionFinalePanel
+            run={run}
+            onSelect={(companionId) => commitRun(selectCompanionFinale(run, companionId))}
+            onResolve={(choice) => commitRun(resolveCompanionFinale(run, choice))}
+          />
         ) : run.phase === 'port' ? (
           <PortPanel
             run={run}
@@ -640,7 +656,7 @@ function TitleScreen({ savedRun, meta, onContinue, onNew, onRules, onLegacy, onA
       </div>
       <div className="title-footer">
         <span>Кампания · Три акта · Четыре финала</span>
-        <span className="title-seed">ВЕРСИЯ 1.4.0 · ПОХОДОВ: {String(meta.voyages).padStart(2, '0')}</span>
+        <span className="title-seed">ВЕРСИЯ 1.5.0 · ПОХОДОВ: {String(meta.voyages).padStart(2, '0')}</span>
       </div>
     </div>
   )
@@ -1063,6 +1079,25 @@ function ChoiceButton({
   )
 }
 
+function TravelComparison({ run }: { run: RunState }) {
+  const bold = travelPreview(run, 'bold')
+  const cautious = travelPreview(run, 'cautious')
+  if (!bold || !cautious) return null
+  const plans = [
+    { preview: bold, label: 'Прямой путь', Icon: Wind },
+    { preview: cautious, label: 'Осторожный обход', Icon: Shield },
+  ]
+  return <section className="travel-comparison" aria-label="Сравнение морских стоек">
+    <div><span className="eyebrow">ЦЕНА ПЕРЕХОДА</span><small>Расчёт уже учитывает вахту, пайки, дары и оснащение.</small></div>
+    <div className="travel-comparison-plans">{plans.map(({ preview, label, Icon }) => <article className={preview.stance} key={preview.stance}>
+      <header><Icon size={14} /><b>{label}</b></header>
+      <div><span>Время <b>{preview.days} дн.</b></span><span>Пища <b>−{preview.foodCost}</b></span><span>Вода <b>−{preview.waterCost}</b></span></div>
+      <div><span>Шторм <b>{preview.stormChance}%</b></span><span>Корпус <b>−{preview.stormDamageRange[0]}…−{preview.stormDamageRange[1]}</b></span><span>Дух <b>{preview.moraleChange >= 0 ? '+' : ''}{preview.moraleChange}</b></span></div>
+      {preview.dueDebts > 0 && <em>В пути взыщут долгов: {preview.dueDebts}</em>}
+    </article>)}</div>
+  </section>
+}
+
 function ResolutionCard({
   run,
   onContinue,
@@ -1138,6 +1173,7 @@ function ResolutionCard({
       </div>
       <div className="travel-options">
         <small>КУРС: {nextNode?.name ?? 'Итака'}</small>
+        <TravelComparison run={run} />
         <button className="continue-button bold" onClick={() => onContinue('bold')}>
           <span><b>Прямой путь</b><em>Быстрее · шторм опаснее</em></span>
           <Wind size={17} />
@@ -1148,6 +1184,56 @@ function ResolutionCard({
         </button>
       </div>
     </div>
+  )
+}
+
+function CompanionFinalePanel({
+  run,
+  onSelect,
+  onResolve,
+}: {
+  run: RunState
+  onSelect: (companionId: 'eurylochus' | 'tiphys' | 'sinon' | 'idmon') => void
+  onResolve: (choice: Choice) => void
+}) {
+  const finaleState = run.companionFinale!
+  if (!finaleState.selectedCompanionId) {
+    return (
+      <section className="companion-finale-panel panel finale-selection">
+        <div className="finale-hero" style={{ backgroundImage: `linear-gradient(115deg, rgba(8,13,17,.96), rgba(19,22,23,.62)), url(${assetPath('art/odyssey-storm.jpg')})` }}><div><span className="eyebrow">ПЕРЕД ВРАТАМИ ИТАКИ</span><h1>Незавершённая песнь</h1><p>Дом уже виден. Но один из людей, прошедших этот путь, требует последнего ответа до того, как берег сделает все обещания окончательными.</p></div></div>
+        <div className="finale-selection-body"><span className="eyebrow">КОМУ ОТВЕТИТЬ ПЕРВЫМ</span><div className="finale-companion-list">
+          {finaleState.eligibleCompanionIds.map((companionId) => {
+            const companion = run.ship.companions.find((entry) => entry.id === companionId)!
+            const saga = companionSagas.find((entry) => entry.companionId === companionId)!
+            return <button key={companionId} onClick={() => onSelect(companionId)}><span className="finale-companion-portrait" style={{ backgroundImage: `url(${companion.portrait})` }} /><span><small>ПОСЛЕДНЯЯ ГЛАВА</small><b>{companion.name} · {saga.chapters[3].title}</b><p>{saga.chapters[3].hint}</p></span><ChevronRight size={18} /></button>
+          })}
+        </div></div>
+      </section>
+    )
+  }
+  const companionId = finaleState.selectedCompanionId
+  const companion = run.ship.companions.find((entry) => entry.id === companionId)!
+  const marks = [...run.campaign.knownCompanionStoryMarks, ...run.campaign.companionStoryMarks]
+  const priorStance = marks.filter((mark) => mark.companionId === companionId).at(-1)?.stance ?? 'trusted'
+  const finale = finaleForCompanion(companionId, priorStance)
+  return (
+    <section className="companion-finale-panel panel">
+      <div className="finale-hero" style={{ backgroundImage: `linear-gradient(90deg, rgba(6,10,13,.94), rgba(6,10,13,.34)), url(${finale.scene})` }}>
+        <div><span className="eyebrow">ПОСЛЕДНЯЯ ГЛАВА · {finale.location}</span><h1>{finale.title}</h1><p>{companion.name} · {companion.role}</p></div>
+      </div>
+      <div className="finale-body">
+        <div className="finale-stance"><ScrollText size={15} /><span><small>ПЕСНЬ ПРИШЛА К ЭТОМУ ЧЕРЕЗ</small><b>{priorStance === 'trusted' ? 'доверие' : priorStance === 'controlled' ? 'контроль' : priorStance === 'complicit' ? 'общую тайну' : priorStance === 'forgiven' ? 'непростое прощение' : 'обиду'}</b></span></div>
+        <p>{finale.description}</p><blockquote>{finale.quote}</blockquote>
+        <div className="finale-choices-heading"><span>ПОСЛЕДНИЙ ОТВЕТ</span><small>Эта глава останется в архиве между походами.</small></div>
+        <div className="finale-choices">{finale.choices.map((choice) => {
+          const SkillIcon = skillConfig[choice.skill].Icon
+          const chance = Math.round(choiceChance(run, choice) * 100)
+          return <button key={choice.id} onClick={() => onResolve(choice)} disabled={!canAfford(run.resources, choice.cost)}>
+            <span className="finale-choice-icon"><SkillIcon size={18} /></span><span><b>{choice.title}</b><small>{choice.description}</small><em>{skillLabels[choice.skill]} · шанс {chance}%</em></span>{choice.cost && <i>{formatEffects(choice.cost).map(({ key, value }) => `${resourceConfig[key].label} ${value}`).join(' · ')}</i>}
+          </button>
+        })}</div>
+      </div>
+    </section>
   )
 }
 
@@ -1298,6 +1384,8 @@ function PortPanel({
           <button className="primary-button" onClick={() => onDepart('bold')}>Уплыть прямым курсом <Wind size={15} /></button>
         </div>
       </div>
+
+      <TravelComparison run={run} />
 
       <div className="port-preparation-links">
         <span>ПЕРЕД ОТПЛЫТИЕМ</span>
@@ -1499,7 +1587,7 @@ function CompanionSongsPanel({ run, meta }: { run: RunState; meta: MetaState }) 
                   const unlocked = heard.has(chapter.id)
                   return <li className={unlocked ? 'heard' : ''} key={chapter.id}>
                     <span>{unlocked ? <Check size={12} /> : chapter.chapter}</span>
-                    <div><small>{unlocked ? 'УСЛЫШАННАЯ ГЛАВА' : chapter.status === 'future' ? 'ПОСЛЕДНЯЯ ПЕСНЬ' : 'ЗАКРЫТАЯ ГЛАВА'}</small><b>{unlocked ? chapter.title : 'Неизвестная песнь'}</b><p>{unlocked ? chapter.hint : chapter.hint}</p></div>
+                    <div><small>{unlocked ? 'УСЛЫШАННАЯ ГЛАВА' : chapter.status === 'finale' ? 'ПОСЛЕДНЯЯ ПЕСНЬ' : 'ЗАКРЫТАЯ ГЛАВА'}</small><b>{unlocked ? chapter.title : 'Неизвестная песнь'}</b><p>{unlocked ? chapter.hint : chapter.hint}</p></div>
                   </li>
                 })}
               </ol>
