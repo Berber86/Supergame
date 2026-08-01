@@ -162,6 +162,7 @@ export interface Resolution {
   aftermath?: string
   crewVoice?: string
   consequence?: string
+  storyFlagsGained?: StoryFlag[]
 }
 
 export interface EquipmentDefinition {
@@ -217,6 +218,34 @@ export interface ShipState {
   lastCrisisDay: number
 }
 
+export type WatchMode = 'balanced' | 'storm' | 'forage'
+export type RationMode = 'normal' | 'strict' | 'generous'
+
+export interface ScoutReport {
+  nodeIndex: number
+  destination: string
+  biome: Biome
+  danger: number
+  boldDays: number
+  cautiousDays: number
+  foodCost: number
+  waterCost: number
+  stormRisk: number
+}
+
+export interface PreparationState {
+  preparedSkill: Skill | null
+  assignedCompanionId: string | null
+  watch: WatchMode
+  rations: RationMode
+  activeBoons: string[]
+  usedCompanionAbilities: string[]
+  restedNodeIndexes: number[]
+  trainedNodeIndexes: number[]
+  offeredNodeIndexes: number[]
+  scoutReport: ScoutReport | null
+}
+
 export interface DecisionRecord {
   id: string
   day: number
@@ -243,11 +272,25 @@ export interface EndingSummary {
   rank: 'мрачный' | 'героический' | 'тайный' | 'божественный'
 }
 
+export type StoryFlagTone = 'oath' | 'wrath' | 'alliance' | 'secret'
+
+export interface StoryFlag {
+  id: string
+  title: string
+  description: string
+  echo: string
+  sourceEncounterId: string
+  sourceChoiceId: string
+  day: number
+  tone: StoryFlagTone
+}
+
 export interface CampaignState {
   act: 1 | 2 | 3
   gods: Record<GodId, number>
   doom: number
   decisions: DecisionRecord[]
+  storyFlags: StoryFlag[]
   prophecy: ProphecyState
   bossesDefeated: string[]
   ending: EndingSummary | null
@@ -287,6 +330,7 @@ export interface RunState {
   skills: Skills
   progression: Progression
   ship: ShipState
+  preparation: PreparationState
   campaign: CampaignState
   boss: BossState | null
   crewCrisis: CrewCrisisState | null

@@ -1,4 +1,5 @@
+import { crewFocusedEncounters } from './crewEncounters'
 import { encounters as originalEncounters } from './data'
 import { newIslandEncounters } from './newEncounters'
 
-export const encounters = [...originalEncounters, ...newIslandEncounters]
+export const encounters = [...originalEncounters, ...newIslandEncounters, ...crewFocusedEncounters]

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { normalizeMeta } from './campaign'
 import { encounters } from './data'
 import { allCompanionDefinitions } from './progression'
-import { bossScenes, encounterScenes, endingScenes, sceneForEncounter, uiScenes } from './visuals'
+import { storyFlagScenes } from './storyFlags'
+import { bossScenes, encounterScenes, endingScenes, preparationScenes, sceneForEncounter, uiScenes } from './visuals'
 
 describe('illustrated narrative scenes', () => {
   it('connects every specific visual scene to an existing encounter', () => {
@@ -41,6 +42,19 @@ describe('illustrated narrative scenes', () => {
     expect(Object.keys(uiScenes)).toEqual(['accessibility', 'offline'])
     expect(new Set(Object.values(uiScenes).map((scene) => scene.src)).size).toBe(2)
     Object.values(uiScenes).forEach((scene) => expect(scene.src).toMatch(/\/art\/ui-.+\.jpg$/))
+  })
+
+  it('provides three new generated memory scenes plus the existing secret scene', () => {
+    expect(Object.keys(storyFlagScenes).sort()).toEqual(['alliance', 'oath', 'secret', 'wrath'])
+    expect(storyFlagScenes.oath).toMatch(/\/art\/memory-oath\.jpg$/)
+    expect(storyFlagScenes.wrath).toMatch(/\/art\/memory-wrath\.jpg$/)
+    expect(storyFlagScenes.alliance).toMatch(/\/art\/memory-alliance\.jpg$/)
+  })
+
+  it('provides four generated preparation scenes', () => {
+    expect(Object.keys(preparationScenes).sort()).toEqual(['council', 'offering', 'scouting', 'training'])
+    expect(new Set(Object.values(preparationScenes).map((scene) => scene.src)).size).toBe(4)
+    Object.values(preparationScenes).forEach((scene) => expect(scene.src).toMatch(/\/art\/preparation-.+\.jpg$/))
   })
 
   it('gives every named companion an original portrait', () => {

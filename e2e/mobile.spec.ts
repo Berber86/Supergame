@@ -33,6 +33,19 @@ test('mobile game uses three compact screens instead of one long page', async ({
   await expect(page.getByRole('tabpanel')).toContainText('Чёрная ласточка')
 })
 
+test('event consequence leads directly to the relevant crew screen', async ({ page }) => {
+  await page.getByRole('button', { name: /Начать путешествие/i }).click()
+  await page.getByRole('button', { name: /Начать путешествие/i }).click()
+  await page.locator('.choice-button').first().click()
+
+  const crewLink = page.getByRole('button', { name: /Посмотреть память спутников|Открыть долги и команду/i })
+  await expect(crewLink).toBeVisible()
+  await crewLink.click()
+  await expect(page.locator('.world-panel')).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Судно' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByText('СПУТНИКИ И ИХ ПАМЯТЬ')).toBeVisible()
+})
+
 test('port exposes an explicit departure action above the market', async ({ page }) => {
   await page.getByRole('button', { name: /Начать путешествие/i }).click()
   await page.getByRole('button', { name: /Начать путешествие/i }).click()

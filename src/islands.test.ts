@@ -4,10 +4,10 @@ import { createRun } from './game'
 import { authoredIslandByEncounter, authoredIslands } from './islands'
 
 describe('authored random-island pool', () => {
-  it('contains exactly twenty-two unique authored islands', () => {
-    expect(authoredIslands).toHaveLength(22)
-    expect(new Set(authoredIslands.map((island) => island.id)).size).toBe(22)
-    expect(new Set(authoredIslands.map((island) => island.encounterId)).size).toBe(22)
+  it('contains exactly twenty-seven unique authored islands', () => {
+    expect(authoredIslands).toHaveLength(27)
+    expect(new Set(authoredIslands.map((island) => island.id)).size).toBe(27)
+    expect(new Set(authoredIslands.map((island) => island.encounterId)).size).toBe(27)
   })
 
   it('fully covers every choice and all six possible outcomes', () => {
@@ -31,10 +31,28 @@ describe('authored random-island pool', () => {
     }
   })
 
-  it('assigns original panoramic art to eleven of the twenty-two islands', () => {
+  it('gives the final ten islands a second narrative layer at least as dense as the first twelve', () => {
+    const firstTwelve = authoredIslands.slice(0, 12)
+    const finalTen = authoredIslands.slice(12, 22)
+    const average = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / values.length
+    const aftermathLengths = (islands: typeof authoredIslands) => islands.flatMap((island) =>
+      Object.values(island.outcomes).flatMap((outcome) => [outcome.success.aftermath.length, outcome.failure.aftermath.length]),
+    )
+
+    expect(finalTen.every((island) => island.introduction.length > 700)).toBe(true)
+    expect(finalTen.every((island) => Object.values(island.outcomes).every((outcome) =>
+      outcome.success.aftermath.length > 400 && outcome.failure.aftermath.length > 400,
+    ))).toBe(true)
+    expect(average(finalTen.map((island) => island.introduction.length))).toBeGreaterThanOrEqual(
+      average(firstTwelve.map((island) => island.introduction.length)),
+    )
+    expect(average(aftermathLengths(finalTen))).toBeGreaterThanOrEqual(average(aftermathLengths(firstTwelve)))
+  })
+
+  it('assigns original panoramic art to twenty-six of the twenty-seven islands', () => {
     const illustrated = authoredIslands.filter((island) => island.scene)
-    expect(illustrated).toHaveLength(11)
-    expect(new Set(illustrated.map((island) => island.scene)).size).toBe(11)
+    expect(illustrated).toHaveLength(26)
+    expect(new Set(illustrated.map((island) => island.scene)).size).toBe(26)
     illustrated.forEach((island) => expect(island.scene).toMatch(/\/art\/island-.+\.jpg$/))
   })
 

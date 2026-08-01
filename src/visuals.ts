@@ -82,6 +82,13 @@ export const endingScenes: Record<string, VisualScene> = {
   },
 }
 
+export const preparationScenes = {
+  training: { src: assetPath('art/preparation-training.jpg'), caption: 'Тело и разум готовятся к следующему испытанию' },
+  council: { src: assetPath('art/preparation-council.jpg'), caption: 'Корабельный совет распределяет роли и припасы' },
+  offering: { src: assetPath('art/preparation-offering.jpg'), caption: 'Подношение меняет отношение богов к пути' },
+  scouting: { src: assetPath('art/preparation-scouting.jpg'), caption: 'Разведчики превращают неизвестность в расчёт' },
+}
+
 export const uiScenes = {
   accessibility: {
     src: assetPath('art/ui-hermes-guide.jpg'),

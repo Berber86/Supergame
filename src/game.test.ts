@@ -112,7 +112,7 @@ describe('resources and choices', () => {
 
     expect(firstResult).toEqual(resolveChoice(secondRun, secondChoice))
     expect(firstResult.progression.xp).toBeGreaterThan(0)
-    expect(firstResult.progression.coins).toBeGreaterThan(firstRun.progression.coins)
+    expect(firstResult.progression.coins).toBe(firstRun.progression.coins + (firstResult.resolution?.coins ?? 0))
   })
 
   it('advances to the next encounter and applies biome travel attrition', () => {
