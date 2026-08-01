@@ -72,6 +72,7 @@ import {
   currentBossDefinition,
   currentEncounter,
   currentIsland,
+  deathReason,
   effectiveSkill,
   equipItem,
   equippedItem,
@@ -85,15 +86,16 @@ import {
   resolveChoice,
   resolveCompanionFinale,
   resolveCrewCrisis,
-  restHero,
+  resolveHerald,
+  resolvePrologue,
+  resolveThreshold,
   routeDistance,
-  scoutNextRoute,
   seekCompanionStory,
   selectCompanionFinale,
   setRationMode,
+  setTravelMode,
   setWatchMode,
   settleDebt,
-  trainSkill,
   travelPreview,
   upgradeSkill,
   activateCompanionAbility,
@@ -107,6 +109,7 @@ import {
   shipUpgrades,
 } from './progression'
 import { achievements, chronicleStats, parseBackup, unlockAchievements, voyageRecord } from './release'
+import { ithacaThresholdScene, poseidonHeraldScene, prologueFor } from './prologue'
 import { storyFlagScenes } from './storyFlags'
 import type {
   BossAction,
@@ -120,13 +123,17 @@ import type {
   ResourceKey,
   RunState,
   Skill,
-  TravelStance,
+  TravelPackage,
+  TravelPreview,
   UiPreferences,
   WatchMode,
 } from './types'
 import { bossScenes, defaultScene, endingScenes, preparationScenes, sceneForEncounter, uiScenes } from './visuals'
 
-const SAVE_KEY = 'odyssey-shadow-save-v10'
+const SAVE_KEY = 'odyssey-shadow-save-v13'
+const TWELFTH_SAVE_KEY = 'odyssey-shadow-save-v12'
+const ELEVENTH_SAVE_KEY = 'odyssey-shadow-save-v11'
+const TENTH_SAVE_KEY = 'odyssey-shadow-save-v10'
 const NINTH_SAVE_KEY = 'odyssey-shadow-save-v9'
 const EIGHTH_SAVE_KEY = 'odyssey-shadow-save-v8'
 const LEGACY_SAVE_KEY = 'odyssey-shadow-save-v7'
@@ -193,6 +200,10 @@ function migrateSavedRun(legacy: RunState, meta: MetaState = DEFAULT_META) {
   return {
     ...migrated,
     divineRescueUsed: legacy.divineRescueUsed ?? false,
+    prologuePending: legacy.prologuePending ?? false,
+    heraldPending: legacy.heraldPending ?? false,
+    thresholdPending: legacy.thresholdPending ?? false,
+    thresholdDone: legacy.thresholdDone ?? false,
     day: legacy.day,
     world: legacy.version >= 9 && legacy.world?.length ? legacy.world : migrated.world,
     route: legacy.version >= 9 && legacy.route?.length ? legacy.route : migrated.route,
@@ -225,12 +236,10 @@ function migrateSavedRun(legacy: RunState, meta: MetaState = DEFAULT_META) {
     preparation: {
       ...migrated.preparation,
       ...legacy.preparation,
+      travelMode: legacy.preparation?.travelMode ?? 'standard',
       activeBoons: legacy.preparation?.activeBoons ?? [],
       usedCompanionAbilities: legacy.preparation?.usedCompanionAbilities ?? [],
-      restedNodeIndexes: legacy.preparation?.restedNodeIndexes ?? [],
-      trainedNodeIndexes: legacy.preparation?.trainedNodeIndexes ?? [],
       offeredNodeIndexes: legacy.preparation?.offeredNodeIndexes ?? [],
-      scoutReport: legacy.preparation?.scoutReport ?? null,
     },
     debts: legacy.debts ?? [],
     boss: legacy.boss ?? null,
@@ -245,8 +254,11 @@ function migrateSavedRun(legacy: RunState, meta: MetaState = DEFAULT_META) {
 
 function loadSavedRun() {
   const current = readStorage<RunState | null>(SAVE_KEY, null)
-  if (current?.version === 10) return current
-  const legacy = readStorage<RunState | null>(NINTH_SAVE_KEY, null)
+  if (current?.version === 13) return current
+  const legacy = readStorage<RunState | null>(TWELFTH_SAVE_KEY, null)
+    ?? readStorage<RunState | null>(ELEVENTH_SAVE_KEY, null)
+    ?? readStorage<RunState | null>(TENTH_SAVE_KEY, null)
+    ?? readStorage<RunState | null>(NINTH_SAVE_KEY, null)
     ?? readStorage<RunState | null>(EIGHTH_SAVE_KEY, null)
     ?? readStorage<RunState | null>(LEGACY_SAVE_KEY, null)
     ?? readStorage<RunState | null>(SIXTH_SAVE_KEY, null)
@@ -328,7 +340,7 @@ function App() {
       ...parsed.payload.preferences,
     }
     const restoredRun = parsed.payload.run
-      ? parsed.payload.run.version === 10 ? parsed.payload.run : migrateSavedRun(parsed.payload.run, restoredMeta)
+      ? parsed.payload.run.version === 13 ? parsed.payload.run : migrateSavedRun(parsed.payload.run, restoredMeta)
       : null
     setMeta(restoredMeta)
     setRun(restoredRun)
@@ -478,10 +490,25 @@ function App() {
         <HeroPanel
           run={run}
           onUpgrade={(skill) => commitRun(upgradeSkill(run, skill))}
-          onRest={() => commitRun(restHero(run))}
-          onTrain={(skill) => commitRun(trainSkill(run, skill))}
         />
-        {run.phase === 'crew-crisis' ? (
+        {run.prologuePending ? (
+          <ProloguePanel
+            run={run}
+            onResolve={(optionId) => commitRun(resolvePrologue(run, optionId))}
+          />
+        ) : run.heraldPending ? (
+          <InterludePanel
+            run={run}
+            kind="herald"
+            onResolve={(optionId) => commitRun(resolveHerald(run, optionId))}
+          />
+        ) : run.thresholdPending ? (
+          <InterludePanel
+            run={run}
+            kind="threshold"
+            onResolve={(optionId) => commitRun(resolveThreshold(run, optionId))}
+          />
+        ) : run.phase === 'crew-crisis' ? (
           <CrewCrisisPanel
             run={run}
             onResolve={(approach) => commitRun(resolveCrewCrisis(run, approach))}
@@ -501,7 +528,8 @@ function App() {
           <PortPanel
             run={run}
             onBuy={(offerId) => commitRun(buyPortOffer(run, offerId))}
-            onDepart={(stance) => commitRun(continueVoyage(run, stance))}
+            onSetTravelMode={(mode) => commitRun(setTravelMode(run, mode))}
+            onDepart={() => commitRun(continueVoyage(run, run.preparation.travelMode))}
             onSeekStory={(companionId) => commitRun(seekCompanionStory(run, companionId))}
             onOpenHero={openHero}
             onOpenShip={() => openWorld('ship')}
@@ -511,7 +539,8 @@ function App() {
             run={run}
             onChoose={(choice) => commitRun(resolveChoice(run, choice))}
             onBlindChoose={(choice) => commitRun(resolveChoice(run, choice, true))}
-            onContinue={(stance) => commitRun(continueVoyage(run, stance))}
+            onSetTravelMode={(mode) => commitRun(setTravelMode(run, mode))}
+            onContinue={(mode) => commitRun(continueVoyage(run, mode))}
             onOpenHero={openHero}
             onOpenShip={() => openWorld('ship')}
             onOpenFate={() => openWorld('fate')}
@@ -528,17 +557,20 @@ function App() {
           onAssignCompanion={(companionId) => commitRun(assignCompanion(run, companionId))}
           onSetWatch={(watch) => commitRun(setWatchMode(run, watch))}
           onSetRations={(rations) => commitRun(setRationMode(run, rations))}
+          onSetTravelMode={(mode) => commitRun(setTravelMode(run, mode))}
           onUseAbility={(companionId) => commitRun(activateCompanionAbility(run, companionId))}
           onOffering={(god) => commitRun(makeOffering(run, god))}
-          onScout={() => commitRun(scoutNextRoute(run))}
         />
       </main>
       <nav className="mobile-dock" aria-label="Разделы игры">
         <div className="mobile-resources">
+          <span><Heart size={11} /> {run.resources.health}</span>
           <span><Wheat size={11} /> {run.resources.food}</span>
           <span><Droplets size={11} /> {run.resources.water}</span>
+          <span><Flame size={11} /> {run.resources.morale}%</span>
           <span><Users size={11} /> {run.resources.crew}</span>
           <span><Shield size={11} /> {run.resources.hull}%</span>
+          <span className="mobile-coins"><Coins size={11} /> {run.progression.coins}</span>
         </div>
         <div className="mobile-tabs">
           <button aria-pressed={mobileView === 'story'} className={mobileView === 'story' ? 'active' : ''} onClick={openStory}><ScrollText size={17} aria-hidden="true" /><span>Сюжет</span></button>
@@ -601,6 +633,9 @@ function TitleScreen({ savedRun, meta, onContinue, onNew, onRules, onLegacy, onA
       <div className="title-art" />
       <div className="title-vignette" />
       <header className="title-header">
+        <span className="ornament-strip title-ornament" style={{ backgroundImage: `url(${assetPath('ui/ornament-h.png')})` }} />
+        <span className="frame-corner corner-tl" style={{ backgroundImage: `url(${assetPath('ui/meander-corner.png')})` }} />
+        <span className="frame-corner corner-tr" style={{ backgroundImage: `url(${assetPath('ui/meander-corner.png')})` }} />
         <Brand compact />
         <div className="title-header-actions">
           <button className="ghost-button legacy-button" onClick={onLegacy}>
@@ -689,6 +724,9 @@ function GameHeader({ run, saving, onMenu, onRules, onArchive, onSettings, onRes
   const difficulty = difficultyDefinition(run.difficulty)
   return (
     <header className="game-header">
+      <span className="ornament-strip header-ornament" style={{ backgroundImage: `url(${assetPath('ui/ornament-h.png')})` }} />
+      <span className="frame-corner corner-tl" style={{ backgroundImage: `url(${assetPath('ui/meander-corner.png')})` }} />
+      <span className="frame-corner corner-tr" style={{ backgroundImage: `url(${assetPath('ui/meander-corner.png')})` }} />
       <button className="icon-button menu-button" onClick={onMenu} aria-label="Главное меню">
         <Menu size={20} />
       </button>
@@ -746,7 +784,7 @@ function CommandBar({
     { id: 'story', label: 'Событие', Icon: ScrollText, active: activeView === 'story', action: onStory, badge: 0 },
     { id: 'hero', label: 'Герой', Icon: Crown, active: activeView === 'hero', action: onHero, badge: run.progression.skillPoints },
     { id: 'ship', label: 'Корабль', Icon: Ship, active: activeView === 'world' && worldTab === 'ship', action: () => onWorld('ship'), badge: pendingDebts || (run.ship.mutinyRisk >= 65 ? 1 : 0) },
-    { id: 'fate', label: 'Судьба', Icon: Eye, active: activeView === 'world' && worldTab === 'fate', action: () => onWorld('fate'), badge: run.campaign.storyFlags.length || (run.campaign.doom >= 60 ? 1 : 0) },
+    { id: 'fate', label: 'Судьба', Icon: Eye, active: activeView === 'world' && worldTab === 'fate', action: () => onWorld('fate'), badge: run.campaign.storyFlags.length || (run.campaign.doom >= 40 ? 1 : 0) },
     { id: 'map', label: 'Карта', Icon: Map, active: activeView === 'world' && worldTab === 'map', action: () => onWorld('map'), badge: 0 },
     { id: 'codex', label: 'Кодекс', Icon: BookOpen, active: activeView === 'world' && worldTab === 'codex', action: () => onWorld('codex'), badge: 0 },
   ]
@@ -766,20 +804,18 @@ function CommandBar({
 function HeroPanel({
   run,
   onUpgrade,
-  onRest,
-  onTrain,
 }: {
   run: RunState
   onUpgrade: (skill: Skill) => void
-  onRest: () => void
-  onTrain: (skill: Skill) => void
 }) {
   const xpPercent = (run.progression.xp / run.progression.nextLevelXp) * 100
-  const preparationAllowed = run.phase === 'encounter' || run.phase === 'port' || run.phase === 'resolution'
-  const restedHere = run.preparation.restedNodeIndexes.includes(run.nodeIndex)
-  const trainedHere = run.preparation.trainedNodeIndexes.includes(run.nodeIndex)
   return (
     <aside className="hero-panel panel">
+      <span className="ornament-strip panel-ornament bronze" style={{ backgroundImage: `url(${assetPath('ui/labrys-h.png')})` }} />
+      <span className="frame-corner bronze corner-tl" style={{ backgroundImage: `url(${assetPath('ui/labrys-corner.png')})` }} />
+      <span className="frame-corner bronze corner-tr" style={{ backgroundImage: `url(${assetPath('ui/labrys-corner.png')})` }} />
+      <span className="frame-corner bronze corner-bl" style={{ backgroundImage: `url(${assetPath('ui/labrys-corner.png')})` }} />
+      <span className="frame-corner bronze corner-br" style={{ backgroundImage: `url(${assetPath('ui/labrys-corner.png')})` }} />
       <section className="hero-identity">
         <div className="hero-portrait">
           <div className="portrait-ring">Ο</div>
@@ -809,19 +845,6 @@ function HeroPanel({
           <small><Star size={10} /> Доступно очков: {run.progression.skillPoints}</small>
         )}
       </div>
-
-      <section className="hero-preparation-section">
-        <div className="preparation-mini-art" style={{ backgroundImage: `url(${preparationScenes.training.src})` }}><span>{preparationScenes.training.caption}</span></div>
-        <div className="section-heading"><span>ПОДГОТОВКА ОДИССЕЯ</span><small>{run.preparation.preparedSkill ? `ГОТОВО: ${skillLabels[run.preparation.preparedSkill]}` : 'НЕ ВЫБРАНА'}</small></div>
-        <button className="rest-action" onClick={onRest} disabled={!preparationAllowed || restedHere}><Heart size={13} /><span><b>{restedHere ? 'Отдых уже использован' : 'Отдохнуть один день'}</b><small>−3 пищи, −3 воды · +20 здоровья, +6 духа</small></span></button>
-        <div className="training-actions">
-          {(Object.keys(run.skills) as Skill[]).map((skill) => {
-            const Icon = skillConfig[skill].Icon
-            return <button className={run.preparation.preparedSkill === skill ? 'active' : ''} key={skill} onClick={() => onTrain(skill)} disabled={!preparationAllowed || trainedHere}><Icon size={12} /><span>{skillLabels[skill]}</span></button>
-          })}
-        </div>
-        <p>Тренировка занимает день, стоит 2 пищи и 1 воду и даёт +7% к следующей подходящей проверке.</p>
-      </section>
 
       <section className="panel-section skills-section">
         <div className="section-heading">
@@ -938,18 +961,127 @@ function ResourceTile({ resourceKey, value }: { resourceKey: 'food' | 'water'; v
   )
 }
 
+function ProloguePanel({
+  run,
+  onResolve,
+}: {
+  run: RunState
+  onResolve: (optionId: string) => void
+}) {
+  const prologue = prologueFor(run.ship.companions)
+  return (
+    <section className="prologue-panel panel">
+      <div className="prologue-hero" style={{ backgroundImage: `url(${assetPath('art/prologue-troy.jpg')})` }}>
+        <div className="prologue-vignette" />
+        <div className="prologue-title">
+          <span className="eyebrow">ПРОЛОГ · ПЕПЕЛ ТРОИ</span>
+          <h1>{prologue.title}</h1>
+          <p>{prologue.subtitle}</p>
+        </div>
+        <div className="prologue-cast">
+          {run.ship.companions.map((companion) => (
+            <span key={companion.id}>
+              <i style={{ backgroundImage: `url(${companion.portrait})` }} />
+              <b>{companion.name}</b>
+              <small>{companion.role}</small>
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="prologue-body">
+        <p className="prologue-text">{prologue.text}</p>
+        <blockquote>{prologue.quote}</blockquote>
+        <div className="prologue-choices-heading">
+          <span>ПЕРВОЕ РЕШЕНИЕ</span>
+          <small>Оно не проверяется броском — море просто запомнит его</small>
+        </div>
+        <div className="prologue-options">
+          {prologue.options.map((option) => (
+            <button key={option.id} className="prologue-option" onClick={() => onResolve(option.id)}>
+              <span className="prologue-option-icon"><Sparkles size={16} /></span>
+              <span className="prologue-option-copy"><b>{option.title}</b><small>{option.description}</small></span>
+              <span className="prologue-option-effects">
+                {formatEffects(option.effects).map(({ key, value }) => {
+                  const Icon = resourceConfig[key].Icon
+                  return <i key={key}><Icon size={11} /> {value > 0 ? '+' : ''}{value}</i>
+                })}
+                {option.doom !== 0 && <i className="doom-effect">Рок {option.doom > 0 ? '+' : ''}{option.doom}</i>}
+              </span>
+              <ChevronRight size={18} />
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function InterludePanel({
+  run,
+  kind,
+  onResolve,
+}: {
+  run: RunState
+  kind: 'herald' | 'threshold'
+  onResolve: (optionId: string) => void
+}) {
+  const scene = kind === 'herald' ? poseidonHeraldScene(run) : ithacaThresholdScene(run)
+  const art = kind === 'herald' ? assetPath('art/boss-poseidon.jpg') : assetPath('art/greek-port.jpg')
+  return (
+    <section className="prologue-panel panel">
+      <div className="prologue-hero" style={{ backgroundImage: `url(${art})` }}>
+        <div className="prologue-vignette" />
+        <div className="prologue-title">
+          <span className="eyebrow">{kind === 'herald' ? 'ЗНАМЕНИЕ · АКТ II' : 'ПОРОГ · АКТ III'}</span>
+          <h1>{scene.title}</h1>
+          <p>{scene.subtitle}</p>
+        </div>
+      </div>
+      <div className="prologue-body">
+        <p className="prologue-text">{scene.text}</p>
+        <blockquote>{scene.quote}</blockquote>
+        <div className="prologue-choices-heading">
+          <span>{kind === 'herald' ? 'ОТВЕТ ГЛАШАТАЮ' : 'ПОСЛЕДНИЙ ВЫБОР'}</span>
+          <small>Решение не проверяется броском — его запомнят боги</small>
+        </div>
+        <div className="prologue-options">
+          {scene.options.map((option) => (
+            <button key={option.id} className="prologue-option" onClick={() => onResolve(option.id)}>
+              <span className="prologue-option-icon"><Sparkles size={16} /></span>
+              <span className="prologue-option-copy"><b>{option.title}</b><small>{option.description}</small></span>
+              <span className="prologue-option-effects">
+                {formatEffects(option.effects).map(({ key, value }) => {
+                  const Icon = resourceConfig[key].Icon
+                  return <i key={key}><Icon size={11} /> {value > 0 ? '+' : ''}{value}</i>
+                })}
+                {option.coins !== undefined && option.coins !== 0 && <i className="coin-effect"><Coins size={11} /> +{option.coins}₯</i>}
+                {option.gods && (Object.entries(option.gods) as [GodId, number][]).map(([god, value]) => (
+                  <i key={god} className="god-effect">{godInfo[god].symbol} {value > 0 ? '+' : ''}{value}</i>
+                ))}
+                {option.doom !== 0 && <i className="doom-effect">Рок {option.doom > 0 ? '+' : ''}{option.doom}</i>}
+              </span>
+              <ChevronRight size={18} />
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 interface EncounterPanelProps {
   run: RunState
   onChoose: (choice: Choice) => void
   onBlindChoose: (choice: Choice) => void
-  onContinue: (stance: TravelStance) => void
+  onSetTravelMode: (mode: TravelPackage) => void
+  onContinue: (mode: TravelPackage) => void
   onOpenHero: () => void
   onOpenShip: () => void
   onOpenFate: () => void
   onOpenSongs: () => void
 }
 
-function EncounterPanel({ run, onChoose, onBlindChoose, onContinue, onOpenHero, onOpenShip, onOpenFate, onOpenSongs }: EncounterPanelProps) {
+function EncounterPanel({ run, onChoose, onBlindChoose, onSetTravelMode, onContinue, onOpenHero, onOpenShip, onOpenFate, onOpenSongs }: EncounterPanelProps) {
   const encounter = currentEncounter(run)
   const island = currentIsland(run)
   const encounterScene = sceneForEncounter(encounter)
@@ -990,7 +1122,7 @@ function EncounterPanel({ run, onChoose, onBlindChoose, onContinue, onOpenHero, 
       </div>
 
       {isResolution && run.resolution ? (
-        <ResolutionCard run={run} onContinue={onContinue} onOpenHero={onOpenHero} onOpenShip={onOpenShip} onOpenFate={onOpenFate} onOpenSongs={onOpenSongs} />
+        <ResolutionCard run={run} onContinue={onContinue} onSetTravelMode={onSetTravelMode} onOpenHero={onOpenHero} onOpenShip={onOpenShip} onOpenFate={onOpenFate} onOpenSongs={onOpenSongs} />
       ) : (
         <div className="choices-area">
           <div className="choices-heading">
@@ -1079,35 +1211,72 @@ function ChoiceButton({
   )
 }
 
-function TravelComparison({ run }: { run: RunState }) {
-  const bold = travelPreview(run, 'bold')
-  const cautious = travelPreview(run, 'cautious')
-  if (!bold || !cautious) return null
-  const plans = [
-    { preview: bold, label: 'Прямой путь', Icon: Wind },
-    { preview: cautious, label: 'Осторожный обход', Icon: Shield },
-  ]
+const travelPackageInfo: Record<TravelPackage, { label: string; Icon: typeof Wind; short: string }> = {
+  cautious: { label: 'Осторожно', Icon: Shield, short: '+5% · отдых · +1 день' },
+  standard: { label: 'Стандартно', Icon: Navigation, short: 'без изменений' },
+  hasty: { label: 'Спешно', Icon: Wind, short: '−5% · −1 день' },
+}
+
+function TravelComparison({
+  run,
+  selected,
+  onSelect,
+}: {
+  run: RunState
+  selected: TravelPackage
+  onSelect: (mode: TravelPackage) => void
+}) {
+  const modes: TravelPackage[] = ['cautious', 'standard', 'hasty']
+  const previews = modes
+    .map((mode) => ({ preview: travelPreview(run, mode)!, mode }))
+    .filter((entry) => entry.preview)
+  if (!previews.length) return null
+  const lethalReasons = (preview: TravelPreview) => {
+    const r = run.resources
+    const reasons: string[] = []
+    if (r.food - preview.foodCost <= 0) reasons.push('пища')
+    if (r.water - preview.waterCost <= 0) reasons.push('вода')
+    if (r.morale + preview.moraleChange <= 0) reasons.push('дух')
+    if (r.hull - preview.stormDamageRange[1] <= 0) reasons.push('корпус в шторм')
+    return reasons
+  }
   return <section className="travel-comparison" aria-label="Сравнение морских стоек">
-    <div><span className="eyebrow">ЦЕНА ПЕРЕХОДА</span><small>Расчёт уже учитывает вахту, пайки, дары и оснащение.</small></div>
-    <div className="travel-comparison-plans">{plans.map(({ preview, label, Icon }) => <article className={preview.stance} key={preview.stance}>
-      <header><Icon size={14} /><b>{label}</b></header>
-      <div><span>Время <b>{preview.days} дн.</b></span><span>Пища <b>−{preview.foodCost}</b></span><span>Вода <b>−{preview.waterCost}</b></span></div>
-      <div><span>Шторм <b>{preview.stormChance}%</b></span><span>Корпус <b>−{preview.stormDamageRange[0]}…−{preview.stormDamageRange[1]}</b></span><span>Дух <b>{preview.moraleChange >= 0 ? '+' : ''}{preview.moraleChange}</b></span></div>
-      {preview.dueDebts > 0 && <em>В пути взыщут долгов: {preview.dueDebts}</em>}
-    </article>)}</div>
+    <div><span className="eyebrow">КАК ГОТОВИМСЯ К ПЕРЕХОДУ</span><small>Один выбор вместо отдельных действий: отдых, тренировка и разведка уже внутри пакетов.</small></div>
+    {run.campaign.doom >= 80 && <p className="doom-travel-note"><Skull size={12} /> Рок высок: в пути возможны роковые знамения.</p>}
+    <div className="travel-comparison-plans">{previews.map(({ preview, mode }) => {
+      const lethal = lethalReasons(preview)
+      const info = travelPackageInfo[mode]
+      const Icon = info.Icon
+      const active = selected === mode
+      return <button
+        key={mode}
+        className={`travel-package-card ${mode} ${lethal.length ? 'lethal' : ''} ${active ? 'selected' : ''}`}
+        onClick={() => onSelect(mode)}
+        aria-pressed={active}
+      >
+        <header><Icon size={14} /><b>{info.label}</b>{active && <Check size={12} className="package-check" />}</header>
+        <div><span>Время <b>{preview.days} дн.</b></span><span>Пища <b>−{preview.foodCost}</b></span><span>Вода <b>−{preview.waterCost}</b></span></div>
+        <div><span>Шторм <b>{preview.stormChance}%</b></span><span>Корпус <b>−{preview.stormDamageRange[0]}…−{preview.stormDamageRange[1]}</b></span><span>Дух <b>{preview.moraleChange >= 0 ? '+' : ''}{preview.moraleChange}</b></span></div>
+        <div className="package-check-line"><span>Шанс <b>{preview.checkBonus > 0 ? `+${Math.round(preview.checkBonus * 100)}%` : preview.checkBonus < 0 ? `${Math.round(preview.checkBonus * 100)}%` : '—'}</b></span><span>{preview.rest ? 'Отдых: +20 зд., +6 духа' : 'Без отдыха'}</span></div>
+        {lethal.length > 0 && <em className="lethal-note"><Skull size={11} /> Гибель: кончатся {lethal.join(', ')}</em>}
+        {preview.dueDebts > 0 && <em>В пути взыщут долгов: {preview.dueDebts}</em>}
+      </button>
+    })}</div>
   </section>
 }
 
 function ResolutionCard({
   run,
   onContinue,
+  onSetTravelMode,
   onOpenHero,
   onOpenShip,
   onOpenFate,
   onOpenSongs,
 }: {
   run: RunState
-  onContinue: (stance: TravelStance) => void
+  onContinue: (mode: TravelPackage) => void
+  onSetTravelMode: (mode: TravelPackage) => void
   onOpenHero: () => void
   onOpenShip: () => void
   onOpenFate: () => void
@@ -1173,14 +1342,10 @@ function ResolutionCard({
       </div>
       <div className="travel-options">
         <small>КУРС: {nextNode?.name ?? 'Итака'}</small>
-        <TravelComparison run={run} />
-        <button className="continue-button bold" onClick={() => onContinue('bold')}>
-          <span><b>Прямой путь</b><em>Быстрее · шторм опаснее</em></span>
-          <Wind size={17} />
-        </button>
-        <button className="continue-button cautious" onClick={() => onContinue('cautious')}>
-          <span><b>Осторожный обход</b><em>Дольше · меньше риск</em></span>
-          <Shield size={16} />
+        <TravelComparison run={run} selected={run.preparation.travelMode} onSelect={onSetTravelMode} />
+        <button className="continue-button" onClick={() => onContinue(run.preparation.travelMode)}>
+          <span><b>Отплыть {travelPackageInfo[run.preparation.travelMode].label.toLowerCase()}</b><em>{travelPackageInfo[run.preparation.travelMode].short}</em></span>
+          <Anchor size={17} />
         </button>
       </div>
     </div>
@@ -1347,6 +1512,7 @@ function BossPanel({ run, onAction }: { run: RunState; onAction: (action: BossAc
 function PortPanel({
   run,
   onBuy,
+  onSetTravelMode,
   onDepart,
   onSeekStory,
   onOpenHero,
@@ -1354,7 +1520,8 @@ function PortPanel({
 }: {
   run: RunState
   onBuy: (offerId: string) => void
-  onDepart: (stance: TravelStance) => void
+  onSetTravelMode: (mode: TravelPackage) => void
+  onDepart: () => void
   onSeekStory: (companionId: 'eurylochus' | 'tiphys' | 'sinon' | 'idmon') => void
   onOpenHero: () => void
   onOpenShip: () => void
@@ -1378,14 +1545,13 @@ function PortPanel({
       {run.portNotice && <div className="port-notice"><Check size={14} /> {run.portNotice}</div>}
 
       <div className="port-sail-banner">
-        <div><Anchor size={18} /><span><small>КОРАБЛЬ ГОТОВ К ОТПЛЫТИЮ</small><b>Следующий курс — {run.route[run.nodeIndex + 1]?.name ?? 'Итака'}</b></span></div>
+        <div><Anchor size={18} /><span><small>КОРАБЛЬ ГОТОВ К ОТПЛЫТИЮ</small><b>Следующий курс — {run.route[run.nodeIndex + 1]?.name ?? 'Итака'} · пакет: {travelPackageInfo[run.preparation.travelMode].label.toLowerCase()}</b></span></div>
         <div>
-          <button className="secondary-button" onClick={() => onDepart('cautious')}><Shield size={14} /> Уплыть осторожно</button>
-          <button className="primary-button" onClick={() => onDepart('bold')}>Уплыть прямым курсом <Wind size={15} /></button>
+          <button className="primary-button" onClick={onDepart}>Отплыть <Anchor size={15} /></button>
         </div>
       </div>
 
-      <TravelComparison run={run} />
+      <TravelComparison run={run} selected={run.preparation.travelMode} onSelect={onSetTravelMode} />
 
       <div className="port-preparation-links">
         <span>ПЕРЕД ОТПЛЫТИЕМ</span>
@@ -1414,7 +1580,8 @@ function PortPanel({
           </div>
           <div className="service-grid">
             {portServices.map((service) => {
-              const cost = portOfferCost(run, service.cost)
+              const crewMultiplier = service.id === 'crew' ? difficultyDefinition(run.difficulty).crewCostMultiplier : 1
+              const cost = Math.max(1, Math.round(portOfferCost(run, service.cost) * crewMultiplier))
               return <button
                 className="market-offer compact"
                 key={service.id}
@@ -1487,10 +1654,9 @@ function PortPanel({
       </div>
 
       <div className="port-departure">
-        <div><Wind size={17} /><span><small>ВЕТЕР: ЗАПАДНЫЙ</small><b>Следующий курс — {run.route[run.nodeIndex + 1]?.name}</b></span></div>
+        <div><Wind size={17} /><span><small>ПАКЕТ: {travelPackageInfo[run.preparation.travelMode].label.toUpperCase()}</small><b>Следующий курс — {run.route[run.nodeIndex + 1]?.name}</b></span></div>
         <div className="port-route-buttons">
-          <button className="secondary-button" onClick={() => onDepart('cautious')}><Shield size={14} /> Уплыть осторожно</button>
-          <button className="primary-button" onClick={() => onDepart('bold')}>Уплыть прямым курсом <Wind size={15} /></button>
+          <button className="primary-button" onClick={onDepart}>Отплыть {travelPackageInfo[run.preparation.travelMode].label.toLowerCase()} <Anchor size={15} /></button>
         </div>
       </div>
     </section>
@@ -1507,9 +1673,9 @@ function WorldPanel({
   onAssignCompanion,
   onSetWatch,
   onSetRations,
+  onSetTravelMode,
   onUseAbility,
   onOffering,
-  onScout,
 }: {
   run: RunState
   meta: MetaState
@@ -1520,9 +1686,9 @@ function WorldPanel({
   onAssignCompanion: (companionId: string | null) => void
   onSetWatch: (watch: WatchMode) => void
   onSetRations: (rations: RationMode) => void
+  onSetTravelMode: (mode: TravelPackage) => void
   onUseAbility: (companionId: string) => void
   onOffering: (god: GodId) => void
-  onScout: () => void
 }) {
   const tabOptions: TabOption<typeof tab>[] = [
     { id: 'map', label: 'Карта', icon: <Map size={13} aria-hidden="true" /> },
@@ -1534,6 +1700,11 @@ function WorldPanel({
   ]
   return (
     <aside className="world-panel panel">
+      <span className="ornament-strip panel-ornament bronze" style={{ backgroundImage: `url(${assetPath('ui/labrys-h.png')})` }} />
+      <span className="frame-corner bronze corner-tl" style={{ backgroundImage: `url(${assetPath('ui/labrys-corner.png')})` }} />
+      <span className="frame-corner bronze corner-tr" style={{ backgroundImage: `url(${assetPath('ui/labrys-corner.png')})` }} />
+      <span className="frame-corner bronze corner-bl" style={{ backgroundImage: `url(${assetPath('ui/labrys-corner.png')})` }} />
+      <span className="frame-corner bronze corner-br" style={{ backgroundImage: `url(${assetPath('ui/labrys-corner.png')})` }} />
       <Tabs
         idBase="world"
         className="world-tabs six-tabs"
@@ -1543,8 +1714,8 @@ function WorldPanel({
         ariaLabel="Разделы мира"
       />
       <TabPanel idBase="world" tabId={tab} className="world-tab-panel">
-        {tab === 'map' && <RouteMap run={run} onScout={onScout} />}
-        {tab === 'ship' && <ShipPanel run={run} onEquip={onEquip} onPayDebt={onPayDebt} onAssignCompanion={onAssignCompanion} onSetWatch={onSetWatch} onSetRations={onSetRations} onUseAbility={onUseAbility} />}
+        {tab === 'map' && <RouteMap run={run} />}
+        {tab === 'ship' && <ShipPanel run={run} onEquip={onEquip} onPayDebt={onPayDebt} onAssignCompanion={onAssignCompanion} onSetWatch={onSetWatch} onSetRations={onSetRations} onSetTravelMode={onSetTravelMode} onUseAbility={onUseAbility} />}
         {tab === 'songs' && <CompanionSongsPanel run={run} meta={meta} />}
         {tab === 'fate' && <FatePanel run={run} onOffering={onOffering} />}
         {tab === 'codex' && <CodexPanel run={run} meta={meta} />}
@@ -1744,6 +1915,7 @@ function FatePanel({ run, onOffering }: { run: RunState; onOffering: (god: GodId
 
       <section className="fate-decisions">
         <div className="section-heading"><span>ЛЕТОПИСЬ РЕШЕНИЙ</span><small>РОК {run.campaign.doom}%</small></div>
+        <p className="doom-hint"><Eye size={12} /> Рок ≥40 — штормы злее · ≥60 — стражи сильнее · ≥80 — роковые знамения в пути · ≥50 — божественный финал закрыт</p>
         {run.campaign.decisions.length === 0 ? <p className="empty-state">Первое решение ещё не принято.</p> : run.campaign.decisions.slice(-5).reverse().map((decision) => (
           <div className={decision.success ? 'good' : 'bad'} key={decision.id}>
             <span>{decision.success ? <Check size={11} /> : <X size={11} />}</span>
@@ -1764,6 +1936,7 @@ function ShipPanel({
   onAssignCompanion,
   onSetWatch,
   onSetRations,
+  onSetTravelMode,
   onUseAbility,
 }: {
   run: RunState
@@ -1772,6 +1945,7 @@ function ShipPanel({
   onAssignCompanion: (companionId: string | null) => void
   onSetWatch: (watch: WatchMode) => void
   onSetRations: (rations: RationMode) => void
+  onSetTravelMode: (mode: TravelPackage) => void
   onUseAbility: (companionId: string) => void
 }) {
   const slots: EquipmentSlot[] = ['weapon', 'armor', 'talisman']
@@ -1792,6 +1966,16 @@ function ShipPanel({
         <div className="watch-ration-grid">
           <div><small>ВАХТА</small>{(['balanced', 'storm', 'forage'] as WatchMode[]).map((watch) => <button className={run.preparation.watch === watch ? 'active' : ''} key={watch} onClick={() => onSetWatch(watch)}>{watch === 'balanced' ? 'Обычная' : watch === 'storm' ? 'Штормовая' : 'Сбор припасов'}</button>)}</div>
           <div><small>ПАЙКИ</small>{(['normal', 'strict', 'generous'] as RationMode[]).map((ration) => <button className={run.preparation.rations === ration ? 'active' : ''} key={ration} onClick={() => onSetRations(ration)}>{ration === 'normal' ? 'Обычные' : ration === 'strict' ? 'Строгие' : 'Щедрые'}</button>)}</div>
+        </div>
+        <div className="travel-mode-select">
+          <small>ПАКЕТ ПЕРЕХОДА</small>
+          <div>
+            {(['cautious', 'standard', 'hasty'] as TravelPackage[]).map((mode) => {
+              const info = travelPackageInfo[mode]
+              const Icon = info.Icon
+              return <button className={run.preparation.travelMode === mode ? 'active' : ''} key={mode} onClick={() => onSetTravelMode(mode)} aria-pressed={run.preparation.travelMode === mode}><Icon size={11} /><span>{info.label}<small>{info.short}</small></span></button>
+            })}
+          </div>
         </div>
         {run.preparation.activeBoons.length > 0 && <div className="active-preparation-boons">{run.preparation.activeBoons.map((boon) => <span key={boon}>{boon === 'tiphys-guidance' ? 'Течение Тифия' : boon === 'sinon-market' ? 'Манифест Синона' : boon === 'idmon-vision' ? 'Видение Идмона' : boon === 'poseidon-calm' ? 'Тишина Посейдона' : boon === 'hermes-speed' ? 'Шаг Гермеса' : boon}</span>)}</div>}
       </section>
@@ -1847,7 +2031,7 @@ function ShipPanel({
           {run.ship.companions.map((companion) => {
             const memory = companion.memories[0]
             const abilityUsed = run.preparation.usedCompanionAbilities.includes(`${run.campaign.act}:${companion.id}`)
-            const abilityName = companion.id === 'eurylochus' ? 'Созвать общий совет' : companion.id === 'tiphys' ? 'Прочитать течение' : companion.id === 'sinon' ? 'Подготовить манифест' : 'Принять дурной сон'
+            const abilityName = companion.id === 'eurylochus' ? 'Созвать общий совет' : companion.id === 'tiphys' ? 'Прочитать течение' : companion.id === 'sinon' ? 'Подделать грамоту' : 'Принять дурной сон'
             return (
               <details className={`crew-companion-card loyalty-${companion.loyalty <= 25 ? 'low' : companion.loyalty >= 70 ? 'high' : 'mid'}`} key={companion.id}>
                 <summary>
@@ -1887,7 +2071,7 @@ function ShipPanel({
   )
 }
 
-function RouteMap({ run, onScout }: { run: RunState; onScout: () => void }) {
+function RouteMap({ run }: { run: RunState }) {
   const routePath = run.route.map((node) => `${node.x},${node.y}`).join(' ')
   const completedPath = run.route.slice(0, run.nodeIndex + 1).map((node) => `${node.x},${node.y}`).join(' ')
   const current = run.route[run.nodeIndex]
@@ -1958,16 +2142,7 @@ function RouteMap({ run, onScout }: { run: RunState; onScout: () => void }) {
         <div><small>ТЕКУЩЕЕ МЕСТО</small><b>{current.name}</b><span>{current.region} · {biomeInfo[current.biome].name}</span></div>
         <div className="course-distance"><small>ПРОЙДЕНО</small><b>{completedDistance(run)}</b><span>стадиев</span></div>
       </div>
-      <section className="scouting-section">
-        <div className="preparation-mini-art" style={{ backgroundImage: `url(${preparationScenes.scouting.src})` }}><span>{preparationScenes.scouting.caption}</span></div>
-        <div className="section-heading"><span>РАЗВЕДКА ПУТИ</span><small>{run.preparation.scoutReport ? 'ОТЧЁТ ГОТОВ' : '1 ПИЩА · 2 ВОДЫ'}</small></div>
-        {run.preparation.scoutReport ? (
-          <div className="scout-report">
-            <b>{run.preparation.scoutReport.destination}</b><span>{biomeInfo[run.preparation.scoutReport.biome].name} · опасность {run.preparation.scoutReport.danger}/5</span>
-            <div><i>Прямой: {run.preparation.scoutReport.boldDays} дн.</i><i>Обход: {run.preparation.scoutReport.cautiousDays} дн.</i><i>Шторм: {run.preparation.scoutReport.stormRisk}%</i><i>≈ {run.preparation.scoutReport.foodCost} пищи / {run.preparation.scoutReport.waterCost} воды</i></div>
-          </div>
-        ) : <button className="scout-button" onClick={onScout}><Compass size={13} /> Отправить разведчиков на один день</button>}
-      </section>
+      <p className="map-hint"><Eye size={13} /> Сравнение пакетов перехода показывает дни, припасы и риск шторма — разведка больше не нужна.</p>
       <div className="gods-panel">
         <div className="section-heading"><span>ВЗОР БОГОВ</span><small>2 ЗНАМЕНИЯ</small></div>
         <div className={`god-row ${run.campaign.gods.poseidon < 0 ? 'hostile' : 'silent'}`}>
@@ -1981,7 +2156,6 @@ function RouteMap({ run, onScout }: { run: RunState; onScout: () => void }) {
           <div className="god-value">{run.campaign.gods.athena > 0 ? '+' : ''}{run.campaign.gods.athena}</div>
         </div>
       </div>
-      <p className="map-hint"><Compass size={13} /> Каждый новый поход меняет острова, встречи и морские пути.</p>
     </div>
   )
 }
@@ -2043,6 +2217,7 @@ function EndingOverlay({
         {victory && run.campaign.ending && <div className={`ending-rank rank-${run.campaign.ending.rank}`}>{run.campaign.ending.rank} финал</div>}
         <p id="ending-description">{run.resolution?.text}</p>
         {run.resolution?.omen && <blockquote>{run.resolution.omen}</blockquote>}
+        {!victory && <DeathBreakdown run={run} />}
         <div className="ending-stats">
           <div><small>ДНЕЙ В МОРЕ</small><b>{run.day}</b></div>
           <div><small>СТРАЖЕЙ ПОВЕРЖЕНО</small><b>{run.campaign.bossesDefeated.length} / 2</b></div>
@@ -2059,6 +2234,43 @@ function EndingOverlay({
         </button>
       <button className="text-button" onClick={onMenu}><ArrowLeft size={15} /> Вернуться в главное меню</button>
     </Dialog>
+  )
+}
+
+function DeathBreakdown({ run }: { run: RunState }) {
+  const reason = deathReason(run.resources) ?? 'Экспедиция погибла.'
+  const killerOrder: ResourceKey[] = ['health', 'crew', 'hull', 'water', 'food', 'morale']
+  const deadKey = killerOrder.find((key) => run.resources[key] <= 0)
+  const tips: Partial<Record<ResourceKey, string>> = {
+    health: 'Раны лечатся отдыхом (3 пищи и 3 воды) и храмовым врачом в порту.',
+    crew: 'Люди гибнут в боях и за опасные решения. В порту можно нанять гребцов.',
+    hull: 'Корпус бьют штормы и стражи. Ремонт в порту, «Бронзовые рёбра» и осторожный курс снижают урон.',
+    water: 'Переходы тратят 3 воды в день (2 с «Глубокими цистернами»). Проверяйте расход перед отплытием.',
+    food: 'Переходы тратят 2 пищи в день (1 в зелёных водах). Пополняйте запасы на островах и в портах.',
+    morale: 'Дух падает от потерь, долгов и строгих пайков. Совет у мачты, щедрые пайки и успехи его поднимают.',
+  }
+  const lastLog = run.log[0]
+  return (
+    <div className="death-breakdown">
+      <span className="eyebrow">ПОСЛЕДНИЙ СЧЁТ</span>
+      <p className="death-reason">{reason}</p>
+      <div className="death-resources">
+        {(Object.keys(run.resources) as ResourceKey[]).map((key) => {
+          const config = resourceConfig[key]
+          const Icon = config.Icon
+          const dead = run.resources[key] <= 0
+          return (
+            <div className={dead ? 'dead' : ''} key={key}>
+              <Icon size={12} />
+              <span>{config.label}</span>
+              <b>{run.resources[key]}</b>
+            </div>
+          )
+        })}
+      </div>
+      {deadKey && tips[deadKey] && <p className="death-tip"><CircleHelp size={13} /> {tips[deadKey]}</p>}
+      {lastLog && <blockquote className="death-log">Последняя запись журнала: «{lastLog.text}»</blockquote>}
+    </div>
   )
 }
 
@@ -2357,7 +2569,7 @@ function RulesModal({ onClose }: { onClose: () => void }) {
     { Icon: Wheat, title: 'Берегите запасы', text: 'Переходы расходуют пищу и воду. Нулевой запас означает гибель похода.' },
     { Icon: Skull, title: 'Читайте намерения', text: 'Стражи показывают следующую атаку. Подбирайте ответ с подходящей защитой.' },
     { Icon: Eye, title: 'Спорьте с судьбой', text: 'Решения меняют отношение богов, рок, личное пророчество и доступный финал.' },
-    { Icon: Wind, title: 'Выбирайте курс', text: 'Прямой путь экономит дни, осторожный снижает вероятность и силу штормов.' },
+    { Icon: Wind, title: 'Выбирайте пакет перехода', text: 'Осторожный пакет даёт отдых и +5% к проверкам, но путь длиннее. Спешный экономит день ценой точности.' },
     { Icon: BookOpen, title: 'Собирайте кодекс', text: 'Пережитые мифы и их иллюстрации навсегда сохраняются между песнями.' },
     { Icon: Coins, title: 'Добывайте драхмы', text: 'Деньги дают только сокровища, награды, торговля и побеждённые стражи. Обычная неудача монет не приносит.' },
     { Icon: Sparkles, title: 'Оставляйте наследие', text: 'κλέος после экспедиции покупает постоянные дары для следующих попыток.' },

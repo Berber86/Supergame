@@ -235,6 +235,61 @@ a {
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.26);
 }
 
+/* Полоска-меандр: нарезанная текстура повторяется по горизонтали. */
+.ornament-strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background-repeat: repeat-x;
+  background-size: auto 6px;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.header-ornament {
+  bottom: -1px;
+  height: 7px;
+  opacity: 0.55;
+}
+
+.title-ornament {
+  bottom: -1px;
+  height: 6px;
+  opacity: 0.5;
+}
+
+.panel-ornament {
+  top: 0;
+  height: 5px;
+  opacity: 0.35;
+}
+
+/* Бронзовый орнамент поздней бронзы: лабрисы и спирали. */
+.panel-ornament.bronze {
+  height: 6px;
+  background-repeat: repeat-x;
+  background-size: auto 6px;
+  opacity: 0.3;
+}
+
+/* Углы рамки: меандр (золото) и лабрис (бронза). */
+.frame-corner {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  background-repeat: no-repeat;
+  background-size: 20px 20px;
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.frame-corner.corner-tl { top: -1px; left: -1px; }
+.frame-corner.corner-tr { top: -1px; right: -1px; transform: scaleX(-1); }
+.frame-corner.corner-bl { bottom: -1px; left: -1px; transform: scaleY(-1); }
+.frame-corner.corner-br { bottom: -1px; right: -1px; transform: scale(-1); }
+
 .section-heading {
   display: flex;
   align-items: center;
@@ -306,6 +361,7 @@ a {
   border-bottom: 1px solid rgba(197, 161, 91, 0.12);
   margin: 0 5vw;
 }
+
 
 .title-content {
   position: relative;
@@ -480,6 +536,7 @@ a {
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
 }
 
+
 .game-header .menu-button {
   display: none;
 }
@@ -574,8 +631,10 @@ a {
 /* Hero panel */
 
 .hero-panel {
+  position: relative;
   padding: 20px 17px 16px;
 }
+
 
 .hero-identity {
   display: flex;
@@ -1331,9 +1390,11 @@ a {
 /* World map */
 
 .world-panel {
+  position: relative;
   min-width: 0;
   overflow: hidden;
 }
+
 
 .world-tabs {
   display: grid;
@@ -2036,6 +2097,84 @@ a {
   font-size: 6px;
   font-weight: 700;
   letter-spacing: .1em;
+}
+
+.death-breakdown {
+  margin: 14px 0 4px;
+  padding: 10px;
+  border: 1px solid rgba(190, 70, 58, .35);
+  background: rgba(80, 22, 18, .14);
+  text-align: left;
+}
+
+.death-breakdown .death-reason {
+  margin: 4px 0 8px;
+  color: #d8c8b8;
+  font-family: var(--serif);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.death-resources {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.death-resources > div {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px;
+  border: 1px solid rgba(255, 255, 255, .06);
+  color: #7d827e;
+  font-size: 7px;
+}
+
+.death-resources > div svg {
+  color: #987b49;
+}
+
+.death-resources > div b {
+  color: #c9bd9c;
+  font-variant-numeric: tabular-nums;
+}
+
+.death-resources > div.dead {
+  border-color: rgba(190, 70, 58, .7);
+  background: rgba(120, 30, 24, .2);
+  color: #d97b6d;
+}
+
+.death-resources > div.dead b {
+  color: #ef9a8d;
+}
+
+.death-breakdown .death-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 9px 0 0;
+  color: #8b9091;
+  font-size: 7.5px;
+  line-height: 1.55;
+}
+
+.death-breakdown .death-tip svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: #8e7546;
+}
+
+.death-breakdown .death-log {
+  margin: 9px 0 0;
+  padding: 7px 9px;
+  border-left: 2px solid rgba(190, 70, 58, .55);
+  color: #6f7470;
+  font-size: 7.5px;
+  font-style: italic;
+  line-height: 1.5;
 }
 
 .ending-stats b {
@@ -2837,6 +2976,22 @@ a {
 .ship-hint svg {
   flex-shrink: 0;
   color: #8e7546;
+}
+
+.doom-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 4px 2px 10px;
+  color: #7c6a80;
+  font-size: 7px;
+  line-height: 1.5;
+}
+
+.doom-hint svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: #8e6a8f;
 }
 
 .map-node.port .node-outer {
@@ -7556,11 +7711,12 @@ a {
   }
 
   .mobile-resources {
-    display: flex;
-    height: 24px;
+    display: grid;
+    height: 26px;
+    grid-template-columns: repeat(7, 1fr);
     align-items: center;
-    justify-content: center;
-    gap: 22px;
+    justify-items: center;
+    gap: 1px;
     border-bottom: 1px solid rgba(197, 161, 91, .12);
     color: #8f928e;
   }
@@ -7568,9 +7724,13 @@ a {
   .mobile-resources span {
     display: flex;
     align-items: center;
-    gap: 4px;
-    font-size: 7px;
+    gap: 3px;
+    font-size: 6.5px;
     font-variant-numeric: tabular-nums;
+  }
+
+  .mobile-resources .mobile-coins {
+    color: #c3ad7c;
   }
 
   .mobile-resources svg {
@@ -8234,6 +8394,231 @@ a {
 }
 
 /* v1.5 — reactive companion finales and transparent courses */
+.prologue-panel {
+  overflow: hidden;
+}
+
+.prologue-hero {
+  position: relative;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 26px;
+  background-color: #0c0e10;
+  background-size: cover;
+  background-position: center;
+}
+
+.prologue-vignette {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(5, 8, 11, .92), rgba(5, 8, 11, .42)), linear-gradient(0deg, rgba(4, 7, 10, .96) 0%, transparent 55%);
+}
+
+.prologue-title {
+  position: relative;
+  z-index: 1;
+}
+
+.prologue-title h1 {
+  margin: 6px 0 4px;
+  color: #e6dcc4;
+  font-family: var(--serif);
+  font-size: clamp(30px, 4.5vw, 44px);
+  line-height: 1.05;
+}
+
+.prologue-title p {
+  color: #a89b7e;
+  font-size: 9px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.prologue-cast {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.prologue-cast span {
+  display: grid;
+  grid-template-columns: 34px auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 8px;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid rgba(197, 161, 91, .3);
+  background: rgba(8, 13, 16, .82);
+}
+
+.prologue-cast i {
+  grid-row: 1 / 3;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 0 0 1px rgba(197, 161, 91, .4);
+}
+
+.prologue-cast b {
+  color: #d8cbb0;
+  font-family: var(--serif);
+  font-size: 11px;
+}
+
+.prologue-cast small {
+  color: #7d827e;
+  font-size: 6.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.prologue-body {
+  padding: 18px 22px 22px;
+}
+
+.prologue-text {
+  color: #cfc6b2;
+  font-family: var(--serif);
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-line;
+}
+
+.prologue-body blockquote {
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border-left: 2px solid rgba(190, 117, 59, .55);
+  color: #a8977a;
+  font-size: 10.5px;
+  font-style: italic;
+  line-height: 1.55;
+}
+
+.prologue-choices-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 18px 0 8px;
+}
+
+.prologue-choices-heading span {
+  color: #c3ad7c;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .14em;
+}
+
+.prologue-choices-heading small {
+  color: #6d7274;
+  font-size: 7px;
+  text-align: right;
+}
+
+.prologue-options {
+  display: grid;
+  gap: 7px;
+}
+
+.prologue-option {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 14px;
+  border: 1px solid rgba(147, 154, 148, .2);
+  background: rgba(255, 255, 255, .02);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.prologue-option:hover {
+  border-color: rgba(197, 161, 91, .6);
+  background: rgba(197, 161, 91, .06);
+}
+
+.prologue-option-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(197, 161, 91, .35);
+  color: #c3ad7c;
+}
+
+.prologue-option-copy b {
+  display: block;
+  color: #ddd2b8;
+  font-family: var(--serif);
+  font-size: 12px;
+}
+
+.prologue-option-copy small {
+  display: block;
+  margin-top: 3px;
+  color: #7d827e;
+  font-size: 7.5px;
+  line-height: 1.45;
+}
+
+.prologue-option-effects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.prologue-option-effects i {
+  padding: 3px 6px;
+  border: 1px solid rgba(147, 154, 148, .2);
+  color: #9aa08f;
+  font-size: 7px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.prologue-option-effects i.doom-effect {
+  border-color: rgba(142, 106, 143, .5);
+  color: #b79bb9;
+}
+
+.prologue-option-effects i.god-effect {
+  border-color: rgba(197, 161, 91, .45);
+  color: #c3ad7c;
+}
+
+.prologue-option-effects i.coin-effect {
+  border-color: rgba(197, 161, 91, .4);
+  color: #c3ad7c;
+}
+
+.prologue-option > svg {
+  color: #6d7274;
+}
+
+@media (max-width: 760px) {
+  .prologue-hero {
+    min-height: 230px;
+    padding: 18px;
+  }
+
+  .prologue-option {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .prologue-option > svg {
+    display: none;
+  }
+}
+
 .travel-comparison {
   margin: 10px 0 4px;
   padding: 9px;
@@ -8258,20 +8643,69 @@ a {
 
 .travel-comparison-plans {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 6px;
 }
 
-.travel-comparison-plans article {
+.travel-package-card {
   padding: 7px;
   border: 1px solid rgba(147, 154, 148, .16);
   background: rgba(255,255,255,.018);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.travel-comparison-plans article.bold { border-color: rgba(190, 117, 59, .35); }
-.travel-comparison-plans article.cautious { border-color: rgba(103, 150, 163, .35); }
+.travel-package-card:hover {
+  border-color: rgba(197, 161, 91, .55);
+}
 
-.travel-comparison-plans header {
+.travel-package-card.cautious { border-color: rgba(103, 150, 163, .35); }
+.travel-package-card.hasty { border-color: rgba(190, 117, 59, .35); }
+
+.travel-package-card.selected {
+  border-color: rgba(197, 161, 91, .85);
+  background: rgba(197, 161, 91, .09);
+  box-shadow: 0 0 0 1px rgba(197, 161, 91, .4) inset;
+}
+
+.travel-package-card.lethal {
+  border-color: rgba(190, 70, 58, .8);
+  background: rgba(120, 30, 24, .12);
+  box-shadow: 0 0 0 1px rgba(190, 70, 58, .28) inset;
+}
+
+.travel-package-card .lethal-note {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 5px;
+  color: #d97b6d;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+.doom-travel-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 7px;
+  padding: 5px 7px;
+  border: 1px solid rgba(142, 106, 143, .45);
+  background: rgba(60, 35, 66, .22);
+  color: #b79bb9;
+  font-size: 7px;
+  line-height: 1.4;
+}
+
+.doom-travel-note svg {
+  flex-shrink: 0;
+  color: #b06fae;
+}
+
+.travel-package-card header {
   display: flex;
   gap: 5px;
   align-items: center;
@@ -8280,32 +8714,80 @@ a {
   font-size: 9px;
 }
 
-.travel-comparison-plans article > div {
+.travel-package-card header .package-check {
+  margin-left: auto;
+  color: #c3ad7c;
+}
+
+.travel-package-card > div {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 3px;
   margin-top: 3px;
 }
 
-.travel-comparison-plans span {
+.travel-package-card span {
   display: grid;
   color: #757a76;
   font-size: 7px;
 }
 
-.travel-comparison-plans span b {
+.travel-package-card span b {
   margin-top: 1px;
   color: #c7c1b4;
   font-family: var(--mono);
   font-size: 8px;
 }
 
-.travel-comparison-plans em {
+.travel-package-card em {
   display: block;
   margin-top: 5px;
   color: #bd9460;
   font-size: 7px;
   font-style: normal;
+}
+
+.travel-mode-select {
+  margin-top: 8px;
+}
+
+.travel-mode-select > small {
+  display: block;
+  margin-bottom: 4px;
+  color: #6d7274;
+  font-size: 6.5px;
+  font-weight: 700;
+  letter-spacing: .12em;
+}
+
+.travel-mode-select > div {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.travel-mode-select button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 5px 6px;
+  border: 1px solid rgba(147, 154, 148, .18);
+  background: rgba(255,255,255,.02);
+  color: #8f928e;
+  font-size: 7.5px;
+  cursor: pointer;
+}
+
+.travel-mode-select button.active {
+  border-color: rgba(197, 161, 91, .8);
+  background: rgba(197, 161, 91, .1);
+  color: #c8bc98;
+}
+
+.travel-mode-select button small {
+  color: #6d7274;
+  font-size: 6.5px;
 }
 
 .companion-finale-panel { overflow: hidden; }
