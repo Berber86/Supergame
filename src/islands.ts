@@ -809,10 +809,21 @@ export const authoredIslands: AuthoredIsland[] = expandedAuthoredIslands.map((is
   if (!literary) return island
   // Keep the original second narrative layer as a later observation rather than
   // replacing it with a shorter arrival passage from the literary pass.
+  const outcomes = Object.fromEntries(Object.entries(island.outcomes).map(([choiceId, branches]) => [choiceId, {
+    success: {
+      ...branches.success,
+      aftermath: `${branches.success.aftermath}\n\n${literary.successEpilogue}`,
+    },
+    failure: {
+      ...branches.failure,
+      aftermath: `${branches.failure.aftermath}\n\n${literary.failureEpilogue}`,
+    },
+  }]))
   return {
     ...island,
     ...literary,
     introduction: `${literary.introduction}\n\n${island.introduction}`,
+    outcomes,
   }
 })
 
