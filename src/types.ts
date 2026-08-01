@@ -4,7 +4,7 @@ export type ResourceKey = 'health' | 'food' | 'water' | 'morale' | 'crew' | 'hul
 
 export type GodId = 'athena' | 'poseidon' | 'hermes' | 'hades'
 
-export type TravelStance = 'bold' | 'cautious'
+export type TravelPackage = 'cautious' | 'standard' | 'hasty'
 
 export type DifficultyId = 'tale' | 'odyssey' | 'wrath'
 
@@ -243,29 +243,15 @@ export interface ShipState {
 export type WatchMode = 'balanced' | 'storm' | 'forage'
 export type RationMode = 'normal' | 'strict' | 'generous'
 
-export interface ScoutReport {
-  nodeIndex: number
-  destination: string
-  biome: Biome
-  danger: number
-  boldDays: number
-  cautiousDays: number
-  foodCost: number
-  waterCost: number
-  stormRisk: number
-}
-
 export interface PreparationState {
-  preparedSkill: Skill | null
+  /** Как готовимся к следующему переходу: один выбор вместо отдельных действий. */
+  travelMode: TravelPackage
   assignedCompanionId: string | null
   watch: WatchMode
   rations: RationMode
   activeBoons: string[]
   usedCompanionAbilities: string[]
-  restedNodeIndexes: number[]
-  trainedNodeIndexes: number[]
   offeredNodeIndexes: number[]
-  scoutReport: ScoutReport | null
 }
 
 export interface DecisionRecord {
@@ -354,7 +340,7 @@ export interface CompanionFinaleState {
 }
 
 export interface TravelPreview {
-  stance: TravelStance
+  travelMode: TravelPackage
   days: number
   foodCost: number
   waterCost: number
@@ -362,6 +348,10 @@ export interface TravelPreview {
   stormChance: number
   stormDamageRange: [number, number]
   dueDebts: number
+  /** Влияние пакета на проверки: Осторожно +5%, Спешно −5%. */
+  checkBonus: number
+  /** Осторожно включает отдых при отплытии. */
+  rest: boolean
 }
 
 export interface RunState {
@@ -369,6 +359,14 @@ export interface RunState {
   seed: number
   difficulty: DifficultyId
   divineRescueUsed: boolean
+  /** Пролог по паре стартовых спутников ещё не сыгран. */
+  prologuePending: boolean
+  /** Сцена глашатая Посейдона при входе во второй акт ещё не сыграна. */
+  heraldPending: boolean
+  /** Сцена перед Итакой (после последнего стража) ещё не сыграна. */
+  thresholdPending: boolean
+  /** Сцена перед Итакой уже сыграна в этом походе. */
+  thresholdDone: boolean
   day: number
   nodeIndex: number
   world: WorldLocation[]

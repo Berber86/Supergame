@@ -43,7 +43,8 @@ describe('difficulty modes', () => {
   it('scales guardian health and action chances', () => {
     const enterBoss = (mode: 'tale' | 'odyssey' | 'wrath') => {
       const run = createRun(1003, [], mode)
-      return continueVoyage({ ...run, nodeIndex: 4, phase: 'resolution', resources: { ...RESOURCE_MAX } }, 'cautious')
+      const bossIndex = run.route.findIndex((node) => node.kind === 'boss')
+      return continueVoyage({ ...run, nodeIndex: bossIndex - 1, phase: 'resolution', resources: { ...RESOURCE_MAX } }, 'standard')
     }
     const tale = enterBoss('tale')
     const odyssey = enterBoss('odyssey')

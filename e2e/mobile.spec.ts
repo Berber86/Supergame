@@ -12,6 +12,8 @@ test('mobile game uses three compact screens instead of one long page', async ({
   await page.getByRole('button', { name: /Начать путешествие/i }).click()
 
   await expect(page.getByRole('navigation', { name: 'Разделы игры' })).toBeVisible()
+  await expect(page.locator('.prologue-panel')).toBeVisible()
+  await page.locator('.prologue-option').first().click()
   await expect(page.locator('.encounter-panel')).toBeVisible()
   await expect(page.locator('.choice-button')).toHaveCount(2)
   await expect(page.getByRole('button', { name: /Первые два решения мне не подходят/i })).toBeVisible()
@@ -39,6 +41,8 @@ test('mobile game uses three compact screens instead of one long page', async ({
 test('event consequence leads directly to the relevant crew screen', async ({ page }) => {
   await page.getByRole('button', { name: /Начать путешествие/i }).click()
   await page.getByRole('button', { name: /Начать путешествие/i }).click()
+  await expect(page.locator('.prologue-panel')).toBeVisible()
+  await page.locator('.prologue-option').first().click()
   await page.locator('.choice-button').first().click()
 
   const crewLink = page.getByRole('button', { name: /Посмотреть память спутников|Открыть долги и команду/i })
@@ -52,9 +56,9 @@ test('event consequence leads directly to the relevant crew screen', async ({ pa
 test('port exposes an explicit departure action above the market', async ({ page }) => {
   await page.getByRole('button', { name: /Начать путешествие/i }).click()
   await page.getByRole('button', { name: /Начать путешествие/i }).click()
-  await page.waitForFunction(() => Boolean(localStorage.getItem('odyssey-shadow-save-v10')))
+  await page.waitForFunction(() => Boolean(localStorage.getItem('odyssey-shadow-save-v13')))
   await page.evaluate(() => {
-    const key = 'odyssey-shadow-save-v10'
+    const key = 'odyssey-shadow-save-v13'
     const run = JSON.parse(localStorage.getItem(key)!)
     run.nodeIndex = 3
     run.phase = 'port'
@@ -66,8 +70,8 @@ test('port exposes an explicit departure action above the market', async ({ page
 
   await expect(page.getByText('КОРАБЛЬ ГОТОВ К ОТПЛЫТИЮ')).toBeVisible()
   await expect(page.getByLabel('Сравнение морских стоек')).toBeVisible()
-  await expect(page.getByRole('button', { name: /Уплыть прямым курсом/i }).first()).toBeVisible()
-  await expect(page.getByRole('button', { name: /Уплыть осторожно/i }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /Отплыть/i }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /Спешно/i }).first()).toBeVisible()
 })
 
 test('dialog traps focus, closes with Escape and restores the trigger', async ({ page }) => {

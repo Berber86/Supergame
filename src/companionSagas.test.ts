@@ -10,6 +10,7 @@ import {
   currentIsland,
   resolveChoice,
   resolveCompanionFinale,
+  resolveThreshold,
   startingNamedCompanions,
   travelPreview,
   seekCompanionStory,
@@ -122,7 +123,7 @@ describe('companion saga director', () => {
 
     expect(companionSagaContext(run)?.stance).toBe('resentful')
     expect(currentEncounter(run).choices[0].title).toBe('Принять его ненависть как право')
-    expect(currentIsland(run)?.introduction).toContain('Прошлая обида')
+    expect(currentIsland(run)?.introduction).toContain('упрямства человека')
   })
 
   it('opens and resolves a real final song before Ithaca after three chapters', () => {
@@ -136,12 +137,15 @@ describe('companion saga director', () => {
     }))
     const atGate = {
       ...base,
-      nodeIndex: 10,
+      nodeIndex: base.route.length - 2,
       phase: 'resolution' as const,
       ship: { ...base.ship, companions },
       campaign: { ...base.campaign, knownCompanionStoryMarks: heard },
     }
-    const finale = continueVoyage(atGate)
+    const threshold = continueVoyage(atGate)
+    expect(threshold.thresholdPending).toBe(true)
+    const afterThreshold = resolveThreshold(threshold, 'threshold-king')
+    const finale = continueVoyage(afterThreshold)
     expect(finale.phase).toBe('companion-finale')
     expect(finale.companionFinale?.selectedCompanionId).toBe('eurylochus')
     const choice = finale.companionFinale?.selectedCompanionId ? currentFinalChoice(finale) : null
@@ -151,16 +155,20 @@ describe('companion saga director', () => {
     expect(resolved.campaign.companionStoryMarks.at(-1)).toMatchObject({ chapter: 4, companionId: 'eurylochus' })
   })
 
-  it('exposes the exact trade-off between direct and cautious sailing', () => {
+  it('exposes the exact trade-off between travel packages', () => {
     const run = createRun(1202)
-    const bold = travelPreview(run, 'bold')!
+    const hasty = travelPreview(run, 'hasty')!
+    const standard = travelPreview(run, 'standard')!
     const cautious = travelPreview(run, 'cautious')!
 
-    expect(bold.days).toBeLessThanOrEqual(cautious.days)
-    expect(bold.foodCost).toBeLessThanOrEqual(cautious.foodCost)
-    expect(bold.waterCost).toBeLessThanOrEqual(cautious.waterCost)
-    expect(bold.stormChance).toBeGreaterThan(cautious.stormChance)
-    expect(bold.stormDamageRange[1]).toBeGreaterThan(cautious.stormDamageRange[1])
+    expect(hasty.days).toBeLessThanOrEqual(standard.days)
+    expect(standard.days).toBeLessThanOrEqual(cautious.days)
+    expect(hasty.foodCost).toBeLessThanOrEqual(standard.foodCost)
+    expect(standard.foodCost).toBeLessThanOrEqual(cautious.foodCost)
+    expect(hasty.stormChance).toBeGreaterThan(cautious.stormChance)
+    expect(hasty.stormDamageRange[1]).toBeGreaterThan(cautious.stormDamageRange[1])
+    expect(cautious.checkBonus).toBe(0.05)
+    expect(hasty.checkBonus).toBe(-0.05)
   })
 })
 

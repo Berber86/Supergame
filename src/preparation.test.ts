@@ -8,35 +8,48 @@ import {
   effectiveSkill,
   makeOffering,
   portOfferCost,
-  restHero,
-  scoutNextRoute,
   setRationMode,
+  setTravelMode,
   setWatchMode,
-  trainSkill,
+  travelPreview,
   activateCompanionAbility,
 } from './game'
 import { recruitableCompanions, startingCompanion } from './progression'
 
-describe('hero preparation', () => {
-  it('rests once per node and pays real supplies', () => {
-    const run = { ...createRun(12001), resources: { ...createRun(12001).resources, health: 40 } }
-    const rested = restHero(run)
-    const repeated = restHero(rested)
+describe('travel packages', () => {
+  it('selects a package and previews its honest costs', () => {
+    const run = createRun(12001)
+    const cautious = setTravelMode(run, 'cautious')
+    const preview = travelPreview(cautious, 'cautious')!
 
-    expect(rested.day).toBe(run.day + 1)
-    expect(rested.resources.health).toBeGreaterThan(run.resources.health)
-    expect(rested.resources.food).toBe(run.resources.food - 3)
-    expect(repeated).toEqual(rested)
+    expect(cautious.preparation.travelMode).toBe('cautious')
+    expect(preview.travelMode).toBe('cautious')
+    expect(preview.rest).toBe(true)
+    expect(preview.checkBonus).toBe(0.05)
+    expect(preview.days).toBeGreaterThan(travelPreview(run, 'hasty')!.days)
   })
 
-  it('prepares one skill and improves the matching check', () => {
-    const run = createRun(12002)
-    const choice = currentEncounter(run).choices[0]
-    const trained = trainSkill(run, choice.skill)
+  it('applies rest with the cautious package and speed with the hasty one', () => {
+    const base = { ...createRun(12002), phase: 'resolution' as const, resources: { ...createRun(12002).resources, health: 40 } }
+    const hasty = continueVoyage(base, 'hasty')
+    const standard = continueVoyage(base, 'standard')
+    const cautious = continueVoyage(base, 'cautious')
 
-    expect(choiceChance(trained, choice) - choiceChance(run, choice)).toBeCloseTo(0.07, 5)
-    expect(trained.preparation.preparedSkill).toBe(choice.skill)
-    expect(trained.resources.food).toBe(run.resources.food - 2)
+    expect(hasty.day).toBeLessThanOrEqual(standard.day)
+    expect(cautious.day).toBeGreaterThan(standard.day)
+    expect(cautious.resources.health).toBeGreaterThan(hasty.resources.health)
+    expect(cautious.resources.morale).toBeGreaterThan(hasty.resources.morale)
+    expect(cautious.resources.food).toBeLessThan(hasty.resources.food)
+  })
+
+  it('shifts check odds by the package without a separate training action', () => {
+    const run = createRun(12003)
+    const choice = currentEncounter(run).choices[0]
+    const cautious = setTravelMode(run, 'cautious')
+    const hasty = setTravelMode(run, 'hasty')
+
+    expect(choiceChance(cautious, choice) - choiceChance(run, choice)).toBeCloseTo(0.05, 5)
+    expect(choiceChance(hasty, choice) - choiceChance(run, choice)).toBeCloseTo(-0.05, 5)
   })
 })
 
@@ -52,8 +65,8 @@ describe('ship council', () => {
 
   it('makes strict rations consume less than generous rations', () => {
     const base = { ...createRun(12102), phase: 'resolution' as const }
-    const strict = continueVoyage(setRationMode(base, 'strict'), 'cautious')
-    const generous = continueVoyage(setRationMode(base, 'generous'), 'cautious')
+    const strict = continueVoyage(setRationMode(base, 'strict'), 'standard')
+    const generous = continueVoyage(setRationMode(base, 'generous'), 'standard')
 
     expect(strict.resources.food).toBeGreaterThan(generous.resources.food)
     expect(generous.resources.morale).toBeGreaterThan(strict.resources.morale)
@@ -76,15 +89,15 @@ describe('ship council', () => {
     const base = createRun(12104)
     const tiphys = recruitableCompanions.find((companion) => companion.id === 'tiphys')!
     const withTiphys = { ...base, ship: { ...base.ship, companions: [...base.ship.companions, { ...tiphys, memories: [] }] } }
-    const baseline = scoutNextRoute(base)
+    const baseline = travelPreview(base, 'standard')!
     const prepared = setWatchMode(activateCompanionAbility(withTiphys, 'tiphys'), 'storm')
-    const scouted = scoutNextRoute(prepared)
+    const scouted = travelPreview(prepared, 'standard')!
 
-    expect(scouted.preparation.scoutReport!.stormRisk).toBeLessThan(baseline.preparation.scoutReport!.stormRisk)
+    expect(scouted.stormChance).toBeLessThan(baseline.stormChance)
   })
 })
 
-describe('offerings, scouting and trade preparation', () => {
+describe('offerings and trade preparation', () => {
   it('pays for one offering and changes divine favor', () => {
     const run = createRun(12201)
     const offered = makeOffering(run, 'poseidon')
@@ -96,14 +109,13 @@ describe('offerings, scouting and trade preparation', () => {
     expect(repeated).toEqual(offered)
   })
 
-  it('creates a useful scout report at a real resource cost', () => {
+  it('shows the travel preview without spending a scouting day', () => {
     const run = createRun(12202)
-    const scouted = scoutNextRoute(run)
+    const preview = travelPreview(run, 'standard')
 
-    expect(scouted.day).toBe(run.day + 1)
-    expect(scouted.resources.food).toBe(run.resources.food - 1)
-    expect(scouted.preparation.scoutReport?.destination).toBe(run.route[1].name)
-    expect(scouted.preparation.scoutReport?.stormRisk).toBeGreaterThan(0)
+    expect(preview?.days).toBeGreaterThan(0)
+    expect(preview?.stormChance).toBeGreaterThan(0)
+    expect(run.day).toBe(1)
   })
 
   it('applies Sinons market discount to the displayed and charged price', () => {

@@ -14,6 +14,7 @@ import { regionNames } from './data'
 import { encounters } from './encounterCatalog'
 import { difficultyDefinition } from './difficulty'
 import { authoredIslandByEncounter, authoredIslands, islandOutcomeNarrative } from './islands'
+import { ithacaThresholdScene, poseidonHeraldScene, prologueFor } from './prologue'
 import { flagsForOutcome, storyFlagModifiers } from './storyFlags'
 import {
   allCompanionDefinitions,
@@ -44,8 +45,8 @@ import type {
   RouteNode,
   RunState,
   Skill,
+  TravelPackage,
   TravelPreview,
-  TravelStance,
   WatchMode,
   WorldLocation,
 } from './types'
@@ -191,24 +192,34 @@ function plannedCompanionEpisodes(seed: number, meta: MetaState, companionIds: N
     .slice(0, 2)
 }
 
-function createRoute(seed: number, meta: MetaState = DEFAULT_META, companionIds: NamedCompanionId[] = []): RouteNode[] {
+function createRoute(seed: number, meta: MetaState = DEFAULT_META, companionIds: NamedCompanionId[] = [], difficulty: DifficultyId = 'odyssey'): RouteNode[] {
   const random = seededRandom(seed)
   const plannedEpisodes = plannedCompanionEpisodes(seed, meta, companionIds)
   const episodeIslandIds = new Set(companionStoryEpisodes.map((episode) => episode.encounterId))
   const genericIslands = shuffle(authoredIslands.filter((island) => !episodeIslandIds.has(island.encounterId)), random)
-  const islandSlots = [0, 1, 2, 4, 6, 8, 9]
+  // Полный путь (Одиссея и Гнев богов) — десять островов; Сказание — короткий путь из семи.
+  const isFullVoyage = difficultyDefinition(difficulty).voyageIslands === 10
+  const islandSlots = isFullVoyage ? [0, 1, 2, 4, 5, 7, 9, 10, 11, 12] : [0, 1, 2, 4, 6, 8, 9]
+  const positions = isFullVoyage
+    ? [
+      [7, 79], [14, 68], [22, 73], [30, 57], [37, 63], [44, 47], [51, 55],
+      [58, 40], [66, 46], [73, 32], [79, 39], [85, 25], [90, 32], [94, 20],
+    ]
+    : [
+      [7, 79], [15, 65], [25, 74], [33, 56], [42, 64], [50, 45],
+      [59, 54], [67, 35], [76, 43], [84, 24], [91, 31],
+    ]
+  const portIndex = isFullVoyage ? 8 : 7
+  const scyllaIndex = isFullVoyage ? 6 : 5
+  const poseidonIndex = isFullVoyage ? 13 : 10
   const plannedByNodeIndex = new Map<number, typeof plannedEpisodes[number]>()
   if (plannedEpisodes[0]) plannedByNodeIndex.set(1, plannedEpisodes[0])
-  if (plannedEpisodes[1]) plannedByNodeIndex.set(6, plannedEpisodes[1])
+  if (plannedEpisodes[1]) plannedByNodeIndex.set(isFullVoyage ? 7 : 6, plannedEpisodes[1])
   let genericIndex = 0
-  const positions = [
-    [7, 79], [15, 65], [25, 74], [33, 56], [42, 64], [50, 45],
-    [59, 54], [67, 35], [76, 43], [84, 24], [91, 31],
-  ]
 
   const route: RouteNode[] = positions.map(([x, y], index) => {
-    const isPort = index === 3 || index === 7
-    const bossId = index === 5 ? 'scylla' : index === 10 ? 'poseidon-avatar' : undefined
+    const isPort = index === 3 || index === portIndex
+    const bossId = index === scyllaIndex ? 'scylla' : index === poseidonIndex ? 'poseidon-avatar' : undefined
     const isBoss = Boolean(bossId)
     const plannedEpisode = plannedByNodeIndex.get(index)
     const island = !isPort && !isBoss
@@ -240,7 +251,7 @@ function createRoute(seed: number, meta: MetaState = DEFAULT_META, companionIds:
   })
 
   if (route.filter((node) => node.encounterId).length !== islandSlots.length) {
-    throw new Error('Маршрут должен содержать семь авторских берегов.')
+    throw new Error('Маршрут должен содержать авторские берега в количестве, заданном сложностью.')
   }
   route.push({
     id: `ithaca-${seed}`,
@@ -277,14 +288,18 @@ export function createRun(seed = Date.now(), legacy: string[] = [], difficulty: 
   const prophecy = { ...prophecies[Math.floor(seededRandom(seed + 404)() * prophecies.length)] }
   const companions = startingNamedCompanions(seed)
   return {
-    version: 10,
+    version: 13,
     seed,
     difficulty,
     divineRescueUsed: false,
+    prologuePending: true,
+    heraldPending: false,
+    thresholdPending: false,
+    thresholdDone: false,
     day: 1,
     nodeIndex: 0,
     world,
-    route: createRoute(seed, meta, companions.map((companion) => companion.id as NamedCompanionId)),
+    route: createRoute(seed, meta, companions.map((companion) => companion.id as NamedCompanionId), difficulty),
     resources,
     skills: {
       cunning: hasBoon('owl-memory') ? 6 : 5,
@@ -311,16 +326,13 @@ export function createRun(seed = Date.now(), legacy: string[] = [], difficulty: 
       lastCrisisDay: -10,
     },
     preparation: {
-      preparedSkill: null,
+      travelMode: 'standard',
       assignedCompanionId: null,
       watch: 'balanced',
       rations: 'normal',
       activeBoons: [],
       usedCompanionAbilities: [],
-      restedNodeIndexes: [],
-      trainedNodeIndexes: [],
       offeredNodeIndexes: [],
-      scoutReport: null,
     },
     campaign: {
       act: 1,
@@ -373,10 +385,16 @@ export function companionSagaContext(run: RunState) {
 export function currentEncounter(run: RunState) {
   const encounterId = run.route[run.nodeIndex]?.encounterId
   const baseEncounter = encounters.find((entry) => entry.id === encounterId) ?? encounters[0]
+  const island = authoredIslandByEncounter.get(encounterId)
+  const sagaEpisode = storyEpisodeForEncounter(encounterId)
   const mainStoryLayer = mainStorySceneLayer(baseEncounter.id)
-  const encounter = mainStoryLayer
-    ? { ...baseEncounter, ...mainStoryLayer }
-    : baseEncounter
+  const encounter = {
+    ...baseEncounter,
+    ...(mainStoryLayer ?? {}),
+    // Один авторский голос: заголовок — имя острова (карта, кодекс и событие сходятся);
+    // главы спутников сохраняют своё название песни.
+    title: sagaEpisode ? baseEncounter.title : (island?.name ?? baseEncounter.title),
+  }
   const context = companionSagaContext(run)
   if (!context) return encounter
   return {
@@ -432,6 +450,22 @@ function divineSkillModifier(run: RunState, skill: Skill) {
   return run.campaign.gods.athena / 1500
 }
 
+/** Рок усиливает море: чем выше doom, тем чаще и злее штормы. */
+export function doomStormModifier(doom: number) {
+  if (doom >= 80) return 0.12
+  if (doom >= 60) return 0.07
+  if (doom >= 40) return 0.03
+  return 0
+}
+
+/** Рок усиливает стражей: намерения боссов наносят больше урона. */
+export function doomBossMultiplier(doom: number) {
+  if (doom >= 80) return 1.25
+  if (doom >= 60) return 1.15
+  if (doom >= 40) return 1.05
+  return 1
+}
+
 export function choiceChance(run: RunState, choice: Choice) {
   const skill = effectiveSkill(run, choice.skill)
   const moraleModifier = (run.resources.morale - 50) / 500
@@ -439,9 +473,9 @@ export function choiceChance(run: RunState, choice: Choice) {
   const legacyModifier = run.legacyBoons.includes('thread-of-moira') ? 0.04 : 0
   const difficultyModifier = difficultyDefinition(run.difficulty).chanceModifier
   const flagModifier = storyFlagModifiers(run.campaign.storyFlags).chance[choice.skill] ?? 0
-  const preparedModifier = run.preparation.preparedSkill === choice.skill ? 0.07 : 0
+  const travelModeModifier = run.preparation.travelMode === 'cautious' ? 0.05 : run.preparation.travelMode === 'hasty' ? -0.05 : 0
   const companionBoonModifier = run.preparation.activeBoons.includes('sinon-scheme') && choice.skill === 'cunning' ? 0.06 : 0
-  const chance = 0.46 + skill * 0.075 - choice.difficulty * 0.08 + moraleModifier + healthModifier + divineSkillModifier(run, choice.skill) + legacyModifier + difficultyModifier + flagModifier + preparedModifier + companionBoonModifier
+  const chance = 0.46 + skill * 0.075 - choice.difficulty * 0.08 + moraleModifier + healthModifier + divineSkillModifier(run, choice.skill) + legacyModifier + difficultyModifier + flagModifier + travelModeModifier + companionBoonModifier
   return Math.max(0.08, Math.min(0.94, chance))
 }
 
@@ -518,7 +552,7 @@ function applyDivineChanges(
   return next
 }
 
-function deathReason(resources: Resources) {
+export function deathReason(resources: Resources) {
   if (resources.health <= 0) return 'Ваши раны оказались сильнее царской воли.'
   if (resources.crew <= 0) return 'На корабле не осталось людей, способных поднять вёсла.'
   if (resources.hull <= 0) return 'Чёрный корабль раскололся и исчез под волнами.'
@@ -687,10 +721,8 @@ export function resolveChoice(run: RunState, choice: Choice, forceDeferredCost =
   const success = deterministicRoll(run, choice) <= choiceChance(run, choice)
   const rawOutcome = success ? choice.success : choice.failure
   const encounter = currentEncounter(run)
-  const mainStoryLayer = mainStorySceneLayer(encounter.id)
-  const outcome = mainStoryLayer
-    ? { ...rawOutcome, text: `${rawOutcome.text}\n\n${success ? mainStoryLayer.success : mainStoryLayer.failure}` }
-    : rawOutcome
+  // Один авторский голос: немедленный исход — текст выбора, развёрнутые последствия — из авторского острова.
+  const outcome = rawOutcome
   const authoredNarrativeBase = islandOutcomeNarrative(encounter.id, choice.id, success)
   const literaryLayer = companionLiteraryLayer(encounter.id, success)
   const narrativeWithLiteraryLayer = authoredNarrativeBase && literaryLayer
@@ -816,9 +848,9 @@ export function resolveChoice(run: RunState, choice: Choice, forceDeferredCost =
     divineChange,
     crewReactions: combinedReactions,
     debtCreated,
-    aftermath: authoredNarrative?.aftermath,
-    crewVoice: authoredNarrative?.crewVoice,
-    consequence: authoredNarrative?.consequence,
+    aftermath: rosterSafeText(run, authoredNarrative?.aftermath),
+    crewVoice: rosterSafeText(run, authoredNarrative?.crewVoice),
+    consequence: rosterSafeText(run, authoredNarrative?.consequence),
     storyFlagsGained,
     companionStoryMark,
   }
@@ -836,7 +868,6 @@ export function resolveChoice(run: RunState, choice: Choice, forceDeferredCost =
     },
     preparation: {
       ...run.preparation,
-      preparedSkill: null,
       activeBoons: run.preparation.activeBoons.filter((boon) => boon !== 'sinon-scheme' && boon !== 'idmon-vision'),
     },
     debts: debtCreated ? [debtCreated, ...run.debts].slice(0, 16) : run.debts,
@@ -855,6 +886,104 @@ export function resolveChoice(run: RunState, choice: Choice, forceDeferredCost =
     ].slice(0, 32),
   }
   return withDeathCheck(next)
+}
+
+/** Первое решение похода: пролог по паре стартовых спутников. Без броска — только клятва, приказ или память. */
+export function resolvePrologue(run: RunState, optionId: string): RunState {
+  if (!run.prologuePending) return run
+  const prologue = prologueFor(run.ship.companions)
+  const option = prologue.options.find((entry) => entry.id === optionId)
+  if (!option) return run
+  return {
+    ...run,
+    prologuePending: false,
+    resources: applyEffects(run.resources, option.effects),
+    campaign: {
+      ...run.campaign,
+      doom: Math.max(0, Math.min(100, run.campaign.doom + option.doom)),
+    },
+    log: [
+      {
+        id: `prologue-${run.seed}-${option.id}`,
+        day: run.day,
+        title: option.logTitle,
+        text: option.logText,
+        tone: 'neutral' as const,
+      },
+      ...run.log,
+    ].slice(0, 32),
+  }
+}
+
+/** Постоянные члены экипажа — всегда на борту, в отличие от именованных спутников. */
+const CREW_FALLBACK_NAMES = ['Еврибат', 'Перимед', 'Филий']
+const COMPANION_SPEAKER_NAMES = ['Еврилох', 'Тифий', 'Синон', 'Идмон']
+
+/**
+ * Реплики и последствия пишутся только для пула авторских островов.
+ * Если авторская строка называет спутника, которого нет на борту,
+ * имя заменяется постоянным членом экипажа — никаких голосов с пустой палубы.
+ */
+export function rosterSafeText(run: RunState, text?: string) {
+  if (!text) return text
+  const aboard = new Set(run.ship.companions.map((companion) => companion.name))
+  let result = text
+  let fallbackIndex = 0
+  COMPANION_SPEAKER_NAMES.forEach((name) => {
+    if (aboard.has(name)) return
+    const replacer = CREW_FALLBACK_NAMES[fallbackIndex % CREW_FALLBACK_NAMES.length]
+    fallbackIndex += 1
+    result = result.split(name).join(replacer)
+  })
+  return result
+}
+
+/** Сцена глашатая Посейдона: вход во второй акт, решение без броска. */
+export function resolveHerald(run: RunState, optionId: string): RunState {
+  if (!run.heraldPending) return run
+  const scene = poseidonHeraldScene(run)
+  const option = scene.options.find((entry) => entry.id === optionId)
+  if (!option) return run
+  return {
+    ...run,
+    heraldPending: false,
+    resources: applyEffects(run.resources, option.effects),
+    campaign: {
+      ...run.campaign,
+      gods: applyDivineChanges(run.campaign.gods, option.gods ?? {}),
+      doom: Math.max(0, Math.min(100, run.campaign.doom + option.doom)),
+    },
+    log: [
+      { id: `herald-${run.seed}-${option.id}`, day: run.day, title: option.logTitle, text: option.logText, tone: 'neutral' as const },
+      ...run.log,
+    ].slice(0, 32),
+  }
+}
+
+/** Сцена перед Итакой: последний выбор без броска после последнего стража. */
+export function resolveThreshold(run: RunState, optionId: string): RunState {
+  if (!run.thresholdPending) return run
+  const scene = ithacaThresholdScene(run)
+  const option = scene.options.find((entry) => entry.id === optionId)
+  if (!option) return run
+  return {
+    ...run,
+    thresholdPending: false,
+    thresholdDone: true,
+    resources: applyEffects(run.resources, option.effects),
+    progression: {
+      ...run.progression,
+      coins: Math.max(0, run.progression.coins + (option.coins ?? 0)),
+    },
+    campaign: {
+      ...run.campaign,
+      doom: Math.max(0, Math.min(100, run.campaign.doom + option.doom)),
+    },
+    log: [
+      { id: `threshold-${run.seed}-${option.id}`, day: run.day, title: option.logTitle, text: option.logText, tone: 'neutral' as const },
+      ...run.log,
+    ].slice(0, 32),
+  }
 }
 
 export function upgradeSkill(run: RunState, skill: Skill): RunState {
@@ -876,45 +1005,8 @@ export function upgradeSkill(run: RunState, skill: Skill): RunState {
   }
 }
 
-function canPrepare(run: RunState) {
-  return run.phase === 'encounter' || run.phase === 'port' || run.phase === 'resolution'
-}
-
-export function restHero(run: RunState): RunState {
-  if (!canPrepare(run) || run.preparation.restedNodeIndexes.includes(run.nodeIndex)) return run
-  const cost: Effects = { food: -3, water: -3 }
-  if (!canAfford(run.resources, cost)) return { ...run, portNotice: 'Для отдыха нужны 3 пищи и 3 воды.' }
-  return {
-    ...run,
-    day: run.day + 1,
-    resources: applyEffects(applyEffects(run.resources, cost), { health: 20, morale: 6 }),
-    preparation: {
-      ...run.preparation,
-      restedNodeIndexes: [...run.preparation.restedNodeIndexes, run.nodeIndex],
-    },
-    portNotice: 'Одиссей отдохнул. Здоровье и боевой дух восстановлены.',
-    log: [
-      { id: `rest-${run.seed}-${run.nodeIndex}`, day: run.day + 1, title: 'День отдыха', text: 'Одиссей передал вахту спутникам и позволил ранам затянуться.', tone: 'good' as const },
-      ...run.log,
-    ].slice(0, 32),
-  }
-}
-
-export function trainSkill(run: RunState, skill: Skill): RunState {
-  if (!canPrepare(run) || run.preparation.trainedNodeIndexes.includes(run.nodeIndex)) return run
-  const cost: Effects = { food: -2, water: -1 }
-  if (!canAfford(run.resources, cost)) return { ...run, portNotice: 'Для тренировки нужны 2 пищи и 1 вода.' }
-  return {
-    ...run,
-    day: run.day + 1,
-    resources: applyEffects(run.resources, cost),
-    preparation: {
-      ...run.preparation,
-      preparedSkill: skill,
-      trainedNodeIndexes: [...run.preparation.trainedNodeIndexes, run.nodeIndex],
-    },
-    portNotice: `Подготовлено: ${skill === 'cunning' ? 'хитрость' : skill === 'valor' ? 'доблесть' : skill === 'seamanship' ? 'мореходство' : 'воля'}. Следующая подходящая проверка получит +7%.`,
-  }
+export function setTravelMode(run: RunState, mode: TravelPackage): RunState {
+  return { ...run, preparation: { ...run.preparation, travelMode: mode } }
 }
 
 export function assignCompanion(run: RunState, companionId: string | null): RunState {
@@ -937,7 +1029,7 @@ export function setRationMode(run: RunState, rations: RationMode): RunState {
 }
 
 export function activateCompanionAbility(run: RunState, companionId: string): RunState {
-  if (!canPrepare(run)) return run
+  if (run.phase !== 'encounter' && run.phase !== 'port' && run.phase !== 'resolution') return run
   const companion = run.ship.companions.find((entry) => entry.id === companionId)
   const useKey = `${run.campaign.act}:${companionId}`
   if (!companion || run.preparation.usedCompanionAbilities.includes(useKey)) return run
@@ -955,7 +1047,7 @@ export function activateCompanionAbility(run: RunState, companionId: string): Ru
     text = 'Тифий прочитал течение: риск следующего шторма значительно снижен.'
   } else if (companionId === 'sinon') {
     if (!activeBoons.includes('sinon-market')) activeBoons.push('sinon-market')
-    text = 'Синон подготовил ложный манифест: следующая покупка в порту дешевле на 25%.'
+    text = 'Синон подделал торговую грамоту: следующая покупка в порту дешевле на 25%.'
   } else {
     resources = applyEffects(resources, { health: -3 })
     campaign = { ...campaign, doom: Math.max(0, campaign.doom - 10) }
@@ -981,7 +1073,7 @@ export function activateCompanionAbility(run: RunState, companionId: string): Ru
 }
 
 export function makeOffering(run: RunState, god: GodId): RunState {
-  if (!canPrepare(run) || run.preparation.offeredNodeIndexes.includes(run.nodeIndex)) return run
+  if ((run.phase !== 'encounter' && run.phase !== 'port' && run.phase !== 'resolution') || run.preparation.offeredNodeIndexes.includes(run.nodeIndex)) return run
   const coinCosts: Record<GodId, number> = { athena: 8, poseidon: 10, hermes: 8, hades: 6 }
   const resourceCosts: Record<GodId, Effects> = {
     athena: { morale: -2 },
@@ -991,7 +1083,7 @@ export function makeOffering(run: RunState, god: GodId): RunState {
   }
   const coinCost = coinCosts[god]
   if (run.progression.coins < coinCost || !canAfford(run.resources, resourceCosts[god])) {
-    return { ...run, portNotice: 'Недостаточно ресурсов для этого подношения.' }
+    return { ...run, portNotice: 'Недостаточно припасов для этого подношения.' }
   }
   const gods = applyDivineChanges(run.campaign.gods, { [god]: god === 'poseidon' ? 18 : 15 })
   const activeBoons = [...run.preparation.activeBoons]
@@ -1008,46 +1100,6 @@ export function makeOffering(run: RunState, god: GodId): RunState {
       offeredNodeIndexes: [...run.preparation.offeredNodeIndexes, run.nodeIndex],
     },
     portNotice: `Подношение принято: ${god === 'athena' ? 'Афина' : god === 'poseidon' ? 'Посейдон' : god === 'hermes' ? 'Гермес' : 'Аид'} стал благосклоннее.`,
-  }
-}
-
-export function scoutNextRoute(run: RunState): RunState {
-  if (!canPrepare(run)) return run
-  const nextIndex = run.nodeIndex + 1
-  const nextNode = run.route[nextIndex]
-  if (!nextNode || run.preparation.scoutReport?.nodeIndex === nextIndex) return run
-  const cost: Effects = { food: -1, water: -2 }
-  if (!canAfford(run.resources, cost)) return { ...run, portNotice: 'Разведке нужны 1 пища и 2 воды.' }
-  const hasUpgrade = (id: string) => run.ship.upgrades.includes(id)
-  const baseDays = Math.max(1, Math.ceil(nextNode.distance / 95)) - (hasUpgrade('broad-sail') ? 1 : 0)
-  const flagModifiers = storyFlagModifiers(run.campaign.storyFlags)
-  const assignedCompanion = run.ship.companions.find((companion) => companion.id === run.preparation.assignedCompanionId)
-  const baseStorm = nextNode.biome === 'storm' ? 0.68 : nextNode.biome === 'civilized' ? 0.14 : 0.36
-  const preparationStorm = (run.preparation.watch === 'storm' ? -0.1 : run.preparation.watch === 'forage' ? 0.05 : 0)
-    + (assignedCompanion?.temperament === 'seafarer' ? -0.05 : 0)
-    + (run.preparation.activeBoons.includes('tiphys-guidance') ? -0.12 : 0)
-    + (run.preparation.activeBoons.includes('poseidon-calm') ? -0.1 : 0)
-  const stormRisk = Math.max(0.03, Math.min(0.94, baseStorm + difficultyDefinition(run.difficulty).stormModifier + flagModifiers.stormModifier + preparationStorm))
-  const normalDays = Math.max(1, baseDays)
-  return {
-    ...run,
-    day: run.day + 1,
-    resources: applyEffects(run.resources, cost),
-    preparation: {
-      ...run.preparation,
-      scoutReport: {
-        nodeIndex: nextIndex,
-        destination: nextNode.name,
-        biome: nextNode.biome,
-        danger: nextNode.danger,
-        boldDays: Math.max(1, baseDays - 1 - (run.preparation.activeBoons.includes('hermes-speed') ? 1 : 0)),
-        cautiousDays: Math.max(1, baseDays + 1 - (run.preparation.activeBoons.includes('hermes-speed') ? 1 : 0)),
-        foodCost: normalDays * (nextNode.biome === 'verdant' ? 1 : 2),
-        waterCost: normalDays * ((hasUpgrade('deep-cisterns') ? 2 : 3) + (nextNode.biome === 'volcanic' ? 1 : 0)),
-        stormRisk: Math.round(stormRisk * 100),
-      },
-    },
-    portNotice: `Разведка завершена: ${nextNode.name}. Отчёт доступен на карте.`,
   }
 }
 
@@ -1136,7 +1188,9 @@ export function buyPortOffer(run: RunState, offerId: string): RunState {
   if (run.phase !== 'port') return run
   const service = portServices.find((entry) => entry.id === offerId)
   if (service) {
-    const cost = portOfferCost(run, service.cost)
+    // «Гнев богов»: наём гребцов вдвое дороже — потеря людей почти необратима.
+    const crewMultiplier = service.id === 'crew' ? difficultyDefinition(run.difficulty).crewCostMultiplier : 1
+    const cost = Math.max(1, Math.round(portOfferCost(run, service.cost) * crewMultiplier))
     if (run.progression.coins < cost) return { ...run, portNotice: 'Не хватает драхм.' }
     const resources = applyEffects(run.resources, service.effects)
     if ((Object.keys(service.effects) as ResourceKey[]).every((key) => resources[key] === run.resources[key])) {
@@ -1222,7 +1276,7 @@ export function settleDebt(run: RunState, debtId: string): RunState {
   const debt = run.debts.find((entry) => entry.id === debtId && entry.status === 'pending')
   if (!debt) return run
   if (!canAfford(run.resources, debt.effects)) {
-    return { ...run, portNotice: 'Сейчас выплата этого долга погубит экспедицию. Нужны дополнительные ресурсы.' }
+    return { ...run, portNotice: 'Сейчас выплата этого долга погубит экспедицию. Нужны дополнительные припасы.' }
   }
   return {
     ...run,
@@ -1264,11 +1318,11 @@ export function bossActionChance(run: RunState, action: BossAction) {
   const difficultyModifier = difficultyDefinition(run.difficulty).chanceModifier
   const flagModifiers = storyFlagModifiers(run.campaign.storyFlags)
   const storyModifier = flagModifiers.bossChance + (currentBossDefinition(run).id === 'scylla' ? flagModifiers.scyllaChance : 0)
-  const preparedModifier = run.preparation.preparedSkill === action.skill ? 0.07 : 0
+  const travelModeModifier = run.preparation.travelMode === 'cautious' ? 0.05 : run.preparation.travelMode === 'hasty' ? -0.05 : 0
   const companionBoonModifier = run.preparation.activeBoons.includes('idmon-vision') && action.skill === 'will'
     ? 0.08
     : run.preparation.activeBoons.includes('sinon-scheme') && action.skill === 'cunning' ? 0.06 : 0
-  const chance = 0.48 + skill * 0.065 - action.difficulty * 0.065 - stagePenalty - healthPenalty + divineSkillModifier(run, action.skill) + legacyModifier + difficultyModifier + storyModifier + preparedModifier + companionBoonModifier
+  const chance = 0.48 + skill * 0.065 - action.difficulty * 0.065 - stagePenalty - healthPenalty + divineSkillModifier(run, action.skill) + legacyModifier + difficultyModifier + storyModifier + travelModeModifier + companionBoonModifier
   return Math.max(0.1, Math.min(0.9, chance))
 }
 
@@ -1302,7 +1356,7 @@ export function resolveBossAction(run: RunState, action: BossAction): RunState {
     ? action.damage + Math.max(0, effectiveSkill(run, action.skill) - 4) * 2
     : Math.max(3, Math.round(action.damage * 0.16))
   const remainingHealth = Math.max(0, run.boss.health - damage)
-  const retaliation = scaledEffects(intent.effects, success ? 1 - action.mitigation : 1.22)
+  const retaliation = scaledEffects(intent.effects, (success ? 1 - action.mitigation : 1.12) * doomBossMultiplier(run.campaign.doom))
   const resources = applyEffects(paidResources, retaliation)
   const healthRatio = remainingHealth / run.boss.maxHealth
   const stage: 1 | 2 | 3 = healthRatio <= 0.34 ? 3 : healthRatio <= 0.68 ? 2 : 1
@@ -1340,7 +1394,6 @@ export function resolveBossAction(run: RunState, action: BossAction): RunState {
       debts: debtsAfterRound,
       preparation: {
         ...run.preparation,
-        preparedSkill: null,
         activeBoons: run.preparation.activeBoons.filter((boon) => boon !== 'sinon-scheme' && boon !== 'idmon-vision'),
       },
       campaign: {
@@ -1379,7 +1432,6 @@ export function resolveBossAction(run: RunState, action: BossAction): RunState {
     debts: debtsAfterRound,
     preparation: {
       ...run.preparation,
-      preparedSkill: null,
       activeBoons: run.preparation.activeBoons.filter((boon) => boon !== 'sinon-scheme' && boon !== 'idmon-vision'),
     },
     boss: {
@@ -1398,9 +1450,10 @@ export function resolveBossAction(run: RunState, action: BossAction): RunState {
   return withDeathCheck(fighting)
 }
 
-function actForNode(nodeIndex: number): 1 | 2 | 3 {
+function actForNode(nodeIndex: number, routeLength: number): 1 | 2 | 3 {
   if (nodeIndex <= 3) return 1
-  if (nodeIndex <= 7) return 2
+  // Полный путь держит вторую гавань на узле 8, короткий — на узле 7.
+  if (nodeIndex <= (routeLength >= 15 ? 8 : 7)) return 2
   return 3
 }
 
@@ -1412,9 +1465,26 @@ function prophecyFulfilled(run: RunState) {
   return run.progression.coins <= 8 && run.resources.morale >= 60
 }
 
-function chooseEnding(run: RunState, fulfilled: boolean) {
+/** Вступление концовки от якорей похода: 2–3 предложения, отсылающие к прожитой истории. */
+function endingIntro(run: RunState) {
+  const parts: string[] = []
+  if (run.resources.crew >= 14) {
+    parts.push(`${run.resources.crew} человек сошли на берег за твоей спиной — не тени, а живое войско.`)
+  } else if (run.resources.crew >= 8) {
+    parts.push(`За твоей спиной — ${run.resources.crew} уцелевших; остальные остались песней.`)
+  } else {
+    parts.push('Ты привёл домой лишь горстку из тех, кто клялся у троянского алтаря.')
+  }
+  if (run.campaign.bossesDefeated.length === 2) parts.push('Оба стража пали, и море впервые признало смертного.')
+  if (run.campaign.doom >= 50) parts.push('Рок, копившийся весь путь, не растворился в прибое.')
+  const lastDecision = run.campaign.decisions.at(-1)
+  if (lastDecision) parts.push(`Последнее решение — «${lastDecision.title}» — ещё звучит в ушах гребцов.`)
+  return parts.slice(0, 3).join(' ')
+}
+
+export function chooseEnding(run: RunState, fulfilled: boolean) {
   const cunningWins = run.campaign.decisions.filter((decision) => decision.skill === 'cunning' && decision.success).length
-  if (run.campaign.gods.athena >= 32 && run.campaign.bossesDefeated.length >= 2 && fulfilled) return endings.divine
+  if (run.campaign.gods.athena >= 32 && run.campaign.bossesDefeated.length >= 2 && fulfilled && run.campaign.doom < 50) return endings.divine
   if (run.resources.crew >= 14 && run.resources.morale >= 50) return endings.hero
   if (cunningWins >= 3) return endings.shadow
   return endings.hollow
@@ -1535,37 +1605,45 @@ function collectDueDebts(run: RunState, day: number, resources: Resources) {
   }
 }
 
-export function travelPreview(run: RunState, stance: TravelStance): TravelPreview | null {
+const PACKAGE_DAYS: Record<TravelPackage, number> = { cautious: 1, standard: 0, hasty: -1 }
+const PACKAGE_STORM: Record<TravelPackage, number> = { cautious: -0.2, standard: 0, hasty: 0.16 }
+const PACKAGE_MORALE: Record<TravelPackage, number> = { cautious: 0, standard: 0, hasty: 2 }
+const PACKAGE_CHECK: Record<TravelPackage, number> = { cautious: 0.05, standard: 0, hasty: -0.05 }
+const PACKAGE_STORM_DAMAGE: Record<TravelPackage, number> = { cautious: 0.72, standard: 1, hasty: 1.2 }
+/** Отдых входит в осторожный пакет: +20 здоровья, +6 духа за 3 пищи и 3 воды. */
+const PACKAGE_REST: Effects = { food: -3, water: -3, health: 20, morale: 6 }
+
+export function travelPreview(run: RunState, mode: TravelPackage): TravelPreview | null {
   const nextNode = run.route[run.nodeIndex + 1]
   if (!nextNode || nextNode.kind === 'destination') return null
   const hasUpgrade = (id: string) => run.ship.upgrades.includes(id)
   const baseDays = Math.max(1, Math.ceil(nextNode.distance / 95))
-  const stanceDays = stance === 'bold' ? -1 : 1
-  const travelDays = Math.max(1, baseDays - (hasUpgrade('broad-sail') ? 1 : 0) + stanceDays - (run.preparation.activeBoons.includes('hermes-speed') ? 1 : 0))
+  const travelDays = Math.max(1, baseDays - (hasUpgrade('broad-sail') ? 1 : 0) + PACKAGE_DAYS[mode] - (run.preparation.activeBoons.includes('hermes-speed') ? 1 : 0))
   const difficultyConfig = difficultyDefinition(run.difficulty)
   const flagModifiers = storyFlagModifiers(run.campaign.storyFlags)
   const rationMultiplier = run.preparation.rations === 'strict' ? 0.75 : run.preparation.rations === 'generous' ? 1.25 : 1
   const watchMultiplier = run.preparation.watch === 'forage' ? 0.85 : 1
   const foodRate = nextNode.biome === 'verdant' ? 1 : 2
   const waterRate = (hasUpgrade('deep-cisterns') ? 2 : 3) + (nextNode.biome === 'volcanic' ? 1 : 0)
-  const foodBase = Math.max(1, Math.round(travelDays * foodRate * difficultyConfig.travelMultiplier * rationMultiplier * watchMultiplier))
-  const waterBase = Math.max(1, Math.round(travelDays * waterRate * difficultyConfig.travelMultiplier * rationMultiplier * watchMultiplier))
+  const rest = mode === 'cautious'
+  const foodBase = Math.max(1, Math.round(travelDays * foodRate * difficultyConfig.travelMultiplier * rationMultiplier * watchMultiplier)) + (rest ? 3 : 0)
+  const waterBase = Math.max(1, Math.round(travelDays * waterRate * difficultyConfig.travelMultiplier * rationMultiplier * watchMultiplier)) + (rest ? 3 : 0)
   const assignedCompanion = run.ship.companions.find((companion) => companion.id === run.preparation.assignedCompanionId)
   const preparationStormModifier = (run.preparation.watch === 'storm' ? -0.1 : run.preparation.watch === 'forage' ? 0.05 : 0)
     + (assignedCompanion?.temperament === 'seafarer' ? -0.05 : 0)
     + (run.preparation.activeBoons.includes('tiphys-guidance') ? -0.12 : 0)
     + (run.preparation.activeBoons.includes('poseidon-calm') ? -0.1 : 0)
-  const baseStormChance = nextNode.biome === 'storm' ? 0.68 : nextNode.biome === 'civilized' ? 0.14 : 0.36
-  const stormChance = Math.max(0.03, Math.min(0.94, baseStormChance + (stance === 'bold' ? 0.16 : -0.2) + difficultyConfig.stormModifier + flagModifiers.stormModifier + preparationStormModifier))
-  const multiplier = stance === 'bold' ? 1.2 : 0.72
-  const stormDamageRange: [number, number] = [5, 13].map((damage) => Math.max(1, Math.round(damage * multiplier) - (hasUpgrade('reinforced-hull') ? 4 : 0))) as [number, number]
-  const moraleChange = (stance === 'bold' ? 2 : 0)
+  const baseStormChance = nextNode.biome === 'storm' ? 0.6 : nextNode.biome === 'civilized' ? 0.12 : 0.3
+  const stormChance = Math.max(0.03, Math.min(0.94, baseStormChance + PACKAGE_STORM[mode] + difficultyConfig.stormModifier + flagModifiers.stormModifier + preparationStormModifier + doomStormModifier(run.campaign.doom)))
+  const stormDamageRange: [number, number] = [4, 11].map((damage) => Math.max(1, Math.round(damage * PACKAGE_STORM_DAMAGE[mode]) - (hasUpgrade('reinforced-hull') ? 4 : 0))) as [number, number]
+  const moraleChange = PACKAGE_MORALE[mode]
+    + (rest ? PACKAGE_REST.morale ?? 0 : 0)
     + (run.preparation.rations === 'strict' ? -4 : run.preparation.rations === 'generous' ? 4 : 0)
     + (run.preparation.watch === 'storm' ? -1 : 0)
     + (flagModifiers.travelEffects.morale ?? 0)
   const arrivalDay = run.day + travelDays
   return {
-    stance,
+    travelMode: mode,
     days: travelDays,
     foodCost: foodBase - (flagModifiers.travelEffects.food ?? 0),
     waterCost: waterBase - (flagModifiers.travelEffects.water ?? 0),
@@ -1573,6 +1651,8 @@ export function travelPreview(run: RunState, stance: TravelStance): TravelPrevie
     stormChance: Math.round(stormChance * 100),
     stormDamageRange,
     dueDebts: run.debts.filter((debt) => debt.status === 'pending' && debt.dueDay <= arrivalDay).length,
+    checkBonus: PACKAGE_CHECK[mode],
+    rest,
   }
 }
 
@@ -1676,7 +1756,7 @@ export function resolveCompanionFinale(run: RunState, choice: Choice): RunState 
   return withDeathCheck(next)
 }
 
-export function continueVoyage(run: RunState, stance: TravelStance = 'bold'): RunState {
+export function continueVoyage(run: RunState, mode: TravelPackage = 'standard'): RunState {
   if (run.phase !== 'resolution' && run.phase !== 'port') return run
   if (
     run.phase === 'resolution'
@@ -1698,6 +1778,8 @@ export function continueVoyage(run: RunState, stance: TravelStance = 'bold'): Ru
   }
   const nextIndex = run.nodeIndex + 1
   if (nextIndex >= run.route.length - 1) {
+    // Порог Итаки: сцена перед финальными песнями и концовкой.
+    if (!run.thresholdPending && !run.thresholdDone) return { ...run, thresholdPending: true }
     const eligibleFinales = eligibleCompanionFinales(run)
     if (eligibleFinales.length > 0) {
       return {
@@ -1745,7 +1827,7 @@ export function continueVoyage(run: RunState, stance: TravelStance = 'bold'): Ru
       resolution: {
         success: true,
         title: ending.title,
-        text: ending.text,
+        text: `${endingIntro(beforeHome)}\n\n${ending.text}`,
         omen: fulfilled ? `Пророчество «${beforeHome.campaign.prophecy.title}» исполнено.` : 'Пророчество осталось незавершённым и последует за следующей песнью.',
         effects: {},
       },
@@ -1755,28 +1837,35 @@ export function continueVoyage(run: RunState, stance: TravelStance = 'bold'): Ru
   const nextNode = run.route[nextIndex]
   const hasUpgrade = (id: string) => run.ship.upgrades.includes(id)
   const baseDays = Math.max(1, Math.ceil(nextNode.distance / 95))
-  const stanceDays = stance === 'bold' ? -1 : 1
-  const travelDays = Math.max(1, baseDays - (hasUpgrade('broad-sail') ? 1 : 0) + stanceDays - (run.preparation.activeBoons.includes('hermes-speed') ? 1 : 0))
-  const random = seededRandom(run.seed + nextIndex * 1301 + (stance === 'bold' ? 17 : 41))
+  const travelDays = Math.max(1, baseDays - (hasUpgrade('broad-sail') ? 1 : 0) + PACKAGE_DAYS[mode] - (run.preparation.activeBoons.includes('hermes-speed') ? 1 : 0))
+  const random = seededRandom(run.seed + nextIndex * 1301 + (mode === 'hasty' ? 17 : mode === 'cautious' ? 41 : 73))
   const difficultyConfig = difficultyDefinition(run.difficulty)
   const flagModifiers = storyFlagModifiers(run.campaign.storyFlags)
   const rationMultiplier = run.preparation.rations === 'strict' ? 0.75 : run.preparation.rations === 'generous' ? 1.25 : 1
   const watchMultiplier = run.preparation.watch === 'forage' ? 0.85 : 1
   const foodRate = nextNode.biome === 'verdant' ? 1 : 2
   const waterRate = (hasUpgrade('deep-cisterns') ? 2 : 3) + (nextNode.biome === 'volcanic' ? 1 : 0)
+  const rest = mode === 'cautious'
   const attrition: Effects = {
     food: -Math.max(1, Math.round(travelDays * foodRate * difficultyConfig.travelMultiplier * rationMultiplier * watchMultiplier)),
     water: -Math.max(1, Math.round(travelDays * waterRate * difficultyConfig.travelMultiplier * rationMultiplier * watchMultiplier)),
-    morale: (stance === 'bold' ? 2 : 0)
+    morale: PACKAGE_MORALE[mode]
       + (run.preparation.rations === 'strict' ? -4 : run.preparation.rations === 'generous' ? 4 : 0)
       + (run.preparation.watch === 'storm' ? -1 : 0),
+  }
+  if (rest) {
+    ;(Object.entries(PACKAGE_REST) as [ResourceKey, number][]).forEach(([key, value]) => {
+      attrition[key] = (attrition[key] ?? 0) + value
+    })
   }
   ;(Object.entries(flagModifiers.travelEffects) as [ResourceKey, number][]).forEach(([key, value]) => {
     attrition[key] = (attrition[key] ?? 0) + value
   })
-  let travelText = stance === 'bold'
-    ? `Вы выбрали прямой курс: ${travelDays} ${travelDays === 1 ? 'день' : 'дня'} под полным парусом.`
-    : `Осторожный обход занял ${travelDays} дня, но кормчий держался вдали от худших течений.`
+  let travelText = mode === 'hasty'
+    ? `Спешный курс: ${travelDays} ${travelDays === 1 ? 'день' : 'дня'} под полным парусом, без отдыха у берега. Гребцы выбиваются из сил — проверки до привала неточнее.`
+    : mode === 'cautious'
+      ? `Осторожный обход занял ${travelDays} ${travelDays === 1 ? 'день' : 'дня'}: Одиссей дал людям отдых, здоровье и дух восстановлены.`
+      : `Обычный переход занял ${travelDays} ${travelDays === 1 ? 'день' : 'дня'} под размеренный стук вёсел.`
   const latestStoryFlag = run.campaign.storyFlags.at(-1)
   if (latestStoryFlag && (flagModifiers.stormModifier !== 0 || Object.keys(flagModifiers.travelEffects).length > 0)) {
     travelText += ` Мир помнит: ${latestStoryFlag.echo}`
@@ -1787,10 +1876,10 @@ export function continueVoyage(run: RunState, stance: TravelStance = 'bold'): Ru
     + (assignedCompanion?.temperament === 'seafarer' ? -0.05 : 0)
     + (run.preparation.activeBoons.includes('tiphys-guidance') ? -0.12 : 0)
     + (run.preparation.activeBoons.includes('poseidon-calm') ? -0.1 : 0)
-  const stormChance = Math.max(0.03, Math.min(0.94, baseStormChance + (stance === 'bold' ? 0.16 : -0.2) + difficultyConfig.stormModifier + flagModifiers.stormModifier + preparationStormModifier))
+  const stormChance = Math.max(0.03, Math.min(0.94, baseStormChance + PACKAGE_STORM[mode] + difficultyConfig.stormModifier + flagModifiers.stormModifier + preparationStormModifier + doomStormModifier(run.campaign.doom)))
   const roll = random()
   if (roll < stormChance) {
-    const rawDamage = (5 + Math.floor(random() * 9)) * (stance === 'bold' ? 1.2 : 0.72)
+    const rawDamage = (5 + Math.floor(random() * 9)) * PACKAGE_STORM_DAMAGE[mode]
     const stormDamage = Math.max(1, Math.round(rawDamage) - (hasUpgrade('reinforced-hull') ? 4 : 0))
     attrition.hull = -stormDamage
     attrition.morale = (attrition.morale ?? 0) - 3
@@ -1799,9 +1888,20 @@ export function continueVoyage(run: RunState, stance: TravelStance = 'bold'): Ru
     attrition.morale = (attrition.morale ?? 0) + (hasUpgrade('gorgon-prow') ? 7 : 4)
     travelText += ' Попутный ветер поднял дух гребцов.'
   }
+  if (difficultyConfig.divineInterference > 0 && random() < difficultyConfig.divineInterference) {
+    attrition.morale = (attrition.morale ?? 0) - 5
+    attrition.water = (attrition.water ?? 0) - 1
+    travelText += ' Боги замечают дерзкий киль: волны гасят очаг, вода и дух тают без причины.'
+  }
   if (nextNode.biome === 'abyssal') attrition.morale = (attrition.morale ?? 0) - 3
   if (nextNode.biome === 'sacred') attrition.morale = (attrition.morale ?? 0) + 2
   if (run.resources.crew < 10) attrition.morale = (attrition.morale ?? 0) - 3
+  if (run.campaign.doom >= 80 && random() < 0.45) {
+    attrition.morale = (attrition.morale ?? 0) - 8
+    attrition.water = (attrition.water ?? 0) - 2
+    attrition.crew = (attrition.crew ?? 0) - 1
+    travelText += ' Рок настигает: гребцы видят погибших среди вёсел, вода и дух тают без видимой причины.'
+  }
 
   const arrivalDay = run.day + travelDays
   let resources = applyEffects(run.resources, attrition)
@@ -1836,7 +1936,7 @@ export function continueVoyage(run: RunState, stance: TravelStance = 'bold'): Ru
       travelText += ` ${leaving.map((companion) => companion.name).join(', ')} ${leaving.length === 1 ? 'покидает' : 'покидают'} корабль в гавани.${sinonLeaves ? ' Вместе с Синоном исчезает часть драхм.' : ''}`
     }
   }
-  const nextAct = actForNode(nextIndex)
+  const nextAct = actForNode(nextIndex, run.route.length)
   const actChanged = nextAct !== run.campaign.act
   const nextBossDefinition = nextNode.bossId ? bosses.find((boss) => boss.id === nextNode.bossId) : undefined
   const bossMaxHealth = nextBossDefinition
@@ -1860,6 +1960,8 @@ export function continueVoyage(run: RunState, stance: TravelStance = 'bold'): Ru
     progression,
     ship,
     debts: debtCollection.debts,
+    // Глашатай Посейдона встречает корабль при входе во второй акт.
+    heraldPending: actChanged && nextAct === 2,
     campaign: {
       ...run.campaign,
       act: nextAct,
@@ -1868,7 +1970,6 @@ export function continueVoyage(run: RunState, stance: TravelStance = 'bold'): Ru
     preparation: {
       ...run.preparation,
       activeBoons: run.preparation.activeBoons.filter((boon) => boon !== 'tiphys-guidance' && boon !== 'poseidon-calm' && boon !== 'hermes-speed'),
-      scoutReport: null,
     },
     boss,
     phase,

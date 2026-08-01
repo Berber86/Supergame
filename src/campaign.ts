@@ -114,7 +114,7 @@ export const bosses: BossDefinition[] = [
     god: 'poseidon',
     intents: [
       { id: 'snatch', title: 'Голодная голова', description: 'Скилла целится в гребцов левого борта.', effects: { crew: -2, morale: -5 } },
-      { id: 'crush', title: 'Каменные щупальца', description: 'Чудовище собирается сдавить корпус о скалу.', effects: { hull: -15 } },
+      { id: 'crush', title: 'Каменные щупальца', description: 'Чудовище собирается сдавить корпус о скалу.', effects: { hull: -12 } },
       { id: 'shriek', title: 'Шесть голосов', description: 'Крик должен сломить волю всей команды.', effects: { morale: -12, health: -4 } },
     ],
     actions: [
@@ -172,9 +172,9 @@ export const bosses: BossDefinition[] = [
     rewardCoins: 45,
     god: 'poseidon',
     intents: [
-      { id: 'trident', title: 'Падение трезубца', description: 'Удар расколет палубу и всё под ней.', effects: { hull: -18, health: -5 } },
+      { id: 'trident', title: 'Падение трезубца', description: 'Удар расколет палубу и всё под ней.', effects: { hull: -14, health: -4 } },
       { id: 'drowning', title: 'Вода в лёгких', description: 'Бог заставит людей вспомнить собственную смерть.', effects: { morale: -14 } },
-      { id: 'undertow', title: 'Обратное течение', description: 'Волна метит корму и слабых гребцов.', effects: { crew: -2, hull: -9 } },
+      { id: 'undertow', title: 'Обратное течение', description: 'Волна метит корму и слабых гребцов.', effects: { crew: -2, hull: -7 } },
       { id: 'blind-sea', title: 'Слепой горизонт', description: 'Шторм скроет звёзды и голос кормчего.', effects: { water: -5, morale: -7 } },
     ],
     actions: [

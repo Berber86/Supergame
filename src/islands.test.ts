@@ -56,13 +56,20 @@ describe('authored random-island pool', () => {
     illustrated.forEach((island) => expect(island.scene).toMatch(/\/art\/(island|saga)-.+\.jpg$/))
   })
 
-  it('builds each voyage from seven non-repeating islands in this pool', () => {
+  it('builds each voyage from non-repeating islands in this pool', () => {
     for (let seed = 0; seed < 50; seed += 1) {
-      const route = createRun(seed).route
-      const islandNodes = route.filter((node) => node.encounterId)
-      expect(islandNodes).toHaveLength(7)
-      expect(new Set(islandNodes.map((node) => node.islandId)).size).toBe(7)
-      for (const node of islandNodes) {
+      // Короткий путь «Сказания» — семь берегов; полный путь — десять.
+      const shortRoute = createRun(seed, [], 'tale').route
+      const shortIslands = shortRoute.filter((node) => node.encounterId)
+      expect(shortIslands).toHaveLength(7)
+      expect(new Set(shortIslands.map((node) => node.islandId)).size).toBe(7)
+
+      const fullRoute = createRun(seed, [], 'odyssey').route
+      const fullIslands = fullRoute.filter((node) => node.encounterId)
+      expect(fullIslands).toHaveLength(10)
+      expect(new Set(fullIslands.map((node) => node.islandId)).size).toBe(10)
+
+      for (const node of [...shortIslands, ...fullIslands]) {
         const island = authoredIslandByEncounter.get(node.encounterId)
         expect(island).toBeDefined()
         expect(node.name).toBe(island!.name)

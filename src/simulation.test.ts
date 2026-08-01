@@ -11,13 +11,19 @@ describe('automated balance simulation', () => {
     })
   })
 
-  it('keeps the narrative mode at least as survivable as wrath', () => {
-    const report = simulateBalance(60)
+  it('hits the designed completion bands for each mode', () => {
+    const report = simulateBalance(120)
     const tale = report.find((entry) => entry.difficulty === 'tale')!
+    const odyssey = report.find((entry) => entry.difficulty === 'odyssey')!
     const wrath = report.find((entry) => entry.difficulty === 'wrath')!
 
-    expect(tale.averageProgress).toBeGreaterThanOrEqual(wrath.averageProgress)
-    expect(tale.completionRate).toBeGreaterThanOrEqual(wrath.completionRate)
+    // Каждый режим проходим: короткий путь — щадящий, полный путь — суровый, гнев — хардкор.
+    expect(tale.completionRate).toBeGreaterThanOrEqual(0.5)
+    expect(odyssey.completionRate).toBeGreaterThanOrEqual(0.25)
+    expect(wrath.completionRate).toBeGreaterThanOrEqual(0.08)
+    // Иерархия сложности сохраняется: Сказание > Одиссея > Гнев богов.
+    expect(tale.completionRate).toBeGreaterThan(odyssey.completionRate)
+    expect(odyssey.completionRate).toBeGreaterThan(wrath.completionRate)
   })
 
   it('is deterministic for the same seed and mode', () => {

@@ -33,7 +33,7 @@ export function parseBackup(text: string): BackupParseResult {
       const runVersion = typeof candidate.run === 'object' && !Array.isArray(candidate.run)
         ? (candidate.run as Record<string, unknown>).version
         : undefined
-      if (![4, 5, 6, 7, 8, 9, 10].includes(runVersion as number)) {
+      if (![4, 5, 6, 7, 8, 9, 10, 11, 12, 13].includes(runVersion as number)) {
         return { ok: false, message: 'Экспедиция создана несовместимой версией игры.' }
       }
     }
