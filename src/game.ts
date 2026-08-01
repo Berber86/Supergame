@@ -1,4 +1,5 @@
 import { bosses, endings, legacyBoons, prophecies } from './campaign'
+import { companionStoryEpisodes, nextStoryEpisode, storyEpisodeForEncounter } from './companionSagas'
 import { regionNames } from './data'
 import { encounters } from './encounterCatalog'
 import { difficultyDefinition } from './difficulty'
@@ -16,6 +17,7 @@ import type {
   BossState,
   Choice,
   Companion,
+  CompanionStoryMark,
   CrewCrisisApproach,
   CrewReaction,
   DeferredDebt,
@@ -24,6 +26,7 @@ import type {
   EquipmentSlot,
   GodId,
   MetaState,
+  NamedCompanionId,
   Outcome,
   Progression,
   ResourceKey,
@@ -56,6 +59,7 @@ export const DEFAULT_META: MetaState = {
   endings: [],
   prophecies: [],
   codex: [],
+  companionChronicles: [],
   history: [],
   achievements: [],
 }
@@ -151,20 +155,46 @@ export function generateWorld(seed: number, size = WORLD_SIZE): WorldLocation[] 
   })
 }
 
-function createRoute(seed: number): RouteNode[] {
+function heardCompanionEpisodes(meta: MetaState) {
+  return meta.companionChronicles.flatMap((chronicle) => chronicle.episodes.map((episode) => episode.episodeId))
+}
+
+function plannedCompanionEpisodes(seed: number, meta: MetaState) {
+  const knownEpisodes = heardCompanionEpisodes(meta)
+  const random = seededRandom(seed ^ 0x27d4eb2d)
+  const otherCompanions = shuffle<NamedCompanionId>(['tiphys', 'sinon', 'idmon'], random)
+  const companionOrder: NamedCompanionId[] = ['eurylochus', ...otherCompanions]
+  return companionOrder
+    .map((companionId) => nextStoryEpisode(companionId, knownEpisodes))
+    .filter((episode): episode is NonNullable<typeof episode> => Boolean(episode))
+    .slice(0, 2)
+}
+
+function createRoute(seed: number, meta: MetaState = DEFAULT_META): RouteNode[] {
   const random = seededRandom(seed)
-  const islandOrder = shuffle(authoredIslands, random)
+  const plannedEpisodes = plannedCompanionEpisodes(seed, meta)
+  const episodeIslandIds = new Set(companionStoryEpisodes.map((episode) => episode.encounterId))
+  const genericIslands = shuffle(authoredIslands.filter((island) => !episodeIslandIds.has(island.encounterId)), random)
+  const islandSlots = [0, 1, 2, 4, 6, 8, 9]
+  const plannedByNodeIndex = new Map<number, typeof plannedEpisodes[number]>()
+  if (plannedEpisodes[0]) plannedByNodeIndex.set(1, plannedEpisodes[0])
+  if (plannedEpisodes[1]) plannedByNodeIndex.set(6, plannedEpisodes[1])
+  let genericIndex = 0
   const positions = [
     [7, 79], [15, 65], [25, 74], [33, 56], [42, 64], [50, 45],
     [59, 54], [67, 35], [76, 43], [84, 24], [91, 31],
   ]
-  let encounterIndex = 0
 
   const route: RouteNode[] = positions.map(([x, y], index) => {
     const isPort = index === 3 || index === 7
     const bossId = index === 5 ? 'scylla' : index === 10 ? 'poseidon-avatar' : undefined
     const isBoss = Boolean(bossId)
-    const island = !isPort && !isBoss ? islandOrder[encounterIndex] : undefined
+    const plannedEpisode = plannedByNodeIndex.get(index)
+    const island = !isPort && !isBoss
+      ? plannedEpisode
+        ? authoredIslandByEncounter.get(plannedEpisode.encounterId)
+        : genericIslands[genericIndex++]
+      : undefined
     const name = isPort
       ? index === 3 ? 'Навпакт' : 'Гавань Алкиноя'
       : bossId === 'scylla'
@@ -172,7 +202,7 @@ function createRoute(seed: number): RouteNode[] {
         : bossId === 'poseidon-avatar'
           ? 'Врата Итаки'
           : island?.name ?? 'Безымянный берег'
-    const node: RouteNode = {
+    return {
       id: `route-${seed}-${index}`,
       name,
       region: isPort ? 'Земли свободных полисов' : isBoss ? 'Владения Посейдона' : island?.region ?? 'Безымянные воды',
@@ -186,10 +216,11 @@ function createRoute(seed: number): RouteNode[] {
       biome: isPort ? 'civilized' : isBoss ? 'storm' : island?.biome ?? 'open-sea',
       danger: isPort ? 1 : isBoss ? 5 : island?.danger ?? 1,
     }
-    if (island) encounterIndex += 1
-    return node
   })
 
+  if (route.filter((node) => node.encounterId).length !== islandSlots.length) {
+    throw new Error('Маршрут должен содержать семь авторских берегов.')
+  }
   route.push({
     id: `ithaca-${seed}`,
     name: 'Итака',
@@ -206,7 +237,7 @@ function createRoute(seed: number): RouteNode[] {
   return route
 }
 
-export function createRun(seed = Date.now(), legacy: string[] = [], difficulty: DifficultyId = 'odyssey'): RunState {
+export function createRun(seed = Date.now(), legacy: string[] = [], difficulty: DifficultyId = 'odyssey', meta: MetaState = DEFAULT_META): RunState {
   const world = generateWorld(seed)
   const hasBoon = (id: string) => legacy.includes(id)
   const difficultyConfig = difficultyDefinition(difficulty)
@@ -224,14 +255,14 @@ export function createRun(seed = Date.now(), legacy: string[] = [], difficulty: 
   }, { ...baseResources })
   const prophecy = { ...prophecies[Math.floor(seededRandom(seed + 404)() * prophecies.length)] }
   return {
-    version: 8,
+    version: 9,
     seed,
     difficulty,
     divineRescueUsed: false,
     day: 1,
     nodeIndex: 0,
     world,
-    route: createRoute(seed),
+    route: createRoute(seed, meta),
     resources,
     skills: {
       cunning: hasBoon('owl-memory') ? 6 : 5,
@@ -275,6 +306,9 @@ export function createRun(seed = Date.now(), legacy: string[] = [], difficulty: 
       doom: 0,
       decisions: [],
       storyFlags: [],
+      knownCompanionEpisodes: heardCompanionEpisodes(meta),
+      companionStoryMarks: [],
+      storyFocus: null,
       prophecy,
       bossesDefeated: [],
       ending: null,
@@ -646,10 +680,29 @@ export function resolveChoice(run: RunState, choice: Choice, forceDeferredCost =
     if (companion) combinedReactions.push({ companionId: impact.companionId, name: companion.name, text: impact.memory, loyaltyDelta: impact.loyalty, reaction: impact.loyalty >= 4 ? 'admire' : impact.loyalty < 0 ? 'disapprove' : 'approve' })
   })
   const storyFlagsGained = flagsForOutcome(encounter.id, choice.id, success, run.day, run.campaign.storyFlags)
+  const storyEpisode = storyEpisodeForEncounter(encounter.id)
+  const companionStoryMark: CompanionStoryMark | undefined = storyEpisode
+    && run.ship.companions.some((companion) => companion.id === storyEpisode.companionId)
+    && !run.campaign.companionStoryMarks.some((mark) => mark.episodeId === storyEpisode.id)
+    ? {
+        companionId: storyEpisode.companionId,
+        episodeId: storyEpisode.id,
+        encounterId: storyEpisode.encounterId,
+        chapter: storyEpisode.chapter,
+        title: storyEpisode.title,
+        stance: storyEpisode.choices[choice.id]?.[success ? 'success' : 'failure'] ?? (success ? 'trusted' : 'resentful'),
+        choiceId: choice.id,
+        success,
+        day: run.day,
+      }
+    : undefined
   const campaign = {
     ...run.campaign,
     gods: applyDivineChanges(run.campaign.gods, divineChange),
     storyFlags: [...run.campaign.storyFlags, ...storyFlagsGained],
+    companionStoryMarks: companionStoryMark
+      ? [...run.campaign.companionStoryMarks, companionStoryMark]
+      : run.campaign.companionStoryMarks,
     doom: Math.min(100, run.campaign.doom + (success ? 0 : 3) + Math.abs(crewLoss)),
     decisions: [
       ...run.campaign.decisions,
@@ -680,6 +733,7 @@ export function resolveChoice(run: RunState, choice: Choice, forceDeferredCost =
     crewVoice: authoredNarrative?.crewVoice,
     consequence: authoredNarrative?.consequence,
     storyFlagsGained,
+    companionStoryMark,
   }
   const next: RunState = {
     ...run,
@@ -907,6 +961,54 @@ export function scoutNextRoute(run: RunState): RunState {
       },
     },
     portNotice: `Разведка завершена: ${nextNode.name}. Отчёт доступен на карте.`,
+  }
+}
+
+export function seekCompanionStory(run: RunState, companionId: NamedCompanionId): RunState {
+  if (run.phase !== 'port') return run
+  const companion = run.ship.companions.find((entry) => entry.id === companionId)
+  if (!companion) return { ...run, portNotice: 'Искать можно только след того, кто идёт этим походом.' }
+  const heard = [...new Set([
+    ...run.campaign.knownCompanionEpisodes,
+    ...run.campaign.companionStoryMarks.map((mark) => mark.episodeId),
+  ])]
+  const episode = nextStoryEpisode(companionId, heard)
+  if (!episode) {
+    return { ...run, portNotice: `Все доступные главы песни ${companion.name} уже услышаны. Новая развязка ждёт будущего обновления саги.` }
+  }
+  const existingIndex = run.route.findIndex((node, index) => index > run.nodeIndex && node.encounterId === episode.encounterId)
+  if (existingIndex >= 0) {
+    return {
+      ...run,
+      campaign: { ...run.campaign, storyFocus: companionId },
+      portNotice: `След ${companion.name} уже лежит на курсе: ${run.route[existingIndex].name}.`,
+    }
+  }
+  const replacementIndex = run.route.findIndex((node, index) => index > run.nodeIndex && Boolean(storyEpisodeForEncounter(node.encounterId)))
+  const personalChaptersOnRoute = run.route.filter((node) => Boolean(storyEpisodeForEncounter(node.encounterId))).length
+  const genericIndex = run.route.findIndex((node, index) => index > run.nodeIndex && Boolean(node.encounterId))
+  const targetIndex = replacementIndex >= 0 ? replacementIndex : personalChaptersOnRoute < 2 ? genericIndex : -1
+  const island = authoredIslandByEncounter.get(episode.encounterId)
+  if (targetIndex < 0 || !island) return { ...run, portNotice: 'Этот поход уже несёт две личные песни. Следующую главу лучше искать в новой экспедиции.' }
+  const route = run.route.map((node, index) => index !== targetIndex ? node : {
+    ...node,
+    name: island.name,
+    region: island.region,
+    encounterId: island.encounterId,
+    islandId: island.id,
+    kind: island.danger >= 5 ? 'danger' as const : 'island' as const,
+    biome: island.biome,
+    danger: island.danger,
+  })
+  return {
+    ...run,
+    route,
+    campaign: { ...run.campaign, storyFocus: companionId },
+    portNotice: `${companion.name} указал след: следующий личный берег — ${island.name}. Другая песнь уступила место этой.`,
+    log: [
+      { id: `story-focus-${run.seed}-${run.day}-${companionId}`, day: run.day, title: `След ${companion.name}`, text: `В гавани Одиссей решил искать следующую главу песни ${companion.name}: «${episode.title}».`, tone: 'neutral' as const },
+      ...run.log,
+    ].slice(0, 24),
   }
 }
 

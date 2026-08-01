@@ -4,10 +4,10 @@ import { createRun } from './game'
 import { authoredIslandByEncounter, authoredIslands } from './islands'
 
 describe('authored random-island pool', () => {
-  it('contains exactly twenty-seven unique authored islands', () => {
-    expect(authoredIslands).toHaveLength(27)
-    expect(new Set(authoredIslands.map((island) => island.id)).size).toBe(27)
-    expect(new Set(authoredIslands.map((island) => island.encounterId)).size).toBe(27)
+  it('contains thirty-five unique authored islands, including eight companion saga shores', () => {
+    expect(authoredIslands).toHaveLength(35)
+    expect(new Set(authoredIslands.map((island) => island.id)).size).toBe(35)
+    expect(new Set(authoredIslands.map((island) => island.encounterId)).size).toBe(35)
   })
 
   it('fully covers every choice and all six possible outcomes', () => {
@@ -49,11 +49,11 @@ describe('authored random-island pool', () => {
     expect(average(aftermathLengths(finalTen))).toBeGreaterThanOrEqual(average(aftermathLengths(firstTwelve)))
   })
 
-  it('assigns original panoramic art to twenty-six of the twenty-seven islands', () => {
+  it('assigns original panoramic art to thirty-four of the thirty-five islands', () => {
     const illustrated = authoredIslands.filter((island) => island.scene)
-    expect(illustrated).toHaveLength(26)
-    expect(new Set(illustrated.map((island) => island.scene)).size).toBe(26)
-    illustrated.forEach((island) => expect(island.scene).toMatch(/\/art\/island-.+\.jpg$/))
+    expect(illustrated).toHaveLength(34)
+    expect(new Set(illustrated.map((island) => island.scene)).size).toBe(34)
+    illustrated.forEach((island) => expect(island.scene).toMatch(/\/art\/(island|saga)-.+\.jpg$/))
   })
 
   it('builds each voyage from seven non-repeating islands in this pool', () => {

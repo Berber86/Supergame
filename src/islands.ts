@@ -1,4 +1,5 @@
 import { assetPath } from './assets'
+import { companionSagaIslands } from './companionSagaIslands'
 import type { Biome } from './types'
 
 export interface CompanionImpact {
@@ -781,23 +782,26 @@ const deepenedNarratives: Record<string, IslandDeepening> = {
   },
 }
 
-export const authoredIslands: AuthoredIsland[] = baseAuthoredIslands.map((island) => {
-  const deepening = deepenedNarratives[island.id]
-  if (!deepening) return island
-  const outcomes = Object.fromEntries(Object.entries(island.outcomes).map(([choiceId, branches]) => {
-    const additions = deepening.outcomes[choiceId]
-    return [choiceId, {
-      success: { ...branches.success, aftermath: `${branches.success.aftermath}\n\n${additions.success}` },
-      failure: { ...branches.failure, aftermath: `${branches.failure.aftermath}\n\n${additions.failure}` },
-    }]
-  }))
-  return {
-    ...island,
-    scene: deepening.scene ?? island.scene,
-    introduction: `${island.introduction}\n\n${deepening.arrival}`,
-    outcomes,
-  }
-})
+export const authoredIslands: AuthoredIsland[] = [
+  ...baseAuthoredIslands.map((island) => {
+    const deepening = deepenedNarratives[island.id]
+    if (!deepening) return island
+    const outcomes = Object.fromEntries(Object.entries(island.outcomes).map(([choiceId, branches]) => {
+      const additions = deepening.outcomes[choiceId]
+      return [choiceId, {
+        success: { ...branches.success, aftermath: `${branches.success.aftermath}\n\n${additions.success}` },
+        failure: { ...branches.failure, aftermath: `${branches.failure.aftermath}\n\n${additions.failure}` },
+      }]
+    }))
+    return {
+      ...island,
+      scene: deepening.scene ?? island.scene,
+      introduction: `${island.introduction}\n\n${deepening.arrival}`,
+      outcomes,
+    }
+  }),
+  ...companionSagaIslands,
+]
 
 export const authoredIslandByEncounter = new Map(authoredIslands.map((island) => [island.encounterId, island]))
 

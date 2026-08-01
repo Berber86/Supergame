@@ -31,6 +31,9 @@ test('mobile game uses three compact screens instead of one long page', async ({
   await page.keyboard.press('ArrowRight')
   await expect(page.getByRole('tab', { name: 'Судно' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('tabpanel')).toContainText('Чёрная ласточка')
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByRole('tab', { name: 'Песни' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tabpanel')).toContainText('Песни экипажа')
 })
 
 test('event consequence leads directly to the relevant crew screen', async ({ page }) => {
@@ -49,9 +52,9 @@ test('event consequence leads directly to the relevant crew screen', async ({ pa
 test('port exposes an explicit departure action above the market', async ({ page }) => {
   await page.getByRole('button', { name: /Начать путешествие/i }).click()
   await page.getByRole('button', { name: /Начать путешествие/i }).click()
-  await page.waitForFunction(() => Boolean(localStorage.getItem('odyssey-shadow-save-v6')))
+  await page.waitForFunction(() => Boolean(localStorage.getItem('odyssey-shadow-save-v9')))
   await page.evaluate(() => {
-    const key = 'odyssey-shadow-save-v6'
+    const key = 'odyssey-shadow-save-v9'
     const run = JSON.parse(localStorage.getItem(key)!)
     run.nodeIndex = 3
     run.phase = 'port'

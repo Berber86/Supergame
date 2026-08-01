@@ -49,6 +49,7 @@ import {
 } from 'lucide-react'
 import { assetPath } from './assets'
 import { acts, bosses, endings as endingDefinitions, godInfo, legacyBoons, normalizeMeta } from './campaign'
+import { companionSagas } from './companionSagas'
 import { Dialog } from './components/Dialog'
 import { TabPanel, Tabs, type TabOption } from './components/Tabs'
 import { Toggle } from './components/Toggle'
@@ -86,6 +87,7 @@ import {
   restHero,
   routeDistance,
   scoutNextRoute,
+  seekCompanionStory,
   setRationMode,
   setWatchMode,
   settleDebt,
@@ -121,7 +123,8 @@ import type {
 } from './types'
 import { bossScenes, defaultScene, endingScenes, preparationScenes, sceneForEncounter, uiScenes } from './visuals'
 
-const SAVE_KEY = 'odyssey-shadow-save-v8'
+const SAVE_KEY = 'odyssey-shadow-save-v9'
+const EIGHTH_SAVE_KEY = 'odyssey-shadow-save-v8'
 const LEGACY_SAVE_KEY = 'odyssey-shadow-save-v7'
 const SIXTH_SAVE_KEY = 'odyssey-shadow-save-v6'
 const FIFTH_SAVE_KEY = 'odyssey-shadow-save-v5'
@@ -150,7 +153,7 @@ const resourceConfig: Record<
   hull: { label: 'Корпус', Icon: Shield, tone: 'teal' },
 }
 
-type WorldTab = 'map' | 'ship' | 'fate' | 'codex' | 'log'
+type WorldTab = 'map' | 'ship' | 'songs' | 'fate' | 'codex' | 'log'
 
 const skillConfig: Record<Skill, { Icon: typeof Brain; short: string }> = {
   cunning: { Icon: Brain, short: 'Хитрость' },
@@ -168,8 +171,8 @@ function readStorage<T>(key: string, fallback: T): T {
   }
 }
 
-function migrateSavedRun(legacy: RunState) {
-  const migrated = createRun(legacy.seed, legacy.legacyBoons ?? [], legacy.difficulty ?? 'odyssey')
+function migrateSavedRun(legacy: RunState, meta: MetaState = DEFAULT_META) {
+  const migrated = createRun(legacy.seed, legacy.legacyBoons ?? [], legacy.difficulty ?? 'odyssey', meta)
   const legacyShip = legacy.ship
   const normalizeCompanion = (companion: RunState['ship']['companions'][number]) => {
     const definition = companionDefinition(companion.id)
@@ -185,7 +188,9 @@ function migrateSavedRun(legacy: RunState) {
   }
   return {
     ...migrated,
+    divineRescueUsed: legacy.divineRescueUsed ?? false,
     day: legacy.day,
+    nodeIndex: Math.max(0, Math.min(legacy.nodeIndex ?? 0, migrated.route.length - 1)),
     resources: legacy.resources,
     skills: legacy.skills,
     log: legacy.log,
@@ -202,16 +207,38 @@ function migrateSavedRun(legacy: RunState) {
       mutinyRisk: legacyShip.mutinyRisk ?? 8,
       lastCrisisDay: legacyShip.lastCrisisDay ?? -10,
     } : migrated.ship,
+    campaign: {
+      ...migrated.campaign,
+      ...legacy.campaign,
+      knownCompanionEpisodes: legacy.campaign?.knownCompanionEpisodes ?? migrated.campaign.knownCompanionEpisodes,
+      companionStoryMarks: legacy.campaign?.companionStoryMarks ?? [],
+      storyFocus: legacy.campaign?.storyFocus ?? null,
+    },
+    preparation: {
+      ...migrated.preparation,
+      ...legacy.preparation,
+      activeBoons: legacy.preparation?.activeBoons ?? [],
+      usedCompanionAbilities: legacy.preparation?.usedCompanionAbilities ?? [],
+      restedNodeIndexes: legacy.preparation?.restedNodeIndexes ?? [],
+      trainedNodeIndexes: legacy.preparation?.trainedNodeIndexes ?? [],
+      offeredNodeIndexes: legacy.preparation?.offeredNodeIndexes ?? [],
+      scoutReport: legacy.preparation?.scoutReport ?? null,
+    },
     debts: legacy.debts ?? [],
-    crewCrisis: null,
-    portNotice: 'Старая песнь перенесена на авторский маршрут двенадцати островов.',
+    boss: legacy.boss ?? null,
+    crewCrisis: legacy.crewCrisis ?? null,
+    phase: legacy.phase ?? 'encounter',
+    resolution: legacy.resolution ?? null,
+    portNotice: 'Старая песнь перенесена на маршрут, который теперь помнит спутников.',
+    kleosEarned: legacy.kleosEarned ?? 0,
   }
 }
 
 function loadSavedRun() {
   const current = readStorage<RunState | null>(SAVE_KEY, null)
-  if (current?.version === 8) return current
-  const legacy = readStorage<RunState | null>(LEGACY_SAVE_KEY, null)
+  if (current?.version === 9) return current
+  const legacy = readStorage<RunState | null>(EIGHTH_SAVE_KEY, null)
+    ?? readStorage<RunState | null>(LEGACY_SAVE_KEY, null)
     ?? readStorage<RunState | null>(SIXTH_SAVE_KEY, null)
     ?? readStorage<RunState | null>(FIFTH_SAVE_KEY, null)
     ?? readStorage<RunState | null>(FOURTH_SAVE_KEY, null)
@@ -248,7 +275,7 @@ function App() {
   }, [preferences])
 
   const startNewRun = (difficulty: DifficultyId) => {
-    const nextRun = createRun(Date.now(), meta.legacy, difficulty)
+    const nextRun = createRun(Date.now(), meta.legacy, difficulty, meta)
     setRun(nextRun)
     setMeta((current) => ({ ...current, voyages: current.voyages + 1 }))
     setConfirmNew(false)
@@ -291,7 +318,7 @@ function App() {
       ...parsed.payload.preferences,
     }
     const restoredRun = parsed.payload.run
-      ? parsed.payload.run.version === 8 ? parsed.payload.run : migrateSavedRun(parsed.payload.run)
+      ? parsed.payload.run.version === 9 ? parsed.payload.run : migrateSavedRun(parsed.payload.run, restoredMeta)
       : null
     setMeta(restoredMeta)
     setRun(restoredRun)
@@ -314,7 +341,25 @@ function App() {
     ]
     setMeta((current) => {
       const codex = [...new Set([...current.codex, ...discoveries])]
-      let updated: MetaState = codex.length === current.codex.length ? current : { ...current, codex }
+      const chronicles = new globalThis.Map(current.companionChronicles.map((chronicle) => [chronicle.companionId, {
+        ...chronicle,
+        episodes: [...chronicle.episodes],
+      }]))
+      next.campaign.companionStoryMarks.forEach((mark) => {
+        const chronicle = chronicles.get(mark.companionId) ?? { companionId: mark.companionId, episodes: [] }
+        if (!chronicle.episodes.some((episode) => episode.episodeId === mark.episodeId)) {
+          chronicle.episodes.push(mark)
+          chronicles.set(mark.companionId, chronicle)
+        }
+      })
+      const companionChronicles = [...chronicles.values()]
+      const chroniclesChanged = companionChronicles.some((chronicle) => {
+        const before = current.companionChronicles.find((entry) => entry.companionId === chronicle.companionId)
+        return !before || before.episodes.length !== chronicle.episodes.length
+      })
+      let updated: MetaState = codex.length === current.codex.length && !chroniclesChanged
+        ? current
+        : { ...current, codex, companionChronicles }
       if (endedNow) {
         const record = voyageRecord(next)
         const history = current.history.some((voyage) => voyage.id === record.id)
@@ -441,6 +486,7 @@ function App() {
             run={run}
             onBuy={(offerId) => commitRun(buyPortOffer(run, offerId))}
             onDepart={(stance) => commitRun(continueVoyage(run, stance))}
+            onSeekStory={(companionId) => commitRun(seekCompanionStory(run, companionId))}
             onOpenHero={openHero}
             onOpenShip={() => openWorld('ship')}
           />
@@ -453,6 +499,7 @@ function App() {
             onOpenHero={openHero}
             onOpenShip={() => openWorld('ship')}
             onOpenFate={() => openWorld('fate')}
+            onOpenSongs={() => openWorld('songs')}
           />
         )}
         <WorldPanel
@@ -581,7 +628,7 @@ function TitleScreen({ savedRun, meta, onContinue, onNew, onRules, onLegacy, onA
           </button>
         </div>
         <div className="title-features">
-          <div><Map size={17} /><span><b>27 авторских островов</b>7 в каждом походе</span></div>
+          <div><Map size={17} /><span><b>35 авторских островов</b>7 в каждом походе</span></div>
           <div><Skull size={17} /><span><b>Одна жизнь</b>Решения имеют цену</span></div>
           <div><Sparkles size={17} /><span><b>{meta.endings.length} из 4 финалов</b>{meta.codex.length} записей кодекса</span></div>
         </div>
@@ -593,7 +640,7 @@ function TitleScreen({ savedRun, meta, onContinue, onNew, onRules, onLegacy, onA
       </div>
       <div className="title-footer">
         <span>Кампания · Три акта · Четыре финала</span>
-        <span className="title-seed">ВЕРСИЯ 1.3.0 · ПОХОДОВ: {String(meta.voyages).padStart(2, '0')}</span>
+        <span className="title-seed">ВЕРСИЯ 1.4.0 · ПОХОДОВ: {String(meta.voyages).padStart(2, '0')}</span>
       </div>
     </div>
   )
@@ -883,9 +930,10 @@ interface EncounterPanelProps {
   onOpenHero: () => void
   onOpenShip: () => void
   onOpenFate: () => void
+  onOpenSongs: () => void
 }
 
-function EncounterPanel({ run, onChoose, onBlindChoose, onContinue, onOpenHero, onOpenShip, onOpenFate }: EncounterPanelProps) {
+function EncounterPanel({ run, onChoose, onBlindChoose, onContinue, onOpenHero, onOpenShip, onOpenFate, onOpenSongs }: EncounterPanelProps) {
   const encounter = currentEncounter(run)
   const island = currentIsland(run)
   const encounterScene = sceneForEncounter(encounter)
@@ -926,7 +974,7 @@ function EncounterPanel({ run, onChoose, onBlindChoose, onContinue, onOpenHero, 
       </div>
 
       {isResolution && run.resolution ? (
-        <ResolutionCard run={run} onContinue={onContinue} onOpenHero={onOpenHero} onOpenShip={onOpenShip} onOpenFate={onOpenFate} />
+        <ResolutionCard run={run} onContinue={onContinue} onOpenHero={onOpenHero} onOpenShip={onOpenShip} onOpenFate={onOpenFate} onOpenSongs={onOpenSongs} />
       ) : (
         <div className="choices-area">
           <div className="choices-heading">
@@ -1021,12 +1069,14 @@ function ResolutionCard({
   onOpenHero,
   onOpenShip,
   onOpenFate,
+  onOpenSongs,
 }: {
   run: RunState
   onContinue: (stance: TravelStance) => void
   onOpenHero: () => void
   onOpenShip: () => void
   onOpenFate: () => void
+  onOpenSongs: () => void
 }) {
   const resolution = run.resolution!
   const nextNode = run.route[run.nodeIndex + 1]
@@ -1081,6 +1131,7 @@ function ResolutionCard({
         <div className="contextual-links">
           <small>РАЗОБРАТЬ ПОСЛЕДСТВИЯ</small>
           {(resolution.crewReactions?.length || resolution.debtCreated) && <button onClick={onOpenShip}><Ship size={12} /><span>{resolution.debtCreated ? 'Открыть долги и команду' : 'Посмотреть память спутников'}</span><ChevronRight size={12} /></button>}
+          {resolution.companionStoryMark && <button onClick={onOpenSongs}><ScrollText size={12} /><span>Открыть песнь экипажа</span><ChevronRight size={12} /></button>}
           {(resolution.levelUp || run.progression.skillPoints > 0) && <button onClick={onOpenHero}><Crown size={12} /><span>Распределить очко героя</span><ChevronRight size={12} /></button>}
           {resolution.divineChange && <button onClick={onOpenFate}><Eye size={12} /><span>Посмотреть реакцию богов</span><ChevronRight size={12} /></button>}
         </div>
@@ -1211,18 +1262,21 @@ function PortPanel({
   run,
   onBuy,
   onDepart,
+  onSeekStory,
   onOpenHero,
   onOpenShip,
 }: {
   run: RunState
   onBuy: (offerId: string) => void
   onDepart: (stance: TravelStance) => void
+  onSeekStory: (companionId: 'eurylochus' | 'tiphys' | 'sinon' | 'idmon') => void
   onOpenHero: () => void
   onOpenShip: () => void
 }) {
   const stock = getPortStock(run)
   const current = run.route[run.nodeIndex]
   const companionCost = portOfferCost(run, 28)
+  const storyCompanions = run.ship.companions.filter((companion) => ['eurylochus', 'tiphys', 'sinon', 'idmon'].includes(companion.id)) as Array<typeof run.ship.companions[number] & { id: 'eurylochus' | 'tiphys' | 'sinon' | 'idmon' }>
   return (
     <section className="port-panel panel">
       <div className="port-hero">
@@ -1252,6 +1306,19 @@ function PortPanel({
       </div>
 
       <div className="port-content">
+        {storyCompanions.length > 0 && (
+          <section className="story-seek-section">
+            <div><span className="eyebrow">ПЕСНИ ЭКИПАЖА</span><h3>Чей след искать дальше?</h3><p>В гавани можно заменить одну будущую личную встречу главой выбранного спутника. За поход путь удержит не больше двух таких песен.</p></div>
+            <div className="story-seek-actions">
+              {storyCompanions.map((companion) => (
+                <button key={companion.id} className={run.campaign.storyFocus === companion.id ? 'active' : ''} onClick={() => onSeekStory(companion.id)}>
+                  <span className="story-seek-portrait" style={{ backgroundImage: `url(${companion.portrait})` }} />
+                  <span><small>{run.campaign.storyFocus === companion.id ? 'СЛЕД ВЫБРАН' : 'ИСКАТЬ СЛЕД'}</small><b>{companion.name}</b></span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
         <section className="market-section services-market">
           <div className="market-heading">
             <div><span className="eyebrow">ПРИЧАЛ И АГОРА</span><h3>Припасы и услуги</h3></div>
@@ -1372,6 +1439,7 @@ function WorldPanel({
   const tabOptions: TabOption<typeof tab>[] = [
     { id: 'map', label: 'Карта', icon: <Map size={13} aria-hidden="true" /> },
     { id: 'ship', label: 'Судно', icon: <Ship size={13} aria-hidden="true" /> },
+    { id: 'songs', label: 'Песни', icon: <ScrollText size={13} aria-hidden="true" /> },
     { id: 'fate', label: 'Судьба', icon: <Eye size={13} aria-hidden="true" /> },
     { id: 'codex', label: 'Кодекс', icon: <BookOpen size={13} aria-hidden="true" /> },
     { id: 'log', label: 'Журнал', icon: <History size={13} aria-hidden="true" /> },
@@ -1380,7 +1448,7 @@ function WorldPanel({
     <aside className="world-panel panel">
       <Tabs
         idBase="world"
-        className="world-tabs five-tabs"
+        className="world-tabs six-tabs"
         value={tab}
         options={tabOptions}
         onChange={onTabChange}
@@ -1389,11 +1457,60 @@ function WorldPanel({
       <TabPanel idBase="world" tabId={tab} className="world-tab-panel">
         {tab === 'map' && <RouteMap run={run} onScout={onScout} />}
         {tab === 'ship' && <ShipPanel run={run} onEquip={onEquip} onPayDebt={onPayDebt} onAssignCompanion={onAssignCompanion} onSetWatch={onSetWatch} onSetRations={onSetRations} onUseAbility={onUseAbility} />}
+        {tab === 'songs' && <CompanionSongsPanel run={run} meta={meta} />}
         {tab === 'fate' && <FatePanel run={run} onOffering={onOffering} />}
         {tab === 'codex' && <CodexPanel run={run} meta={meta} />}
         {tab === 'log' && <VoyageLog run={run} />}
       </TabPanel>
     </aside>
+  )
+}
+
+function CompanionSongsPanel({ run, meta }: { run: RunState; meta: MetaState }) {
+  const heard = new Set([
+    ...meta.companionChronicles.flatMap((chronicle) => chronicle.episodes.map((episode) => episode.episodeId)),
+    ...run.campaign.companionStoryMarks.map((mark) => mark.episodeId),
+  ])
+  return (
+    <div className="companion-songs-content">
+      <div className="songs-heading">
+        <span className="eyebrow">АРХИВ СПУТНИКОВ</span>
+        <h3>Песни экипажа</h3>
+        <p>Каждый поход открывает только несколько глав. Память песен сохраняется между возвращениями, но не даёт боевых преимуществ.</p>
+      </div>
+      <div className="saga-list">
+        {companionSagas.map((saga) => {
+          const companion = run.ship.companions.find((entry) => entry.id === saga.companionId)
+            ?? run.ship.departedCompanions.find((entry) => entry.id === saga.companionId)
+            ?? companionDefinition(saga.companionId)
+          const heardCount = saga.chapters.filter((chapter) => heard.has(chapter.id)).length
+          const nextChapter = saga.chapters.find((chapter) => !heard.has(chapter.id))
+          const currentMark = run.campaign.companionStoryMarks.filter((mark) => mark.companionId === saga.companionId).at(-1)
+          return (
+            <article className={`saga-card ${companion ? 'met' : 'unmet'} ${run.campaign.storyFocus === saga.companionId ? 'focused' : ''}`} key={saga.companionId}>
+              <header>
+                {companion && <div className="saga-portrait" style={{ backgroundImage: `url(${companion.portrait})` }} />}
+                <div><span className="eyebrow">{companion?.role ?? 'НЕВСТРЕЧЕННЫЙ ГОЛОС'}</span><h4>{saga.title}</h4><p>{saga.premise}</p></div>
+                <b className="saga-count">{heardCount} / {saga.chapters.length}</b>
+              </header>
+              <div className="saga-progress"><i style={{ width: `${(heardCount / saga.chapters.length) * 100}%` }} /></div>
+              <ol>
+                {saga.chapters.map((chapter) => {
+                  const unlocked = heard.has(chapter.id)
+                  return <li className={unlocked ? 'heard' : ''} key={chapter.id}>
+                    <span>{unlocked ? <Check size={12} /> : chapter.chapter}</span>
+                    <div><small>{unlocked ? 'УСЛЫШАННАЯ ГЛАВА' : chapter.status === 'future' ? 'ПОСЛЕДНЯЯ ПЕСНЬ' : 'ЗАКРЫТАЯ ГЛАВА'}</small><b>{unlocked ? chapter.title : 'Неизвестная песнь'}</b><p>{unlocked ? chapter.hint : chapter.hint}</p></div>
+                  </li>
+                })}
+              </ol>
+              <footer>
+                {currentMark ? <span>Последний след: <b>{currentMark.stance === 'trusted' ? 'доверие' : currentMark.stance === 'controlled' ? 'контроль' : currentMark.stance === 'complicit' ? 'общая тайна' : currentMark.stance === 'forgiven' ? 'непростое прощение' : 'обида'}</b></span> : <span>{nextChapter ? `Следующая нить: ${nextChapter.hint}` : 'Эта песнь пока не получила новой главы.'}</span>}
+              </footer>
+            </article>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 

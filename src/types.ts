@@ -46,6 +46,27 @@ export type Effects = Partial<Record<ResourceKey, number>>
 
 export type CompanionTemperament = 'cautious' | 'seafarer' | 'trickster' | 'prophet'
 
+export type NamedCompanionId = 'eurylochus' | 'tiphys' | 'sinon' | 'idmon'
+
+export type CompanionStoryStance = 'trusted' | 'controlled' | 'complicit' | 'resentful' | 'forgiven'
+
+export interface CompanionStoryMark {
+  companionId: NamedCompanionId
+  episodeId: string
+  encounterId: string
+  chapter: number
+  title: string
+  stance: CompanionStoryStance
+  choiceId: string
+  success: boolean
+  day: number
+}
+
+export interface CompanionChronicle {
+  companionId: NamedCompanionId
+  episodes: CompanionStoryMark[]
+}
+
 export interface CompanionMemory {
   id: string
   day: number
@@ -163,6 +184,7 @@ export interface Resolution {
   crewVoice?: string
   consequence?: string
   storyFlagsGained?: StoryFlag[]
+  companionStoryMark?: CompanionStoryMark
 }
 
 export interface EquipmentDefinition {
@@ -291,6 +313,12 @@ export interface CampaignState {
   doom: number
   decisions: DecisionRecord[]
   storyFlags: StoryFlag[]
+  /** Episodes heard in earlier voyages; used by the story director to avoid repeating a song. */
+  knownCompanionEpisodes: string[]
+  /** The personal consequences created during this voyage. */
+  companionStoryMarks: CompanionStoryMark[]
+  /** A port decision can ask the route director to favour one companion's next chapter. */
+  storyFocus: NamedCompanionId | null
   prophecy: ProphecyState
   bossesDefeated: string[]
   ending: EndingSummary | null
@@ -365,6 +393,8 @@ export interface MetaState {
   endings: string[]
   prophecies: string[]
   codex: string[]
+  /** Personal songs collected across alternate voyages. It carries knowledge, never stat bonuses. */
+  companionChronicles: CompanionChronicle[]
   history: VoyageRecord[]
   achievements: string[]
 }

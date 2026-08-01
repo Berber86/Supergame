@@ -25,7 +25,7 @@ export function parseBackup(text: string): BackupParseResult {
       return { ok: false, message: 'В резервной копии отсутствует метапрогрессия.' }
     }
     const meta = candidate.meta as Record<string, unknown>
-    const arrayFields = ['legacy', 'endings', 'prophecies', 'codex', 'history', 'achievements']
+    const arrayFields = ['legacy', 'endings', 'prophecies', 'codex', 'companionChronicles', 'history', 'achievements']
     if (arrayFields.some((field) => meta[field] !== undefined && !Array.isArray(meta[field]))) {
       return { ok: false, message: 'Коллекции резервной копии имеют неверный формат.' }
     }
@@ -33,7 +33,7 @@ export function parseBackup(text: string): BackupParseResult {
       const runVersion = typeof candidate.run === 'object' && !Array.isArray(candidate.run)
         ? (candidate.run as Record<string, unknown>).version
         : undefined
-      if (![4, 5, 6, 7, 8].includes(runVersion as number)) {
+      if (![4, 5, 6, 7, 8, 9].includes(runVersion as number)) {
         return { ok: false, message: 'Экспедиция создана несовместимой версией игры.' }
       }
     }

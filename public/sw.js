@@ -1,4 +1,4 @@
-const CACHE_NAME = 'odyssey-shadow-v1.3.0'
+const CACHE_NAME = 'odyssey-shadow-v1.4.0'
 const SCOPE_URL = self.registration.scope
 const scopedUrl = (path = './') => new URL(path, SCOPE_URL).toString()
 const APP_SHELL = [

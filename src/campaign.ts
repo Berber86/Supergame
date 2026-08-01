@@ -316,6 +316,7 @@ export function normalizeMeta(value: Partial<MetaState> | null | undefined): Met
     endings: value?.endings ?? [],
     prophecies: value?.prophecies ?? [],
     codex: value?.codex ?? [],
+    companionChronicles: value?.companionChronicles ?? [],
     history: value?.history ?? [],
     achievements: value?.achievements ?? [],
   }
