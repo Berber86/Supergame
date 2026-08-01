@@ -1,5 +1,6 @@
 import { bosses, endings, legacyBoons, prophecies } from './campaign'
 import { companionLiteraryLayer } from './companionLiteraryLayer'
+import { mainStorySceneLayer } from './mainStoryLiteraryLayer'
 import {
   companionStoryEpisodes,
   finaleForCompanion,
@@ -371,7 +372,11 @@ export function companionSagaContext(run: RunState) {
 
 export function currentEncounter(run: RunState) {
   const encounterId = run.route[run.nodeIndex]?.encounterId
-  const encounter = encounters.find((entry) => entry.id === encounterId) ?? encounters[0]
+  const baseEncounter = encounters.find((entry) => entry.id === encounterId) ?? encounters[0]
+  const mainStoryLayer = mainStorySceneLayer(baseEncounter.id)
+  const encounter = mainStoryLayer
+    ? { ...baseEncounter, ...mainStoryLayer }
+    : baseEncounter
   const context = companionSagaContext(run)
   if (!context) return encounter
   return {
@@ -680,8 +685,12 @@ export function resolveChoice(run: RunState, choice: Choice, forceDeferredCost =
 
   const paidResources = applyEffects(run.resources, chargedCost ?? {})
   const success = deterministicRoll(run, choice) <= choiceChance(run, choice)
-  const outcome = success ? choice.success : choice.failure
+  const rawOutcome = success ? choice.success : choice.failure
   const encounter = currentEncounter(run)
+  const mainStoryLayer = mainStorySceneLayer(encounter.id)
+  const outcome = mainStoryLayer
+    ? { ...rawOutcome, text: `${rawOutcome.text}\n\n${success ? mainStoryLayer.success : mainStoryLayer.failure}` }
+    : rawOutcome
   const authoredNarrativeBase = islandOutcomeNarrative(encounter.id, choice.id, success)
   const literaryLayer = companionLiteraryLayer(encounter.id, success)
   const narrativeWithLiteraryLayer = authoredNarrativeBase && literaryLayer
