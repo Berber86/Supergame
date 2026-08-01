@@ -1,4 +1,5 @@
 import { bosses, endings, legacyBoons, prophecies } from './campaign'
+import { companionLiteraryLayer } from './companionLiteraryLayer'
 import {
   companionStoryEpisodes,
   finaleForCompanion,
@@ -682,13 +683,22 @@ export function resolveChoice(run: RunState, choice: Choice, forceDeferredCost =
   const outcome = success ? choice.success : choice.failure
   const encounter = currentEncounter(run)
   const authoredNarrativeBase = islandOutcomeNarrative(encounter.id, choice.id, success)
-  const reactiveContext = companionSagaContext(run)
-  const reactiveEpisode = storyEpisodeForEncounter(encounter.id)
-  const authoredNarrative = authoredNarrativeBase && reactiveContext && reactiveEpisode
+  const literaryLayer = companionLiteraryLayer(encounter.id, success)
+  const narrativeWithLiteraryLayer = authoredNarrativeBase && literaryLayer
     ? {
         ...authoredNarrativeBase,
-        aftermath: `${authoredNarrativeBase.aftermath}\n\n${reactiveContext.aftermath}`,
-        companionImpacts: (authoredNarrativeBase.companionImpacts ?? []).map((impact) => impact.companionId !== reactiveEpisode.companionId ? impact : {
+        aftermath: `${authoredNarrativeBase.aftermath}\n\n${literaryLayer.aftermath}`,
+        crewVoice: `${authoredNarrativeBase.crewVoice}\n\n${literaryLayer.crewVoice}`,
+        consequence: `${authoredNarrativeBase.consequence}\n\n${literaryLayer.consequence}`,
+      }
+    : authoredNarrativeBase
+  const reactiveContext = companionSagaContext(run)
+  const reactiveEpisode = storyEpisodeForEncounter(encounter.id)
+  const authoredNarrative = narrativeWithLiteraryLayer && reactiveContext && reactiveEpisode
+    ? {
+        ...narrativeWithLiteraryLayer,
+        aftermath: `${narrativeWithLiteraryLayer.aftermath}\n\n${reactiveContext.aftermath}`,
+        companionImpacts: (narrativeWithLiteraryLayer.companionImpacts ?? []).map((impact) => impact.companionId !== reactiveEpisode.companionId ? impact : {
           ...impact,
           loyalty: impact.loyalty + reactiveContext.loyalty,
           respect: impact.respect + reactiveContext.respect,
@@ -696,7 +706,7 @@ export function resolveChoice(run: RunState, choice: Choice, forceDeferredCost =
           memory: `${impact.memory} ${reactiveContext.aftermath}`,
         }),
       }
-    : authoredNarrativeBase
+    : narrativeWithLiteraryLayer
   const resources = applyEffects(paidResources, outcome.effects)
   const baseXp = outcome.xp ?? (success ? 22 + choice.difficulty * 4 : 11 + choice.difficulty * 2)
   const xp = Math.round(baseXp * (run.legacyBoons.includes('black-sail-legend') && success ? 1.2 : 1))
