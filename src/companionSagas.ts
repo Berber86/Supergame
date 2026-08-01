@@ -51,13 +51,13 @@ export interface CompanionFinaleDefinition {
 export const companionSagas: CompanionSaga[] = [
   {
     companionId: 'eurylochus',
-    title: 'Цена власти',
-    premise: 'Еврилох помнит каждого человека, которого приказ оставил за кормой. Он не просит корону — он проверяет, способен ли царь не держать её мёртвой хваткой.',
+    title: 'Свинец под короной',
+    premise: 'Еврилох помнит лица всех, кого царский приказ превратил в пену за кормой. Ему не нужен трон Итаки — он лишь хочет знать, способен ли Одиссей разжать пальцы, когда власть требует принести в жертву человечность.',
     chapters: [
-      { id: 'eurylochus-broken-oar', encounterId: 'eurylochus-broken-oar', chapter: 1, title: 'Весло, которое не отдали', hint: 'На берегу ждёт семья гребца, оставленного прежним приказом.', status: 'playable' },
-      { id: 'eurylochus-council', encounterId: 'eurylochus-council', chapter: 2, title: 'Каменный совет', hint: 'Право возражать царю нужно заслужить не словами.', status: 'playable' },
-      { id: 'eurylochus-crownless', encounterId: 'eurylochus-crownless', chapter: 3, title: 'Корона без головы', hint: 'Старый знак командования требует нового владельца.', status: 'playable' },
-      { id: 'eurylochus-homecoming', chapter: 4, title: 'Чей приказ слышит Итака', hint: 'Последняя песнь прозвучит только у дома.', status: 'finale' },
+      { id: 'eurylochus-broken-oar', encounterId: 'eurylochus-broken-oar', chapter: 1, title: 'Мёртвое дерево', hint: 'У воды ждёт семья того, кого когда-то перечеркнул короткий приказ.', status: 'playable' },
+      { id: 'eurylochus-council', encounterId: 'eurylochus-council', chapter: 2, title: 'Суд холодных камней', hint: 'На этом острове преданность доказывают не поклоном, а обнажённым клинком правды.', status: 'playable' },
+      { id: 'eurylochus-crownless', encounterId: 'eurylochus-crownless', chapter: 3, title: 'Венец для палача', hint: 'Бронза, покрытая патиной старых предательств, ждёт нового хозяина.', status: 'playable' },
+      { id: 'eurylochus-homecoming', chapter: 4, title: 'Шепот перед Итакой', hint: 'Последний приговор произносится там, где бьются волны родного берега.', status: 'finale' },
     ],
   },
   {
@@ -244,20 +244,68 @@ const stanceLanguage: Record<CompanionStoryStance, Omit<ReactiveSagaContext, 'st
   },
 }
 
-export function reactiveSagaContext(stance: CompanionStoryStance): ReactiveSagaContext {
-  return { stance, ...stanceLanguage[stance] }
+const eurylochusStanceLanguage: Record<CompanionStoryStance, Omit<ReactiveSagaContext, 'stance'>> = {
+  trusted: {
+    label: 'ГОРЬКОЕ ДОВЕРИЕ',
+    arrival: 'Еврилох шагает рядом с царём, а не позади него. После недавних испытаний он не тратит время на колкости — он сразу говорит о том, что грызёт его изнутри, веря, что Одиссей не отмахнётся.',
+    hook: 'Доверие — хрупкий клинок. Одно неосторожное движение власти, и он сломается навсегда.',
+    choiceTitle: 'Взвалить груз на двоих',
+    choiceDescription: 'Не укрываться за царским щитом. Дать Еврилоху право ударить словом, чтобы выстоять вместе.',
+    aftermath: 'Связь между ними стала крепче, потому что была проверена огнём, а не слащавыми клятвами.',
+    loyalty: 3, respect: 2, fear: -2,
+  },
+  controlled: {
+    label: 'ХОЛОДНЫЙ КОНТРОЛЬ',
+    arrival: 'Еврилох действует с точностью механизма. Каждое «да, мой царь» звучит как удар молота по наковальне. Он сдался приказам, но душа его закована в лёд.',
+    hook: 'Он ждёт, когда Одиссей оступится. Любая слабость будет воспринята не как человечность, а как ошибка командира.',
+    choiceTitle: 'Разомкнуть железную хватку',
+    choiceDescription: 'Рискнуть потерей абсолютного контроля, чтобы показать: на этом корабле ещё остались живые люди.',
+    aftermath: 'Лёд треснул. Еврилох увидел, что царь способен разжать пальцы, не теряя при этом короны.',
+    loyalty: 1, respect: 3, fear: -1,
+  },
+  complicit: {
+    label: 'СВЯЗАННЫЕ ГРЕХОМ',
+    arrival: 'Они смотрят друг на друга, и каждый видит в глазах другого их общую грязную тайну. Это союз, скреплённый не верностью, а страхом разоблачения перед командой.',
+    hook: 'Общая тайна превратила их в заговорщиков, но любой неверный шаг на этом совете может стать детонатором.',
+    choiceTitle: 'Выставить счёт за молчание',
+    choiceDescription: 'Отказаться от привычного обмана. Бросить вызов Еврилоху: пусть сам решит, что из их тьмы увидит свет.',
+    aftermath: 'Кровь на их руках не исчезла, но они больше не пытаются спрятать её друг от друга.',
+    loyalty: 2, respect: 1, fear: 1,
+  },
+  resentful: {
+    label: 'ТЛЕЮЩАЯ ОБИДА',
+    arrival: 'Еврилох смотрит куда угодно, только не на Одиссея. Его движения резки, слова процежены сквозь зубы. Прошлая обида гниёт в нём, отравляя воздух вокруг.',
+    hook: 'Здесь нет места примирению. Главное — не бросить факел в пороховую бочку его ненависти.',
+    choiceTitle: 'Принять его ненависть как право',
+    choiceDescription: 'Не требовать фальшивых улыбок. Позволить ему ненавидеть решения царя, пока он выполняет их.',
+    aftermath: 'Обида никуда не ушла, но Еврилох, по крайней мере, увидел, что его ярость не игнорируют.',
+    loyalty: 2, respect: 3, fear: -1,
+  },
+  forgiven: {
+    label: 'ПЕПЕЛ ПРОЩЕНИЯ',
+    arrival: 'Еврилох больше не бросается на ножи из-за старых ран, но шрамы ноют к плохой погоде. Это не мир — это вооружённое перемирие ради выживания.',
+    hook: 'Каждое слово сейчас — это проверка: стоило ли прощать Одиссея в прошлый раз?',
+    choiceTitle: 'Доказать право на это прощение',
+    choiceDescription: 'Действовать так, чтобы Еврилох не пожалел о том дне, когда решил опустить меч.',
+    aftermath: 'Перемирие выдержало шторм. Оно перестало быть просто отсрочкой новой войны.',
+    loyalty: 4, respect: 2, fear: -2,
+  },
+}
+
+export function reactiveSagaContext(companionId: NamedCompanionId, stance: CompanionStoryStance): ReactiveSagaContext {
+  return { stance, ...(companionId === 'eurylochus' ? eurylochusStanceLanguage[stance] : stanceLanguage[stance]) }
 }
 
 const finaleDefinitions: Record<NamedCompanionId, CompanionFinaleDefinition> = {
   eurylochus: {
-    id: 'eurylochus-homecoming', companionId: 'eurylochus', eyebrow: 'Последний совет перед домом', title: 'Чей приказ слышит Итака', location: 'Врата Итаки · Ночная палуба',
+    id: 'eurylochus-homecoming', companionId: 'eurylochus', eyebrow: 'Берег в огне', title: 'Суд перед родным порогом', location: 'Врата Итаки · Ночная палуба',
     scene: assetPath('art/finale-eurylochus-homecoming.jpg'),
-    description: 'Огни Итаки видны за штормом. Еврилох просит не обещания, а последний ответ: когда дом окажется рядом, кто будет решать, сколько людей и какой правдой войдут в него?',
-    quote: '«Если власть нельзя разделить у дома, значит, в море мы только репетировали послушание.»',
+    description: 'Сквозь рваные тучи пробиваются огни Итаки. Ветер доносит запах родного дыма, но на палубе царит ледяное напряжение. Еврилох стоит у борта, его пальцы вцепились в изъеденное солью дерево. Он не просит клятв — он требует ответа. Когда киль коснётся песка Итаки, кто будет решать, сколько мертвецов они притащат за собой, и какими словами будут оправдывать их смерти?',
+    quote: '«Мы везём домой слишком много призраков. Вопрос в том, кто из нас будет смотреть в глаза их вдовам.»',
     choices: [
-      { id: 'eurylochus-finale-council', title: 'Созвать последний совет команды', description: 'Пусть каждый услышит цену возвращения до того, как берег станет оправданием.', skill: 'will', difficulty: 7, success: { text: 'Еврилох кладёт свой жезл рядом с царским. Никто не получает равную власть, но никто больше не притворяется, что голоса команды ничего не весят.', effects: { morale: 13 } }, failure: { text: 'Совет превращается в перечисление старых мертвецов, и Еврилох понимает, что честность не всегда лечит вовремя.', effects: { morale: -8 } } },
-      { id: 'eurylochus-finale-burden', title: 'Взять последний приказ только на себя', description: 'Не просить Еврилоха делить вину за выбор у Итаки.', skill: 'valor', difficulty: 8, success: { text: 'Одиссей оставляет Еврилоху право спорить, но не требует нести последнюю ответственность. Заместитель впервые принимает это как доверие, а не как отстранение.', effects: { morale: 8, health: -2 } }, failure: { text: 'Слова о личной ответственности звучат как новая попытка не дать никому участвовать в решении.', effects: { morale: -11 } } },
-      { id: 'eurylochus-finale-mask', title: 'Сохранить единый голос перед Итакой', description: 'Спрятать раскол команды, чтобы дом увидел только непобеждённый корабль.', skill: 'cunning', difficulty: 7, success: { text: 'Еврилох поддерживает единую речь, но оба знают, сколько несказанного останется за её ровным тоном.', effects: { morale: 5 }, coins: 14 }, failure: { text: 'Гребцы слышат репетицию лжи и отказываются повторять её у берега.', effects: { morale: -13 } } },
+      { id: 'eurylochus-finale-council', title: 'Разделить с ним власть и вину', description: 'Положить свой жезл рядом с его. Доказать, что Итака встретит двух мужей, а не тирана и его тень.', skill: 'will', difficulty: 7, success: { text: 'Еврилох тяжело выдыхает, словно сбросив невидимую цепь. Два жезла ложатся на палубу. Они не равны в коронах, но отныне равны в ответственности перед своим народом.', effects: { morale: 13 } }, failure: { text: 'Попытка разделить вину оборачивается перебрасыванием упрёков. Вместо единства команда слышит, как два командира судорожно пытаются отмыть руки перед возвращением.', effects: { morale: -8 } } },
+      { id: 'eurylochus-finale-burden', title: 'Взять всё бремя крови только на себя', description: 'Сказать Еврилоху, что он свободен от прошлых приказов. Вся тяжесть решений ложится на царские плечи.', skill: 'valor', difficulty: 8, success: { text: 'Одиссей принимает на себя каждый грех этого плавания. Еврилох отступает в тень, впервые чувствуя не унижение, а мрачную благодарность. Он понимает, каково это — быть щитом.', effects: { morale: 8, health: -2 } }, failure: { text: 'Голос Одиссея срывается, слова звучат фальшиво. Еврилох кривится — он видит не благородную жертву, а жалкую попытку узурпировать даже право на покаяние.', effects: { morale: -11 } } },
+      { id: 'eurylochus-finale-mask', title: 'Надеть маску монолитного единства', description: 'Скрыть все расколы и сомнения. Убедить Еврилоха сыграть роль идеального соратника перед Итакой.', skill: 'cunning', difficulty: 7, success: { text: 'Еврилох молча кивает. Они сойдут на берег как непобедимые герои. Оба знают, что это ложь, но ради Итаки они готовы нести эту маску до конца своих дней.', effects: { morale: 5 }, coins: 14 }, failure: { text: 'Матросы, слушающие этот сговор, начинают плеваться за борт. Никто не хочет возвращаться домой, неся на плечах фальшивого царя и его купленного пса.', effects: { morale: -13 } } },
     ],
   },
   tiphys: {
@@ -304,7 +352,7 @@ const finaleChoiceStances: Record<string, { success: CompanionStoryStance; failu
 
 export function finaleForCompanion(companionId: NamedCompanionId, priorStance: CompanionStoryStance) {
   const finale = finaleDefinitions[companionId]
-  const context = reactiveSagaContext(priorStance)
+  const context = reactiveSagaContext(companionId, priorStance)
   return {
     ...finale,
     description: `${finale.description}\n\n${companionNames[companionId]} приходит к этому разговору через состояние «${context.label.toLowerCase()}». ${context.arrival}`,

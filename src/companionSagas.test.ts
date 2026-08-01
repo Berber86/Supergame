@@ -121,8 +121,8 @@ describe('companion saga director', () => {
     }
 
     expect(companionSagaContext(run)?.stance).toBe('resentful')
-    expect(currentEncounter(run).choices[0].title).toBe('Признать право на гнев')
-    expect(currentIsland(run)?.introduction).toContain('прежняя обида')
+    expect(currentEncounter(run).choices[0].title).toBe('Принять его ненависть как право')
+    expect(currentIsland(run)?.introduction).toContain('Прошлая обида')
   })
 
   it('opens and resolves a real final song before Ithaca after three chapters', () => {

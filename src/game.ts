@@ -365,7 +365,7 @@ export function companionSagaContext(run: RunState) {
     ...(run.campaign.companionStoryMarks ?? []),
   ]
   const previousMark = marks.filter((mark) => mark.companionId === episode.companionId && mark.chapter < episode.chapter).at(-1)
-  return previousMark ? reactiveSagaContext(previousMark.stance) : undefined
+  return previousMark ? reactiveSagaContext(episode.companionId, previousMark.stance) : undefined
 }
 
 export function currentEncounter(run: RunState) {
