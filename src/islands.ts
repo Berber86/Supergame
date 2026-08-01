@@ -1,5 +1,6 @@
 import { assetPath } from './assets'
 import { companionSagaIslands } from './companionSagaIslands'
+import { islandLiteraryPassA } from './islandLiteraryPassA'
 import type { Biome } from './types'
 
 export interface CompanionImpact {
@@ -782,7 +783,7 @@ const deepenedNarratives: Record<string, IslandDeepening> = {
   },
 }
 
-export const authoredIslands: AuthoredIsland[] = [
+const expandedAuthoredIslands: AuthoredIsland[] = [
   ...baseAuthoredIslands.map((island) => {
     const deepening = deepenedNarratives[island.id]
     if (!deepening) return island
@@ -802,6 +803,18 @@ export const authoredIslands: AuthoredIsland[] = [
   }),
   ...companionSagaIslands,
 ]
+
+export const authoredIslands: AuthoredIsland[] = expandedAuthoredIslands.map((island) => {
+  const literary = islandLiteraryPassA[island.id]
+  if (!literary) return island
+  // Keep the original second narrative layer as a later observation rather than
+  // replacing it with a shorter arrival passage from the literary pass.
+  return {
+    ...island,
+    ...literary,
+    introduction: `${literary.introduction}\n\n${island.introduction}`,
+  }
+})
 
 export const authoredIslandByEncounter = new Map(authoredIslands.map((island) => [island.encounterId, island]))
 
