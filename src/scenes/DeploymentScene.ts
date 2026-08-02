@@ -3,6 +3,7 @@ import { CONFIG } from '../config';
 import { TERRAIN_LABEL } from '../data/terrain';
 import { generateWave } from '../data/waves';
 import { ROLE_INFO } from '../data/units';
+import { findNode } from '../data/evolution-tree';
 import { Campaign, type PlayerDeploymentEntry } from '../meta/Campaign';
 import { isDeployable, type RosterUnit } from '../meta/RosterUnit';
 import { campaignOf } from '../meta/session';
@@ -123,7 +124,14 @@ export class DeploymentScene extends Phaser.Scene {
 
   private drawEnemies(): void {
     for (const we of generateWave(this.campaign.wave)) {
-      const view = createUnitView(this, { name: we.scaled.name, role: we.scaled.role, team: 'enemy' });
+      const node = findNode(we.scaled.id);
+      const view = createUnitView(this, {
+        name: we.scaled.name,
+        role: we.scaled.role,
+        team: 'enemy',
+        epochIndex: node ? node.epoch : 1,
+        line: node ? node.line : 'Infantry',
+      });
       const p = this.grid.pixelOf(we.col, we.row);
       view.container.setPosition(p.x, p.y);
       setHpRatio(view, 1);
@@ -280,7 +288,14 @@ export class DeploymentScene extends Phaser.Scene {
   }
 
   private placeUnit(ru: RosterUnit, col: number, row: number): void {
-    const view = createUnitView(this, { name: ru.name, role: ru.role, team: 'player' });
+    const node = findNode(ru.templateId);
+    const view = createUnitView(this, {
+      name: ru.name,
+      role: ru.role,
+      team: 'player',
+      epochIndex: ru.epochIndex,
+      line: node ? node.line : 'Infantry',
+    });
     const p = this.grid.pixelOf(col, row);
     view.container.setPosition(p.x, p.y);
     setHpRatio(view, ru.currentHp / ru.maxHp);

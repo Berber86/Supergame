@@ -1,4 +1,6 @@
 import type { Role } from '../entities/types';
+import { EVOLUTION_TREE_NODES, nodeToTemplate } from './evolution-tree';
+
 
 /** Шаблон тестового юнита (одна эпоха — Каменный век). */
 export interface UnitTemplate {
@@ -12,6 +14,7 @@ export interface UnitTemplate {
   range: number; // дальность в гексах
   move: number; // скорость: гексов в секунду
   description?: string;
+  epochIndex?: number;
 }
 
 /**
@@ -154,6 +157,12 @@ export const ENEMY_LINEUP: ReadonlyArray<{ templateId: string; col: number; row:
 
 export function findTemplate(id: string): UnitTemplate {
   const t = STONE_AGE_UNITS.find((u) => u.id === id);
-  if (!t) throw new Error(`Unknown unit template: ${id}`);
-  return t;
+  if (t) return t;
+  
+  const node = EVOLUTION_TREE_NODES.find((n) => n.id === id);
+  if (node) {
+    return nodeToTemplate(node);
+  }
+  
+  throw new Error(`Unknown unit template: ${id}`);
 }
