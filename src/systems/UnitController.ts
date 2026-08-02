@@ -5,113 +5,156 @@ import type { Role } from '../entities/types';
 import type { HexCell } from './HexGrid';
 import { findPath } from './Pathfinding';
 import type { ControllerContext } from './sim-types';
+import { SpecialAbilitySystem } from './SpecialAbilitySystem';
 
-/** Роли, которые отступают при низком HP (тяжёлые/танки/кавалерия бьются до конца). */
 const RETREAT_ROLES: ReadonlySet<Role> = new Set<Role>(['ranged', 'melee']);
 
-/**
- * ИИ-контроллер одного юнита: конечный автомат поведения.
- * IDLE → ENGAGE → ATTACK → CHASE/REPOSITION → RETREAT (+ DEAD).
- *
- * Чистая логика: не знает о Phaser, общается с миром через ControllerContext
- * и сообщает о действиях через ctx.emit(...).
- *
- * Ролевое поведение:
- *  - melee/tank/heavy/cavalry — идут к цели и бьют в ближнем бою;
- *  - ranged — держат дистанцию, кайтят, если враг подошёл вплотную;
- *  - support — держится позади, лечит ближайшего раненого союзника по кулдауну;
- *  - раненые ranged/melee отступают к своему краю.
- */
+/** FSM одного юнита, расширенный подключаемым состоянием ABILITY/STUNNED. */
 export class UnitController {
-  constructor(readonly unit: UnitModel) {}
+  constructor(
+    readonly unit: UnitModel,
+    private readonly abilities: SpecialAbilitySystem = new SpecialAbilitySystem(),
+  ) {}
 
   update(dt: number, ctx: ControllerContext): void {
-    const u = this.unit;
+    const unit = this.unit;
+    if (!this.abilities.tickUnit(unit, dt, ctx)) return;
 
-    // Тик кулдаунов.
-    u.attackCooldown = Math.max(0, u.attackCooldown - dt);
-    u.moveCooldown = Math.max(0, u.moveCooldown - dt);
-    u.healCooldown = Math.max(0, u.healCooldown - dt);
+    unit.attackCooldown = Math.max(0, unit.attackCooldown - dt);
+    unit.moveCooldown = Math.max(0, unit.moveCooldown - dt);
+    unit.healCooldown = Math.max(0, unit.healCooldown - dt);
 
-    if (u.role === 'support') {
-      this.updateSupport(ctx);
-    } else {
-      this.updateCombat(ctx);
+    if (unit.stunnedFor > 0) {
+      this.setState(unit, 'STUNNED', ctx);
+      return;
     }
+
+    if (this.abilities.tryActivate(unit, ctx)) {
+      if (unit.alive) this.setState(unit, 'ABILITY', ctx);
+      return;
+    }
+
+    if (unit.role === 'support') this.updateSupport(ctx);
+    else this.updateCombat(ctx);
   }
 
-  // ---------------- Боевые роли ----------------
-
   private updateCombat(ctx: ControllerContext): void {
-    const u = this.unit;
-    const target = this.nearest(ctx.enemiesOf(u), u, ctx);
-    u.targetId = target ? target.uid : null;
+    const unit = this.unit;
+    const target = this.nearest(ctx.enemiesOf(unit), unit, ctx);
+    unit.targetId = target?.uid ?? null;
     if (!target) {
-      this.setState(u, 'IDLE', ctx);
+      this.setState(unit, 'IDLE', ctx);
       return;
     }
 
-    const dist = ctx.grid.distance(u.col, u.row, target.col, target.row);
-    const effRange = this.effectiveRange(u, ctx);
+    const distance = ctx.grid.distance(unit.col, unit.row, target.col, target.row);
+    const range = this.effectiveRange(unit, ctx);
 
-    // 1) Отступление тяжело раненных (где уместно).
     if (
-      RETREAT_ROLES.has(u.role) &&
-      u.hp / u.maxHp <= CONFIG.RETREAT_HP_RATIO
+      RETREAT_ROLES.has(unit.role) &&
+      (ctx.elapsedSeconds ?? 0) < CONFIG.OVERTIME_START_SECONDS &&
+      unit.hp / unit.maxHp <= CONFIG.RETREAT_HP_RATIO
     ) {
-      this.setState(u, 'RETREAT', ctx);
-      if (this.moveAway(u, target, ctx)) return;
-      // Отступать некуда — драться.
+      this.setState(unit, 'RETREAT', ctx);
+      if (this.moveAway(unit, target, ctx)) return;
     }
 
-    // 2) В пределах дальности атаки.
-    if (dist <= effRange) {
-      // Ranged кайтит, когда враг вплотную.
-      if (CONFIG.RANGED_KITE_ADJACENT && u.role === 'ranged' && dist <= 1) {
-        this.setState(u, 'REPOSITION', ctx);
-        if (this.moveAway(u, target, ctx)) return; // убежали — в этот тик не стреляем
-        // Прижали к стене — стреляем в упор.
+    if (distance <= range) {
+      if (
+        CONFIG.RANGED_KITE_ADJACENT &&
+        (ctx.elapsedSeconds ?? 0) < CONFIG.OVERTIME_START_SECONDS &&
+        unit.role === 'ranged' &&
+        !unit.immobile &&
+        distance <= 1
+      ) {
+        this.setState(unit, 'REPOSITION', ctx);
+        if (this.moveAway(unit, target, ctx)) return;
       }
-      this.setState(u, 'ATTACK', ctx);
-      this.tryAttack(u, target, ctx);
+      this.setState(unit, 'ATTACK', ctx);
+      this.tryAttack(unit, target, ctx);
       return;
     }
 
-    // 3) Цель далеко — идём к ней.
-    this.setState(u, u.role === 'cavalry' ? 'CHASE' : 'ENGAGE', ctx);
-    this.moveToward(u, target, ctx);
+    if (unit.immobile) {
+      this.setState(unit, 'IDLE', ctx);
+      return;
+    }
+    this.setState(unit, unit.role === 'cavalry' ? 'CHASE' : 'ENGAGE', ctx);
+    this.moveToward(unit, target, ctx);
   }
 
   private updateSupport(ctx: ControllerContext): void {
-    const u = this.unit;
-    const enemies = ctx.enemiesOf(u);
-    const nearestEnemy = enemies.length ? this.nearest(enemies, u, ctx) : null;
-    const enemyDist = nearestEnemy
-      ? ctx.grid.distance(u.col, u.row, nearestEnemy.col, nearestEnemy.row)
+    const unit = this.unit;
+    const enemies = ctx.enemiesOf(unit);
+    const nearestEnemy = enemies.length ? this.nearest(enemies, unit, ctx) : null;
+    const enemyDistance = nearestEnemy
+      ? ctx.grid.distance(unit.col, unit.row, nearestEnemy.col, nearestEnemy.row)
       : Infinity;
 
-    // Держим дистанцию: если враг близко — отходим.
-    if (nearestEnemy && enemyDist <= CONFIG.SUPPORT_SAFE_DISTANCE) {
-      this.setState(u, 'REPOSITION', ctx);
-      u.targetId = nearestEnemy.uid;
-      this.moveAway(u, nearestEnemy, ctx);
-      return;
+    if (
+      nearestEnemy &&
+      (ctx.elapsedSeconds ?? 0) < CONFIG.OVERTIME_START_SECONDS &&
+      enemyDistance <= CONFIG.SUPPORT_SAFE_DISTANCE
+    ) {
+      this.setState(unit, 'REPOSITION', ctx);
+      unit.targetId = nearestEnemy.uid;
+      if (this.moveAway(unit, nearestEnemy, ctx)) return;
     }
 
-    // Лечим ближайшего раненого союзника.
-    const wounded = ctx.alliesOf(u).filter((a) => a.hp < a.maxHp);
-    if (wounded.length) {
-      const patient = this.nearest(wounded, u, ctx);
+    const combatAllies = ctx.alliesOf(unit).filter(
+      (ally) => ally.combatRole !== 'support-heal' && ally.combatRole !== 'support-buff',
+    );
+
+    if (unit.combatRole === 'support-buff') {
+      const candidate = combatAllies
+        .filter((ally) => ally.inspiredFor <= 0.25)
+        .sort((a, b) => {
+          const da = ctx.grid.distance(unit.col, unit.row, a.col, a.row);
+          const db = ctx.grid.distance(unit.col, unit.row, b.col, b.row);
+          return da - db || a.uid - b.uid;
+        })[0];
+      if (candidate) {
+        unit.targetId = candidate.uid;
+        this.setState(unit, 'IDLE', ctx);
+        if (unit.healCooldown <= 0) {
+          unit.healCooldown = CONFIG.HEAL_INTERVAL;
+          candidate.inspiredFor = CONFIG.SUPPORT_BUFF_DURATION;
+          candidate.inspiredMultiplier = Math.max(
+            candidate.inspiredMultiplier,
+            CONFIG.SUPPORT_BUFF_MULT,
+          );
+          ctx.emit({
+            type: 'buff',
+            source: unit.uid,
+            target: candidate.uid,
+            multiplier: CONFIG.SUPPORT_BUFF_MULT,
+          });
+        }
+        return;
+      }
+    } else {
+      const wounded = combatAllies.filter((ally) => ally.hp < ally.maxHp);
+      const patient = wounded.length ? this.nearest(wounded, unit, ctx) : null;
       if (patient) {
-        u.targetId = patient.uid;
-        this.setState(u, 'IDLE', ctx);
-        if (u.healCooldown <= 0) {
-          u.healCooldown = CONFIG.HEAL_INTERVAL;
+        unit.targetId = patient.uid;
+        this.setState(unit, 'IDLE', ctx);
+        if (unit.healCooldown <= 0) {
+          unit.healCooldown = CONFIG.HEAL_INTERVAL;
           const before = patient.hp;
-          patient.hp = Math.min(patient.maxHp, patient.hp + CONFIG.HEAL_AMOUNT);
+          const baseHeal = Math.max(
+            CONFIG.HEAL_AMOUNT,
+            Math.round(patient.maxHp * CONFIG.SUPPORT_HEAL_HP_RATIO),
+          );
+          const healFatigue = Math.max(
+            CONFIG.OVERTIME_HEAL_MIN_MULT,
+            1 - Math.max(0, (ctx.elapsedSeconds ?? 0) - CONFIG.OVERTIME_START_SECONDS) /
+              CONFIG.OVERTIME_HEAL_DECAY_SECONDS,
+          );
+          const heal = Math.max(1, Math.round(baseHeal * healFatigue));
+          patient.hp = Math.min(patient.maxHp, patient.hp + heal);
           ctx.emit({
             type: 'heal',
-            healer: u.uid,
+            healer: unit.uid,
             target: patient.uid,
             amount: patient.hp - before,
           });
@@ -120,169 +163,156 @@ export class UnitController {
       }
     }
 
-    u.targetId = null;
-    this.setState(u, 'IDLE', ctx);
+    // Если прикрывать/лечить уже некого, support обязан вступить в бой — это
+    // исключает бесконечный финал «лекарь против лекаря».
+    if (enemies.length) {
+      this.updateCombat(ctx);
+      return;
+    }
+    unit.targetId = null;
+    this.setState(unit, 'IDLE', ctx);
   }
 
-  // ---------------- Атака ----------------
+  private tryAttack(unit: UnitModel, target: UnitModel, ctx: ControllerContext): void {
+    if (unit.attackCooldown > 0 || !target.alive) return;
+    const attackSpeed = Math.max(
+      0.1,
+      unit.baseAtkSpeed * unit.suppressionMultiplier * unit.inspiredMultiplier,
+    );
+    unit.attackCooldown = 1 / attackSpeed;
+    const ranged = unit.baseRange > 1;
 
-  private tryAttack(
-    u: UnitModel,
-    target: UnitModel,
-    ctx: ControllerContext,
-  ): void {
-    if (u.attackCooldown > 0) return;
-    u.attackCooldown = 1 / u.baseAtkSpeed;
-
-    const rng = ctx.rng;
-    const ranged = u.baseRange > 1;
-
-    // Промах.
-    if (!rng.chance(CONFIG.HIT_CHANCE)) {
+    if (!ctx.rng.chance(CONFIG.HIT_CHANCE)) {
       ctx.emit({
-        type: 'attack',
-        attacker: u.uid,
-        target: target.uid,
-        ranged,
-        damage: 0,
-        crit: false,
-        miss: true,
+        type: 'attack', attacker: unit.uid, target: target.uid,
+        ranged, damage: 0, crit: false, miss: true,
       });
       return;
     }
 
-    const crit = rng.chance(CONFIG.CRIT_CHANCE);
-    const def = this.effectiveDef(target, ctx);
-    let dmg = Math.max(1, u.baseAtk - def);
-
-    // Стрелок на холме получает бонус урона.
+    const crit = ctx.rng.chance(CONFIG.CRIT_CHANCE);
+    const defense = this.effectiveDef(target, ctx);
+    let damage = Math.max(1, unit.baseAtk * unit.inspiredMultiplier - defense);
     if (ranged) {
-      const mod = TERRAIN_MODIFIERS[this.terrainAt(u, ctx)];
-      dmg *= mod.rangedDamageMultiplier;
+      damage *= TERRAIN_MODIFIERS[this.terrainAt(unit, ctx)].rangedDamageMultiplier;
     }
-    if (crit) dmg *= CONFIG.CRIT_MULT;
-    dmg = Math.max(1, Math.round(dmg));
+    if (crit) damage *= CONFIG.CRIT_MULT;
+    const overtimeSteps = Math.max(
+      0,
+      ((ctx.elapsedSeconds ?? 0) - CONFIG.OVERTIME_START_SECONDS) / 30,
+    );
+    const overtimeMultiplier = Math.min(
+      CONFIG.OVERTIME_DAMAGE_MAX_MULT,
+      1 + overtimeSteps * CONFIG.OVERTIME_DAMAGE_PER_30_SECONDS,
+    );
+    damage *= overtimeMultiplier;
+    damage = Math.max(1, Math.round(damage));
+    damage = this.abilities.modifyBasicDamage(unit, target, damage, ctx);
 
-    target.hp -= dmg;
+    const dealt = this.abilities.applyDamage(unit, target, damage, ctx);
     ctx.emit({
-      type: 'attack',
-      attacker: u.uid,
-      target: target.uid,
-      ranged,
-      damage: dmg,
-      crit,
-      miss: false,
+      type: 'attack', attacker: unit.uid, target: target.uid,
+      ranged, damage: dealt.total, crit, miss: false,
     });
 
-    if (target.hp <= 0) {
-      target.hp = 0;
-      this.kill(target, ctx);
+    if (unit.combatRole === 'aoe-breaker' && dealt.total > 0) {
+      this.splash(unit, target, dealt.total, ctx);
     }
   }
 
-  private kill(u: UnitModel, ctx: ControllerContext): void {
-    u.alive = false;
-    u.state = 'DEAD';
-    const cell = ctx.grid.get(u.col, u.row);
-    if (cell && cell.unit === u) cell.unit = null;
-    ctx.emit({ type: 'death', uid: u.uid });
+  private splash(
+    attacker: UnitModel,
+    primary: UnitModel,
+    primaryDamage: number,
+    ctx: ControllerContext,
+  ): void {
+    const splashDamage = Math.max(1, Math.round(primaryDamage * CONFIG.HEAVY_SPLASH_RATIO));
+    const secondary = ctx.enemiesOf(attacker)
+      .filter((enemy) =>
+        enemy.uid !== primary.uid &&
+        ctx.grid.distance(primary.col, primary.row, enemy.col, enemy.row) <= 1,
+      )
+      .sort((a, b) => a.uid - b.uid);
+    for (const target of secondary) {
+      const dealt = this.abilities.applyDamage(attacker, target, splashDamage, ctx);
+      ctx.emit({
+        type: 'attack', attacker: attacker.uid, target: target.uid,
+        ranged: attacker.baseRange > 1, damage: dealt.total,
+        crit: false, miss: false, splash: true,
+      });
+    }
   }
 
-  // ---------------- Движение ----------------
-
-  /** Шаг к цели по A* (fallback — жадный выбор соседа). */
-  private moveToward(u: UnitModel, target: UnitModel, ctx: ControllerContext): void {
-    if (u.moveCooldown > 0) return;
-    const path = findPath(ctx.grid, u.col, u.row, target.col, target.row);
+  private moveToward(unit: UnitModel, target: UnitModel, ctx: ControllerContext): void {
+    if (unit.moveCooldown > 0 || unit.immobile) return;
+    const path = findPath(ctx.grid, unit.col, unit.row, target.col, target.row);
     if (path && path.length >= 2) {
       const next = path[1];
-      const isTargetCell = next.col === target.col && next.row === target.row;
-      if (this.isFree(next, ctx) && !isTargetCell) {
-        this.stepTo(u, next.col, next.row, ctx);
+      const targetCell = next.col === target.col && next.row === target.row;
+      if (this.isFree(next) && !targetCell) {
+        this.stepTo(unit, next.col, next.row, ctx);
         return;
       }
     }
-    const nb = this.bestNeighborToward(u, target, ctx);
-    if (nb) this.stepTo(u, nb.col, nb.row, ctx);
+    const neighbor = this.bestNeighborToward(unit, target, ctx);
+    if (neighbor) this.stepTo(unit, neighbor.col, neighbor.row, ctx);
   }
 
-  /** Шаг прочь от опорной точки (кайт/отступление/безопасность support-а). */
-  private moveAway(u: UnitModel, ref: UnitModel, ctx: ControllerContext): boolean {
-    if (u.moveCooldown > 0) return false;
-    const candidates = ctx.grid.neighbors(u.col, u.row).filter((c) =>
-      this.isFree(c, ctx),
-    );
+  private moveAway(unit: UnitModel, reference: UnitModel, ctx: ControllerContext): boolean {
+    if (unit.moveCooldown > 0 || unit.immobile) return false;
+    const candidates = ctx.grid.neighbors(unit.col, unit.row).filter((cell) => this.isFree(cell));
     if (!candidates.length) return false;
 
-    // Игрок отступает влево, враг — вправо (к своему краю).
-    const ownSideScore = (c: HexCell) =>
-      u.team === 'player' ? -c.col : c.col;
-
+    const ownSideScore = (cell: HexCell) => unit.team === 'player' ? -cell.col : cell.col;
     let best: HexCell | null = null;
     let bestScore = -Infinity;
-    for (const c of candidates) {
-      const d = ctx.grid.distance(c.col, c.row, ref.col, ref.row);
-      const score = d + ownSideScore(c) * 0.4;
+    for (const cell of candidates) {
+      const distance = ctx.grid.distance(cell.col, cell.row, reference.col, reference.row);
+      const terrain = cell.terrain === 'hill' && unit.role === 'ranged' ? 0.5 : 0;
+      const score = distance + ownSideScore(cell) * 0.4 + terrain;
       if (score > bestScore) {
         bestScore = score;
-        best = c;
+        best = cell;
       }
     }
-    if (best) {
-      this.stepTo(u, best.col, best.row, ctx);
-      return true;
-    }
-    return false;
+    if (!best) return false;
+    this.stepTo(unit, best.col, best.row, ctx);
+    return true;
   }
 
   private bestNeighborToward(
-    u: UnitModel,
+    unit: UnitModel,
     target: UnitModel,
     ctx: ControllerContext,
   ): HexCell | null {
-    const nbs = ctx.grid.neighbors(u.col, u.row).filter(
-      (c) =>
-        this.isFree(c, ctx) &&
-        !(c.col === target.col && c.row === target.row),
+    const candidates = ctx.grid.neighbors(unit.col, unit.row).filter(
+      (cell) => this.isFree(cell) && !(cell.col === target.col && cell.row === target.row),
     );
     let best: HexCell | null = null;
-    let bestD = Infinity;
-    for (const c of nbs) {
-      const d = ctx.grid.distance(c.col, c.row, target.col, target.row);
-      if (d < bestD) {
-        bestD = d;
-        best = c;
+    let bestDistance = Infinity;
+    for (const cell of candidates) {
+      const distance = ctx.grid.distance(cell.col, cell.row, target.col, target.row);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = cell;
       }
     }
     return best;
   }
 
-  private stepTo(
-    u: UnitModel,
-    col: number,
-    row: number,
-    ctx: ControllerContext,
-  ): void {
-    const fromCol = u.col;
-    const fromRow = u.row;
+  private stepTo(unit: UnitModel, col: number, row: number, ctx: ControllerContext): void {
+    const fromCol = unit.col;
+    const fromRow = unit.row;
     const oldCell = ctx.grid.get(fromCol, fromRow);
-    if (oldCell) oldCell.unit = null;
-    u.col = col;
-    u.row = row;
+    if (oldCell?.unit === unit) oldCell.unit = null;
+    unit.col = col;
+    unit.row = row;
     const newCell = ctx.grid.get(col, row);
-    if (newCell) newCell.unit = u;
-    u.moveCooldown = this.moveInterval(u, ctx);
-    ctx.emit({
-      type: 'move',
-      uid: u.uid,
-      fromCol,
-      fromRow,
-      toCol: col,
-      toRow: row,
-    });
+    if (newCell) newCell.unit = unit;
+    unit.moveCooldown = this.moveInterval(unit, ctx);
+    ctx.emit({ type: 'move', uid: unit.uid, fromCol, fromRow, toCol: col, toRow: row });
+    this.abilities.onUnitMoved(unit, ctx);
   }
-
-  // ---------------- Утилиты/модификаторы ----------------
 
   private nearest(
     list: UnitModel[],
@@ -290,50 +320,43 @@ export class UnitController {
     ctx: ControllerContext,
   ): UnitModel | null {
     let best: UnitModel | null = null;
-    let bestD = Infinity;
-    for (const c of list) {
-      const d = ctx.grid.distance(origin.col, origin.row, c.col, c.row);
-      if (d < bestD || (d === bestD && best && c.uid < best.uid)) {
-        bestD = d;
-        best = c;
+    let bestDistance = Infinity;
+    for (const candidate of list) {
+      const distance = ctx.grid.distance(origin.col, origin.row, candidate.col, candidate.row);
+      if (distance < bestDistance || (distance === bestDistance && (!best || candidate.uid < best.uid))) {
+        bestDistance = distance;
+        best = candidate;
       }
     }
     return best;
   }
 
-  private setState(
-    u: UnitModel,
-    s: UnitModel['state'],
-    ctx: ControllerContext,
-  ): void {
-    if (u.state !== s) {
-      u.state = s;
-      ctx.emit({ type: 'state', uid: u.uid, state: s });
-    }
+  private setState(unit: UnitModel, state: UnitModel['state'], ctx: ControllerContext): void {
+    if (unit.state === state) return;
+    unit.state = state;
+    ctx.emit({ type: 'state', uid: unit.uid, state });
   }
 
-  private isFree(cell: HexCell, _ctx: ControllerContext): boolean {
+  private isFree(cell: HexCell): boolean {
     return !cell.blocked && !cell.unit;
   }
 
-  private terrainAt(u: UnitModel, ctx: ControllerContext): Terrain {
-    return ctx.grid.get(u.col, u.row)?.terrain ?? 'plain';
+  private terrainAt(unit: UnitModel, ctx: ControllerContext): Terrain {
+    return ctx.grid.get(unit.col, unit.row)?.terrain ?? 'plain';
   }
 
-  private effectiveRange(u: UnitModel, ctx: ControllerContext): number {
-    if (u.baseRange <= 1) return u.baseRange;
-    const mod = TERRAIN_MODIFIERS[this.terrainAt(u, ctx)];
-    return u.baseRange + mod.rangedRangeBonus;
+  private effectiveRange(unit: UnitModel, ctx: ControllerContext): number {
+    if (unit.baseRange <= 1) return unit.baseRange;
+    return unit.baseRange + TERRAIN_MODIFIERS[this.terrainAt(unit, ctx)].rangedRangeBonus;
   }
 
-  private effectiveDef(u: UnitModel, ctx: ControllerContext): number {
-    const mod = TERRAIN_MODIFIERS[this.terrainAt(u, ctx)];
-    return u.baseDef + mod.defenseBonus;
+  private effectiveDef(unit: UnitModel, ctx: ControllerContext): number {
+    return unit.baseDef + TERRAIN_MODIFIERS[this.terrainAt(unit, ctx)].defenseBonus;
   }
 
-  private moveInterval(u: UnitModel, ctx: ControllerContext): number {
-    const mod = TERRAIN_MODIFIERS[this.terrainAt(u, ctx)];
-    const speed = Math.max(0.1, u.baseMove * mod.moveMultiplier);
-    return 1 / speed; // секунд на гекс
+  private moveInterval(unit: UnitModel, ctx: ControllerContext): number {
+    const modifier = TERRAIN_MODIFIERS[this.terrainAt(unit, ctx)];
+    const speed = Math.max(0.1, unit.baseMove * modifier.moveMultiplier);
+    return 1 / speed;
   }
 }

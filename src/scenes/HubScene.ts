@@ -373,7 +373,10 @@ export class HubScene extends Phaser.Scene {
       const statLine3 = this.add.text(statsX, statsY + 32, `DEF: ${ru.def} ➜ ${opt.def} (${defDiff >= 0 ? '+' : ''}${defDiff})`, { fontFamily: 'Consolas, monospace', fontSize: '11px', color: '#cbd5e1' });
       const statLine4 = this.add.text(statsX, statsY + 48, `RNG: ${ru.range} ➜ ${opt.range}  •  SPD: ${ru.move} ➜ ${opt.move}`, { fontFamily: 'Consolas, monospace', fontSize: '11px', color: '#9aa3b2' });
 
-      const descText = this.add.text(-100, statsY + 70, opt.description, {
+      const abilityLine = opt.special_ability
+        ? `\n⚡ ${opt.special_ability.name} • CD ${opt.special_ability.cooldown}с`
+        : '';
+      const descText = this.add.text(-100, statsY + 70, `${opt.description}${abilityLine}`, {
         fontFamily: 'Arial, sans-serif',
         fontSize: '11px',
         color: '#9aa3b2',
@@ -540,10 +543,28 @@ export class HubScene extends Phaser.Scene {
         })
         .setOrigin(0, 0.5);
       card.add([bg, emblem, letter, name, stats, role]);
-      bg.setInteractive(new Phaser.Geom.Rectangle(-115, -46, 230, 92), Phaser.Geom.Rectangle.Contains);
-      bg.on('pointerover', () => bg.setFillStyle(0x25304a));
-      bg.on('pointerout', () => bg.setFillStyle(0x1b212f));
+      // Авто-hit-area Phaser использует реальные 230×92, а не смещённую
+      // отрицательную область, которая раньше принимала лишь часть кликов.
+      bg.setInteractive({ useHandCursor: true });
+      let pressed = false;
+      bg.on('pointerover', () => {
+        bg.setFillStyle(0x33415c);
+        bg.setStrokeStyle(3, 0x64748b);
+      });
+      bg.on('pointerout', () => {
+        pressed = false;
+        bg.setFillStyle(0x1b212f);
+        bg.setStrokeStyle(2, COLORS.panelEdge);
+      });
+      bg.on('pointerdown', () => {
+        pressed = true;
+        bg.setFillStyle(0x111827);
+      });
       bg.on('pointerup', () => {
+        const shouldHire = pressed;
+        pressed = false;
+        bg.setFillStyle(0x33415c);
+        if (!shouldHire) return;
         const res = this.campaign.hire(tpl.id);
         if (res.ok) {
           this.campaign.save();
@@ -557,7 +578,7 @@ export class HubScene extends Phaser.Scene {
       overlay.add(card);
     });
 
-    makeButton(
+    const close = makeButton(
       this,
       this.scale.width / 2,
       this.scale.height / 2 + 200,
@@ -567,9 +588,8 @@ export class HubScene extends Phaser.Scene {
       () => overlay.destroy(),
       { color: 0x334155 },
     );
-    overlay.list[overlay.list.length - 1]; // no-op для линтера
-    overlay.add(this.add.existing(this.children.getByName('__noop__') as unknown as Phaser.GameObjects.GameObject));
-    // (makeButton уже добавил себя в сцену; переносим в overlay для совместного удаления)
+    // makeButton добавляет объект в сцену; включаем его в overlay для общего destroy().
+    overlay.add(close);
   }
 
   // ---------- Сброс кампании ----------

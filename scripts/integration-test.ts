@@ -4,7 +4,8 @@
  * консистентность кампании после боя.
  */
 import { CONFIG } from '../src/config';
-import { buildTerrainMap, terrainSourceFromMap } from '../src/data/boardLayout';
+import { buildTerrainMap, terrainSeedForWave, terrainSourceFromMap } from '../src/data/boardLayout';
+import { findNode } from '../src/data/evolution-tree';
 import { generateWave } from '../src/data/waves';
 import { CombatSystem } from '../src/systems/CombatSystem';
 import { HexGrid } from '../src/systems/HexGrid';
@@ -33,12 +34,17 @@ interface PlayResult {
 }
 
 function playWave(campaign: Campaign): PlayResult {
+  const terrain = buildTerrainMap(
+    CONFIG.GRID_COLS,
+    CONFIG.GRID_ROWS,
+    terrainSeedForWave(campaign.wave),
+  );
   const grid = new HexGrid(
     CONFIG.GRID_COLS,
     CONFIG.GRID_ROWS,
     0,
     0,
-    terrainSourceFromMap(buildTerrainMap(CONFIG.GRID_COLS, CONFIG.GRID_ROWS, CONFIG.TERRAIN_SEED)),
+    terrainSourceFromMap(terrain),
   );
   const sim = new CombatSystem(grid, CONFIG.SEED);
   const uidToRoster = new Map<number, string>();
@@ -55,7 +61,9 @@ function playWave(campaign: Campaign): PlayResult {
     const u = sim.addUnit(rosterToTemplate(ru), 'player', col, row, ru.currentHp);
     uidToRoster.set(u.uid, ru.id);
   });
-  for (const we of generateWave(campaign.wave)) sim.addUnit(we.scaled, 'enemy', we.col, we.row);
+  for (const we of generateWave(campaign.worldEpochScore(), campaign.wave, terrain)) {
+    sim.addUnit(we.scaled, 'enemy', we.col, we.row);
+  }
   sim.start();
   for (let i = 0; i < 8000; i++) {
     sim.update(0.1);
@@ -112,8 +120,12 @@ if (mammothRu) {
   check('успешная эволюция мамонта в баллисту', res.ok, res.reason);
   check('после эволюции эпоха мамонта = 2', mammothRu.epochIndex === 2);
   check('опыт сбросился в 0', mammothRu.battleExperience === 0);
-  check('имя обновилось', mammothRu.name === 'Бронзовая Баллиста');
-  check('HP обновилось под новые статы', mammothRu.maxHp === 150 && mammothRu.currentHp === 150);
+  const ballista = findNode('bronze_ballista')!;
+  check('имя обновилось', mammothRu.name === ballista.name);
+  check(
+    'HP обновилось под рассчитанные статы',
+    mammothRu.maxHp === ballista.hp && mammothRu.currentHp === ballista.hp,
+  );
   check('валюта списалась (200 - 45 = 155)', testCampaign.currency === 155);
 } else {
   // Если в стартовом ростере мамонта нет, наймём его вручную для теста
@@ -141,7 +153,7 @@ if (guardianRu) {
   const goodEvolve = testCampaign.evolveUnit(guardianRu.id, 'bronze_swordsman');
   check('успешная эволюция стража в мечника', goodEvolve.ok, goodEvolve.reason);
   check('после эволюции эпоха = 2', guardianRu.epochIndex === 2);
-  check('имя обновилось в Бронзовый Мечник', guardianRu.name === 'Бронзовый Мечник');
+  check('имя обновилось в Микенский Мечник', guardianRu.name === 'Микенский Мечник');
 }
 
 // Проверим рассчёт мировой эпохи

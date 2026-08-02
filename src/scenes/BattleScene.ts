@@ -2,9 +2,10 @@ import Phaser from 'phaser';
 import { CONFIG } from '../config';
 import { ROLE_INFO } from '../data/units';
 import { findNode } from '../data/evolution-tree';
+import { SPECIAL_ABILITY_NAMES } from '../data/special-abilities';
 import { TERRAIN_LABEL } from '../data/terrain';
-import { generateWave } from '../data/waves';
-import { buildTerrainMap, terrainSourceFromMap } from '../data/boardLayout';
+import { generateWave, isEliteWave } from '../data/waves';
+import { buildTerrainMap, terrainSeedForWave, terrainSourceFromMap } from '../data/boardLayout';
 import {
   Campaign,
   type PlayerDeploymentEntry,
@@ -13,6 +14,7 @@ import {
 import { rosterToTemplate } from '../meta/RosterUnit';
 import { campaignOf } from '../meta/session';
 import { CombatSystem } from '../systems/CombatSystem';
+import { abilityColor } from '../systems/SpecialAbilitySystem';
 import type { SimEvent } from '../systems/sim-types';
 import { HexGrid } from '../systems/HexGrid';
 import type { UnitModel } from '../entities/UnitModel';
@@ -65,7 +67,11 @@ export class BattleScene extends Phaser.Scene {
       GRID_CENTER_X,
       GRID_CENTER_Y,
     );
-    const terrainMap = buildTerrainMap(CONFIG.GRID_COLS, CONFIG.GRID_ROWS, CONFIG.TERRAIN_SEED);
+    const terrainMap = buildTerrainMap(
+      CONFIG.GRID_COLS,
+      CONFIG.GRID_ROWS,
+      terrainSeedForWave(this.campaign.wave),
+    );
     this.grid = new HexGrid(
       CONFIG.GRID_COLS,
       CONFIG.GRID_ROWS,
@@ -98,7 +104,11 @@ export class BattleScene extends Phaser.Scene {
       this.uidToRoster.set(unit.uid, ru.id);
     }
 
-    for (const we of generateWave(this.campaign.wave)) {
+    for (const we of generateWave(
+      this.campaign.worldEpochScore(),
+      this.campaign.wave,
+      terrainMap,
+    )) {
       this.combat.addUnit(we.scaled, 'enemy', we.col, we.row);
     }
 
@@ -107,12 +117,17 @@ export class BattleScene extends Phaser.Scene {
 
     // --- HUD ---
     this.add
-      .text(this.scale.width / 2, 28, `THE LONG LINE — Волна ${this.campaign.wave}`, {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '24px',
-        color: '#e5e7eb',
-        fontStyle: 'bold',
-      })
+      .text(
+        this.scale.width / 2,
+        28,
+        `THE LONG LINE — Волна ${this.campaign.wave}${isEliteWave(this.campaign.wave) ? ' • ЭЛИТА' : ''}`,
+        {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '24px',
+          color: '#e5e7eb',
+          fontStyle: 'bold',
+        },
+      )
       .setOrigin(0.5)
       .setDepth(30);
     this.hudText = this.add
@@ -152,8 +167,8 @@ export class BattleScene extends Phaser.Scene {
       role: u.role,
       team: u.team,
       showState: true,
-      epochIndex: node ? node.epoch : 1,
-      line: node ? node.line : 'Infantry',
+      epochIndex: node ? node.epoch : u.epochIndex,
+      line: node ? node.line : u.immobile ? 'Siege' : 'Infantry',
     });
     const p = this.grid.pixelOf(u.col, u.row);
     view.container.setPosition(p.x, p.y);
@@ -180,6 +195,12 @@ export class BattleScene extends Phaser.Scene {
         break;
       case 'heal':
         this.onHeal(e);
+        break;
+      case 'buff':
+        this.onBuff(e);
+        break;
+      case 'ability':
+        this.onAbility(e);
         break;
       case 'death':
         this.onDeath(e.uid);
@@ -238,6 +259,38 @@ export class BattleScene extends Phaser.Scene {
     const pos = this.grid.pixelOf(target.col, target.row);
     this.flash(pos, 0x22c55e);
     this.floatText({ x: pos.x, y: pos.y - 14 }, `+${e.amount}`, '#86efac', 16);
+  }
+
+  private onBuff(e: Extract<SimEvent, { type: 'buff' }>): void {
+    const target = this.units.get(e.target);
+    if (!target) return;
+    const pos = this.grid.pixelOf(target.col, target.row);
+    this.flash(pos, 0xa3e635);
+    this.floatText({ x: pos.x, y: pos.y - 14 }, 'вдохновение', '#bef264', 13);
+  }
+
+  private onAbility(e: Extract<SimEvent, { type: 'ability' }>): void {
+    if (e.summoned !== undefined) {
+      const summoned = this.combat.units.find((unit) => unit.uid === e.summoned);
+      if (summoned && !this.units.has(summoned.uid)) this.spawnView(summoned);
+    }
+    const target = e.targets.length ? this.units.get(e.targets[0]) : null;
+    const caster = this.units.get(e.caster);
+    const pos = target
+      ? this.grid.pixelOf(target.col, target.row)
+      : e.col !== undefined && e.row !== undefined
+      ? this.grid.pixelOf(e.col, e.row)
+      : caster
+      ? this.grid.pixelOf(caster.col, caster.row)
+      : null;
+    if (!pos) return;
+    this.flash(pos, abilityColor(e.ability));
+    this.floatText(
+      { x: pos.x, y: pos.y - 22 },
+      SPECIAL_ABILITY_NAMES[e.ability],
+      '#fef3c7',
+      12,
+    );
   }
 
   private onDeath(uid: number): void {
@@ -340,7 +393,8 @@ export class BattleScene extends Phaser.Scene {
   private updateHud(): void {
     this.hudText.setText(
       [
-        `Волна: ${this.campaign.wave}`,
+        `Волна: ${this.campaign.wave}${isEliteWave(this.campaign.wave) ? ' [ЭЛИТА]' : ''}`,
+        `Мировая эпоха: ${this.campaign.worldEpochScore().toFixed(2)}`,
         `Тик: ${this.combat.tickNumber}`,
         `Игрок: ${this.combat.aliveCount('player')}`,
         `Враг:  ${this.combat.aliveCount('enemy')}`,
@@ -377,9 +431,9 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private buildTooltip(): void {
-    const bg = this.add.rectangle(0, 0, 210, 92, 0x0b0e14, 0.92).setStrokeStyle(1, COLORS.panelEdge);
+    const bg = this.add.rectangle(0, 0, 250, 132, 0x0b0e14, 0.92).setStrokeStyle(1, COLORS.panelEdge);
     this.tooltipText = this.add
-      .text(-96, -40, '', { fontFamily: 'Consolas, monospace', fontSize: '12px', color: '#e5e7eb' })
+      .text(-116, -60, '', { fontFamily: 'Consolas, monospace', fontSize: '12px', color: '#e5e7eb' })
       .setLineSpacing(3);
     this.tooltipBox = this.add.container(0, 0, [bg, this.tooltipText]).setDepth(60).setVisible(false);
   }
@@ -394,14 +448,15 @@ export class BattleScene extends Phaser.Scene {
         u.name,
         `роль: ${role}`,
         `состояние: ${state}`,
-        `HP: ${Math.ceil(u.hp)}/${u.maxHp}`,
+        `HP: ${Math.ceil(u.hp)}/${u.maxHp}${u.shieldHp > 0 ? ` +${Math.ceil(u.shieldHp)} щит` : ''}`,
         `рельеф: ${terrain}`,
+        `способность: ${u.specialAbility?.name ?? '—'}`,
       ].join('\n'),
     );
     let x = pointer.x + 18;
     let y = pointer.y + 14;
-    if (x > this.scale.width - 220) x = pointer.x - 222;
-    if (y > this.scale.height - 100) y = pointer.y - 100;
+    if (x > this.scale.width - 260) x = pointer.x - 262;
+    if (y > this.scale.height - 140) y = pointer.y - 140;
     this.tooltipBox.setPosition(x, y).setVisible(true);
   }
 
@@ -447,7 +502,7 @@ export class BattleScene extends Phaser.Scene {
       .text(
         cx,
         cy - 14,
-        win ? `Доход за волну: +${income}🪙\nВолна ${this.campaign.wave} пройдена` : 'Волна не пройдена',
+        win ? `Доход за волну: +${income}🪙\nВолна ${this.campaign.wave - 1} пройдена` : 'Волна не пройдена',
         { fontFamily: 'Arial, sans-serif', fontSize: '16px', color: '#9aa3b2', align: 'center' },
       )
       .setOrigin(0.5);
@@ -489,6 +544,10 @@ function stateRu(s: UnitState): string {
       return 'перепозиция';
     case 'RETREAT':
       return 'отступление';
+    case 'ABILITY':
+      return 'способность';
+    case 'STUNNED':
+      return 'оглушён';
     case 'DEAD':
       return 'пал';
     default:

@@ -182,6 +182,8 @@ const STATE_LABEL: Record<string, string> = {
   CHASE: 'погоня',
   REPOSITION: 'перепозиция',
   RETREAT: 'отступление',
+  ABILITY: 'способность',
+  STUNNED: 'оглушён',
   DEAD: 'пал',
 };
 

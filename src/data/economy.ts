@@ -7,7 +7,7 @@ export const ECONOMY = {
   STARTING_CURRENCY: 130,
 
   HIRE_COST: 55,
-  HEAL_COST_PER_HP: 1.0, // валюты за 1 недостающей HP
+  HEAL_COST_PER_HP: 0.35, // поздние эпохи лечатся без блокировки прогрессии
   HEAL_MIN_COST: 5,
 
   COMPOSE_MIN: 4,

@@ -91,7 +91,7 @@ export class CompositionScene extends Phaser.Scene {
     const y = GRID_Y + row * (CARD_H + 18);
 
     const selected = this.selected.has(ru.id);
-    const { container } = drawRosterCard(this, ru, x, y, {
+    const { container, bg } = drawRosterCard(this, ru, x, y, {
       w: CARD_W,
       h: CARD_H,
       selected,
@@ -111,11 +111,30 @@ export class CompositionScene extends Phaser.Scene {
       this.rosterLayer.add(mark);
     }
 
-    container.setInteractive(
-      new Phaser.Geom.Rectangle(0, 0, CARD_W, CARD_H),
-      Phaser.Geom.Rectangle.Contains,
-    );
-    container.on('pointerup', () => this.toggle(ru));
+    container.setInteractive({
+      hitArea: new Phaser.Geom.Rectangle(0, 0, CARD_W, CARD_H),
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+      useHandCursor: true,
+    });
+    const baseFill = bg.fillColor;
+    let pressed = false;
+    container.on('pointerover', () => {
+      bg.setFillStyle(selected ? 0x263b55 : 0x25304a, 0.98);
+    });
+    container.on('pointerout', () => {
+      pressed = false;
+      bg.setFillStyle(baseFill, 0.96);
+    });
+    container.on('pointerdown', () => {
+      pressed = true;
+      bg.setFillStyle(0x111827, 0.98);
+    });
+    container.on('pointerup', () => {
+      const shouldToggle = pressed;
+      pressed = false;
+      bg.setFillStyle(selected ? 0x263b55 : 0x25304a, 0.98);
+      if (shouldToggle) this.toggle(ru);
+    });
   }
 
   private toggle(ru: RosterUnit): void {
