@@ -55,8 +55,12 @@ export class CombatSystem {
     team: Team,
     col: number,
     row: number,
+    initialHp?: number,
   ): UnitModel {
     const unit = new UnitModel(this.uidCounter++, template, team, col, row);
+    if (typeof initialHp === 'number') {
+      unit.hp = Math.max(1, Math.min(unit.maxHp, Math.round(initialHp)));
+    }
     const cell = this.grid.get(col, row);
     if (cell) cell.unit = unit;
     this.units.push(unit);

@@ -1,34 +1,27 @@
 import Phaser from 'phaser';
 import { CONFIG } from '../config';
-import {
-  ENEMY_LINEUP,
-  ROLE_INFO,
-  STONE_AGE_UNITS,
-  findTemplate,
-  type UnitTemplate,
-} from '../data/units';
 import { TERRAIN_LABEL } from '../data/terrain';
-import { buildTerrainMap, terrainSourceFromMap } from '../data/boardLayout';
-import type { DeploymentEntry } from '../systems/CombatSystem';
+import { generateWave } from '../data/waves';
+import { ROLE_INFO } from '../data/units';
+import { Campaign, type PlayerDeploymentEntry } from '../meta/Campaign';
+import { isDeployable, type RosterUnit } from '../meta/RosterUnit';
+import { campaignOf } from '../meta/session';
 import { HexGrid } from '../systems/HexGrid';
-import type { UnitModel } from '../entities/UnitModel';
+import { buildTerrainMap, terrainSourceFromMap } from '../data/boardLayout';
 import { COLORS } from '../ui/theme';
 import { createUnitView, setHpRatio } from '../ui/UnitView';
-import {
-  drawTerrainLayer,
-  drawZoneOverlay,
-  hexPolygon,
-} from '../ui/board';
+import { drawTerrainLayer, drawZoneOverlay, hexPolygon } from '../ui/board';
+import { makeButton, setButtonEnabled, setButtonLabel } from '../ui/widgets';
 
 interface PlacedUnit {
-  templateId: string;
+  rosterId: string;
   col: number;
   row: number;
   view: ReturnType<typeof createUnitView>;
 }
 
 interface Card {
-  template: UnitTemplate;
+  ru: RosterUnit;
   container: Phaser.GameObjects.Container;
   homeX: number;
   homeY: number;
@@ -38,14 +31,16 @@ const CARD_W = 350;
 const CARD_H = 60;
 const GRID_CENTER_X = 430;
 const GRID_CENTER_Y = 410;
+const PANEL_X = 1078;
 
-/** Сцена фазы расстановки: drag-and-drop юнитов на гексы зоны игрока. */
+/** Сцена расстановки выбранных юнитов на гексах зоны игрока. */
 export class DeploymentScene extends Phaser.Scene {
   private grid!: HexGrid;
+  private campaign!: Campaign;
   private terrainGfx!: Phaser.GameObjects.Graphics;
   private zoneGfx!: Phaser.GameObjects.Graphics;
   private hoverGfx!: Phaser.GameObjects.Graphics;
-  private hoverTerrainText!: Phaser.GameObjects.Text;
+  private hoverText!: Phaser.GameObjects.Text;
 
   private cards = new Map<string, Card>();
   private placed: PlacedUnit[] = [];
@@ -55,8 +50,7 @@ export class DeploymentScene extends Phaser.Scene {
   private hoverCellKey: string | null = null;
 
   private startBtn!: Phaser.GameObjects.Container;
-  private startLabel!: Phaser.GameObjects.Text;
-  private startBg!: Phaser.GameObjects.Rectangle;
+  private countText!: Phaser.GameObjects.Text;
 
   constructor() {
     super('Deployment');
@@ -64,12 +58,8 @@ export class DeploymentScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor(COLORS.bg);
+    this.campaign = campaignOf(this.game.registry);
 
-    const map = buildTerrainMap(
-      CONFIG.GRID_COLS,
-      CONFIG.GRID_ROWS,
-      CONFIG.TERRAIN_SEED,
-    );
     const { originX, originY } = computeOrigin(
       CONFIG.GRID_COLS,
       CONFIG.GRID_ROWS,
@@ -82,7 +72,7 @@ export class DeploymentScene extends Phaser.Scene {
       CONFIG.GRID_ROWS,
       originX,
       originY,
-      terrainSourceFromMap(map),
+      terrainSourceFromMap(buildTerrainMap(CONFIG.GRID_COLS, CONFIG.GRID_ROWS, CONFIG.TERRAIN_SEED)),
     );
 
     this.terrainGfx = this.add.graphics().setDepth(0);
@@ -91,156 +81,111 @@ export class DeploymentScene extends Phaser.Scene {
     drawTerrainLayer(this.terrainGfx, this.grid);
     drawZoneOverlay(this.zoneGfx, this.grid);
 
-    this.drawLegend();
     this.drawEnemies();
-    this.drawPanel();
-    this.drawTitle();
 
-    this.hoverTerrainText = this.add
-      .text(16, 16, '', {
-        fontFamily: 'Consolas, monospace',
+    this.add
+      .text(GRID_CENTER_X, 30, `Расстановка — Волна ${this.campaign.wave}`, {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '24px',
+        fontStyle: 'bold',
+        color: '#e5e7eb',
+      })
+      .setOrigin(0.5);
+    this.add
+      .text(GRID_CENTER_X, 58, 'Перетащите юнитов на синюю зону (левые 3 колонки).', {
+        fontFamily: 'Arial, sans-serif',
         fontSize: '13px',
         color: '#9aa3b2',
       })
+      .setOrigin(0.5);
+
+    this.hoverText = this.add
+      .text(16, 16, '', { fontFamily: 'Consolas, monospace', fontSize: '13px', color: '#9aa3b2' })
       .setDepth(20);
 
-    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+    this.drawPanel();
+
+    makeButton(this, 90, 34, 150, 34, '←  К составу', () => this.scene.start('Composition'), {
+      color: 0x334155,
+      fontSize: 13,
+    });
+
+    this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
       if (this.draggingId) return;
-      this.updateHover(pointer);
+      this.updateHover(p);
     });
     this.input.on('pointerout', () => this.clearHover());
 
-    this.refreshStartButton();
+    this.refreshStart();
   }
 
-  // ---------- Заголовок / легенда ----------
-
-  private drawTitle(): void {
-    this.add
-      .text(GRID_CENTER_X, 34, 'THE LONG LINE — Расстановка', {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '26px',
-        color: '#e5e7eb',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-
-    this.add
-      .text(
-        GRID_CENTER_X,
-        62,
-        'Перетащите юнитов на синюю зону (левые 3 колонки). Красная зона — враги.',
-        { fontFamily: 'Arial, sans-serif', fontSize: '13px', color: '#9aa3b2' },
-      )
-      .setOrigin(0.5);
-
-    this.add
-      .text(16, this.scale.height - 22, `SEED боя: ${CONFIG.SEED}  •  рельеф: ${CONFIG.TERRAIN_SEED} (детерминированно)`, {
-        fontFamily: 'Consolas, monospace',
-        fontSize: '12px',
-        color: '#6b7280',
-      })
-      .setDepth(20);
-  }
-
-  private drawLegend(): void {
-    const items: [string, number][] = [
-      [TERRAIN_LABEL.plain, 0x4f6b3a],
-      [TERRAIN_LABEL.forest, 0x2f5d34],
-      [TERRAIN_LABEL.hill, 0x8a6b3b],
-      [TERRAIN_LABEL.rock, 0x55585c],
-    ];
-    let x = 16;
-    const y = 90;
-    this.add
-      .text(x, y - 18, 'Рельеф:', {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '12px',
-        color: '#9aa3b2',
-      })
-      .setDepth(20);
-    for (const [label, color] of items) {
-      this.add.rectangle(x + 6, y + 4, 14, 14, color).setOrigin(0.5).setDepth(20);
-      this.add
-        .text(x + 18, y, label, {
-          fontFamily: 'Arial, sans-serif',
-          fontSize: '12px',
-          color: '#cbd5e1',
-        })
-        .setDepth(20);
-      x += 18 + label.length * 7 + 22;
-    }
-  }
-
-  // ---------- Превью врагов ----------
+  // ---------- Враги (превью) ----------
 
   private drawEnemies(): void {
-    for (const e of ENEMY_LINEUP) {
-      const tpl = findTemplate(e.templateId);
-      const view = createUnitView(this, {
-        name: tpl.name,
-        role: tpl.role,
-        team: 'enemy',
-      });
-      const p = this.grid.pixelOf(e.col, e.row);
+    for (const we of generateWave(this.campaign.wave)) {
+      const view = createUnitView(this, { name: we.scaled.name, role: we.scaled.role, team: 'enemy' });
+      const p = this.grid.pixelOf(we.col, we.row);
       view.container.setPosition(p.x, p.y);
       setHpRatio(view, 1);
     }
   }
 
-  // ---------- Панель юнитов ----------
+  // ---------- Панель выбранных юнитов ----------
 
   private drawPanel(): void {
-    const panelX = 1078;
-    const top = 90;
-    const step = 64;
-
     this.add
-      .rectangle(panelX, this.scale.height / 2, 366, this.scale.height - 40, COLORS.panel, 0.6)
+      .rectangle(PANEL_X, this.scale.height / 2, 366, this.scale.height - 40, COLORS.panel, 0.6)
       .setStrokeStyle(2, COLORS.panelEdge)
       .setOrigin(0.5)
       .setDepth(2);
-
     this.add
-      .text(panelX, 56, 'Отряд игрока', {
+      .text(PANEL_X, 56, 'Ваш отряд', {
         fontFamily: 'Arial, sans-serif',
         fontSize: '16px',
-        color: '#e5e7eb',
         fontStyle: 'bold',
+        color: '#e5e7eb',
       })
       .setOrigin(0.5)
       .setDepth(3);
 
-    STONE_AGE_UNITS.forEach((tpl, i) => {
-      const card = this.makeCard(tpl, panelX, top + i * step);
-      this.cards.set(tpl.id, card);
+    this.countText = this.add
+      .text(PANEL_X, 80, '', { fontFamily: 'Consolas, monospace', fontSize: '12px', color: '#9aa3b2' })
+      .setOrigin(0.5)
+      .setDepth(3);
+
+    const selected = this.campaign.selectedIds
+      .map((id) => this.campaign.get(id))
+      .filter((ru): ru is RosterUnit => !!ru && isDeployable(ru));
+
+    selected.forEach((ru, i) => {
+      const card = this.makeCard(ru, PANEL_X, 116 + i * 64);
+      this.cards.set(ru.id, card);
     });
 
-    // Кнопки.
-    this.startBtn = this.makeButton(panelX, this.scale.height - 92, '⚔  Начать бой', 0x1f6feb, () => {
-      if (this.placed.length === 0) return;
-      const entries: DeploymentEntry[] = this.placed.map((p) => ({
-        templateId: p.templateId,
-        col: p.col,
-        row: p.row,
-      }));
-      this.game.registry.set('playerDeployment', entries);
-      this.scene.start('Battle');
+    this.startBtn = makeButton(
+      this,
+      PANEL_X,
+      700,
+      350,
+      50,
+      '⚔  Начать бой',
+      () => this.startBattle(),
+      { color: 0x1f6feb, fontSize: 17 },
+    );
+    makeButton(this, PANEL_X - 92, 754, 170, 34, 'Авто', () => this.autoDeploy(), {
+      color: 0x334155,
+      fontSize: 13,
     });
-    this.startBg = this.startBtn.getByName('bg') as Phaser.GameObjects.Rectangle;
-    this.startLabel = this.startBtn.getByName('label') as Phaser.GameObjects.Text;
+    makeButton(this, PANEL_X + 92, 754, 170, 34, 'Сброс', () => this.resetDeployment(), {
+      color: 0x334155,
+      fontSize: 13,
+    });
 
-    this.makeButton(panelX - 96, this.scale.height - 42, '↺  Сброс', 0x334155, () =>
-      this.resetDeployment(),
-    );
-    this.makeButton(panelX + 96, this.scale.height - 42, '🎲  Случайно', 0x334155, () =>
-      this.autoDeploy(),
-    );
+    this.countText.setText(`Размещено ${this.placed.length} из ${selected.length}`);
   }
 
-  private makeCard(tpl: UnitTemplate, x: number, y: number): Card {
+  private makeCard(ru: RosterUnit, x: number, y: number): Card {
     const container = this.add.container(x, y, []).setDepth(6);
-
     const bg = this.add
       .rectangle(0, 0, CARD_W, CARD_H, COLORS.panel, 0.95)
       .setStrokeStyle(2, COLORS.panelEdge);
@@ -250,40 +195,38 @@ export class DeploymentScene extends Phaser.Scene {
     );
     this.input.setDraggable(bg);
 
-    const emblem = this.add.circle(-CARD_W / 2 + 24, 0, 16, ROLE_INFO[tpl.role].color);
+    const role = ROLE_INFO[ru.role];
+    const emblem = this.add.circle(-CARD_W / 2 + 24, 0, 16, role.color);
     const letter = this.add
-      .text(-CARD_W / 2 + 24, 0, ROLE_INFO[tpl.role].letter, {
+      .text(-CARD_W / 2 + 24, 0, role.letter, {
         fontFamily: 'Arial, sans-serif',
         fontSize: '15px',
         fontStyle: 'bold',
         color: '#0b0e14',
       })
       .setOrigin(0.5);
-
     const name = this.add
-      .text(-CARD_W / 2 + 50, -11, tpl.name, {
+      .text(-CARD_W / 2 + 50, -11, ru.name, {
         fontFamily: 'Arial, sans-serif',
         fontSize: '13px',
-        color: '#e5e7eb',
         fontStyle: 'bold',
+        color: '#e5e7eb',
       })
       .setOrigin(0, 0.5);
-
     const stats = this.add
       .text(
         -CARD_W / 2 + 50,
         9,
-        `HP ${tpl.hp}  ATK ${tpl.atk}  DEF ${tpl.def}  R ${tpl.range}  SPD ${tpl.move}`,
+        `HP ${Math.ceil(ru.currentHp)}/${ru.maxHp}  ATK ${ru.atk}  DEF ${ru.def}  RNG ${ru.range}`,
         { fontFamily: 'Consolas, monospace', fontSize: '11px', color: '#9aa3b2' },
       )
       .setOrigin(0, 0.5);
-
     container.add([bg, emblem, letter, name, stats]);
 
     bg.on('pointerover', () => bg.setFillStyle(0x25304a, 0.95));
     bg.on('pointerout', () => bg.setFillStyle(COLORS.panel, 0.95));
     bg.on('dragstart', () => {
-      this.draggingId = tpl.id;
+      this.draggingId = ru.id;
       this.children.bringToTop(container);
       container.setScale(1.05);
     });
@@ -294,42 +237,15 @@ export class DeploymentScene extends Phaser.Scene {
     });
     bg.on('dragend', () => {
       container.setScale(1);
-      this.finishDrop(tpl.id);
+      this.finishDrop(ru.id);
       this.draggingId = null;
       this.clearHover();
     });
 
-    return { template: tpl, container, homeX: x, homeY: y };
+    return { ru, container, homeX: x, homeY: y };
   }
 
-  private makeButton(
-    x: number,
-    y: number,
-    label: string,
-    color: number,
-    onClick: () => void,
-  ): Phaser.GameObjects.Container {
-    const w = 168;
-    const h = 38;
-    const bg = this.add.rectangle(0, 0, w, h, color).setName('bg').setStrokeStyle(2, COLORS.panelEdge);
-    const text = this.add
-      .text(0, 0, label, {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '14px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5)
-      .setName('label');
-    const container = this.add.container(x, y, [bg, text]).setDepth(15);
-    bg.setInteractive(new Phaser.Geom.Rectangle(-w / 2, -h / 2, w, h), Phaser.Geom.Rectangle.Contains);
-    bg.on('pointerover', () => bg.setFillStyle(0x34528f));
-    bg.on('pointerout', () => bg.setFillStyle(color));
-    bg.on('pointerup', onClick);
-    return container;
-  }
-
-  // ---------- Размещение / снятие ----------
+  // ---------- Размещение ----------
 
   private playerZoneEnd(): number {
     return CONFIG.PLAYER_ZONE_COLS - 1;
@@ -340,19 +256,18 @@ export class DeploymentScene extends Phaser.Scene {
     if (row < 0 || row >= this.grid.rows) return false;
     const cell = this.grid.get(col, row);
     if (!cell || cell.blocked) return false;
-    return !this.placedCells.has(cellKey(col, row));
+    return !this.placedCells.has(col + ',' + row);
   }
 
-  private finishDrop(templateId: string): void {
-    const card = this.cards.get(templateId);
+  private finishDrop(rosterId: string): void {
+    const card = this.cards.get(rosterId);
     if (!card) return;
     const pointer = this.input.activePointer;
     const cell = this.grid.cellAtPixel(pointer.x, pointer.y);
     if (cell && this.canPlace(cell.col, cell.row)) {
-      this.placeUnit(card.template, cell.col, cell.row);
+      this.placeUnit(card.ru, cell.col, cell.row);
       card.container.setVisible(false);
     } else {
-      // Вернуть карту на место.
       this.tweens.add({
         targets: card.container,
         x: card.homeX,
@@ -361,41 +276,37 @@ export class DeploymentScene extends Phaser.Scene {
         ease: 'Back.out',
       });
     }
-    this.refreshStartButton();
+    this.refreshStart();
   }
 
-  private placeUnit(tpl: UnitTemplate, col: number, row: number): void {
-    const view = createUnitView(this, {
-      name: tpl.name,
-      role: tpl.role,
-      team: 'player',
-    });
+  private placeUnit(ru: RosterUnit, col: number, row: number): void {
+    const view = createUnitView(this, { name: ru.name, role: ru.role, team: 'player' });
     const p = this.grid.pixelOf(col, row);
     view.container.setPosition(p.x, p.y);
-    setHpRatio(view, 1);
+    setHpRatio(view, ru.currentHp / ru.maxHp);
     view.container.setDepth(12);
-
-    // Клик по размещённому юниту — снять его.
-    const hit = new Phaser.Geom.Circle(0, 0, view.radius * 1.5);
-    view.container.setInteractive(hit, Phaser.Geom.Circle.Contains);
+    view.container.setInteractive(
+      new Phaser.Geom.Circle(0, 0, view.radius * 1.5),
+      Phaser.Geom.Circle.Contains,
+    );
     view.container.on('pointerup', () => {
       if (this.draggingId) return;
-      this.removeUnit(templateKey(col, row));
+      this.removeUnit(ru.id);
     });
-
-    this.placed.push({ templateId: tpl.id, col, row, view });
-    this.placedCells.add(cellKey(col, row));
+    this.placed.push({ rosterId: ru.id, col, row, view });
+    this.placedCells.add(col + ',' + row);
+    this.countText.setText(`Размещено ${this.placed.length} из ${this.cards.size}`);
   }
 
-  private removeUnit(key: string): void {
-    const idx = this.placed.findIndex((p) => templateKey(p.col, p.row) === key);
+  private removeUnit(rosterId: string): void {
+    const idx = this.placed.findIndex((p) => p.rosterId === rosterId);
     if (idx < 0) return;
     const removed = this.placed.splice(idx, 1)[0];
-    this.placedCells.delete(cellKey(removed.col, removed.row));
+    this.placedCells.delete(removed.col + ',' + removed.row);
     removed.view.container.destroy();
-    const card = this.cards.get(removed.templateId);
+    const card = this.cards.get(rosterId);
     if (card) card.container.setVisible(true);
-    this.refreshStartButton();
+    this.refreshStart();
   }
 
   private resetDeployment(): void {
@@ -403,36 +314,44 @@ export class DeploymentScene extends Phaser.Scene {
     this.placed = [];
     this.placedCells.clear();
     for (const card of this.cards.values()) card.container.setVisible(true);
-    this.refreshStartButton();
+    this.refreshStart();
   }
 
-  /** Автоматически расставить весь отряд (для быстрого старта). */
   private autoDeploy(): void {
     this.resetDeployment();
-    const tpls = STONE_AGE_UNITS;
+    const list = [...this.cards.values()];
     let i = 0;
-    for (let col = 0; col <= this.playerZoneEnd() && i < tpls.length; col++) {
-      for (let row = 0; row < this.grid.rows && i < tpls.length; row++) {
+    for (let col = 0; col <= this.playerZoneEnd() && i < list.length; col++) {
+      for (let row = 0; row < this.grid.rows && i < list.length; row++) {
         if (this.canPlace(col, row)) {
-          this.placeUnit(tpls[i], col, row);
-          this.cards.get(tpls[i].id)!.container.setVisible(false);
+          this.placeUnit(list[i].ru, col, row);
+          list[i].container.setVisible(false);
           i++;
         }
       }
     }
-    this.refreshStartButton();
+    this.refreshStart();
   }
 
-  private refreshStartButton(): void {
-    const enabled = this.placed.length > 0;
-    this.startBg.setFillStyle(enabled ? 0x1f6feb : 0x334155);
-    this.startLabel.setAlpha(enabled ? 1 : 0.5);
-    (this.startBg as Phaser.GameObjects.Rectangle).input!.cursor = enabled
-      ? 'pointer'
-      : 'default';
+  private refreshStart(): void {
+    const n = this.placed.length;
+    this.countText.setText(`Размещено ${n} из ${this.cards.size}`);
+    setButtonEnabled(this.startBtn, n >= 1);
+    setButtonLabel(this.startBtn, n >= 1 ? '⚔  Начать бой' : 'Разместите ≥1 юнита');
   }
 
-  // ---------- Подсветка наведения ----------
+  private startBattle(): void {
+    if (this.placed.length === 0) return;
+    const entries: PlayerDeploymentEntry[] = this.placed.map((p) => ({
+      rosterId: p.rosterId,
+      col: p.col,
+      row: p.row,
+    }));
+    this.game.registry.set('playerDeployment', entries);
+    this.scene.start('Battle');
+  }
+
+  // ---------- Наведение ----------
 
   private updateHover(pointer: Phaser.Input.Pointer): void {
     const cell = this.grid.cellAtPixel(pointer.x, pointer.y);
@@ -440,7 +359,7 @@ export class DeploymentScene extends Phaser.Scene {
       this.clearHover();
       return;
     }
-    const key = cellKey(cell.col, cell.row);
+    const key = cell.col + ',' + cell.row;
     if (key === this.hoverCellKey) return;
     this.hoverCellKey = key;
     this.renderHover(cell);
@@ -448,57 +367,44 @@ export class DeploymentScene extends Phaser.Scene {
 
   private updateDragHover(pointer: Phaser.Input.Pointer): void {
     const cell = this.grid.cellAtPixel(pointer.x, pointer.y);
-    this.hoverCellKey = cell ? cellKey(cell.col, cell.row) : null;
+    this.hoverCellKey = cell ? cell.col + ',' + cell.row : null;
     this.renderHover(cell ?? undefined);
   }
 
   private renderHover(cell?: { col: number; row: number; terrain: string; blocked: boolean }): void {
     this.hoverGfx.clear();
     if (!cell) {
-      this.hoverTerrainText.setText('');
+      this.hoverText.setText('');
       return;
     }
     const p = this.grid.pixelOf(cell.col, cell.row);
     const poly = hexPolygon(p.x, p.y, this.grid.size * 0.96);
     const valid = this.canPlace(cell.col, cell.row);
-    const color = this.draggingId
-      ? valid
-        ? COLORS.valid
-        : COLORS.invalid
-      : COLORS.hover;
+    const color = this.draggingId ? (valid ? COLORS.valid : COLORS.invalid) : COLORS.hover;
     this.hoverGfx.lineStyle(3, color, 0.95);
     this.hoverGfx.strokePoints(poly.points, true);
     if (this.draggingId && valid) {
       this.hoverGfx.fillStyle(color, 0.18);
       this.hoverGfx.fillPoints(poly.points, true);
     }
-    const terrainLabel =
-      TERRAIN_LABEL[cell.terrain as keyof typeof TERRAIN_LABEL] ?? cell.terrain;
+    const terrainLabel = TERRAIN_LABEL[cell.terrain as keyof typeof TERRAIN_LABEL] ?? cell.terrain;
     const where =
       cell.col <= this.playerZoneEnd()
         ? 'зона игрока'
         : cell.col >= this.grid.cols - CONFIG.ENEMY_ZONE_COLS
         ? 'зона врага'
         : 'центр';
-    this.hoverTerrainText.setText(`${terrainLabel} • ${where}`);
+    this.hoverText.setText(`${terrainLabel} • ${where}`);
   }
 
   private clearHover(): void {
     this.hoverCellKey = null;
     this.hoverGfx.clear();
-    this.hoverTerrainText.setText('');
+    this.hoverText.setText('');
   }
 }
 
-// ---------- утилиты ----------
-
-function cellKey(col: number, row: number): string {
-  return col + ',' + row;
-}
-function templateKey(col: number, row: number): string {
-  return 'u_' + col + '_' + row;
-}
-
+/** Центрирование сетки (используется и в BattleScene). */
 export function computeOrigin(
   cols: number,
   rows: number,

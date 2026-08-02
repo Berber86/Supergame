@@ -1,9 +1,17 @@
 import Phaser from 'phaser';
 import { CONFIG } from '../config';
-import { ENEMY_LINEUP, ROLE_INFO, STONE_AGE_UNITS, type UnitTemplate } from '../data/units';
+import { ROLE_INFO } from '../data/units';
 import { TERRAIN_LABEL } from '../data/terrain';
+import { generateWave } from '../data/waves';
 import { buildTerrainMap, terrainSourceFromMap } from '../data/boardLayout';
-import { CombatSystem, type DeploymentEntry } from '../systems/CombatSystem';
+import {
+  Campaign,
+  type PlayerDeploymentEntry,
+  type UnitBattleReport,
+} from '../meta/Campaign';
+import { rosterToTemplate } from '../meta/RosterUnit';
+import { campaignOf } from '../meta/session';
+import { CombatSystem } from '../systems/CombatSystem';
 import type { SimEvent } from '../systems/sim-types';
 import { HexGrid } from '../systems/HexGrid';
 import type { UnitModel } from '../entities/UnitModel';
@@ -12,27 +20,29 @@ import { COLORS, TEAM_COLORS } from '../ui/theme';
 import { createUnitView, setHpRatio, setStateText, type UnitView } from '../ui/UnitView';
 import { drawTerrainLayer, drawZoneOverlay, hexPolygon } from '../ui/board';
 import { computeOrigin } from './DeploymentScene';
+import { makeButton } from '../ui/widgets';
 
 const GRID_CENTER_X = 640;
 const GRID_CENTER_Y = 392;
 
 /**
- * Сцена боя: ТОЛЬКО отрисовка и ввод.
- * Вся боевая логика живёт в CombatSystem; сцена проигрывает sim-events как
- * анимации и читает модель для полосок HP/состояний. Тайминги логики (10 Гц)
- * и анимаций (60 Гц) полностью развязаны через очередь событий.
+ * Сцена боя: ТОЛЬКО отрисовка/ввод + фиксация исхода для мета-слоя.
+ * Логика боя — в CombatSystem; последствия (доход, опыт, HP, волна) пишутся в
+ * Campaign после завершения, затем сцена возвращает игрока в хаб (победа) или
+ * на повтор выбора состава (поражение).
  */
 export class BattleScene extends Phaser.Scene {
   private grid!: HexGrid;
   private combat!: CombatSystem;
+  private campaign!: Campaign;
 
   private views = new Map<number, UnitView>();
   private units = new Map<number, UnitModel>();
+  private uidToRoster = new Map<number, string>();
   private moveTweens = new Map<number, Phaser.Tweens.Tween>();
 
   private hoverGfx!: Phaser.GameObjects.Graphics;
   private hudText!: Phaser.GameObjects.Text;
-  private resultOverlay!: Phaser.GameObjects.Container;
   private resultShown = false;
 
   private tooltipBox!: Phaser.GameObjects.Container;
@@ -45,8 +55,8 @@ export class BattleScene extends Phaser.Scene {
   create(): void {
     this.cameras.main.setBackgroundColor(COLORS.bg);
     this.resultShown = false;
+    this.campaign = campaignOf(this.game.registry);
 
-    const map = buildTerrainMap(CONFIG.GRID_COLS, CONFIG.GRID_ROWS, CONFIG.TERRAIN_SEED);
     const { originX, originY } = computeOrigin(
       CONFIG.GRID_COLS,
       CONFIG.GRID_ROWS,
@@ -54,12 +64,13 @@ export class BattleScene extends Phaser.Scene {
       GRID_CENTER_X,
       GRID_CENTER_Y,
     );
+    const terrainMap = buildTerrainMap(CONFIG.GRID_COLS, CONFIG.GRID_ROWS, CONFIG.TERRAIN_SEED);
     this.grid = new HexGrid(
       CONFIG.GRID_COLS,
       CONFIG.GRID_ROWS,
       originX,
       originY,
-      terrainSourceFromMap(map),
+      terrainSourceFromMap(terrainMap),
     );
 
     const terrainGfx = this.add.graphics().setDepth(0);
@@ -70,24 +81,32 @@ export class BattleScene extends Phaser.Scene {
 
     // --- Симуляция ---
     this.combat = new CombatSystem(this.grid, CONFIG.SEED);
-    const templates = buildTemplateIndex();
 
-    const playerEntries = (this.game.registry.get('playerDeployment') as DeploymentEntry[]) ?? [];
-    const enemyEntries: DeploymentEntry[] = ENEMY_LINEUP.map((e) => ({
-      templateId: e.templateId,
-      col: e.col,
-      row: e.row,
-    }));
-    this.combat.addUnits(playerEntries, templates, 'player');
-    this.combat.addUnits(enemyEntries, templates, 'enemy');
+    const deployment =
+      (this.game.registry.get('playerDeployment') as PlayerDeploymentEntry[] | null) ?? [];
+    for (const e of deployment) {
+      const ru = this.campaign.get(e.rosterId);
+      if (!ru || ru.currentHp <= 0) continue;
+      const unit = this.combat.addUnit(
+        rosterToTemplate(ru),
+        'player',
+        e.col,
+        e.row,
+        ru.currentHp,
+      );
+      this.uidToRoster.set(unit.uid, ru.id);
+    }
+
+    for (const we of generateWave(this.campaign.wave)) {
+      this.combat.addUnit(we.scaled, 'enemy', we.col, we.row);
+    }
 
     for (const u of this.combat.units) this.spawnView(u);
-
     this.combat.start();
 
     // --- HUD ---
     this.add
-      .text(this.scale.width / 2, 28, 'THE LONG LINE — Бой', {
+      .text(this.scale.width / 2, 28, `THE LONG LINE — Волна ${this.campaign.wave}`, {
         fontFamily: 'Arial, sans-serif',
         fontSize: '24px',
         color: '#e5e7eb',
@@ -104,11 +123,8 @@ export class BattleScene extends Phaser.Scene {
       .setDepth(30);
 
     this.buildTooltip();
-    this.buildResultOverlay();
 
-    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-      this.updateHover(pointer);
-    });
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => this.updateHover(pointer));
     this.input.on('pointerout', () => {
       this.hoverGfx.clear();
       this.tooltipBox.setVisible(false);
@@ -123,25 +139,21 @@ export class BattleScene extends Phaser.Scene {
     this.processEvents();
     this.syncVisuals();
     this.updateHud();
-
-    if (!this.resultShown && this.combat.result !== 'ongoing') {
-      this.showResult();
-    }
+    if (!this.resultShown && this.combat.result !== 'ongoing') this.showResult();
   }
 
   // ---------------- Создание представлений ----------------
 
   private spawnView(u: UnitModel): void {
-    const tpl = STONE_AGE_UNITS.find((t) => t.id === u.id)!;
     const view = createUnitView(this, {
-      name: tpl.name,
+      name: u.name,
       role: u.role,
       team: u.team,
       showState: true,
     });
     const p = this.grid.pixelOf(u.col, u.row);
     view.container.setPosition(p.x, p.y);
-    setHpRatio(view, 1);
+    setHpRatio(view, u.hp / u.maxHp);
     setStateText(view, u.state);
     this.views.set(u.uid, view);
     this.units.set(u.uid, u);
@@ -169,7 +181,6 @@ export class BattleScene extends Phaser.Scene {
         this.onDeath(e.uid);
         break;
       case 'state':
-        // Состояния обновляются по модели каждый кадр — здесь не дублируем.
         break;
     }
   }
@@ -180,14 +191,16 @@ export class BattleScene extends Phaser.Scene {
     const prev = this.moveTweens.get(uid);
     if (prev) prev.stop();
     const p = this.grid.pixelOf(col, row);
-    const tw = this.tweens.add({
-      targets: view.container,
-      x: p.x,
-      y: p.y,
-      duration: 170,
-      ease: 'Quad.easeInOut',
-    });
-    this.moveTweens.set(uid, tw);
+    this.moveTweens.set(
+      uid,
+      this.tweens.add({
+        targets: view.container,
+        x: p.x,
+        y: p.y,
+        duration: 170,
+        ease: 'Quad.easeInOut',
+      }),
+    );
   }
 
   private onAttack(e: Extract<SimEvent, { type: 'attack' }>): void {
@@ -237,24 +250,15 @@ export class BattleScene extends Phaser.Scene {
       angle: 90,
       duration: 280,
       ease: 'Quad.easeIn',
-      onComplete: () => {
-        view.container.destroy();
-      },
+      onComplete: () => view.container.destroy(),
     });
     this.views.delete(uid);
   }
 
   // ---------------- Визуальные эффекты ----------------
 
-  private spawnProjectile(
-    from: { x: number; y: number },
-    to: { x: number; y: number },
-    color: number,
-  ): void {
-    const dot = this.add
-      .circle(from.x, from.y, 5, color)
-      .setDepth(25)
-      .setStrokeStyle(1, 0xffffff, 0.6);
+  private spawnProjectile(from: { x: number; y: number }, to: { x: number; y: number }, color: number): void {
+    const dot = this.add.circle(from.x, from.y, 5, color).setDepth(25).setStrokeStyle(1, 0xffffff, 0.6);
     this.tweens.add({
       targets: dot,
       x: to.x,
@@ -285,9 +289,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private flash(pos: { x: number; y: number }, color: number): void {
-    const ring = this.add
-      .circle(pos.x, pos.y, 18, color, 0.85)
-      .setDepth(24);
+    const ring = this.add.circle(pos.x, pos.y, 18, color, 0.85).setDepth(24);
     this.tweens.add({
       targets: ring,
       alpha: 0,
@@ -332,13 +334,12 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private updateHud(): void {
-    const player = this.combat.aliveCount('player');
-    const enemy = this.combat.aliveCount('enemy');
     this.hudText.setText(
       [
+        `Волна: ${this.campaign.wave}`,
         `Тик: ${this.combat.tickNumber}`,
-        `Синие (игрок): ${player}`,
-        `Красные (враг):  ${enemy}`,
+        `Игрок: ${this.combat.aliveCount('player')}`,
+        `Враг:  ${this.combat.aliveCount('enemy')}`,
       ].join('\n'),
     );
   }
@@ -346,7 +347,6 @@ export class BattleScene extends Phaser.Scene {
   // ---------------- Наведение / тултип ----------------
 
   private updateHover(pointer: Phaser.Input.Pointer): void {
-    // Подсветка гекса.
     const cell = this.grid.cellAtPixel(pointer.x, pointer.y);
     this.hoverGfx.clear();
     if (cell) {
@@ -356,19 +356,13 @@ export class BattleScene extends Phaser.Scene {
       this.hoverGfx.strokePoints(poly.points, true);
     }
 
-    // Тултип по наведению на юнита.
     let hit: UnitModel | null = null;
     let bestD = Infinity;
     for (const u of this.combat.units) {
       if (!u.alive) continue;
       const view = this.views.get(u.uid);
       if (!view) continue;
-      const d = Phaser.Math.Distance.Between(
-        pointer.x,
-        pointer.y,
-        view.container.x,
-        view.container.y,
-      );
+      const d = Phaser.Math.Distance.Between(pointer.x, pointer.y, view.container.x, view.container.y);
       if (d <= view.radius * 1.6 && d < bestD) {
         bestD = d;
         hit = u;
@@ -381,11 +375,7 @@ export class BattleScene extends Phaser.Scene {
   private buildTooltip(): void {
     const bg = this.add.rectangle(0, 0, 210, 92, 0x0b0e14, 0.92).setStrokeStyle(1, COLORS.panelEdge);
     this.tooltipText = this.add
-      .text(-96, -40, '', {
-        fontFamily: 'Consolas, monospace',
-        fontSize: '12px',
-        color: '#e5e7eb',
-      })
+      .text(-96, -40, '', { fontFamily: 'Consolas, monospace', fontSize: '12px', color: '#e5e7eb' })
       .setLineSpacing(3);
     this.tooltipBox = this.add.container(0, 0, [bg, this.tooltipText]).setDepth(60).setVisible(false);
   }
@@ -397,7 +387,7 @@ export class BattleScene extends Phaser.Scene {
     const terrain = cell ? TERRAIN_LABEL[cell.terrain] : '?';
     this.tooltipText.setText(
       [
-        `${u.name}`,
+        u.name,
         `роль: ${role}`,
         `состояние: ${state}`,
         `HP: ${Math.ceil(u.hp)}/${u.maxHp}`,
@@ -411,81 +401,75 @@ export class BattleScene extends Phaser.Scene {
     this.tooltipBox.setPosition(x, y).setVisible(true);
   }
 
-  // ---------------- Экран результата ----------------
-
-  private buildResultOverlay(): void {
-    const bg = this.add
-      .rectangle(0, 0, this.scale.width, this.scale.height, 0x000000, 0.65)
-      .setOrigin(0)
-      .setInteractive();
-
-    const panel = this.add
-      .rectangle(0, 0, 460, 240, COLORS.panel, 1)
-      .setStrokeStyle(3, COLORS.panelEdge);
-
-    const title = this.add
-      .text(0, -60, '', { fontFamily: 'Arial, sans-serif', fontSize: '44px', fontStyle: 'bold' })
-      .setOrigin(0.5)
-      .setName('title');
-
-    const sub = this.add
-      .text(0, -10, 'Бой завершён', {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '16px',
-        color: '#9aa3b2',
-      })
-      .setOrigin(0.5);
-
-    const btn = this.makeRestartButton();
-
-    this.resultOverlay = this.add
-      .container(0, 0, [bg, panel, title, sub, btn])
-      .setDepth(100)
-      .setVisible(false)
-      .setPosition(this.scale.width / 2, this.scale.height / 2);
-  }
-
-  private makeRestartButton(): Phaser.GameObjects.Container {
-    const w = 220;
-    const h = 50;
-    const bg = this.add.rectangle(0, 60, w, h, 0x1f6feb).setStrokeStyle(2, COLORS.panelEdge);
-    const label = this.add
-      .text(0, 60, '↻  Заново', {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '18px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-    bg.setInteractive(new Phaser.Geom.Rectangle(-w / 2, 60 - h / 2, w, h), Phaser.Geom.Rectangle.Contains);
-    bg.on('pointerover', () => bg.setFillStyle(0x34528f));
-    bg.on('pointerout', () => bg.setFillStyle(0x1f6feb));
-    bg.on('pointerup', () => this.scene.start('Deployment'));
-    return this.add.container(0, 0, [bg, label]);
-  }
+  // ---------------- Исход боя → мета ----------------
 
   private showResult(): void {
     this.resultShown = true;
     const win = this.combat.result === 'player_win';
-    const title = this.resultOverlay.getByName('title') as Phaser.GameObjects.Text;
-    title.setText(win ? 'ПОБЕДА' : 'ПОРАЖЕНИЕ');
-    title.setColor(win ? '#22c55e' : '#ef4444');
-    this.tweens.add({
-      targets: this.resultOverlay,
-      alpha: { from: 0, to: 1 },
-      duration: 350,
-      onStart: () => this.resultOverlay.setVisible(true),
-    });
+    let income = 0;
+    if (win) {
+      const report: UnitBattleReport[] = [];
+      for (const [uid, rosterId] of this.uidToRoster) {
+        const unit = this.units.get(uid);
+        if (!unit) continue;
+        report.push({ rosterId, endHp: unit.hp, survived: unit.alive });
+      }
+      income = this.campaign.applyVictory(report).income;
+      this.campaign.save();
+    } else {
+      this.campaign.applyDefeat();
+    }
+    this.renderResultOverlay(win, income);
+  }
+
+  private renderResultOverlay(win: boolean, income: number): void {
+    const cx = this.scale.width / 2;
+    const cy = this.scale.height / 2;
+    const overlay = this.add.container(0, 0).setDepth(100).setAlpha(0);
+
+    const dim = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x000000, 0.65).setOrigin(0).setInteractive();
+    const panel = this.add.rectangle(cx, cy, 480, 260, COLORS.panel).setStrokeStyle(3, COLORS.panelEdge);
+
+    const title = this.add
+      .text(cx, cy - 70, win ? 'ПОБЕДА' : 'ПОРАЖЕНИЕ', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '44px',
+        fontStyle: 'bold',
+        color: win ? '#22c55e' : '#ef4444',
+      })
+      .setOrigin(0.5);
+
+    const sub = this.add
+      .text(
+        cx,
+        cy - 14,
+        win ? `Доход за волну: +${income}🪙\nВолна ${this.campaign.wave} пройдена` : 'Волна не пройдена',
+        { fontFamily: 'Arial, sans-serif', fontSize: '16px', color: '#9aa3b2', align: 'center' },
+      )
+      .setOrigin(0.5);
+
+    overlay.add([dim, panel, title, sub]);
+
+    if (win) {
+      const cont = makeButton(this, cx, cy + 70, 240, 50, 'Продолжить →', () =>
+        this.scene.start('Hub'),
+      );
+      overlay.add(cont);
+    } else {
+      const again = makeButton(this, cx - 110, cy + 70, 200, 50, '↻  Заново', () =>
+        this.scene.start('Composition'),
+      );
+      const hub = makeButton(this, cx + 110, cy + 70, 200, 50, '←  В хаб', () =>
+        this.scene.start('Hub'),
+      );
+      overlay.add([again, hub]);
+    }
+
+    this.tweens.add({ targets: overlay, alpha: 1, duration: 320 });
   }
 }
 
-// ---------------- утилиты ----------------
-
-function buildTemplateIndex(): Record<string, UnitTemplate> {
-  const idx: Record<string, UnitTemplate> = {};
-  for (const u of STONE_AGE_UNITS) idx[u.id] = u;
-  return idx;
-}
+// ---------------- утилиты сцены ----------------
 
 function stateRu(s: UnitState): string {
   switch (s) {
