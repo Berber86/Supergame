@@ -24,12 +24,17 @@ export class HubScene extends Phaser.Scene {
   private waveText!: Phaser.GameObjects.Text;
   private slotsText!: Phaser.GameObjects.Text;
   private worldEpochText!: Phaser.GameObjects.Text;
+  private worldEpochBg!: Phaser.GameObjects.Rectangle;
+  private worldEpochBar!: Phaser.GameObjects.Rectangle;
 
   private rosterLayer!: Phaser.GameObjects.Container;
   private buttonsLayer!: Phaser.GameObjects.Container;
   private toBattleBtn!: Phaser.GameObjects.Container;
   private healAllBtn!: Phaser.GameObjects.Container;
   private msgText!: Phaser.GameObjects.Text;
+
+  private tooltipBox!: Phaser.GameObjects.Container;
+  private tooltipText!: Phaser.GameObjects.Text;
 
   constructor() {
     super('Hub');
@@ -55,6 +60,15 @@ export class HubScene extends Phaser.Scene {
         fontStyle: 'bold',
         color: '#94a3b8',
       })
+      .setDepth(20);
+
+    this.worldEpochBg = this.add
+      .rectangle(20, 78, 240, 8, 0x1e293b)
+      .setOrigin(0, 0.5)
+      .setDepth(20);
+    this.worldEpochBar = this.add
+      .rectangle(20, 78, 0, 8, 0x8b5cf6)
+      .setOrigin(0, 0.5)
       .setDepth(20);
 
     this.waveText = this.add
@@ -145,6 +159,7 @@ export class HubScene extends Phaser.Scene {
       { color: 0x7f1d1d, fontSize: 12 },
     );
 
+    this.buildRosterTooltip();
     this.refresh();
   }
 
@@ -156,6 +171,8 @@ export class HubScene extends Phaser.Scene {
     
     const worldScore = this.campaign.worldEpochScore();
     this.worldEpochText.setText(`Мировая Эра: ${worldScore.toFixed(2)} ⭐`);
+    const pct = Phaser.Math.Clamp((worldScore - 1) / 7, 0, 1);
+    this.worldEpochBar.width = Math.round(240 * pct);
 
     this.slotsText.setText(
       `Ростер: ${this.campaign.roster.length}/${ECONOMY.ROSTER_LIMIT}  •  боеспособных: ${this.campaign.deployable().length}`,
@@ -186,8 +203,19 @@ export class HubScene extends Phaser.Scene {
   }
 
   private drawRosterSlot(ru: RosterUnit, x: number, y: number): void {
-    const { container } = drawRosterCard(this, ru, x, y, { w: CARD_W, h: CARD_H });
+    const { container, bg } = drawRosterCard(this, ru, x, y, { w: CARD_W, h: CARD_H });
     this.rosterLayer.add(container);
+
+    bg.setInteractive({ useHandCursor: true });
+    bg.on('pointerover', (pointer: Phaser.Input.Pointer) => {
+      this.showRosterTooltip(ru, pointer);
+    });
+    bg.on('pointerout', () => {
+      this.hideRosterTooltip();
+    });
+    bg.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      this.moveRosterTooltip(pointer);
+    });
 
     const node = findNode(ru.templateId);
     const threshold = getEvolutionThreshold(ru.epochIndex);
@@ -618,6 +646,63 @@ export class HubScene extends Phaser.Scene {
     }, { color: 0x7f1d1d });
     const no = makeButton(this, this.scale.width / 2 + 90, this.scale.height / 2 + 50, 150, 42, 'Отмена', () => overlay.destroy(), { color: 0x334155 });
     overlay.add([yes, no]);
+  }
+
+  // ---------- Тултипы ----------
+
+  private buildRosterTooltip(): void {
+    const bg = this.add.rectangle(0, 0, 340, 200, 0x0b0e14, 0.95).setStrokeStyle(2, COLORS.panelEdge);
+    this.tooltipText = this.add
+      .text(-156, -86, '', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '12px',
+        color: '#e5e7eb',
+      })
+      .setLineSpacing(4);
+    this.tooltipBox = this.add.container(0, 0, [bg, this.tooltipText]).setDepth(100).setVisible(false);
+  }
+
+  private showRosterTooltip(ru: RosterUnit, pointer: Phaser.Input.Pointer): void {
+    const roleLabel = ROLE_INFO[ru.role].label;
+    const history = ru.evolutionHistory && ru.evolutionHistory.length > 0
+      ? ru.evolutionHistory.join(' ➜ ')
+      : ru.name;
+
+    const abilityDesc = ru.specialAbility
+      ? `\n  Способность: ${ru.specialAbility.name} (CD ${ru.specialAbility.cooldown}s)`
+      : '';
+
+    const lines = [
+      `  ${ru.name.toUpperCase()}`,
+      `  Класс: ${roleLabel} (Эра ${ru.epochIndex})`,
+      `  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `  HP:  ${ru.currentHp}/${ru.maxHp}   |  ATK: ${ru.atk}`,
+      `  DEF: ${ru.def}         |  RNG: ${ru.range}`,
+      `  SPD: ${ru.move}         |  SPD атаки: ${ru.atkSpeed}`,
+      `  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `  История: ${history}`,
+      abilityDesc
+    ];
+
+    this.tooltipText.setText(lines.join('\n'));
+    this.moveRosterTooltip(pointer);
+    this.tooltipBox.setVisible(true);
+  }
+
+  private moveRosterTooltip(pointer: Phaser.Input.Pointer): void {
+    let x = pointer.x + 20;
+    let y = pointer.y + 20;
+    if (x > this.scale.width - 360) {
+      x = pointer.x - 360;
+    }
+    if (y > this.scale.height - 220) {
+      y = pointer.y - 220;
+    }
+    this.tooltipBox.setPosition(x + 170, y + 100);
+  }
+
+  private hideRosterTooltip(): void {
+    this.tooltipBox.setVisible(false);
   }
 
   // ---------- Прочее ----------

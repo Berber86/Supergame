@@ -24,6 +24,7 @@ export interface RosterUnit {
   epochIndex: number;
   description?: string;
   specialAbility?: SpecialAbilityDefinition;
+  evolutionHistory?: string[];
 }
 
 export function createRosterUnitFromTemplate(
@@ -47,6 +48,7 @@ export function createRosterUnitFromTemplate(
     epochIndex: tpl.epochIndex ?? 1,
     description: tpl.description,
     specialAbility: tpl.specialAbility,
+    evolutionHistory: [tpl.name],
   };
 }
 

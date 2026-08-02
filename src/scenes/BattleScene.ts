@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { CONFIG } from '../config';
 import { ROLE_INFO } from '../data/units';
-import { findNode } from '../data/evolution-tree';
+import { findNode, getEvolutionThreshold } from '../data/evolution-tree';
 import { SPECIAL_ABILITY_NAMES } from '../data/special-abilities';
 import { TERRAIN_LABEL } from '../data/terrain';
 import { generateWave, isEliteWave } from '../data/waves';
@@ -369,13 +369,27 @@ export class BattleScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setDepth(40);
+
+    const driftX = pos.x + Phaser.Math.Between(-18, 18);
+    label.setScale(0.5);
     this.tweens.add({
       targets: label,
-      y: pos.y - 26,
-      alpha: 0,
-      duration: 720,
-      ease: 'Quad.easeOut',
-      onComplete: () => label.destroy(),
+      x: driftX,
+      y: pos.y - 36,
+      scaleX: 1.1,
+      scaleY: 1.1,
+      duration: 180,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        this.tweens.add({
+          targets: label,
+          y: pos.y - 54,
+          alpha: 0,
+          duration: 540,
+          ease: 'Linear',
+          onComplete: () => label.destroy(),
+        });
+      }
     });
   }
 
@@ -466,8 +480,19 @@ export class BattleScene extends Phaser.Scene {
     this.resultShown = true;
     const win = this.combat.result === 'player_win';
     let income = 0;
+    const report: UnitBattleReport[] = [];
+    const beforeHpMap = new Map<string, number>();
+    const beforeXpMap = new Map<string, number>();
+
+    for (const [uid, rosterId] of this.uidToRoster) {
+      const ru = this.campaign.get(rosterId);
+      if (ru) {
+        beforeHpMap.set(rosterId, ru.currentHp);
+        beforeXpMap.set(rosterId, ru.battleExperience);
+      }
+    }
+
     if (win) {
-      const report: UnitBattleReport[] = [];
       for (const [uid, rosterId] of this.uidToRoster) {
         const unit = this.units.get(uid);
         if (!unit) continue;
@@ -478,47 +503,138 @@ export class BattleScene extends Phaser.Scene {
     } else {
       this.campaign.applyDefeat();
     }
-    this.renderResultOverlay(win, income);
+    this.renderResultOverlay(win, income, beforeHpMap, beforeXpMap, report);
   }
 
-  private renderResultOverlay(win: boolean, income: number): void {
+  private renderResultOverlay(
+    win: boolean,
+    income: number,
+    beforeHpMap: Map<string, number>,
+    beforeXpMap: Map<string, number>,
+    report: UnitBattleReport[]
+  ): void {
     const cx = this.scale.width / 2;
     const cy = this.scale.height / 2;
     const overlay = this.add.container(0, 0).setDepth(100).setAlpha(0);
 
-    const dim = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x000000, 0.65).setOrigin(0).setInteractive();
-    const panel = this.add.rectangle(cx, cy, 480, 260, COLORS.panel).setStrokeStyle(3, COLORS.panelEdge);
+    const dim = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x000000, 0.75).setOrigin(0).setInteractive();
+    
+    const panelW = 680;
+    const panelH = 500;
+    const panel = this.add.rectangle(cx, cy, panelW, panelH, COLORS.panel).setStrokeStyle(3, COLORS.panelEdge);
+    overlay.add([dim, panel]);
 
+    const titleY = cy - panelH / 2 + 50;
     const title = this.add
-      .text(cx, cy - 70, win ? 'ПОБЕДА' : 'ПОРАЖЕНИЕ', {
+      .text(cx, titleY, win ? 'ПОБЕДА' : 'ПОРАЖЕНИЕ', {
         fontFamily: 'Arial, sans-serif',
-        fontSize: '44px',
+        fontSize: '36px',
         fontStyle: 'bold',
         color: win ? '#22c55e' : '#ef4444',
       })
       .setOrigin(0.5);
 
+    const subY = titleY + 45;
     const sub = this.add
       .text(
         cx,
-        cy - 14,
-        win ? `Доход за волну: +${income}🪙\nВолна ${this.campaign.wave - 1} пройдена` : 'Волна не пройдена',
-        { fontFamily: 'Arial, sans-serif', fontSize: '16px', color: '#9aa3b2', align: 'center' },
+        subY,
+        win ? `Доход за волну: +${income}🪙  |  Волна ${this.campaign.wave - 1} пройдена` : 'Волна не пройдена',
+        { fontFamily: 'Arial, sans-serif', fontSize: '15px', color: '#fbbf24', fontStyle: 'bold' }
       )
       .setOrigin(0.5);
+      
+    overlay.add([title, sub]);
 
-    overlay.add([dim, panel, title, sub]);
+    const listTitle = this.add.text(cx, cy - 110, 'ИТОГИ БОЯ ДЛЯ ЮНИТОВ', {
+      fontFamily: 'Arial, sans-serif',
+      fontSize: '14px',
+      fontStyle: 'bold',
+      color: '#9aa3b2',
+    }).setOrigin(0.5);
+    overlay.add(listTitle);
 
+    const rosterIds = Array.from(this.uidToRoster.values());
+    const itemY = cy - 65;
+    const colLeftX = cx - 160;
+    const colRightX = cx + 160;
+    
+    rosterIds.forEach((rosterId, idx) => {
+      const ru = this.campaign.get(rosterId);
+      if (!ru) return;
+      
+      const colX = idx % 2 === 0 ? colLeftX : colRightX;
+      const rowY = itemY + Math.floor(idx / 2) * 64;
+      
+      const beforeHp = beforeHpMap.get(rosterId) ?? ru.maxHp;
+      const endHp = win ? (report.find(r => r.rosterId === rosterId)?.endHp ?? 0) : ru.currentHp;
+      const dead = endHp <= 0;
+      
+      const hpLost = beforeHp - endHp;
+      const xpGained = win ? (ru.battleExperience - (beforeXpMap.get(rosterId) ?? 0)) : 0;
+      
+      const itemBg = this.add.rectangle(colX, rowY, 300, 54, 0x111827).setStrokeStyle(1, 0x334155);
+      
+      const uName = this.add.text(colX - 138, rowY - 20, ru.name, {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '12px',
+        fontStyle: 'bold',
+        color: '#e5e7eb',
+      });
+      
+      let hpStatusText = '';
+      let hpColor = '#34d399';
+      if (dead) {
+        hpStatusText = win ? 'Сражён ☠ (HP 0)' : 'Сражён ☠ (Восстановлен)';
+        hpColor = '#f87171';
+      } else if (hpLost > 0) {
+        hpStatusText = `Получил урон: -${Math.round(hpLost)} HP (Осталось ${Math.round(endHp)})`;
+        hpColor = '#fcd34d';
+      } else {
+        hpStatusText = `Без повреждений (${Math.round(endHp)} HP)`;
+      }
+      
+      const uHp = this.add.text(colX - 138, rowY - 2, hpStatusText, {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '11px',
+        color: hpColor,
+      });
+      
+      const threshold = getEvolutionThreshold(ru.epochIndex);
+      let xpStatusText = '';
+      let xpColor = '#a78bfa';
+      
+      if (win) {
+        if (ru.battleExperience >= threshold) {
+          xpStatusText = 'ГОТОВ К ЭВОЛЮЦИИ! ⭐';
+          xpColor = '#fbbf24';
+        } else {
+          xpStatusText = `Опыт: ${ru.battleExperience}/${threshold} (+${xpGained})`;
+        }
+      } else {
+        xpStatusText = `Опыт: ${ru.battleExperience}/${threshold}`;
+      }
+      
+      const uXp = this.add.text(colX - 138, rowY + 11, xpStatusText, {
+        fontFamily: 'Consolas, monospace',
+        fontSize: '10px',
+        color: xpColor,
+      });
+      
+      overlay.add([itemBg, uName, uHp, uXp]);
+    });
+
+    const btnY = cy + panelH / 2 - 45;
     if (win) {
-      const cont = makeButton(this, cx, cy + 70, 240, 50, 'Продолжить →', () =>
+      const cont = makeButton(this, cx, btnY, 240, 48, 'Продолжить →', () =>
         this.scene.start('Hub'),
       );
       overlay.add(cont);
     } else {
-      const again = makeButton(this, cx - 110, cy + 70, 200, 50, '↻  Заново', () =>
+      const again = makeButton(this, cx - 115, btnY, 200, 48, '↻  Заново', () =>
         this.scene.start('Composition'),
       );
-      const hub = makeButton(this, cx + 110, cy + 70, 200, 50, '←  В хаб', () =>
+      const hub = makeButton(this, cx + 115, btnY, 200, 48, '←  В хаб', () =>
         this.scene.start('Hub'),
       );
       overlay.add([again, hub]);

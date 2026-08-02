@@ -187,6 +187,14 @@ export class Campaign {
     ru.battleExperience = 0;
     ru.epochIndex = targetNode.epoch;
 
+    if (!ru.evolutionHistory) {
+      const prevTemplate = findTemplate(ru.templateId);
+      ru.evolutionHistory = prevTemplate ? [prevTemplate.name] : [ru.name];
+    }
+    if (!ru.evolutionHistory.includes(targetNode.name)) {
+      ru.evolutionHistory.push(targetNode.name);
+    }
+
     return { ok: true };
   }
 
@@ -254,6 +262,9 @@ export class Campaign {
           ru.combatRole = tpl.combatRole ?? ru.combatRole;
           ru.description = tpl.description;
           ru.specialAbility = tpl.specialAbility;
+          if (!ru.evolutionHistory) {
+            ru.evolutionHistory = [ru.name];
+          }
         } catch {
           ru.epochIndex = typeof ru.epochIndex === 'number' ? ru.epochIndex : 1;
         }

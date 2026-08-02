@@ -3,6 +3,7 @@ import { ROLE_INFO } from '../data/units';
 import { getEvolutionThreshold } from '../data/evolution-tree';
 import type { RosterUnit } from '../meta/RosterUnit';
 import { COLORS, TEAM_COLORS } from './theme';
+import { createSilhouetteGraphics } from './UnitView';
 
 export interface CardStyle {
   w?: number;
@@ -73,14 +74,8 @@ export function drawRosterCard(
   body.setStrokeStyle(2, team.edge);
   const role = ROLE_INFO[ru.role];
   const emblem = scene.add.circle(fx, fy, r * 0.62, role.color, 0.92);
-  const letter = scene.add
-    .text(fx, fy, role.letter, {
-      fontFamily: 'Arial, sans-serif',
-      fontSize: '18px',
-      fontStyle: 'bold',
-      color: '#0b0e14',
-    })
-    .setOrigin(0.5);
+  const letter = createSilhouetteGraphics(scene, ru.role, r);
+  letter.setPosition(fx, fy);
 
   // Тексты.
   const tx = 86;
