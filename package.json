@@ -1,0 +1,20 @@
+{
+  "name": "the-long-line",
+  "private": true,
+  "version": "0.1.0",
+  "description": "The Long Line — прототип боевой системы на гекс-сетке (TS + Vite + Phaser 3)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "phaser": "^3.80.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vite": "^5.2.0"
+  }
+}
