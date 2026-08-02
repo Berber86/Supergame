@@ -1,17 +1,18 @@
 import type { UnitTemplate } from '../data/units';
-import type { Role } from '../entities/types';
+import type { SpecialAbilityDefinition } from '../data/special-abilities';
+import {
+  combatRoleForRole,
+  type CombatRole,
+  type Role,
+} from '../entities/types';
 
-/**
- * Персистентный юнит ростера. Хранит ПОЛНЫЕ статы (самодостаточен, не зависит
- * от шаблонов в будущем), текущий HP (между волнами) и счётчик опыта.
- * Это «долгоживущее» состояние; в бой из него создаётся краткоживущая
- * UnitModel (боевая) с hp = currentHp.
- */
+/** Долгоживущее состояние индивидуально эволюционирующего юнита. */
 export interface RosterUnit {
-  id: string; // уникальный id экземпляра ('ruNN')
+  id: string;
   templateId: string;
   name: string;
   role: Role;
+  combatRole?: CombatRole;
   maxHp: number;
   atk: number;
   def: number;
@@ -21,6 +22,8 @@ export interface RosterUnit {
   currentHp: number;
   battleExperience: number;
   epochIndex: number;
+  description?: string;
+  specialAbility?: SpecialAbilityDefinition;
 }
 
 export function createRosterUnitFromTemplate(
@@ -32,6 +35,7 @@ export function createRosterUnitFromTemplate(
     templateId: tpl.id,
     name: tpl.name,
     role: tpl.role,
+    combatRole: tpl.combatRole ?? combatRoleForRole(tpl.role),
     maxHp: tpl.hp,
     atk: tpl.atk,
     def: tpl.def,
@@ -41,15 +45,18 @@ export function createRosterUnitFromTemplate(
     currentHp: tpl.hp,
     battleExperience: 0,
     epochIndex: tpl.epochIndex ?? 1,
+    description: tpl.description,
+    specialAbility: tpl.specialAbility,
   };
 }
 
-/** Преобразовать ростер-юнита в боевой шаблон (для CombatSystem.addUnit). */
+/** Преобразовать ростер-юнита в краткоживущий боевой шаблон. */
 export function rosterToTemplate(ru: RosterUnit): UnitTemplate {
   return {
     id: ru.templateId,
     name: ru.name,
     role: ru.role,
+    combatRole: ru.combatRole ?? combatRoleForRole(ru.role),
     hp: ru.maxHp,
     atk: ru.atk,
     def: ru.def,
@@ -57,6 +64,8 @@ export function rosterToTemplate(ru: RosterUnit): UnitTemplate {
     range: ru.range,
     move: ru.move,
     epochIndex: ru.epochIndex,
+    description: ru.description,
+    specialAbility: ru.specialAbility,
   };
 }
 
@@ -68,7 +77,6 @@ export function isDowned(ru: RosterUnit): boolean {
   return ru.currentHp <= 0;
 }
 
-/** Готов к бою: не «сражён» (currentHp > 0). */
 export function isDeployable(ru: RosterUnit): boolean {
   return ru.currentHp > 0;
 }

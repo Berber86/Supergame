@@ -8,12 +8,18 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:sim": "esbuild scripts/sim-test.ts --bundle --platform=node --format=cjs --outfile=/tmp/tll-sim.cjs && node /tmp/tll-sim.cjs",
+    "test:campaign": "esbuild scripts/campaign-test.ts --bundle --platform=node --format=cjs --outfile=/tmp/tll-campaign.cjs && node /tmp/tll-campaign.cjs",
+    "test:integration": "esbuild scripts/integration-test.ts --bundle --platform=node --format=cjs --outfile=/tmp/tll-integration.cjs && node /tmp/tll-integration.cjs",
+    "test:stage4": "esbuild scripts/stage4-test.ts --bundle --platform=node --format=cjs --outfile=/tmp/tll-stage4.cjs && node /tmp/tll-stage4.cjs",
+    "test": "npm run typecheck && npm run test:sim && npm run test:campaign && npm run test:integration && npm run test:stage4"
   },
   "dependencies": {
     "phaser": "^3.80.1"
   },
   "devDependencies": {
+    "esbuild": "^0.21.5",
     "typescript": "^5.4.5",
     "vite": "^5.2.0"
   }

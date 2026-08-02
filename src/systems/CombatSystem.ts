@@ -6,6 +6,7 @@ import type { HexGrid } from './HexGrid';
 import { RNG } from './RNG';
 import type { ControllerContext, SimEvent } from './sim-types';
 import { UnitController } from './UnitController';
+import { SpecialAbilitySystem } from './SpecialAbilitySystem';
 
 export type SimResult = 'ongoing' | 'player_win' | 'enemy_win';
 
@@ -32,6 +33,7 @@ export class CombatSystem {
   readonly rng: RNG;
   readonly seed: number;
   readonly tickInterval: number;
+  readonly abilities = new SpecialAbilitySystem();
 
   tickNumber = 0;
   result: SimResult = 'ongoing';
@@ -64,7 +66,7 @@ export class CombatSystem {
     const cell = this.grid.get(col, row);
     if (cell) cell.unit = unit;
     this.units.push(unit);
-    this.controllers.push(new UnitController(unit));
+    this.controllers.push(new UnitController(unit, this.abilities));
     return unit;
   }
 
@@ -114,10 +116,16 @@ export class CombatSystem {
     return {
       grid: this.grid,
       rng: this.rng,
+      elapsedSeconds: this.tickNumber * this.tickInterval,
       alliesOf: (u) =>
         units.filter((x) => x.alive && x.team === u.team && x !== u),
       enemiesOf: (u) => units.filter((x) => x.alive && x.team !== u.team),
       unitById: (uid) => units.find((x) => x.uid === uid) ?? null,
+      spawnSummon: (template, team, col, row) => {
+        const cell = this.grid.get(col, row);
+        if (!cell || cell.blocked || cell.unit) return null;
+        return this.addUnit(template, team, col, row);
+      },
       emit: (event) => {
         this.events.push(event);
       },
@@ -127,9 +135,11 @@ export class CombatSystem {
   private tick(): void {
     this.tickNumber++;
     const ctx = this.makeContext();
-    // Детерминированный порядок обработки => детерминированный расход ГСЧ.
-    for (const c of this.controllers) {
-      if (c.unit.alive) c.update(this.tickInterval, ctx);
+    this.abilities.beginTick(this.tickInterval);
+    // Snapshot: призванная в этот тик турель начнёт действовать со следующего.
+    // Порядок остаётся детерминированным и не зависит от динамического push().
+    for (const controller of [...this.controllers]) {
+      if (controller.unit.alive) controller.update(this.tickInterval, ctx);
     }
     this.checkVictory();
   }

@@ -114,8 +114,8 @@ store.set(ECONOMY.SAVE_KEY, '{not json');
 check('битый сейв → newGame', Campaign.load().roster.length === 4);
 
 console.log('=== Волны: детерминизм и масштабирование ===');
-const w1a = generateWave(1);
-const w1b = generateWave(1);
+const w1a = generateWave(c.worldEpochScore(), 1);
+const w1b = generateWave(c.worldEpochScore(), 1);
 check('волна детерминирована', JSON.stringify(w1a) === JSON.stringify(w1b));
 check('кол-во врагов растёт с волной', enemyCount(6) > enemyCount(1));
 const tpl = STONE_AGE_UNITS[0];

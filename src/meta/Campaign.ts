@@ -74,7 +74,7 @@ export class Campaign {
   worldEpochScore(): number {
     if (this.roster.length === 0) return 1.0;
     const sum = this.roster.reduce((acc, ru) => acc + ru.epochIndex, 0);
-    return sum / this.roster.length;
+    return Math.max(1, Math.min(8, sum / this.roster.length));
   }
 
   // ---------- Найм ----------
@@ -133,9 +133,8 @@ export class Campaign {
       const ru = this.get(r.rosterId);
       if (!ru) continue;
       ru.currentHp = Math.max(0, Math.min(ru.maxHp, Math.round(r.endHp)));
-      if (r.survived) {
-        ru.battleExperience += 1;
-      }
+      ru.battleExperience += ECONOMY.XP_PARTICIPATION;
+      if (r.survived) ru.battleExperience += ECONOMY.XP_SURVIVAL;
     }
     this.currency += income;
     this.wave += 1;
@@ -173,13 +172,16 @@ export class Campaign {
     ru.templateId = targetNode.id;
     ru.name = targetNode.name;
     ru.role = targetNode.role;
+    ru.combatRole = targetNode.combatRole;
     ru.maxHp = targetNode.hp;
     ru.atk = targetNode.atk;
     ru.def = targetNode.def;
     ru.atkSpeed = targetNode.atkSpeed;
     ru.range = targetNode.range;
     ru.move = targetNode.move;
-    
+    ru.description = targetNode.description;
+    ru.specialAbility = targetNode.special_ability;
+
     // Эволюция исцеляет и сбрасывает опыт
     ru.currentHp = targetNode.hp;
     ru.battleExperience = 0;
@@ -201,7 +203,7 @@ export class Campaign {
   save(): void {
     try {
       const data = {
-        version: 1,
+        version: 2,
         currency: this.currency,
         wave: this.wave,
         nextId: this.nextId,
@@ -220,7 +222,7 @@ export class Campaign {
       const raw = globalThis.localStorage.getItem(ECONOMY.SAVE_KEY);
       if (!raw) return Campaign.newGame();
       const data = JSON.parse(raw);
-      if (!data || data.version !== 1 || !Array.isArray(data.roster)) {
+      if (!data || ![1, 2].includes(data.version) || !Array.isArray(data.roster)) {
         return Campaign.newGame();
       }
       const c = new Campaign();
@@ -229,17 +231,31 @@ export class Campaign {
       c.nextId = Number(data.nextId) || 1;
       c.roster = data.roster as RosterUnit[];
       c.selectedIds = Array.isArray(data.selectedIds) ? data.selectedIds : [];
-      // Санитизация.
+      // Санитизация и миграция сейвов Этапа 3: подтягиваем рассчитанные статы,
+      // новую классификацию и способность, сохраняя долю текущего здоровья.
       for (const ru of c.roster) {
         if (typeof ru.currentHp !== 'number') ru.currentHp = ru.maxHp;
         if (typeof ru.battleExperience !== 'number') ru.battleExperience = 0;
-        if (typeof ru.epochIndex !== 'number') {
-          try {
-            const tpl = findTemplate(ru.templateId);
-            ru.epochIndex = tpl.epochIndex ?? 1;
-          } catch {
-            ru.epochIndex = 1;
+        try {
+          const tpl = findTemplate(ru.templateId);
+          const hpRatio = ru.maxHp > 0 ? Math.max(0, Math.min(1, ru.currentHp / ru.maxHp)) : 1;
+          if (data.version === 1) {
+            ru.name = tpl.name;
+            ru.role = tpl.role;
+            ru.maxHp = tpl.hp;
+            ru.atk = tpl.atk;
+            ru.def = tpl.def;
+            ru.atkSpeed = tpl.atkSpeed;
+            ru.range = tpl.range;
+            ru.move = tpl.move;
+            ru.currentHp = Math.round(tpl.hp * hpRatio);
           }
+          ru.epochIndex = tpl.epochIndex ?? ru.epochIndex ?? 1;
+          ru.combatRole = tpl.combatRole ?? ru.combatRole;
+          ru.description = tpl.description;
+          ru.specialAbility = tpl.specialAbility;
+        } catch {
+          ru.epochIndex = typeof ru.epochIndex === 'number' ? ru.epochIndex : 1;
         }
       }
       c.nextId = Math.max(c.nextId, c.roster.length + 1);

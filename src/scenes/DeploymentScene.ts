@@ -1,14 +1,14 @@
 import Phaser from 'phaser';
 import { CONFIG } from '../config';
 import { TERRAIN_LABEL } from '../data/terrain';
-import { generateWave } from '../data/waves';
+import { generateWave, isEliteWave } from '../data/waves';
 import { ROLE_INFO } from '../data/units';
 import { findNode } from '../data/evolution-tree';
 import { Campaign, type PlayerDeploymentEntry } from '../meta/Campaign';
 import { isDeployable, type RosterUnit } from '../meta/RosterUnit';
 import { campaignOf } from '../meta/session';
 import { HexGrid } from '../systems/HexGrid';
-import { buildTerrainMap, terrainSourceFromMap } from '../data/boardLayout';
+import { buildTerrainMap, terrainSeedForWave, terrainSourceFromMap } from '../data/boardLayout';
 import { COLORS } from '../ui/theme';
 import { createUnitView, setHpRatio } from '../ui/UnitView';
 import { drawTerrainLayer, drawZoneOverlay, hexPolygon } from '../ui/board';
@@ -73,7 +73,11 @@ export class DeploymentScene extends Phaser.Scene {
       CONFIG.GRID_ROWS,
       originX,
       originY,
-      terrainSourceFromMap(buildTerrainMap(CONFIG.GRID_COLS, CONFIG.GRID_ROWS, CONFIG.TERRAIN_SEED)),
+      terrainSourceFromMap(buildTerrainMap(
+        CONFIG.GRID_COLS,
+        CONFIG.GRID_ROWS,
+        terrainSeedForWave(this.campaign.wave),
+      )),
     );
 
     this.terrainGfx = this.add.graphics().setDepth(0);
@@ -85,12 +89,17 @@ export class DeploymentScene extends Phaser.Scene {
     this.drawEnemies();
 
     this.add
-      .text(GRID_CENTER_X, 30, `Расстановка — Волна ${this.campaign.wave}`, {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '24px',
-        fontStyle: 'bold',
-        color: '#e5e7eb',
-      })
+      .text(
+        GRID_CENTER_X,
+        30,
+        `Расстановка — Волна ${this.campaign.wave}${isEliteWave(this.campaign.wave) ? ' • ЭЛИТА' : ''}`,
+        {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '24px',
+          fontStyle: 'bold',
+          color: '#e5e7eb',
+        },
+      )
       .setOrigin(0.5);
     this.add
       .text(GRID_CENTER_X, 58, 'Перетащите юнитов на синюю зону (левые 3 колонки).', {
@@ -123,7 +132,16 @@ export class DeploymentScene extends Phaser.Scene {
   // ---------- Враги (превью) ----------
 
   private drawEnemies(): void {
-    for (const we of generateWave(this.campaign.wave)) {
+    const terrain = buildTerrainMap(
+      CONFIG.GRID_COLS,
+      CONFIG.GRID_ROWS,
+      terrainSeedForWave(this.campaign.wave),
+    );
+    for (const we of generateWave(
+      this.campaign.worldEpochScore(),
+      this.campaign.wave,
+      terrain,
+    )) {
       const node = findNode(we.scaled.id);
       const view = createUnitView(this, {
         name: we.scaled.name,
@@ -183,10 +201,14 @@ export class DeploymentScene extends Phaser.Scene {
     makeButton(this, PANEL_X - 92, 754, 170, 34, 'Авто', () => this.autoDeploy(), {
       color: 0x334155,
       fontSize: 13,
+      hitPadding: 4,
+      minHitHeight: 44,
     });
     makeButton(this, PANEL_X + 92, 754, 170, 34, 'Сброс', () => this.resetDeployment(), {
       color: 0x334155,
       fontSize: 13,
+      hitPadding: 4,
+      minHitHeight: 44,
     });
 
     this.countText.setText(`Размещено ${this.placed.length} из ${selected.length}`);
@@ -197,10 +219,9 @@ export class DeploymentScene extends Phaser.Scene {
     const bg = this.add
       .rectangle(0, 0, CARD_W, CARD_H, COLORS.panel, 0.95)
       .setStrokeStyle(2, COLORS.panelEdge);
-    bg.setInteractive(
-      new Phaser.Geom.Rectangle(-CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H),
-      Phaser.Geom.Rectangle.Contains,
-    );
+    // Автоматический hit-area Rectangle покрывает всю карточку. Ручная область
+    // с отрицательными координатами покрывала только её четверть.
+    bg.setInteractive({ useHandCursor: true });
     this.input.setDraggable(bg);
 
     const role = ROLE_INFO[ru.role];
@@ -334,16 +355,45 @@ export class DeploymentScene extends Phaser.Scene {
 
   private autoDeploy(): void {
     this.resetDeployment();
-    const list = [...this.cards.values()];
-    let i = 0;
-    for (let col = 0; col <= this.playerZoneEnd() && i < list.length; col++) {
-      for (let row = 0; row < this.grid.rows && i < list.length; row++) {
-        if (this.canPlace(col, row)) {
-          this.placeUnit(list[i].ru, col, row);
-          list[i].container.setVisible(false);
-          i++;
+    const priority = (ru: RosterUnit): number => {
+      if (ru.combatRole === 'ranged-dps') return 0;
+      if (ru.combatRole === 'aoe-breaker') return 1;
+      if (ru.combatRole === 'support-heal' || ru.combatRole === 'support-buff') return 2;
+      if (ru.combatRole === 'tank') return 3;
+      return 4;
+    };
+    const list = [...this.cards.values()].sort(
+      (a, b) => priority(a.ru) - priority(b.ru) || a.ru.id.localeCompare(b.ru.id),
+    );
+    const cells = this.grid.cells.flat().filter(
+      (cell) => cell.col <= this.playerZoneEnd() && this.canPlace(cell.col, cell.row),
+    );
+
+    for (const card of list) {
+      let bestIndex = 0;
+      let bestScore = -Infinity;
+      for (let i = 0; i < cells.length; i++) {
+        const cell = cells[i];
+        const role = card.ru.combatRole;
+        let score = 0;
+        if (role === 'ranged-dps') score = (cell.terrain === 'hill' ? 100 : 0) - cell.col * 4;
+        else if (role === 'aoe-breaker') {
+          score = (cell.terrain === 'hill' ? 50 : 0) - cell.col * 2;
+        } else if (role === 'support-heal' || role === 'support-buff') {
+          score = (cell.terrain === 'forest' ? 24 : 0) - cell.col * 3;
+        } else if (role === 'tank') score = cell.col * 5 + (cell.terrain === 'forest' ? 10 : 0);
+        else score = cell.col * 4 + (cell.terrain === 'plain' ? 4 : 0);
+        // Стабильный tie-break сверху вниз.
+        score -= cell.row * 0.001;
+        if (score > bestScore) {
+          bestScore = score;
+          bestIndex = i;
         }
       }
+      const cell = cells.splice(bestIndex, 1)[0];
+      if (!cell) break;
+      this.placeUnit(card.ru, cell.col, cell.row);
+      card.container.setVisible(false);
     }
     this.refreshStart();
   }
