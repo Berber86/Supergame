@@ -2,7 +2,9 @@ import Phaser from 'phaser';
 import { CONFIG } from '../config';
 import { ECONOMY } from '../data/economy';
 import { ROLE_INFO, STONE_AGE_UNITS } from '../data/units';
+import { findNode, getEvolutionThreshold } from '../data/evolution-tree';
 import { Campaign } from '../meta/Campaign';
+import type { Role } from '../entities/types';
 import { isDeployable, isDowned, isWounded, type RosterUnit } from '../meta/RosterUnit';
 import { campaignOf } from '../meta/session';
 import { COLORS } from '../ui/theme';
@@ -21,6 +23,7 @@ export class HubScene extends Phaser.Scene {
   private currencyText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
   private slotsText!: Phaser.GameObjects.Text;
+  private worldEpochText!: Phaser.GameObjects.Text;
 
   private rosterLayer!: Phaser.GameObjects.Container;
   private buttonsLayer!: Phaser.GameObjects.Container;
@@ -42,6 +45,15 @@ export class HubScene extends Phaser.Scene {
         fontSize: '24px',
         fontStyle: 'bold',
         color: '#e5e7eb',
+      })
+      .setDepth(20);
+
+    this.worldEpochText = this.add
+      .text(20, 55, '', {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '14px',
+        fontStyle: 'bold',
+        color: '#94a3b8',
       })
       .setDepth(20);
 
@@ -141,6 +153,10 @@ export class HubScene extends Phaser.Scene {
   private refresh(): void {
     this.waveText.setText(`Волна ${this.campaign.wave}`);
     this.currencyText.setText(`🪙 ${this.campaign.currency}`);
+    
+    const worldScore = this.campaign.worldEpochScore();
+    this.worldEpochText.setText(`Мировая Эра: ${worldScore.toFixed(2)} ⭐`);
+
     this.slotsText.setText(
       `Ростер: ${this.campaign.roster.length}/${ECONOMY.ROSTER_LIMIT}  •  боеспособных: ${this.campaign.deployable().length}`,
     );
@@ -173,7 +189,49 @@ export class HubScene extends Phaser.Scene {
     const { container } = drawRosterCard(this, ru, x, y, { w: CARD_W, h: CARD_H });
     this.rosterLayer.add(container);
 
-    if (isWounded(ru) || isDowned(ru)) {
+    const node = findNode(ru.templateId);
+    const threshold = getEvolutionThreshold(ru.epochIndex);
+    const canEvolve = ru.battleExperience >= threshold && node !== undefined && node.nextNodes.length > 0;
+    const needsHeal = isWounded(ru) || isDowned(ru);
+
+    if (needsHeal && canEvolve) {
+      // Кнопки рядом друг с другом
+      const btnW = (CARD_W - 32) / 2;
+      
+      const cost = this.campaign.healCost(ru);
+      const canHeal = this.campaign.currency >= cost;
+      const healBtn = makeButton(
+        this,
+        x + 8 + btnW / 2,
+        y + CARD_H - 16,
+        btnW,
+        26,
+        `✚ Лечить (${cost})`,
+        () => this.healOne(ru.id),
+        { color: canHeal ? 0x15803d : 0x334155, fontSize: 10 },
+      );
+      this.rosterLayer.add(healBtn);
+      if (!canHeal) setButtonEnabled(healBtn, false);
+
+      const nextNodeId = node!.nextNodes[0];
+      const nextNode = findNode(nextNodeId);
+      const evoCost = nextNode ? nextNode.evolutionCost : 0;
+      const canAfford = this.campaign.currency >= evoCost;
+      const evolveBtn = makeButton(
+        this,
+        x + CARD_W - 8 - btnW / 2,
+        y + CARD_H - 16,
+        btnW,
+        26,
+        `⭐ Эра+ (${evoCost})`,
+        () => this.evolveOne(ru, node),
+        { color: canAfford ? 0x8b5cf6 : 0x334155, fontSize: 10 },
+      );
+      this.rosterLayer.add(evolveBtn);
+      if (!canAfford) setButtonEnabled(evolveBtn, false);
+
+    } else if (needsHeal) {
+      // Широкая кнопка лечения
       const cost = this.campaign.healCost(ru);
       const canHeal = this.campaign.currency >= cost;
       const btn = makeButton(
@@ -188,7 +246,179 @@ export class HubScene extends Phaser.Scene {
       );
       this.rosterLayer.add(btn);
       if (!canHeal) setButtonEnabled(btn, false);
+
+    } else if (canEvolve) {
+      // Широкая кнопка эволюции
+      const nextNodeId = node!.nextNodes[0];
+      const nextNode = findNode(nextNodeId);
+      const evoCost = nextNode ? nextNode.evolutionCost : 0;
+      const canAfford = this.campaign.currency >= evoCost;
+      const btn = makeButton(
+        this,
+        x + CARD_W / 2,
+        y + CARD_H - 16,
+        CARD_W - 24,
+        26,
+        `⭐ Эволюционировать (${evoCost})`,
+        () => this.evolveOne(ru, node),
+        { color: canAfford ? 0x8b5cf6 : 0x334155, fontSize: 12 },
+      );
+      this.rosterLayer.add(btn);
+      if (!canAfford) setButtonEnabled(btn, false);
     }
+  }
+
+  private evolveOne(ru: RosterUnit, node: any): void {
+    if (node.nextNodes.length === 1) {
+      const nextId = node.nextNodes[0];
+      const nextNode = findNode(nextId);
+      const cost = nextNode ? nextNode.evolutionCost : 0;
+      if (this.campaign.currency < cost) {
+        this.showMsg('Недостаточно валюты', '#fca5a5');
+        return;
+      }
+      const res = this.campaign.evolveUnit(ru.id, nextId);
+      if (res.ok) {
+        this.campaign.save();
+        this.refresh();
+        this.showMsg(`${ru.name} эволюционировал в ${nextNode?.name}!`, '#86efac');
+      } else {
+        this.showMsg(res.reason ?? 'Ошибка эволюции', '#fca5a5');
+      }
+    } else if (node.nextNodes.length === 2) {
+      this.openEvolveModal(ru, node);
+    }
+  }
+
+  private openEvolveModal(ru: RosterUnit, node: any): void {
+    const overlay = this.add.container(0, 0).setDepth(60);
+    const dim = this.add
+      .rectangle(0, 0, this.scale.width, this.scale.height, 0x000000, 0.75)
+      .setOrigin(0)
+      .setInteractive();
+    
+    const panelW = 640;
+    const panelH = 440;
+    const panel = this.add
+      .rectangle(this.scale.width / 2, this.scale.height / 2, panelW, panelH, COLORS.panel)
+      .setStrokeStyle(3, COLORS.panelEdge);
+
+    const title = this.add
+      .text(this.scale.width / 2, this.scale.height / 2 - 180, `Эволюция: Выберите специализацию`, {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '22px',
+        fontStyle: 'bold',
+        color: '#fbbf24',
+      })
+      .setOrigin(0.5);
+
+    const sub = this.add
+      .text(this.scale.width / 2, this.scale.height / 2 - 150, `Превращение ${ru.name} воина следующей эпохи`, {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '14px',
+        color: '#9aa3b2',
+      })
+      .setOrigin(0.5);
+
+    overlay.add([dim, panel, title, sub]);
+
+    const optIds = node.nextNodes;
+    const options = optIds.map((id: string) => findNode(id)).filter((o: any) => o !== undefined);
+
+    options.forEach((opt: any, idx: number) => {
+      const isLeft = idx === 0;
+      const cardX = this.scale.width / 2 + (isLeft ? -150 : 150);
+      const cardY = this.scale.height / 2 + 10;
+      const cardW = 260;
+      const cardH = 240;
+
+      const cardContainer = this.add.container(cardX, cardY);
+      const cardBg = this.add.rectangle(0, 0, cardW, cardH, 0x1b212f).setStrokeStyle(2, COLORS.panelEdge);
+      
+      const emblem = this.add.circle(-100, -85, 18, ROLE_INFO[opt.role as Role].color);
+      const letter = this.add
+        .text(-100, -85, ROLE_INFO[opt.role as Role].letter, {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '14px',
+          fontStyle: 'bold',
+          color: '#0b0e14',
+        })
+        .setOrigin(0.5);
+
+      const nameText = this.add
+        .text(-74, -95, opt.name, {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '15px',
+          fontStyle: 'bold',
+          color: '#e5e7eb',
+        })
+        .setOrigin(0, 0);
+
+      const roleText = this.add
+        .text(-74, -77, `${ROLE_INFO[opt.role as Role].label} Эры ${opt.epoch}`, {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '11px',
+          color: '#9aa3b2',
+        })
+        .setOrigin(0, 0);
+
+      const statsX = -100;
+      const statsY = -40;
+      const hpDiff = opt.hp - ru.maxHp;
+      const atkDiff = opt.atk - ru.atk;
+      const defDiff = opt.def - ru.def;
+
+      const statLine1 = this.add.text(statsX, statsY,      `HP:  ${ru.maxHp} ➜ ${opt.hp} (${hpDiff >= 0 ? '+' : ''}${hpDiff})`, { fontFamily: 'Consolas, monospace', fontSize: '11px', color: '#86efac' });
+      const statLine2 = this.add.text(statsX, statsY + 16, `ATK: ${ru.atk} ➜ ${opt.atk} (${atkDiff >= 0 ? '+' : ''}${atkDiff})`, { fontFamily: 'Consolas, monospace', fontSize: '11px', color: '#cbd5e1' });
+      const statLine3 = this.add.text(statsX, statsY + 32, `DEF: ${ru.def} ➜ ${opt.def} (${defDiff >= 0 ? '+' : ''}${defDiff})`, { fontFamily: 'Consolas, monospace', fontSize: '11px', color: '#cbd5e1' });
+      const statLine4 = this.add.text(statsX, statsY + 48, `RNG: ${ru.range} ➜ ${opt.range}  •  SPD: ${ru.move} ➜ ${opt.move}`, { fontFamily: 'Consolas, monospace', fontSize: '11px', color: '#9aa3b2' });
+
+      const descText = this.add.text(-100, statsY + 70, opt.description, {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '11px',
+        color: '#9aa3b2',
+        align: 'left',
+        wordWrap: { width: cardW - 40 }
+      }).setOrigin(0, 0);
+
+      const canAfford = this.campaign.currency >= opt.evolutionCost;
+      const chooseBtn = makeButton(
+        this,
+        0,
+        cardH / 2 - 25,
+        cardW - 40,
+        28,
+        `Выбрать (${opt.evolutionCost}🪙)`,
+        () => {
+          const res = this.campaign.evolveUnit(ru.id, opt.id);
+          if (res.ok) {
+            this.campaign.save();
+            overlay.destroy();
+            this.refresh();
+            this.showMsg(`${ru.name} эволюционировал в ${opt.name}!`, '#86efac');
+          } else {
+            this.showMsg(res.reason ?? 'Ошибка эволюции', '#fca5a5');
+          }
+        },
+        { color: canAfford ? 0x8b5cf6 : 0x334155, fontSize: 12 }
+      );
+      if (!canAfford) setButtonEnabled(chooseBtn, false);
+
+      cardContainer.add([cardBg, emblem, letter, nameText, roleText, statLine1, statLine2, statLine3, statLine4, descText, chooseBtn]);
+      overlay.add(cardContainer);
+    });
+
+    const closeBtn = makeButton(
+      this,
+      this.scale.width / 2,
+      this.scale.height / 2 + panelH / 2 + 35,
+      140,
+      32,
+      '✕  Отмена',
+      () => overlay.destroy(),
+      { color: 0x334155, fontSize: 13 }
+    );
+    overlay.add(closeBtn);
   }
 
   private drawEmptySlot(x: number, y: number): void {

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { CONFIG } from '../config';
 import { ROLE_INFO } from '../data/units';
+import { findNode } from '../data/evolution-tree';
 import { TERRAIN_LABEL } from '../data/terrain';
 import { generateWave } from '../data/waves';
 import { buildTerrainMap, terrainSourceFromMap } from '../data/boardLayout';
@@ -145,11 +146,14 @@ export class BattleScene extends Phaser.Scene {
   // ---------------- Создание представлений ----------------
 
   private spawnView(u: UnitModel): void {
+    const node = findNode(u.id);
     const view = createUnitView(this, {
       name: u.name,
       role: u.role,
       team: u.team,
       showState: true,
+      epochIndex: node ? node.epoch : 1,
+      line: node ? node.line : 'Infantry',
     });
     const p = this.grid.pixelOf(u.col, u.row);
     view.container.setPosition(p.x, p.y);

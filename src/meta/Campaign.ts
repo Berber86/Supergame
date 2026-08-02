@@ -1,5 +1,6 @@
 import { ECONOMY, STARTER_TEMPLATE_IDS } from '../data/economy';
 import { STONE_AGE_UNITS, findTemplate } from '../data/units';
+import { findNode, getEvolutionThreshold } from '../data/evolution-tree';
 import {
   createRosterUnitFromTemplate,
   isDeployable,
@@ -70,6 +71,12 @@ export class Campaign {
     return ECONOMY.ROSTER_LIMIT - this.roster.length;
   }
 
+  worldEpochScore(): number {
+    if (this.roster.length === 0) return 1.0;
+    const sum = this.roster.reduce((acc, ru) => acc + ru.epochIndex, 0);
+    return sum / this.roster.length;
+  }
+
   // ---------- Найм ----------
 
   canHire(): { ok: boolean; reason?: string } {
@@ -126,12 +133,59 @@ export class Campaign {
       const ru = this.get(r.rosterId);
       if (!ru) continue;
       ru.currentHp = Math.max(0, Math.min(ru.maxHp, Math.round(r.endHp)));
-      ru.battleExperience +=
-        ECONOMY.XP_PARTICIPATION + (r.survived ? ECONOMY.XP_SURVIVAL : 0);
+      if (r.survived) {
+        ru.battleExperience += 1;
+      }
     }
     this.currency += income;
     this.wave += 1;
     return { income };
+  }
+
+  evolveUnit(rosterId: string, targetTemplateId: string): { ok: boolean; reason?: string } {
+    const ru = this.get(rosterId);
+    if (!ru) return { ok: false, reason: 'Юнит не найден' };
+
+    const node = findNode(ru.templateId);
+    if (!node) return { ok: false, reason: 'Дерево эволюции не найдено для этого юнита' };
+
+    const threshold = getEvolutionThreshold(ru.epochIndex);
+    if (ru.battleExperience < threshold) {
+      return { ok: false, reason: 'Недостаточно опыта для эволюции' };
+    }
+
+    if (!node.nextNodes.includes(targetTemplateId)) {
+      return { ok: false, reason: 'Недопустимая ветка эволюции' };
+    }
+
+    const targetNode = findNode(targetTemplateId);
+    if (!targetNode) return { ok: false, reason: 'Шаблон цели эволюции не найден' };
+
+    const cost = targetNode.evolutionCost;
+    if (this.currency < cost) {
+      return { ok: false, reason: 'Недостаточно валюты' };
+    }
+
+    // Тратим валюту
+    this.currency -= cost;
+
+    // Меняем статы и данные юнита
+    ru.templateId = targetNode.id;
+    ru.name = targetNode.name;
+    ru.role = targetNode.role;
+    ru.maxHp = targetNode.hp;
+    ru.atk = targetNode.atk;
+    ru.def = targetNode.def;
+    ru.atkSpeed = targetNode.atkSpeed;
+    ru.range = targetNode.range;
+    ru.move = targetNode.move;
+    
+    // Эволюция исцеляет и сбрасывает опыт
+    ru.currentHp = targetNode.hp;
+    ru.battleExperience = 0;
+    ru.epochIndex = targetNode.epoch;
+
+    return { ok: true };
   }
 
   /**
@@ -179,6 +233,14 @@ export class Campaign {
       for (const ru of c.roster) {
         if (typeof ru.currentHp !== 'number') ru.currentHp = ru.maxHp;
         if (typeof ru.battleExperience !== 'number') ru.battleExperience = 0;
+        if (typeof ru.epochIndex !== 'number') {
+          try {
+            const tpl = findTemplate(ru.templateId);
+            ru.epochIndex = tpl.epochIndex ?? 1;
+          } catch {
+            ru.epochIndex = 1;
+          }
+        }
       }
       c.nextId = Math.max(c.nextId, c.roster.length + 1);
       return c;

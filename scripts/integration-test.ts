@@ -94,5 +94,60 @@ if (r1.result === 'player_win') {
   check('после поражения валюта та же', c.currency === curBefore);
 }
 
+console.log('\n=== Тест системы эволюции ===');
+const testCampaign = Campaign.newGame();
+testCampaign.currency = 200; // дадим достаточно золота
+
+// Найдём юнита "mammoth" (Siege, Осада), у него простая прямая эволюция: mammoth -> bronze_ballista -> iron_catapult
+const mammothRu = testCampaign.roster.find(u => u.templateId === 'mammoth');
+if (mammothRu) {
+  check('изначальная эпоха мамонта = 1', mammothRu.epochIndex === 1);
+  check('опыт мамонта вначале = 0', mammothRu.battleExperience === 0);
+  
+  // Добавим опыта
+  mammothRu.battleExperience = 2; // порог для 1 эпохи = 1 * 2 = 2
+  
+  // Попробуем эволюционировать мамонта в баллисту
+  const res = testCampaign.evolveUnit(mammothRu.id, 'bronze_ballista');
+  check('успешная эволюция мамонта в баллисту', res.ok, res.reason);
+  check('после эволюции эпоха мамонта = 2', mammothRu.epochIndex === 2);
+  check('опыт сбросился в 0', mammothRu.battleExperience === 0);
+  check('имя обновилось', mammothRu.name === 'Бронзовая Баллиста');
+  check('HP обновилось под новые статы', mammothRu.maxHp === 150 && mammothRu.currentHp === 150);
+  check('валюта списалась (200 - 45 = 155)', testCampaign.currency === 155);
+} else {
+  // Если в стартовом ростере мамонта нет, наймём его вручную для теста
+  testCampaign.currency = 200;
+  const hireRes = testCampaign.hire('mammoth');
+  const freshMammoth = testCampaign.roster.find(u => u.templateId === 'mammoth');
+  if (freshMammoth) {
+    freshMammoth.battleExperience = 2;
+    const res = testCampaign.evolveUnit(freshMammoth.id, 'bronze_ballista');
+    check('успешная эволюция нанятого мамонта в баллисту', res.ok, res.reason);
+    check('после эволюции эпоха = 2', freshMammoth.epochIndex === 2);
+  }
+}
+
+// Тест ветвления: guardian (Infantry, Племенной Страж) -> bronze_swordsman или bronze_phalanx
+const guardianRu = testCampaign.roster.find(u => u.templateId === 'guardian');
+if (guardianRu) {
+  guardianRu.battleExperience = 2;
+  
+  // Попробуем неверную цель эволюции
+  const badEvolve = testCampaign.evolveUnit(guardianRu.id, 'bronze_ballista');
+  check('нельзя эволюционировать в чужую ветку', !badEvolve.ok);
+  
+  // Эволюция в бронзового мечника
+  const goodEvolve = testCampaign.evolveUnit(guardianRu.id, 'bronze_swordsman');
+  check('успешная эволюция стража в мечника', goodEvolve.ok, goodEvolve.reason);
+  check('после эволюции эпоха = 2', guardianRu.epochIndex === 2);
+  check('имя обновилось в Бронзовый Мечник', guardianRu.name === 'Бронзовый Мечник');
+}
+
+// Проверим рассчёт мировой эпохи
+const avgScore = testCampaign.worldEpochScore();
+const manualAverage = testCampaign.roster.reduce((sum, u) => sum + u.epochIndex, 0) / testCampaign.roster.length;
+check('мировая эпоха рассчитывается корректно', Math.abs(avgScore - manualAverage) < 0.0001);
+
 console.log(`\nИТОГ: ${pass} прошло, ${fail} провалено`);
 if (fail > 0) process.exit(1);

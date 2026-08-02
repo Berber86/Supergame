@@ -20,6 +20,7 @@ export interface RosterUnit {
   move: number;
   currentHp: number;
   battleExperience: number;
+  epochIndex: number;
 }
 
 export function createRosterUnitFromTemplate(
@@ -39,6 +40,7 @@ export function createRosterUnitFromTemplate(
     move: tpl.move,
     currentHp: tpl.hp,
     battleExperience: 0,
+    epochIndex: tpl.epochIndex ?? 1,
   };
 }
 
@@ -54,6 +56,7 @@ export function rosterToTemplate(ru: RosterUnit): UnitTemplate {
     atkSpeed: ru.atkSpeed,
     range: ru.range,
     move: ru.move,
+    epochIndex: ru.epochIndex,
   };
 }
 
