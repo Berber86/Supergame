@@ -73,6 +73,17 @@ async function main() {
     for (const [id, x, y] of spots) world.place(id, x, y, 0, Date.now() - 864e5 * 30);
   }
 
+  if (process.env.PATHS) {
+    const { findPath, layPath } = await import('../src/world/paths');
+    for (const [a, b] of [
+      [[2, 22], [23, 19]],
+      [[20, 2], [12, 21]],
+    ] as [number, number][][]) {
+      const cells = findPath(world, { x: a[0], y: a[1] }, { x: b[0], y: b[1] });
+      if (cells) layPath(world, cells);
+    }
+  }
+
   const t = computeTime(d.getTime());
   const ws = new WeatherSystem();
   const wkind = (process.env.WEATHER ?? 'clear') as 'clear' | 'rain' | 'storm' | 'fog' | 'snow';

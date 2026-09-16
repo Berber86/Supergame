@@ -202,6 +202,12 @@ export const MILESTONES: Record<string, Milestone> = {
     text: 'Ровная площадка над садом — есть где поставить беседку.',
     unlocks: 'Рельеф',
   },
+  first_path: {
+    id: 'first_path',
+    title: 'Тропа',
+    text: 'Дорожка сама обошла камни и воду. По саду можно гулять.',
+    unlocks: 'Мелочи',
+  },
   grove: {
     id: 'grove',
     title: 'Роща',

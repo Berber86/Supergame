@@ -21,6 +21,7 @@ import { History } from './core/history';
 import { GardenStore } from './world/gardens';
 import { GardensPanel } from './ui/gardensPanel';
 import { waterLoudness } from './render/water';
+import { findPath, layPath } from './world/paths';
 import { PlacedObject } from './world/types';
 
 const app = document.getElementById('app')!;
@@ -61,6 +62,11 @@ const ui = new UI(app, world, {
     scene.showGrid = sel.kind === 'item' || sel.kind === 'brush' || sel.kind === 'fill';
     canvas.classList.toggle('building', sel.kind !== 'none');
     canvas.classList.toggle('picking', sel.kind === 'pick' || sel.kind === 'move');
+    if (sel.kind !== 'path') {
+      pathStart = null;
+      scene.pathFrom = null;
+      scene.pathPreview = null;
+    }
     if (sel.kind === 'none') {
       scene.ghost = null;
       scene.highlightId = -1;
@@ -181,6 +187,8 @@ let dragging = false;
 let painting = false;
 /** Объект, который сейчас переносят, и его исходное место. */
 let moving: { obj: PlacedObject; fromX: number; fromY: number } | null = null;
+/** Начало тропы: первый клик инструмента «Тропа». */
+let pathStart: { x: number; y: number } | null = null;
 let lastX = 0;
 let lastY = 0;
 let pointerX = 0;
@@ -381,6 +389,9 @@ window.addEventListener('keydown', (e) => {
   } else if (k === 'f') {
     ui.toggleBuild(true);
     ui.fillFromKeyboard();
+  } else if (k === 'l') {
+    ui.toggleBuild(true);
+    ui.select(ui.selection.kind === 'path' ? { kind: 'none' } : { kind: 'path' });
   } else if (k === 'u') {
     gardensPanel.toggle();
   } else if (k === '1' || k === '2' || k === '3') {
@@ -437,6 +448,13 @@ function updateGhost(): void {
   }
   scene.highlightId = -1;
 
+  if (selection.kind === 'path') {
+    scene.ghost = null;
+    // Пока выбран только старт — показываем, куда ляжет дорога
+    scene.pathPreview = pathStart ? findPath(world, pathStart, { x: Math.floor(p.tx), y: Math.floor(p.ty) }) : null;
+    return;
+  }
+
   if (selection.kind === 'fill') {
     scene.ghost = {
       kind: 'brush',
@@ -482,6 +500,12 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
   // Пипетка: подобрать то, что уже стоит, и продолжить тем же
   if (selection.kind === 'pick') {
     pickAt(p.tx, p.ty);
+    return;
+  }
+
+  if (selection.kind === 'path') {
+    if (!isClick) return;
+    layPathStep(p.tx, p.ty);
     return;
   }
 
@@ -536,6 +560,51 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
   }
 
   if (selection.kind === 'erase') applyErase(sx, sy);
+}
+
+/** Тропа в два клика: первый отмечает начало, второй прокладывает дорогу. */
+function layPathStep(tx: number, ty: number): void {
+  const x = Math.floor(tx);
+  const y = Math.floor(ty);
+  const here = world.at(x, y);
+  if (!here || here.water || here.indoor) {
+    ui.toast('Тропа здесь не ляжет');
+    return;
+  }
+
+  if (!pathStart) {
+    pathStart = { x, y };
+    scene.pathFrom = pathStart;
+    ui.setHint('Теперь отметьте, куда ведёт тропа');
+    return;
+  }
+
+  const cells = findPath(world, pathStart, { x, y });
+  pathStart = null;
+  scene.pathFrom = null;
+  scene.pathPreview = null;
+  if (!cells) {
+    ui.toast('Отсюда туда дороги нет');
+    ui.setHint('Тропа — отметьте начало, потом конец');
+    return;
+  }
+
+  history.begin('тропа', null);
+  world.clearTouched();
+  const laid = layPath(world, cells);
+  if (laid) {
+    repaintTouched();
+    if (history.commit()) syncHistoryUI();
+    audio.place();
+    flushMilestones();
+    world.checkMilestone('first_path');
+    flushMilestones();
+    ui.toast(`Тропа легла: ${laid} шагов`);
+  } else {
+    history.abort();
+    ui.toast('Тропа уже проложена');
+  }
+  ui.setHint('Тропа — отметьте начало, потом конец');
 }
 
 /** Пипетка: под указателем может быть и предмет, и просто земля. */

@@ -84,6 +84,7 @@ export const GLYPHS: Record<string, string> = {
   gardens: '<path d="M4 20V9l6-4 6 4v11"/><path d="M16 20V12h4v8"/><path d="M4 20h16"/>',
   file: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
   trash: '<path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/>',
+  path: '<path d="M7 21c0-4 3-4 3-8s-3-4-3-7"/><path d="M14 21c1.5-3 3-3.5 3-7s-2-4-2-7"/><circle cx="7" cy="3" r="1"/><circle cx="15" cy="4" r="1"/>',
 };
 
 export function svgIcon(name: string, size = 22, stroke = 'currentColor'): string {

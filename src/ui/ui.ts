@@ -19,7 +19,9 @@ export type Selection =
   /** Перенос поставленного. */
   | { kind: 'move' }
   /** Заливка области материалом. */
-  | { kind: 'fill'; ground: GroundId; name: string };
+  | { kind: 'fill'; ground: GroundId; name: string }
+  /** Тропа: два клика — начало и конец, дорога прокладывается сама. */
+  | { kind: 'path' };
 
 export interface UIHooks {
   onSelect(sel: Selection): void;
@@ -116,6 +118,7 @@ export class UI {
         <div class="bb-btn" data-act="pick" title="Пипетка (I) — подобрать то, что стоит">${svgIcon('dropper', 19)}</div>
         <div class="bb-btn" data-act="move" title="Перенести (V)">${svgIcon('move', 19)}</div>
         <div class="bb-btn" data-act="fill" title="Залить область (F)">${svgIcon('fill', 19)}</div>
+        <div class="bb-btn" data-act="path" title="Тропа (P) — два клика, дорога ляжет сама">${svgIcon('path', 19)}</div>
       </div>
       <div class="bb-sep"></div>
       <div class="bb-group bb-sizes" title="Размер кисти (1 · 2 · 3)">
@@ -133,6 +136,7 @@ export class UI {
         else if (act === 'pick') this.select(this.selection.kind === 'pick' ? { kind: 'none' } : { kind: 'pick' });
         else if (act === 'move') this.select(this.selection.kind === 'move' ? { kind: 'none' } : { kind: 'move' });
         else if (act === 'fill') this.startFill();
+        else if (act === 'path') this.select(this.selection.kind === 'path' ? { kind: 'none' } : { kind: 'path' });
       });
     });
     bb.querySelectorAll<HTMLElement>('.bb-size').forEach((b) => {
@@ -191,6 +195,13 @@ export class UI {
         <dt>Зажать</dt><dd>Рисовать землёй и мелочами</dd>
         <dt>R</dt><dd>Повернуть предмет</dd>
         <dt>X / ПКМ</dt><dd>Убрать предмет</dd>
+        <dt>I</dt><dd>Пипетка — подобрать то, что уже стоит</dd>
+        <dt>V</dt><dd>Перенести поставленное</dd>
+        <dt>F</dt><dd>Залить область материалом</dd>
+        <dt>L</dt><dd>Тропа: два клика, дорога ляжет сама</dd>
+        <dt>1 2 3</dt><dd>Размер кисти земли</dd>
+        <dt>Ctrl+Z</dt><dd>Отменить · с Shift — вернуть</dd>
+        <dt>U</dt><dd>Усадьбы: несколько садов, файл на диск</dd>
         <dt>Esc</dt><dd>Отложить инструмент</dd>
       </dl>
       <div class="section">Время</div>
@@ -340,6 +351,7 @@ export class UI {
     bb.querySelector('[data-act="pick"]')!.classList.toggle('active', k === 'pick');
     bb.querySelector('[data-act="move"]')!.classList.toggle('active', k === 'move');
     bb.querySelector('[data-act="fill"]')!.classList.toggle('active', k === 'fill');
+    bb.querySelector('[data-act="path"]')!.classList.toggle('active', k === 'path');
   }
 
   setHistoryState(canUndo: boolean, canRedo: boolean, undoLabel: string, redoLabel: string): void {
@@ -366,6 +378,7 @@ export class UI {
     else if (sel.kind === 'pick') this.setHint('Пипетка — кликните по тому, что хотите продолжить ставить');
     else if (sel.kind === 'fill') this.setHint(`Заливка «${sel.name}» — кликните по области`);
     else if (sel.kind === 'move') this.setHint('Перенос — тяните поставленное на новое место');
+    else if (sel.kind === 'path') this.setHint('Тропа — отметьте начало, потом конец; дорога ляжет сама');
   }
 
   toggleBuild(force?: boolean): void {

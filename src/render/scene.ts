@@ -62,6 +62,10 @@ export class Scene {
   highlightId = -1;
   /** Течение воды: считается по рельефу, обновляется при правках земли. */
   flow = new WaterFlow();
+  /** Начало прокладываемой тропы. */
+  pathFrom: { x: number; y: number } | null = null;
+  /** Предпросмотр тропы — клетки, по которым она ляжет. */
+  pathPreview: { x: number; y: number }[] | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -227,6 +231,9 @@ export class Scene {
 
     // сетка в режиме строительства
     if (this.showGrid) this.drawGrid(ctx, world, atm);
+
+    // предпросмотр тропы
+    if (this.pathFrom || this.pathPreview) this.drawPathPreview(ctx, world, time);
 
     // подсветка наведённого тайла / призрак объекта
     if (this.ghost) this.drawGhost(ctx, world, atm, time);
@@ -480,6 +487,42 @@ export class Scene {
     ctx.setLineDash([]);
     ctx.fillStyle = css(col, 0.14 * pulse);
     ctx.fill();
+    ctx.restore();
+  }
+
+  /** Тропа перед прокладкой: цепочка следов от начала к концу. */
+  private drawPathPreview(ctx: Ctx, world: World, time: number): void {
+    const pulse = 0.6 + Math.sin(time * 0.005) * 0.2;
+    const col: RGB = { r: 248, g: 242, b: 214 };
+
+    // Отметка начала — кружок, чтобы было видно, откуда ведём
+    if (this.pathFrom) {
+      const t = world.at(this.pathFrom.x, this.pathFrom.y);
+      const p = isoToScreen(this.pathFrom.x + 0.5, this.pathFrom.y + 0.5, t ? t.level : 0);
+      ctx.save();
+      ctx.strokeStyle = css(col, 0.8 * pulse);
+      ctx.lineWidth = 2 / this.camera.zoom;
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, TILE_W * 0.26, TILE_H * 0.26, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    const cells = this.pathPreview;
+    if (!cells || cells.length < 2) return;
+
+    ctx.save();
+    for (let i = 0; i < cells.length; i++) {
+      const c = cells[i];
+      const t = world.at(c.x, c.y);
+      const p = isoToScreen(c.x + 0.5, c.y + 0.5, t ? t.level : 0);
+      // След тем ярче, чем ближе к началу — видно направление
+      const k = 1 - (i / cells.length) * 0.45;
+      ctx.fillStyle = css(col, 0.3 * pulse * k);
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, TILE_W * 0.3, TILE_H * 0.3, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
