@@ -25,6 +25,7 @@ async function main() {
   const { computeTime, SEASON_MS, DAY_MS } = await import('../src/core/clock');
   const { GRID } = await import('../src/core/iso');
   const { Life } = await import('../src/world/life');
+  const { WeatherSystem } = await import('../src/world/weatherState');
 
   const W = Number(process.env.W ?? 1500);
   const H = Number(process.env.H ?? 860);
@@ -53,16 +54,22 @@ async function main() {
   d.setHours(Math.floor(hour), Math.round((hour % 1) * 60), 0, 0);
 
   const t = computeTime(d.getTime());
-  const atm = buildAtmosphere(t);
+  const ws = new WeatherSystem();
+  const wkind = (process.env.WEATHER ?? 'clear') as 'clear' | 'rain' | 'storm' | 'fog' | 'snow';
+  ws.force(wkind);
+  // разгоняем погоду до полной силы
+  for (let i = 0; i < 300; i++) ws.update(60, t);
+  const atm = buildAtmosphere(t, ws.state.overcast);
 
   // Прогреваем частицы и живность
   const life = new Life();
   const WARM = Number(process.env.WARM ?? 260);
   for (let i = 0; i < WARM; i++) {
     life.update(world, t, 16, 1000 + i * 16);
-    scene.render(world, atm, 1000 + i * 16, 16, life);
+    ws.update(16, t);
+    scene.render(world, atm, 1000 + i * 16, 16, life, ws.state);
   }
-  console.log(`кот@${life.cats[0] ? life.cats[0].tx.toFixed(1)+','+life.cats[0].ty.toFixed(1)+' '+life.cats[0].state : '-'} коты=${life.cats.length} птицы=${life.birds.length} порхают=${life.flutters.length} карпы=${life.fish.length} ветер=${life.windBase.toFixed(2)}`);
+  console.log(`погода=${wkind} дождь=${ws.state.rain.toFixed(2)} туман=${ws.state.fog.toFixed(2)} тучи=${ws.state.overcast.toFixed(2)} | кот@${life.cats[0] ? life.cats[0].tx.toFixed(1)+','+life.cats[0].ty.toFixed(1)+' '+life.cats[0].state : '-'} коты=${life.cats.length} птицы=${life.birds.length} порхают=${life.flutters.length} карпы=${life.fish.length} ветер=${life.windBase.toFixed(2)}`);
 
   const buf = (canvas as unknown as { toBuffer(mime: string): Buffer }).toBuffer('image/png');
   writeFileSync(out, buf);

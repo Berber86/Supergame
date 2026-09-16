@@ -142,6 +142,8 @@ export interface Atmosphere {
   /** Направление и мягкость теней. */
   sunDir: { x: number; y: number };
   season: SeasonId;
+  /** Затянутость неба 0..1. */
+  overcast: number;
   /** Сила золотого часа (дубль из TimeState — удобно для рендера). */
   golden: number;
   time: TimeState;
@@ -154,24 +156,34 @@ const DAY_TINT = rgb(255, 250, 232);
 const NIGHT_SKY: [RGB, RGB] = [rgb(30, 42, 74), rgb(58, 74, 108)];
 const DUSK_SKY: [RGB, RGB] = [rgb(148, 142, 168), rgb(238, 186, 148)];
 
-export function buildAtmosphere(t: TimeState): Atmosphere {
+export function buildAtmosphere(t: TimeState, overcast = 0): Atmosphere {
   const blend = seasonBlend(t);
   const palette = mixPalette(SEASON_PALETTES[blend.from], SEASON_PALETTES[blend.to], blend.k);
 
   const d = t.daylight;
-  const g = t.golden;
+  // Тучи глушат золотой час и приглушают дневной свет
+  const g = t.golden * (1 - overcast * 0.85);
 
   // Тон света
   let lightTint = mix(NIGHT_TINT, DAY_TINT, clamp01(d * 1.15));
   lightTint = mix(lightTint, DUSK_TINT, g * 0.75);
+  lightTint = mix(lightTint, rgb(178, 190, 204), overcast * 0.55);
 
-  const skyTop = mix(mix(NIGHT_SKY[0], palette.sky[0], clamp01(d * 1.2)), DUSK_SKY[0], g * 0.6);
-  const skyBottom = mix(mix(NIGHT_SKY[1], palette.sky[1], clamp01(d * 1.2)), DUSK_SKY[1], g * 0.7);
+  let skyTop = mix(mix(NIGHT_SKY[0], palette.sky[0], clamp01(d * 1.2)), DUSK_SKY[0], g * 0.6);
+  let skyBottom = mix(mix(NIGHT_SKY[1], palette.sky[1], clamp01(d * 1.2)), DUSK_SKY[1], g * 0.7);
+  if (overcast > 0) {
+    // грозовое небо: свинцовые, слегка сизые тона
+    const stormTop = mix(rgb(96, 104, 116), rgb(48, 54, 66), 1 - clamp01(d * 1.3));
+    const stormBot = mix(rgb(138, 144, 152), rgb(62, 68, 80), 1 - clamp01(d * 1.3));
+    skyTop = mix(skyTop, stormTop, overcast);
+    skyBottom = mix(skyBottom, stormBot, overcast);
+  }
 
-  const exposure = lerp(0.42, 1.0, clamp01(d * 1.05)) + g * 0.05;
+  let exposure = lerp(0.42, 1.0, clamp01(d * 1.05)) + g * 0.05;
+  exposure *= lerp(1, 0.62, overcast);
 
   const shadowTint = mix(rgb(52, 62, 104), rgb(108, 116, 150), d);
-  const shadowAmount = lerp(0.1, 0.3, d) + g * 0.06;
+  const shadowAmount = (lerp(0.1, 0.3, d) + g * 0.06) * lerp(1, 0.38, overcast);
 
   // Солнце ходит по небу: тени поворачиваются в течение дня.
   const ang = Math.PI * (0.15 + t.dayT * 1.0);
@@ -186,10 +198,11 @@ export function buildAtmosphere(t: TimeState): Atmosphere {
     exposure,
     skyTop,
     skyBottom,
-    lampGlow: clamp01(1 - d * 1.35) ,
+    lampGlow: clamp01(Math.max(1 - d * 1.35, overcast * 0.55 * (1 - d * 0.5))),
     fireflies: clamp01((1 - d * 1.5)) * (blend.from === 'summer' || blend.from === 'spring' ? 1 : 0.25),
     sunDir,
     season: blend.from,
+    overcast,
     golden: g,
     time: t,
   };

@@ -68,6 +68,10 @@ export const GLYPHS: Record<string, string> = {
   rotate: '<path d="M4 12a8 8 0 1 1 2.6 5.9"/><path d="M3 18.5l1.2-4.4 4.4 1.2"/>',
   scroll: '<path d="M6 4h12v16H6z"/><path d="M9 8h6M9 12h6M9 16h4"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  'sound-on':
+    '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M16 9.2a4 4 0 010 5.6"/><path d="M18.6 6.6a7.6 7.6 0 010 10.8"/>',
+  'sound-off':
+    '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M16.5 10l4 4M20.5 10l-4 4"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
   grid: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5" opacity=".5"/>',

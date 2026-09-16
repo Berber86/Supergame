@@ -13,6 +13,10 @@ import { World } from './world/world';
 import { UI, Selection } from './ui/ui';
 import { ITEM_BY_ID } from './world/catalog';
 import { Life } from './world/life';
+import { TimeControl } from './core/timeControl';
+import { WeatherSystem } from './world/weatherState';
+import { GardenAudio } from './audio/audio';
+import { DevPanel } from './ui/devPanel';
 
 const app = document.getElementById('app')!;
 
@@ -28,6 +32,9 @@ if (world.load()) {
 }
 
 const life = new Life();
+const timeCtl = new TimeControl();
+const weatherSys = new WeatherSystem();
+const audio = new GardenAudio();
 const scene = new Scene(canvas);
 scene.centerOn(GRID / 2, GRID / 2 + 1.5);
 scene.camera.zoom = 0.85;
@@ -64,6 +71,16 @@ const ui = new UI(app, world, {
     location.reload();
   },
 });
+
+const devPanel = new DevPanel(app, timeCtl, weatherSys, {
+  onChange() {
+    scene.markTerrainDirty();
+    wake();
+  },
+});
+
+// Гром: звук приходит позже вспышки
+weatherSys.onThunder = (d) => audio.thunder(d);
 
 // ---------------- Режим созерцания ----------------
 
@@ -222,6 +239,18 @@ window.addEventListener('keydown', (e) => {
     ui.toggleHelp(false);
   } else if (k === 'g') {
     scene.showGrid = !scene.showGrid;
+  } else if (k === 't') {
+    devPanel.toggle();
+    devPanel.refresh();
+  } else if (k === 'm') {
+    toggleSound();
+  } else if (k === 'arrowleft' || k === 'arrowright') {
+    e.preventDefault();
+    const dir = k === 'arrowright' ? 1 : -1;
+    if (e.shiftKey) timeCtl.nextSeason(dir);
+    else timeCtl.nudgeHour(dir * (e.altKey ? 0.25 : 1));
+    scene.markTerrainDirty();
+    devPanel.refresh();
   }
 });
 
@@ -293,6 +322,8 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
       if (tooClose) return;
     }
     world.place(item.id, s.tx, s.ty, ghostRot);
+    if (item.needsWater || item.onWater) audio.splash();
+    else audio.place();
     flushMilestones();
     return;
   }
@@ -340,6 +371,27 @@ function takeScreenshot(): void {
   });
 }
 
+// ---------------- Звук ----------------
+
+let soundOn = false;
+
+async function toggleSound(force?: boolean): Promise<void> {
+  const want = force ?? !soundOn;
+  if (want) {
+    await audio.start();
+    audio.setEnabled(true);
+    soundOn = true;
+    ui.toast('Звук сада включён');
+  } else {
+    audio.setEnabled(false);
+    soundOn = false;
+    ui.toast('Тишина');
+  }
+  ui.setSoundState(soundOn);
+}
+
+ui.onSound = () => void toggleSound();
+
 // ---------------- Заставка ----------------
 
 const splash = document.createElement('div');
@@ -355,19 +407,48 @@ splash.querySelector('.enter')!.addEventListener('click', () => {
   splash.classList.add('hide');
   setTimeout(() => splash.remove(), 1400);
   wake();
+  void toggleSound(true);
 });
 
 // ---------------- Игровой цикл ----------------
 
 let last = performance.now();
 let eveningChecked = '';
+let audioAccum = 0;
+
+/** Что сейчас звучит вокруг: считаем по составу сада рядом с камерой. */
+function gatherAudioContext() {
+  let water = 0;
+  let trees = 0;
+  let hasChime = false;
+  let hasShishi = false;
+  for (const o of world.objects) {
+    const item = ITEM_BY_ID.get(o.type);
+    if (!item) continue;
+    if (item.kind === 'tree') trees++;
+    if (o.type === 'wind_chime') hasChime = true;
+    if (o.type === 'shishi') hasShishi = true;
+  }
+  for (let y = 0; y < 26; y += 2)
+    for (let x = 0; x < 26; x += 2) if (world.at(x, y)?.water) water += 0.03;
+  return {
+    wind: life.windBase + life.gusts.reduce((a, g) => a + g.strength, 0) * 0.5,
+    waterNearby: Math.min(1, water),
+    hasChime,
+    hasShishi,
+    catNear: life.cats.length > 0,
+    trees,
+  };
+}
 
 function frame(now: number): void {
   const dt = Math.min(now - last, 60);
   last = now;
 
-  const t = computeTime(Date.now());
-  const atm = buildAtmosphere(t);
+  timeCtl.tick(dt);
+  const t = timeCtl.compute();
+  weatherSys.update(dt, t);
+  const atm = buildAtmosphere(t, weatherSys.state.overcast);
 
   // Веха «Сумерки» — когда игрок впервые застаёт вечер
   const dayKey = `${t.year}-${t.seasonIndex}-${Math.floor(t.dayT * 4)}`;
@@ -384,8 +465,16 @@ function frame(now: number): void {
   // Интерфейс растворяется в бездействии
   if (!zenMode && !ui.buildOpen && now - lastInteraction > IDLE_MS) setZen(true);
 
-  scene.render(world, atm, now, dt, life);
+  scene.render(world, atm, now, dt, life, weatherSys.state);
   ui.tick(t, atm);
+  devPanel.tick();
+
+  // Звук: пересобираем «что слышно» из состава сада
+  audioAccum -= dt;
+  if (audioAccum <= 0) {
+    audioAccum = 400;
+    audio.update(400, t, weatherSys.state, gatherAudioContext());
+  }
 
   requestAnimationFrame(frame);
 }

@@ -34,6 +34,8 @@ export class UI {
   private milestoneTimer = 0;
   private toastTimer = 0;
   private iconSeason = '';
+  /** Назначается извне: переключение звука. */
+  onSound: (() => void) | null = null;
 
   constructor(root: HTMLElement, world: World, hooks: UIHooks) {
     this.root = root;
@@ -78,12 +80,14 @@ export class UI {
     this.els.btnBuild = mk('hand', 'Строить (B)');
     this.els.btnZen = mk('eye', 'Созерцание (Z)');
     this.els.btnShot = mk('camera', 'Снимок (P)');
+    this.els.btnSound = mk('sound-off', 'Звук (M)');
     this.els.btnHelp = mk('scroll', 'Свиток (H)');
     layer.appendChild(tools);
 
     this.els.btnBuild.addEventListener('click', () => this.toggleBuild());
     this.els.btnZen.addEventListener('click', () => this.hooks.onZen());
     this.els.btnShot.addEventListener('click', () => this.hooks.onScreenshot());
+    this.els.btnSound.addEventListener('click', () => this.onSound?.());
     this.els.btnHelp.addEventListener('click', () => this.toggleHelp());
 
     // --- Каталог ---
@@ -129,6 +133,7 @@ export class UI {
         <dt>Колесо</dt><dd>Приблизить или отдалить</dd>
         <dt>Z</dt><dd>Созерцание — интерфейс растворяется</dd>
         <dt>P</dt><dd>Сохранить снимок сада</dd>
+        <dt>M</dt><dd>Звук сада: листва, вода, цикады, дождь</dd>
       </dl>
       <div class="section">Строительство</div>
       <dl>
@@ -144,6 +149,8 @@ export class UI {
         <dt>Часы</dt><dd>Время в саду равно вашему</dd>
         <dt>Сезон</dt><dd>Три реальных дня; год — двенадцать</dd>
         <dt>Рост</dt><dd>Сакура взрослеет за неделю. Ничто не гибнет.</dd>
+        <dt>T</dt><dd>Мастерская времени: выбрать час, сезон и погоду</dd>
+        <dt>← →</dt><dd>Сдвинуть час; с Shift — сменить сезон</dd>
       </dl>
       <div class="section">Мастерство</div>
       <dl>
@@ -255,6 +262,15 @@ export class UI {
     const open = force ?? !this.els.help.classList.contains('show');
     this.els.help.classList.toggle('show', open);
     this.els.btnHelp.classList.toggle('active', open);
+  }
+
+  setSoundState(on: boolean): void {
+    const b = this.els.btnSound;
+    if (!b) return;
+    b.classList.toggle('active', on);
+    b.innerHTML = `${svgIcon(on ? 'sound-on' : 'sound-off', 23)}<span class="label">${
+      on ? 'Тишина (M)' : 'Звук (M)'
+    }</span>`;
   }
 
   setHint(text: string): void {

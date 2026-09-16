@@ -13,6 +13,8 @@ import { drawHouseRoof, drawHouseWalls } from './building';
 import { Life } from '../world/life';
 import { drawBird, drawCat, drawFish, drawFlutter } from './creatures';
 import { Weather, drawMist, drawSunShafts } from './weather';
+import { RainRenderer, drawFog, drawLightning, drawWetSheen } from './rain';
+import { WeatherState } from '../world/weatherState';
 
 export interface Camera {
   x: number;
@@ -48,6 +50,8 @@ export class Scene {
   showGrid = false;
   wind = 0.5;
   life: Life | null = null;
+  rain = new RainRenderer();
+  weatherState: WeatherState | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -62,6 +66,7 @@ export class Scene {
     this.canvas.width = Math.round(w * this.dpr);
     this.canvas.height = Math.round(h * this.dpr);
     this.weather.resize(w, h);
+    this.rain.resize(w, h);
   }
 
   get viewW(): number {
@@ -116,8 +121,11 @@ export class Scene {
     )}|${Math.round(atm.lightTint.b / 9)}`;
   }
 
-  render(world: World, atm: Atmosphere, time: number, dt: number, life?: Life): void {
+  render(world: World, atm: Atmosphere, time: number, dt: number, life?: Life, weatherState?: WeatherState): void {
     if (life) this.life = life;
+    if (weatherState) this.weatherState = weatherState;
+    const ws = this.weatherState;
+    if (ws) this.rain.update(dt, ws, world);
     const ctx = this.ctx;
     const W = this.viewW;
     const H = this.viewH;
@@ -171,6 +179,12 @@ export class Scene {
     // кровля и столбы — поверх интерьера
     drawHouseRoof(ctx, world, atm, time);
 
+    // мокрый блеск и круги от капель
+    if (ws) {
+      drawWetSheen(ctx, world, atm, ws, time);
+      this.rain.drawWorldLayer(ctx, world, atm, ws);
+    }
+
     ctx.restore();
 
     // --- Атмосферные слои поверх сцены ---
@@ -190,6 +204,13 @@ export class Scene {
     }
     this.weather.update(dt, atm);
     this.weather.draw(ctx, atm);
+
+    // дождь, туман и молнии — поверх сцены
+    if (ws) {
+      this.rain.drawScreenLayer(ctx, atm, ws);
+      drawFog(ctx, W, H, atm, ws, time);
+      drawLightning(ctx, W, H, ws);
+    }
 
     // --- Пост-обработка ---
     this.drawPaperGrain(ctx, W, H);
