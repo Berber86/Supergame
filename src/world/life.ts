@@ -142,6 +142,16 @@ export class Life {
   /** Лепестки, сорванные с деревьев: сцена забирает их каждый кадр. */
   emitted: { x: number; y: number; kind: 'petal' | 'leaf'; seed: number }[] = [];
 
+  /** Забыть всю живность — при переходе в другую усадьбу. */
+  reset(): void {
+    this.cats = [];
+    this.birds = [];
+    this.flutters = [];
+    this.fish = [];
+    this.gusts = [];
+    this.emitted = [];
+  }
+
   /** Пересобирает агентов под текущий состав сада. */
   sync(world: World): void {
     // --- Коты: по объекту «кот» в саду ---

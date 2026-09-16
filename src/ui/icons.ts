@@ -75,6 +75,15 @@ export const GLYPHS: Record<string, string> = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
   grid: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5" opacity=".5"/>',
+  undo: '<path d="M9 7L4 12l5 5"/><path d="M4 12h9.5a5.5 5.5 0 010 11H10"/>',
+  redo: '<path d="M15 7l5 5-5 5"/><path d="M20 12h-9.5a5.5 5.5 0 000 11H14"/>',
+  dropper:
+    '<path d="M14.5 4.8a2.6 2.6 0 013.7 3.7l-1.3 1.3 1 1-1.6 1.6-1-1L9 18.7l-3.6.9.9-3.6 6.3-6.3-1-1L13.2 7l1 1z"/>',
+  move: '<path d="M12 3v18M3 12h18"/><path d="M12 3l-2.4 2.6M12 3l2.4 2.6M12 21l-2.4-2.6M12 21l2.4-2.6"/><path d="M3 12l2.6-2.4M3 12l2.6 2.4M21 12l-2.6-2.4M21 12l2.6 2.4"/>',
+  fill: '<path d="M11 3l8 8-7.5 7.5a2 2 0 01-2.8 0L4 13a2 2 0 010-2.8z"/><path d="M6 8.5h11"/><path d="M20 15c1.4 2 2 3.1 2 4a2 2 0 11-4 0c0-.9.6-2 2-4z"/>',
+  gardens: '<path d="M4 20V9l6-4 6 4v11"/><path d="M16 20V12h4v8"/><path d="M4 20h16"/>',
+  file: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
+  trash: '<path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/>',
 };
 
 export function svgIcon(name: string, size = 22, stroke = 'currentColor'): string {

@@ -3,6 +3,7 @@
 import { CatalogItem, ITEMS, MILESTONES, TABS, TERRAIN_BRUSHES, TerrainBrush } from '../world/catalog';
 import { SEASON_NAMES, SEASON_POEM, TimeState, partOfDay } from '../core/clock';
 import { Atmosphere } from '../world/palette';
+import { GroundId } from '../world/types';
 import { World } from '../world/world';
 import { itemIcon, svgIcon } from './icons';
 
@@ -12,7 +13,13 @@ export type Selection =
   | { kind: 'none' }
   | { kind: 'item'; item: CatalogItem }
   | { kind: 'brush'; brush: TerrainBrush }
-  | { kind: 'erase' };
+  | { kind: 'erase' }
+  /** Пипетка: подобрать то, что уже стоит. */
+  | { kind: 'pick' }
+  /** Перенос поставленного. */
+  | { kind: 'move' }
+  /** Заливка области материалом. */
+  | { kind: 'fill'; ground: GroundId; name: string };
 
 export interface UIHooks {
   onSelect(sel: Selection): void;
@@ -20,6 +27,10 @@ export interface UIHooks {
   onZen(): void;
   onScreenshot(): void;
   onReset(): void;
+  onUndo(): void;
+  onRedo(): void;
+  onBrushSize(n: number): void;
+  onGardens(): void;
 }
 
 export class UI {
@@ -34,6 +45,7 @@ export class UI {
   private milestoneTimer = 0;
   private toastTimer = 0;
   private iconSeason = '';
+  brushSize = 1;
   /** Назначается извне: переключение звука. */
   onSound: (() => void) | null = null;
 
@@ -81,6 +93,7 @@ export class UI {
     this.els.btnZen = mk('eye', 'Созерцание (Z)');
     this.els.btnShot = mk('camera', 'Снимок (P)');
     this.els.btnSound = mk('sound-off', 'Звук (M)');
+    this.els.btnGardens = mk('gardens', 'Усадьбы (U)');
     this.els.btnHelp = mk('scroll', 'Свиток (H)');
     layer.appendChild(tools);
 
@@ -88,7 +101,43 @@ export class UI {
     this.els.btnZen.addEventListener('click', () => this.hooks.onZen());
     this.els.btnShot.addEventListener('click', () => this.hooks.onScreenshot());
     this.els.btnSound.addEventListener('click', () => this.onSound?.());
+    this.els.btnGardens.addEventListener('click', () => this.hooks.onGardens());
     this.els.btnHelp.addEventListener('click', () => this.toggleHelp());
+
+    // --- Инструменты строителя (видны только в режиме стройки) ---
+    const bb = this.el('div', 'buildbar wood');
+    bb.innerHTML = `
+      <div class="bb-group">
+        <div class="bb-btn" data-act="undo" title="Отменить (Ctrl+Z)">${svgIcon('undo', 19)}</div>
+        <div class="bb-btn" data-act="redo" title="Повторить (Ctrl+Shift+Z)">${svgIcon('redo', 19)}</div>
+      </div>
+      <div class="bb-sep"></div>
+      <div class="bb-group">
+        <div class="bb-btn" data-act="pick" title="Пипетка (I) — подобрать то, что стоит">${svgIcon('dropper', 19)}</div>
+        <div class="bb-btn" data-act="move" title="Перенести (V)">${svgIcon('move', 19)}</div>
+        <div class="bb-btn" data-act="fill" title="Залить область (F)">${svgIcon('fill', 19)}</div>
+      </div>
+      <div class="bb-sep"></div>
+      <div class="bb-group bb-sizes" title="Размер кисти (1 · 2 · 3)">
+        <div class="bb-size active" data-size="1">1</div>
+        <div class="bb-size" data-size="3">3</div>
+        <div class="bb-size" data-size="5">5</div>
+      </div>`;
+    layer.appendChild(bb);
+    this.els.buildbar = bb;
+    bb.querySelectorAll<HTMLElement>('.bb-btn').forEach((b) => {
+      b.addEventListener('click', () => {
+        const act = b.dataset.act!;
+        if (act === 'undo') this.hooks.onUndo();
+        else if (act === 'redo') this.hooks.onRedo();
+        else if (act === 'pick') this.select(this.selection.kind === 'pick' ? { kind: 'none' } : { kind: 'pick' });
+        else if (act === 'move') this.select(this.selection.kind === 'move' ? { kind: 'none' } : { kind: 'move' });
+        else if (act === 'fill') this.startFill();
+      });
+    });
+    bb.querySelectorAll<HTMLElement>('.bb-size').forEach((b) => {
+      b.addEventListener('click', () => this.setBrushSize(Number(b.dataset.size)));
+    });
 
     // --- Каталог ---
     const cat = this.el('div', 'catalog');
@@ -240,18 +289,89 @@ export class UI {
     box.appendChild(er);
   }
 
+  /** Открыть вкладку каталога — нужно пипетке. */
+  openTab(id: string): void {
+    if (!this.tabUnlocked(id)) return;
+    this.activeTab = id;
+    this.world.seenTabs.add(id);
+    this.renderTabs();
+    this.renderItems();
+  }
+
+  /** Заливка по клавише F. */
+  fillFromKeyboard(): void {
+    this.startFill();
+  }
+
+  setBrushSize(n: number): void {
+    this.brushSize = n;
+    this.els.buildbar.querySelectorAll<HTMLElement>('.bb-size').forEach((b) => {
+      b.classList.toggle('active', Number(b.dataset.size) === n);
+    });
+    this.hooks.onBrushSize(n);
+    if (this.selection.kind === 'brush' && this.selection.brush.kind === 'ground') {
+      this.setHint(`${this.selection.brush.name} · кисть ${n}×${n}`);
+    }
+  }
+
+  /** Заливка работает материалом выбранной кисти земли. */
+  private startFill(): void {
+    if (this.selection.kind === 'fill') {
+      this.select({ kind: 'none' });
+      return;
+    }
+    const brush = this.selection.kind === 'brush' && this.selection.brush.ground ? this.selection.brush : null;
+    if (!brush) {
+      this.toast('Сначала выберите материал на вкладке «Земля»');
+      this.activeTab = 'ground';
+      this.renderTabs();
+      this.renderItems();
+      this.toggleBuild(true);
+      return;
+    }
+    this.select({ kind: 'fill', ground: brush.ground!, name: brush.name });
+  }
+
+  /** Подсветка активного инструмента и доступности отмены. */
+  private syncBuildbar(): void {
+    const bb = this.els.buildbar;
+    if (!bb) return;
+    const k = this.selection.kind;
+    bb.querySelector('[data-act="pick"]')!.classList.toggle('active', k === 'pick');
+    bb.querySelector('[data-act="move"]')!.classList.toggle('active', k === 'move');
+    bb.querySelector('[data-act="fill"]')!.classList.toggle('active', k === 'fill');
+  }
+
+  setHistoryState(canUndo: boolean, canRedo: boolean, undoLabel: string, redoLabel: string): void {
+    const bb = this.els.buildbar;
+    if (!bb) return;
+    const u = bb.querySelector<HTMLElement>('[data-act="undo"]')!;
+    const r = bb.querySelector<HTMLElement>('[data-act="redo"]')!;
+    u.classList.toggle('off', !canUndo);
+    r.classList.toggle('off', !canRedo);
+    u.title = canUndo ? `Отменить: ${undoLabel} (Ctrl+Z)` : 'Отменять нечего';
+    r.title = canRedo ? `Повторить: ${redoLabel} (Ctrl+Shift+Z)` : 'Повторять нечего';
+  }
+
   select(sel: Selection): void {
     this.selection = sel;
     this.renderItems();
+    this.syncBuildbar();
     this.hooks.onSelect(sel);
     if (sel.kind === 'item') this.setHint(`${sel.item.name} — клик, чтобы поставить · R — поворот`);
-    else if (sel.kind === 'brush') this.setHint(`${sel.brush.name} — зажмите и ведите`);
-    else if (sel.kind === 'erase') this.setHint('Кликните по предмету, чтобы убрать');
+    else if (sel.kind === 'brush') {
+      const sz = sel.brush.kind === 'ground' && this.brushSize > 1 ? ` · кисть ${this.brushSize}×${this.brushSize}` : '';
+      this.setHint(`${sel.brush.name} — зажмите и ведите${sz}`);
+    } else if (sel.kind === 'erase') this.setHint('Кликните по предмету, чтобы убрать');
+    else if (sel.kind === 'pick') this.setHint('Пипетка — кликните по тому, что хотите продолжить ставить');
+    else if (sel.kind === 'fill') this.setHint(`Заливка «${sel.name}» — кликните по области`);
+    else if (sel.kind === 'move') this.setHint('Перенос — тяните поставленное на новое место');
   }
 
   toggleBuild(force?: boolean): void {
     this.buildOpen = force ?? !this.buildOpen;
     this.els.catalog.classList.toggle('open', this.buildOpen);
+    this.els.buildbar.classList.toggle('show', this.buildOpen);
     this.els.btnBuild.classList.toggle('active', this.buildOpen);
     if (!this.buildOpen) this.select({ kind: 'none' });
     else this.setHint('Выберите, чему появиться в саду');

@@ -16,6 +16,8 @@ export class World {
   seenTabs = new Set<string>();
   /** Очередь уведомлений о новых вехах. */
   pendingMilestones: string[] = [];
+  /** Границы последней правки земли — для частичной перерисовки. */
+  lastTouched: { x0: number; y0: number; x1: number; y1: number } | null = null;
 
   constructor() {
     this.reset();
@@ -23,6 +25,22 @@ export class World {
 
   idx(x: number, y: number): number {
     return y * GRID + x;
+  }
+
+  /** Отметить клетку как изменённую. */
+  private touch(x: number, y: number): void {
+    const r = this.lastTouched;
+    if (!r) this.lastTouched = { x0: x, y0: y, x1: x, y1: y };
+    else {
+      if (x < r.x0) r.x0 = x;
+      if (y < r.y0) r.y0 = y;
+      if (x > r.x1) r.x1 = x;
+      if (y > r.y1) r.y1 = y;
+    }
+  }
+
+  clearTouched(): void {
+    this.lastTouched = null;
   }
 
   at(x: number, y: number): Tile | null {
@@ -261,6 +279,7 @@ export class World {
         if (!t || t.indoor) continue;
         t.level = clamp(t.level + delta, -1, 3);
         if (t.level > 0 && t.water) t.water = false;
+        this.touch(x, y);
       }
     }
     this.smoothTerrain();
@@ -281,10 +300,12 @@ export class World {
         const wob = (fbm(x * 0.55, y * 0.55, 2, 21) - 0.5) * 0.3;
         const d = Math.sqrt(nx * nx + ny * ny) + wob;
         if (d <= 1.02) {
+          this.touch(x, y);
           t.water = true;
           t.ground = 'water';
           t.level = Math.min(t.level, 0);
         } else if (d <= 1.35 && !t.water) {
+          this.touch(x, y);
           t.ground = t.ground === 'tatami' || t.ground === 'deck' ? t.ground : 'sand';
         }
       }
@@ -297,11 +318,13 @@ export class World {
     if (!t) return;
     t.water = false;
     if (t.ground === 'water') t.ground = 'moss';
+    this.touch(x, y);
   }
 
   setGround(x: number, y: number, g: GroundId): void {
     const t = this.at(x, y);
     if (!t) return;
+    this.touch(x, y);
     t.ground = g;
     if (g !== 'water') t.water = false;
     t.indoor = g === 'tatami';
@@ -335,24 +358,80 @@ export class World {
           }
           if (maxN === -99) continue;
           const cur = snapshot[i];
-          if (cur < maxN - 1) this.tiles[i].level = maxN - 1;
-          else if (cur > minN + 1) this.tiles[i].level = minN + 1;
+          if (cur < maxN - 1) {
+            this.tiles[i].level = maxN - 1;
+            this.touch(x, y);
+          } else if (cur > minN + 1) {
+            this.tiles[i].level = minN + 1;
+            this.touch(x, y);
+          }
         }
       }
     }
   }
 
+  /**
+   * Размер кисти для земли: 1, 3 или 5 клеток. Модульные блоки (пруд, холм)
+   * свой размер уже несут в себе, их это не касается.
+   */
+  brushSize = 1;
+
+  /** Заливка области одним материалом вместо мазков по клетке. */
+  floodFill(tx: number, ty: number, g: GroundId): boolean {
+    const sx = Math.floor(tx);
+    const sy = Math.floor(ty);
+    const start = this.at(sx, sy);
+    if (!start) return false;
+    // Что считаем «той же областью»: материал и наличие воды
+    const srcGround = start.ground;
+    const srcWater = start.water;
+    if (srcGround === g && !srcWater) return false;
+
+    const seen = new Uint8Array(GRID * GRID);
+    const stack: number[] = [this.idx(sx, sy)];
+    let painted = 0;
+    // Предел бережёт от случайной заливки всего сада одним кликом
+    const LIMIT = 420;
+    while (stack.length && painted < LIMIT) {
+      const i = stack.pop()!;
+      if (seen[i]) continue;
+      seen[i] = 1;
+      const x = i % GRID;
+      const y = (i / GRID) | 0;
+      const t = this.tiles[i];
+      if (t.indoor || t.veranda) continue;
+      if (t.ground !== srcGround || t.water !== srcWater) continue;
+      t.ground = g;
+      t.water = false;
+      this.touch(x, y);
+      painted++;
+      if (x > 0) stack.push(i - 1);
+      if (x < GRID - 1) stack.push(i + 1);
+      if (y > 0) stack.push(i - GRID);
+      if (y < GRID - 1) stack.push(i + GRID);
+    }
+    return painted > 0;
+  }
+
   applyBrush(brush: TerrainBrush, tx: number, ty: number): boolean {
-    const x0 = Math.floor(tx - (brush.w - 1) / 2);
-    const y0 = Math.floor(ty - (brush.h - 1) / 2);
+    // Кисти земли растягиваются до выбранного размера, блоки — нет
+    const isGroundPaint = brush.kind === 'ground';
+    const bw = isGroundPaint ? this.brushSize : brush.w;
+    const bh = isGroundPaint ? this.brushSize : brush.h;
+    const x0 = Math.floor(tx - (bw - 1) / 2);
+    const y0 = Math.floor(ty - (bh - 1) / 2);
+    const rad = (bw - 1) / 2;
     switch (brush.kind) {
       case 'ground':
-        for (let y = y0; y < y0 + brush.h; y++)
-          for (let x = x0; x < x0 + brush.w; x++) {
+        for (let y = y0; y < y0 + bh; y++)
+          for (let x = x0; x < x0 + bw; x++) {
+            // Круглая кисть, а не квадрат — мазок ложится естественнее
+            if (bw > 1 && Math.hypot(x - tx + 0.5, y - ty + 0.5) > rad + 0.62) continue;
             if (brush.id === 'w_fill') this.drain(x, y);
             else {
               const t = this.at(x, y);
               if (t && !t.indoor && !t.veranda) {
+                this.touch(x, y);
                 t.ground = brush.ground!;
                 t.water = false;
               }
@@ -360,17 +439,16 @@ export class World {
           }
         return true;
       case 'water':
-        this.applyWaterBlock(x0, y0, brush.w, brush.h);
+        this.applyWaterBlock(x0, y0, bw, bh);
         return true;
       case 'hill':
-        this.applyHill(x0, y0, brush.w, brush.h, 1);
+        this.applyHill(x0, y0, bw, bh, 1);
         return true;
       case 'lower':
-        this.applyHill(x0, y0, brush.w, brush.h, -1);
+        this.applyHill(x0, y0, bw, bh, -1);
         return true;
       case 'floor':
-        for (let y = y0; y < y0 + brush.h; y++)
-          for (let x = x0; x < x0 + brush.w; x++) this.setGround(x, y, brush.ground!);
+        for (let y = y0; y < y0 + bh; y++) for (let x = x0; x < x0 + bw; x++) this.setGround(x, y, brush.ground!);
         return true;
     }
     return false;
@@ -415,22 +493,66 @@ export class World {
     return obj;
   }
 
-  removeAt(tx: number, ty: number): PlacedObject | null {
+  /**
+   * Что находится под указателем. Ищем ближайший центр, но крупные
+   * объекты имеют больший радиус захвата — иначе в валун 2×2 трудно попасть.
+   */
+  pickObject(tx: number, ty: number): PlacedObject | null {
     let best: PlacedObject | null = null;
-    let bestD = 0.75;
+    let bestScore = Infinity;
     for (const o of this.objects) {
       const item = ITEM_BY_ID.get(o.type);
       if (!item) continue;
       const cx = o.tx + item.w / 2;
       const cy = o.ty + item.h / 2;
+      const reach = Math.max(item.w, item.h) * 0.5 + 0.3;
       const d = Math.hypot(cx - tx, cy - ty);
-      if (d < bestD) {
-        bestD = d;
+      if (d > reach) continue;
+      // при равном расстоянии выигрывает тот, кто поставлен позже
+      const score = d / reach - o.id * 1e-7;
+      if (score < bestScore) {
+        bestScore = score;
         best = o;
       }
     }
-    if (best) this.objects = this.objects.filter((o) => o !== best);
     return best;
+  }
+
+  removeObject(obj: PlacedObject): void {
+    this.objects = this.objects.filter((o) => o !== obj);
+  }
+
+  removeAt(tx: number, ty: number): PlacedObject | null {
+    const best = this.pickObject(tx, ty);
+    if (best) this.removeObject(best);
+    return best;
+  }
+
+  /**
+   * Перенести уже поставленное. Возраст сохраняется — дерево, которое
+   * растили неделю, не должно снова стать саженцем из-за переезда.
+   */
+  moveObject(obj: PlacedObject, tx: number, ty: number, rot = obj.rot): boolean {
+    const item = ITEM_BY_ID.get(obj.type);
+    if (!item) return false;
+    const oldX = obj.tx;
+    const oldY = obj.ty;
+    const oldRot = obj.rot;
+    // проверяем место без самого объекта — он себе не мешает
+    this.removeObject(obj);
+    const ok = this.canPlace(obj.type, tx, ty);
+    if (ok) {
+      obj.tx = tx;
+      obj.ty = ty;
+      obj.rot = rot;
+    } else {
+      obj.tx = oldX;
+      obj.ty = oldY;
+      obj.rot = oldRot;
+    }
+    this.objects.push(obj);
+    this.objects.sort((a, b) => a.id - b.id);
+    return ok;
   }
 
   checkMilestone(id: string): void {
@@ -468,18 +590,31 @@ export class World {
     }
   }
 
+  /** Принять разобранное сохранение. Используется и файлом, и слотами. */
+  fromJSON(d: SaveData): boolean {
+    if (!d || !Array.isArray(d.tiles) || d.tiles.length !== GRID * GRID) return false;
+    this.tiles = d.tiles.map((t) => ({
+      ground: t.ground,
+      level: t.level ?? 0,
+      water: !!t.water,
+      indoor: !!t.indoor,
+      veranda: !!t.veranda,
+    }));
+    this.objects = (d.objects ?? []).filter((o) => ITEM_BY_ID.has(o.type));
+    this.nextId = d.nextId ?? 1;
+    for (const o of this.objects) this.nextId = Math.max(this.nextId, o.id + 1);
+    this.milestones = new Set(d.milestones ?? []);
+    this.seenTabs = new Set(d.seen ?? []);
+    this.pendingMilestones = [];
+    this.lastTouched = null;
+    return true;
+  }
+
   load(): boolean {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (!raw) return false;
-      const d = JSON.parse(raw) as SaveData;
-      if (!d || d.version !== 3 || !Array.isArray(d.tiles) || d.tiles.length !== GRID * GRID) return false;
-      this.tiles = d.tiles;
-      this.objects = d.objects ?? [];
-      this.nextId = d.nextId ?? 1;
-      this.milestones = new Set(d.milestones ?? []);
-      this.seenTabs = new Set(d.seen ?? []);
-      return true;
+      return this.fromJSON(JSON.parse(raw) as SaveData);
     } catch {
       return false;
     }

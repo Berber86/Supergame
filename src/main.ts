@@ -11,12 +11,16 @@ import { Scene } from './render/scene';
 import { buildAtmosphere } from './world/palette';
 import { World } from './world/world';
 import { UI, Selection } from './ui/ui';
-import { ITEM_BY_ID } from './world/catalog';
+import { ITEM_BY_ID, TERRAIN_BRUSHES } from './world/catalog';
 import { Life } from './world/life';
 import { TimeControl } from './core/timeControl';
 import { WeatherSystem } from './world/weatherState';
 import { GardenAudio } from './audio/audio';
 import { DevPanel } from './ui/devPanel';
+import { History } from './core/history';
+import { GardenStore } from './world/gardens';
+import { GardensPanel } from './ui/gardensPanel';
+import { PlacedObject } from './world/types';
 
 const app = document.getElementById('app')!;
 
@@ -25,10 +29,14 @@ canvas.id = 'garden';
 app.appendChild(canvas);
 
 const world = new World();
-if (world.load()) {
-  // сохранённая усадьба
-} else {
-  world.save();
+const gardens = new GardenStore();
+if (!gardens.load(world)) gardens.save(world);
+
+const history = new History(world);
+
+/** Сохранение теперь всегда идёт в активный слот усадьбы. */
+function saveWorld(): void {
+  gardens.save(world);
 }
 
 const life = new Life();
@@ -48,9 +56,15 @@ const ui = new UI(app, world, {
   onSelect(sel) {
     selection = sel;
     ghostRot = 0;
-    scene.showGrid = sel.kind !== 'none';
+    // Сетка нужна, когда кладут землю или предметы; пипетке и переносу — нет
+    scene.showGrid = sel.kind === 'item' || sel.kind === 'brush' || sel.kind === 'fill';
     canvas.classList.toggle('building', sel.kind !== 'none');
-    if (sel.kind === 'none') scene.ghost = null;
+    canvas.classList.toggle('picking', sel.kind === 'pick' || sel.kind === 'move');
+    if (sel.kind === 'none') {
+      scene.ghost = null;
+      scene.highlightId = -1;
+    }
+    updateGhost();
   },
   onToggleBuild(open) {
     scene.showGrid = open && selection.kind !== 'none';
@@ -70,6 +84,34 @@ const ui = new UI(app, world, {
     world.clearSave();
     location.reload();
   },
+  onUndo() {
+    doUndo();
+  },
+  onRedo() {
+    doRedo();
+  },
+  onBrushSize(n) {
+    world.brushSize = n;
+    updateGhost();
+  },
+  onGardens() {
+    gardensPanel.toggle();
+  },
+});
+
+const gardensPanel = new GardensPanel(app, world, gardens, {
+  onSwitch() {
+    // Мир заменился целиком: история чужой усадьбы больше не имеет смысла
+    history.clear();
+    scene.markTerrainDirty();
+    life.reset();
+    ui.select({ kind: 'none' });
+    ui.renderTabs();
+    ui.renderItems();
+    syncHistoryUI();
+    wake();
+  },
+  toast: (t) => ui.toast(t),
 });
 
 const devPanel = new DevPanel(app, timeCtl, weatherSys, {
@@ -81,6 +123,34 @@ const devPanel = new DevPanel(app, timeCtl, weatherSys, {
 
 // Гром: звук приходит позже вспышки
 weatherSys.onThunder = (d) => audio.thunder(d);
+
+// ---------------- Отмена и повтор ----------------
+
+function syncHistoryUI(): void {
+  ui.setHistoryState(history.canUndo, history.canRedo, history.undoLabel, history.redoLabel);
+}
+
+/** Земля после отмены может измениться где угодно — перерисовываем целиком. */
+function afterHistory(label: string | null, verb: string): void {
+  if (!label) {
+    ui.toast(verb === 'отмена' ? 'Отменять нечего' : 'Повторять нечего');
+    return;
+  }
+  scene.markTerrainDirty();
+  life.sync(world);
+  ui.renderTabs();
+  syncHistoryUI();
+  saveWorld();
+  ui.toast(verb === 'отмена' ? `Отменено: ${label}` : `Возвращено: ${label}`);
+}
+
+function doUndo(): void {
+  afterHistory(history.undo(), 'отмена');
+}
+
+function doRedo(): void {
+  afterHistory(history.redo(), 'повтор');
+}
 
 // ---------------- Режим созерцания ----------------
 
@@ -108,6 +178,8 @@ const IDLE_MS = 14000;
 
 let dragging = false;
 let painting = false;
+/** Объект, который сейчас переносят, и его исходное место. */
+let moving: { obj: PlacedObject; fromX: number; fromY: number } | null = null;
 let lastX = 0;
 let lastY = 0;
 let pointerX = 0;
@@ -123,6 +195,21 @@ canvas.addEventListener('pointerdown', (e) => {
   if (e.button === 2) {
     // ПКМ — убрать объект
     applyErase(e.clientX, e.clientY);
+    return;
+  }
+  if (selection.kind === 'move' && e.button === 0) {
+    const p = scene.pickTile(e.clientX, e.clientY, world);
+    const obj = world.pickObject(p.tx, p.ty);
+    if (obj) {
+      history.begin('перенос', null);
+      moving = { obj, fromX: obj.tx, fromY: obj.ty };
+      scene.movingId = obj.id;
+      painting = true;
+      audio.place();
+    } else {
+      dragging = true;
+      canvas.classList.add('dragging');
+    }
     return;
   }
   if (selection.kind !== 'none' && e.button === 0) {
@@ -147,6 +234,16 @@ canvas.addEventListener('pointermove', (e) => {
     scene.camera.x -= dx / scene.camera.zoom;
     scene.camera.y -= dy / scene.camera.zoom;
     scene.clampCamera();
+  } else if (moving) {
+    const p = scene.pickTile(e.clientX, e.clientY, world);
+    const item = ITEM_BY_ID.get(moving.obj.type);
+    if (item) {
+      const s2 =
+        item.step === 1
+          ? { tx: Math.floor(p.tx - (item.w - 1) / 2), ty: Math.floor(p.ty - (item.h - 1) / 2) }
+          : { tx: floorTo(p.tx, item.step), ty: floorTo(p.ty, item.step) };
+      world.moveObject(moving.obj, s2.tx, s2.ty);
+    }
   } else if (painting && selection.kind === 'brush') {
     applyAt(e.clientX, e.clientY, false);
   } else if (painting && selection.kind === 'item' && selection.item.step < 1) {
@@ -159,10 +256,26 @@ canvas.addEventListener('pointermove', (e) => {
 });
 
 const endPointer = () => {
+  if (moving) {
+    const m = moving;
+    moving = null;
+    scene.movingId = -1;
+    if (m.obj.tx === m.fromX && m.obj.ty === m.fromY) {
+      history.abort();
+    } else if (history.commit()) {
+      const item = ITEM_BY_ID.get(m.obj.type);
+      ui.toast(`${item?.name ?? 'Предмет'} переставлен`);
+      syncHistoryUI();
+    }
+  } else if (painting) {
+    // мазок кистью закончен — следующий станет отдельным шагом отмены
+    if (history.commit()) syncHistoryUI();
+    history.breakMerge();
+  }
   dragging = false;
   painting = false;
   canvas.classList.remove('dragging');
-  world.save();
+  saveWorld();
 };
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
@@ -218,7 +331,25 @@ canvas.addEventListener(
 
 window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
+  // Не перехватываем набор текста (переименование усадьбы)
+  const el = e.target as HTMLElement | null;
+  if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
   wake();
+
+  // Отмена и повтор — до остальных клавиш
+  if ((e.ctrlKey || e.metaKey) && k === 'z') {
+    e.preventDefault();
+    if (e.shiftKey) doRedo();
+    else doUndo();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && k === 'y') {
+    e.preventDefault();
+    doRedo();
+    return;
+  }
+  if (e.ctrlKey || e.metaKey) return;
+
   if (k === 'b') {
     ui.toggleBuild();
   } else if (k === 'z') {
@@ -234,11 +365,25 @@ window.addEventListener('keydown', (e) => {
     ui.select({ kind: 'erase' });
     ui.toggleBuild(true);
   } else if (k === 'escape') {
-    if (ui.selection.kind !== 'none') ui.select({ kind: 'none' });
+    if (gardensPanel.isOpen) gardensPanel.setOpen(false);
+    else if (ui.selection.kind !== 'none') ui.select({ kind: 'none' });
     else ui.toggleBuild(false);
     ui.toggleHelp(false);
   } else if (k === 'g') {
     scene.showGrid = !scene.showGrid;
+  } else if (k === 'i') {
+    ui.toggleBuild(true);
+    ui.select(ui.selection.kind === 'pick' ? { kind: 'none' } : { kind: 'pick' });
+  } else if (k === 'v') {
+    ui.toggleBuild(true);
+    ui.select(ui.selection.kind === 'move' ? { kind: 'none' } : { kind: 'move' });
+  } else if (k === 'f') {
+    ui.toggleBuild(true);
+    ui.fillFromKeyboard();
+  } else if (k === 'u') {
+    gardensPanel.toggle();
+  } else if (k === '1' || k === '2' || k === '3') {
+    ui.setBrushSize(k === '1' ? 1 : k === '2' ? 3 : 5);
   } else if (k === 't') {
     devPanel.toggle();
     devPanel.refresh();
@@ -276,10 +421,33 @@ function snapForSelection(tx: number, ty: number): { tx: number; ty: number } {
 function updateGhost(): void {
   if (!hasPointer || selection.kind === 'none') {
     scene.ghost = null;
+    scene.highlightId = -1;
     return;
   }
   const p = scene.pickTile(pointerX, pointerY, world);
   const s = snapForSelection(p.tx, p.ty);
+
+  // Пипетка и перенос не показывают призрак — они подсвечивают то, что под курсором
+  if (selection.kind === 'pick' || selection.kind === 'move') {
+    scene.ghost = null;
+    const hit = moving ? null : world.pickObject(p.tx, p.ty);
+    scene.highlightId = hit ? hit.id : -1;
+    return;
+  }
+  scene.highlightId = -1;
+
+  if (selection.kind === 'fill') {
+    scene.ghost = {
+      kind: 'brush',
+      tx: Math.floor(s.tx),
+      ty: Math.floor(s.ty),
+      rot: 0,
+      valid: inBounds(Math.floor(s.tx), Math.floor(s.ty)),
+      w: 1,
+      h: 1,
+    };
+    return;
+  }
 
   if (selection.kind === 'item') {
     const item = selection.item;
@@ -287,22 +455,58 @@ function updateGhost(): void {
     scene.ghost = { kind: 'item', itemId: item.id, tx: s.tx, ty: s.ty, rot: ghostRot, valid, w: item.w, h: item.h };
   } else if (selection.kind === 'brush') {
     const b = selection.brush;
-    const x0 = Math.floor(s.tx - (b.w - 1) / 2);
-    const y0 = Math.floor(s.ty - (b.h - 1) / 2);
-    scene.ghost = { kind: 'brush', brushId: b.id, tx: x0, ty: y0, rot: 0, valid: inBounds(x0, y0), w: b.w, h: b.h };
+    // Кисти земли растягиваются размером 1/3/5, блоки держат свой размер
+    const bw = b.kind === 'ground' ? world.brushSize : b.w;
+    const bh = b.kind === 'ground' ? world.brushSize : b.h;
+    const x0 = Math.floor(s.tx - (bw - 1) / 2);
+    const y0 = Math.floor(s.ty - (bh - 1) / 2);
+    scene.ghost = { kind: 'brush', brushId: b.id, tx: x0, ty: y0, rot: 0, valid: inBounds(x0, y0), w: bw, h: bh };
   } else {
     scene.ghost = { kind: 'erase', tx: Math.floor(s.tx), ty: Math.floor(s.ty), rot: 0, valid: true, w: 1, h: 1 };
   }
+}
+
+/** Перерисовать только то, что тронула правка земли. */
+function repaintTouched(): void {
+  const r = world.lastTouched;
+  if (r) scene.markTilesDirty(r.x0, r.y0, r.x1, r.y1);
+  else scene.markTerrainDirty();
+  world.clearTouched();
 }
 
 function applyAt(sx: number, sy: number, isClick: boolean): void {
   const p = scene.pickTile(sx, sy, world);
   if (!inBounds(Math.floor(p.tx), Math.floor(p.ty))) return;
 
+  // Пипетка: подобрать то, что уже стоит, и продолжить тем же
+  if (selection.kind === 'pick') {
+    pickAt(p.tx, p.ty);
+    return;
+  }
+
+  if (selection.kind === 'fill') {
+    history.begin(`заливка «${selection.name}»`, null);
+    world.clearTouched();
+    if (world.floodFill(p.tx, p.ty, selection.ground)) {
+      repaintTouched();
+      if (history.commit()) syncHistoryUI();
+      audio.place();
+      flushMilestones();
+    } else {
+      history.abort();
+      if (isClick) ui.toast('Здесь уже этот материал');
+    }
+    return;
+  }
+
   if (selection.kind === 'brush') {
     const b = selection.brush;
+    // Один мазок = один шаг отмены: ведение кистью склеивается по ключу
+    history.begin(b.name.toLowerCase(), `brush:${b.id}`);
+    world.clearTouched();
     world.applyBrush(b, p.tx, p.ty);
-    scene.markTerrainDirty();
+    repaintTouched();
+    if (history.commit()) syncHistoryUI();
     flushMilestones();
     return;
   }
@@ -321,7 +525,9 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
       );
       if (tooClose) return;
     }
+    history.begin(item.name.toLowerCase(), isClick ? null : `scatter:${item.id}`);
     world.place(item.id, s.tx, s.ty, ghostRot);
+    if (history.commit()) syncHistoryUI();
     if (item.needsWater || item.onWater) audio.splash();
     else audio.place();
     flushMilestones();
@@ -331,14 +537,42 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
   if (selection.kind === 'erase') applyErase(sx, sy);
 }
 
+/** Пипетка: под указателем может быть и предмет, и просто земля. */
+function pickAt(tx: number, ty: number): void {
+  const obj = world.pickObject(tx, ty);
+  if (obj) {
+    const item = ITEM_BY_ID.get(obj.type);
+    if (item) {
+      ui.openTab(item.tab);
+      ui.select({ kind: 'item', item });
+      ghostRot = obj.rot;
+      ui.toast(`Подобрано: ${item.name}`);
+      return;
+    }
+  }
+  const t = world.at(Math.floor(tx), Math.floor(ty));
+  if (t) {
+    const brush = TERRAIN_BRUSHES.find((b) => b.kind === 'ground' && b.ground === t.ground);
+    if (brush) {
+      ui.openTab(brush.tab);
+      ui.select({ kind: 'brush', brush });
+      ui.toast(`Подобрано: ${brush.name}`);
+      return;
+    }
+  }
+  ui.toast('Здесь нечего подбирать');
+}
+
 function applyErase(sx: number, sy: number): void {
   const p = scene.pickTile(sx, sy, world);
-  const removed = world.removeAt(p.tx, p.ty);
-  if (removed) {
-    const item = ITEM_BY_ID.get(removed.type);
-    ui.toast(`${item?.name ?? 'Предмет'} убран${item?.kind === 'tree' ? 'о' : ''}`);
-    world.save();
-  }
+  const target = world.pickObject(p.tx, p.ty);
+  if (!target) return;
+  history.begin('снос', null);
+  world.removeObject(target);
+  if (history.commit()) syncHistoryUI();
+  const item = ITEM_BY_ID.get(target.type);
+  ui.toast(`${item?.name ?? 'Предмет'} убран${item?.kind === 'tree' ? 'о' : ''}`);
+  saveWorld();
 }
 
 function flushMilestones(): void {
@@ -346,7 +580,7 @@ function flushMilestones(): void {
     const id = world.pendingMilestones.shift()!;
     ui.showMilestone(id);
   }
-  world.save();
+  saveWorld();
 }
 
 function takeScreenshot(): void {
@@ -482,8 +716,8 @@ function frame(now: number): void {
 requestAnimationFrame(frame);
 
 // Периодическое автосохранение — сад не должен теряться
-setInterval(() => world.save(), 20000);
-window.addEventListener('beforeunload', () => world.save());
+setInterval(saveWorld, 20000);
+window.addEventListener('beforeunload', saveWorld);
 
 // Тихая подсказка при первом входе
 setTimeout(() => {

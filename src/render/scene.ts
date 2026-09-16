@@ -7,7 +7,7 @@ import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
 import { PlacedObject } from '../world/types';
 import { World } from '../world/world';
 import { Ctx, getPaperTile, glow, vignette } from './paint';
-import { TerrainLayer, drawWaterAnimation, renderTerrain } from './terrain';
+import { TerrainLayer, TileRect, drawWaterAnimation, renderTerrain } from './terrain';
 import { drawObject } from './sprites';
 import { drawHouseRoof, drawHouseWalls } from './building';
 import { Life } from '../world/life';
@@ -40,6 +40,8 @@ export class Scene {
   camera: Camera = { x: 0, y: 0, zoom: 1 };
   private terrain: TerrainLayer | null = null;
   private terrainDirty = true;
+  /** Участок земли, который нужно перерисовать; null — весь слой. */
+  private dirtyRect: TileRect | null = null;
   private lastAtmKey = '';
   private weather = new Weather();
   private paperPattern: CanvasPattern | null = null;
@@ -52,6 +54,10 @@ export class Scene {
   life: Life | null = null;
   rain = new RainRenderer();
   weatherState: WeatherState | null = null;
+  /** id переносимого объекта: он «приподнят» и полупрозрачен. */
+  movingId = -1;
+  /** id объекта под указателем — подсвечивается пипеткой и переносом. */
+  highlightId = -1;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -77,7 +83,34 @@ export class Scene {
     return this.canvas.height / this.dpr;
   }
 
+  /** Перерисовать весь ландшафт (смена сезона, загрузка, отмена). */
   markTerrainDirty(): void {
+    this.terrainDirty = true;
+    this.dirtyRect = null;
+  }
+
+  /**
+   * Перерисовать только тронутый участок земли. Несколько вызовов подряд
+   * до следующего кадра объединяются в общий прямоугольник.
+   */
+  markTilesDirty(x0: number, y0: number, x1: number, y1: number): void {
+    const r: TileRect = {
+      x0: Math.floor(Math.min(x0, x1)),
+      y0: Math.floor(Math.min(y0, y1)),
+      x1: Math.floor(Math.max(x0, x1)),
+      y1: Math.floor(Math.max(y0, y1)),
+    };
+    if (this.terrainDirty && !this.dirtyRect) return; // и так перерисуем всё
+    if (this.dirtyRect) {
+      this.dirtyRect = {
+        x0: Math.min(this.dirtyRect.x0, r.x0),
+        y0: Math.min(this.dirtyRect.y0, r.y0),
+        x1: Math.max(this.dirtyRect.x1, r.x1),
+        y1: Math.max(this.dirtyRect.y1, r.y1),
+      };
+    } else {
+      this.dirtyRect = r;
+    }
     this.terrainDirty = true;
   }
 
@@ -139,8 +172,11 @@ export class Scene {
     // --- Ландшафт (кэшируется) ---
     const key = this.atmKey(atm);
     if (this.terrainDirty || key !== this.lastAtmKey || !this.terrain) {
-      this.terrain = renderTerrain(world, atm, 1);
+      // Свет поменялся — обновлять частями нельзя, цвет плывёт по всему саду
+      const full = !this.terrain || key !== this.lastAtmKey || !this.dirtyRect;
+      this.terrain = renderTerrain(world, atm, 1, full ? undefined : this.terrain!, full ? undefined : this.dirtyRect!);
       this.terrainDirty = false;
+      this.dirtyRect = null;
       this.lastAtmKey = key;
     }
 
@@ -374,6 +410,31 @@ export class Scene {
     ctx.restore();
   }
 
+  /** Кольцо под объектом: жёлтое у наведённого, светлое у переносимого. */
+  private drawObjectMarker(
+    ctx: Ctx,
+    cx: number,
+    cy: number,
+    lvl: number,
+    strong: boolean,
+    time: number,
+  ): void {
+    const p = isoToScreen(cx, cy, lvl);
+    const pulse = 0.6 + Math.sin(time * 0.005) * 0.2;
+    const col: RGB = strong ? { r: 250, g: 244, b: 216 } : { r: 236, g: 206, b: 138 };
+    ctx.save();
+    ctx.strokeStyle = css(col, (strong ? 0.75 : 0.5) * pulse);
+    ctx.lineWidth = 1.8 / this.camera.zoom;
+    ctx.setLineDash([5 / this.camera.zoom, 4 / this.camera.zoom]);
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y, TILE_W * 0.42, TILE_H * 0.42, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = css(col, 0.14 * pulse);
+    ctx.fill();
+    ctx.restore();
+  }
+
   private drawGhost(ctx: Ctx, world: World, atm: Atmosphere, time: number): void {
     const gh = this.ghost!;
     const pulse = 0.55 + Math.sin(time * 0.004) * 0.15;
@@ -451,9 +512,26 @@ export class Scene {
       const g = world.growth(o, now);
       // ветер берём в точке дерева — порыв проходит волной
       const wind = this.life ? this.life.windAt(cx, cy) : this.wind;
+      const isMoving = o.id === this.movingId;
+      const isHot = o.id === this.highlightId;
+      // Переносимое слегка всплывает над землёй — видно, что оно «в руке»
+      const lift = isMoving ? 9 + Math.sin(time * 0.006) * 1.6 : 0;
       list.push({
         depth: (cx + cy) * 100 + lvl * 20,
-        draw: () => drawObject({ ctx, x: p.x, y: p.y, atm, g, obj: o, time, wind, alpha: 1 }),
+        draw: () => {
+          if (isMoving || isHot) this.drawObjectMarker(ctx, cx, cy, lvl, isMoving, time);
+          drawObject({
+            ctx,
+            x: p.x,
+            y: p.y - lift,
+            atm,
+            g,
+            obj: o,
+            time,
+            wind,
+            alpha: isMoving ? 0.72 : 1,
+          });
+        },
       });
     }
 

@@ -7,6 +7,20 @@ import { GroundId, Tile } from '../world/types';
 import { World } from '../world/world';
 import { Ctx, blobPath, granulate } from './paint';
 
+interface Bounds { bx0: number; by0: number; bx1: number; by1: number }
+
+/**
+ * Начало цикла с сохранением фазы.
+ *
+ * Разводы идут с дробным шагом (2.1, 1.2, 3.4 клетки), и позиция каждой
+ * кляксы задаётся её координатой. Если при частичной перерисовке начать
+ * цикл прямо с края участка, вся сетка клякс сдвинется и рисунок поедет.
+ * Поэтому отступаем назад до ближайшего узла исходной сетки.
+ */
+function phase(from: number, origin: number, step: number): number {
+  return origin + Math.floor((from - origin) / step) * step;
+}
+
 function groundColor(g: GroundId, atm: Atmosphere): RGB {
   const p = atm.palette;
   switch (g) {
@@ -36,6 +50,14 @@ function isSoft(g: GroundId): boolean {
   return g === 'moss' || g === 'grass' || g === 'gravel' || g === 'sand' || g === 'soil';
 }
 
+/** Прямоугольник тайлов, который нужно перерисовать. */
+export interface TileRect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
 export interface TerrainLayer {
   canvas: HTMLCanvasElement;
   ox: number;
@@ -44,7 +66,17 @@ export interface TerrainLayer {
   h: number;
 }
 
-export function renderTerrain(world: World, atm: Atmosphere, scale = 1): TerrainLayer {
+/**
+ * Рисует землю в готовый слой.
+ *
+ * Если передан `dirty`, перерисовывается только этот участок: контекст
+ * обрезается по экранному прямоугольнику участка, старые пиксели стираются,
+ * и всё рисуется заново. Так можно, потому что вся отрисовка земли
+ * детерминирована — цвет и форма каждой кляксы выводятся из координат тайла
+ * и сида, а не из случайных чисел. Частичный проход даёт пиксель в пиксель
+ * то же, что полный.
+ */
+export function renderTerrain(world: World, atm: Atmosphere, scale = 1, into?: TerrainLayer, dirty?: TileRect): TerrainLayer {
   const corners = [isoToScreen(0, 0, 3), isoToScreen(GRID, 0, 0), isoToScreen(GRID, GRID, 0), isoToScreen(0, GRID, 0)];
   let minX = Infinity;
   let maxX = -Infinity;
@@ -62,18 +94,61 @@ export function renderTerrain(world: World, atm: Atmosphere, scale = 1): Terrain
   minY -= pad + LEVEL_H * 3;
   maxY += pad;
 
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.ceil((maxX - minX) * scale);
-  canvas.height = Math.ceil((maxY - minY) * scale);
-  const ctx = canvas.getContext('2d')!;
+  const canvas = into?.canvas ?? document.createElement('canvas');
+  if (!into) {
+    canvas.width = Math.ceil((maxX - minX) * scale);
+    canvas.height = Math.ceil((maxY - minY) * scale);
+  }
+
+  // Какой прямоугольник холста обновляем
+  const rect = into && dirty ? blitRect(dirty, minX, minY, scale, canvas.width, canvas.height) : null;
+
+  // Частичная перерисовка идёт в запасной холст такого же размера, а потом
+  // участок переносится в слой.
+  //
+  // Почему не рисовать сразу в слой с обрезкой: земля складывается из двух
+  // десятков полупрозрачных слоёв, и любая обрезка домножает каждый из них
+  // на краевое покрытие по отдельности. На стыке нового со старым от этого
+  // остаётся еле заметный, но различимый шов.
+  //
+  // Почему холст полного размера, а не с участок: мазки должны лечь ровно
+  // в те же координаты, что и при полной перерисовке. Холст заводится один
+  // раз и живёт между вызовами.
+  const partial = !!(into && dirty && rect);
+  const target = partial ? scratchFor(canvas) : canvas;
+  const ctx = target.getContext('2d')!;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (partial) ctx.clearRect(rect!.x, rect!.y, rect!.w, rect!.h);
   ctx.scale(scale, scale);
   ctx.translate(-minX, -minY);
 
+  // Тайлы обходим по диагоналям — так дальние рисуются раньше ближних.
+  // При частичной перерисовке берём только те, что могут задеть участок:
+  // запас в 3 клетки покрывает разлёт клякс и берега.
+  // Какие тайлы нужны, чтобы прямоугольник был нарисован целиком. Набор
+  // выводится из самого прямоугольника, а не берётся с запасом «на глаз».
+  const need = rect ? tilesCovering(rect, minX, minY, scale) : null;
+  const bx0 = need ? Math.max(0, need.x0) : 0;
+  const by0 = need ? Math.max(0, need.y0) : 0;
+  const bx1 = need ? Math.min(GRID - 1, need.x1) : GRID - 1;
+  const by1 = need ? Math.min(GRID - 1, need.y1) : GRID - 1;
+
+  const bounds: Bounds = { bx0, by0, bx1, by1 };
+
   const order: { x: number; y: number }[] = [];
   for (let s = 0; s <= (GRID - 1) * 2; s++) {
-    for (let x = 0; x < GRID; x++) {
+    for (let x = bx0; x <= bx1; x++) {
       const y = s - x;
-      if (y >= 0 && y < GRID) order.push({ x, y });
+      if (y < by0 || y > by1) continue;
+      // Прямоугольный охват по тайлам заметно шире нужного: соответствующий
+      // ему ромб вытянут по диагонали. Отсеиваем поштучно клетки, чья краска
+      // до прямоугольника всё равно не долетит.
+      if (rect && !tileTouchesRect(x, y, world, rect, minX, minY, scale)) continue;
+      // Прямоугольный охват по тайлам сильно шире нужного: ромб, который
+      // ему соответствует, вытянут по диагонали. Отсеиваем поштучно те
+      // клетки, чья краска до прямоугольника всё равно не долетит.
+      order.push({ x, y });
     }
   }
 
@@ -87,10 +162,10 @@ export function renderTerrain(world: World, atm: Atmosphere, scale = 1): Terrain
   for (const { x, y } of order) drawTileFill(ctx, world, x, y, world.at(x, y)!, atm);
 
   // 4) Крупные акварельные разводы поверх — ломают ощущение сетки
-  drawGlobalWash(ctx, world, atm);
+  drawGlobalWash(ctx, world, atm, bounds);
 
   // 4.5) Снежный покров
-  if (atm.season === 'winter') drawSnowCover(ctx, world, atm);
+  if (atm.season === 'winter') drawSnowCover(ctx, world, atm, bounds);
 
   // 5) Мягкие границы между разными материалами
   for (const { x, y } of order) drawMaterialEdges(ctx, world, x, y, atm);
@@ -106,8 +181,159 @@ export function renderTerrain(world: World, atm: Atmosphere, scale = 1): Terrain
     if (world.at(x, y)!.water) drawWaterEdge(ctx, world, x, y, atm);
   }
 
+  ctx.restore();
+
+  if (partial) {
+    // Переносим ровно прямоугольник участка: целые координаты и масштаб 1:1,
+    // поэтому сглаживанию на кромке взяться неоткуда и результат совпадает
+    // с полной перерисовкой пиксель в пиксель.
+    // Именно putImageData, а не drawImage: тот заставляет подготовить
+    // весь холст слоя целиком (это и была основная трата), а этот копирует
+    // ровно байты участка. Замена пикселей здесь и нужна — участок уже
+    // нарисован поверх пустоты, смешивать со старым содержимым нечего.
+    const dst = canvas.getContext('2d')!;
+    dst.save();
+    dst.setTransform(1, 0, 0, 1, 0, 0);
+    dst.clearRect(rect!.x, rect!.y, rect!.w, rect!.h);
+    dst.drawImage(target, rect!.x, rect!.y, rect!.w, rect!.h, rect!.x, rect!.y, rect!.w, rect!.h);
+    dst.restore();
+  }
+
   return { canvas, ox: minX, oy: minY, w: maxX - minX, h: maxY - minY };
 }
+
+/**
+ * Насколько далеко краска расходится от своего тайла.
+ * Кляксы разводов и снежные сугробы бывают крупнее клетки.
+ */
+const SPLATTER = 3.5;
+/** Диапазон уровней рельефа, который может попасть в кадр. */
+const LEVEL_MIN = -2.5;
+const LEVEL_MAX = 3.5;
+
+/** Может ли тайл нарисовать хоть что-нибудь внутри прямоугольника. */
+function tileTouchesRect(
+  x: number,
+  y: number,
+  world: World,
+  rect: { x: number; y: number; w: number; h: number },
+  ox: number,
+  oy: number,
+  scale: number,
+): boolean {
+  const t = world.at(x, y);
+  const lvl = t ? t.level : 0;
+  // Ромб тайла плюс разлёт краски и высота столбика под ним
+  const c = isoToScreen(x + 0.5, y + 0.5, lvl);
+  const halfW = TILE_W * (0.5 + SPLATTER * 0.5);
+  const up = TILE_H * (0.5 + SPLATTER * 0.5) + LEVEL_H;
+  const down = TILE_H * (0.5 + SPLATTER * 0.5) + LEVEL_H * (lvl + 3);
+  const x0 = (c.x - halfW - ox) * scale;
+  const x1 = (c.x + halfW - ox) * scale;
+  const y0 = (c.y - up - oy) * scale;
+  const y1 = (c.y + down - oy) * scale;
+  return x1 >= rect.x && x0 <= rect.x + rect.w && y1 >= rect.y && y0 <= rect.y + rect.h;
+}
+
+/**
+ * Запасной холст для частичной перерисовки — один на всё приложение.
+ * Держать его постоянно дешевле, чем заводить новый на каждый мазок кистью.
+ */
+
+/**
+ * Запасной холст для частичной перерисовки — один на всё приложение,
+ * размером с участок. Маленький он не только ради памяти: чтение пикселей
+ * заставляет canvas сбросить очередь отрисовки по всей своей площади,
+ * и на холсте размером со слой это стоило дороже, чем нарисовать сад заново.
+ */
+let scratch: HTMLCanvasElement | null = null;
+
+function scratchFor(like: HTMLCanvasElement): HTMLCanvasElement {
+  if (!scratch || scratch.width !== like.width || scratch.height !== like.height) {
+    scratch = document.createElement('canvas');
+    scratch.width = like.width;
+    scratch.height = like.height;
+  }
+  return scratch;
+}
+
+/**
+ * Какие тайлы способны нарисовать хоть что-то внутри прямоугольника.
+ *
+ * Обращаем изометрию: x = (tx-ty)·(W/2), y = (tx+ty)·(H/2) - level·LEVEL_H.
+ * Значит tx-ty и tx+ty выражаются через края прямоугольника, а разброс
+ * по высоте и разлёт краски расширяют полученные границы.
+ */
+function tilesCovering(
+  rect: { x: number; y: number; w: number; h: number },
+  ox: number,
+  oy: number,
+  scale: number,
+): { x0: number; y0: number; x1: number; y1: number } {
+  // пиксели холста → мировые экранные координаты
+  const wx0 = rect.x / scale + ox;
+  const wx1 = (rect.x + rect.w) / scale + ox;
+  const wy0 = rect.y / scale + oy;
+  const wy1 = (rect.y + rect.h) / scale + oy;
+
+  // разность координат: d = tx - ty
+  const dMin = wx0 / (TILE_W / 2) - SPLATTER * 2;
+  const dMax = wx1 / (TILE_W / 2) + SPLATTER * 2;
+  // сумма координат: s = tx + ty (высота сдвигает тайл по вертикали)
+  const sMin = (wy0 + LEVEL_MIN * LEVEL_H) / (TILE_H / 2) - SPLATTER * 2;
+  const sMax = (wy1 + LEVEL_MAX * LEVEL_H) / (TILE_H / 2) + SPLATTER * 2;
+
+  return {
+    x0: Math.floor((sMin + dMin) / 2),
+    y0: Math.floor((sMin - dMax) / 2),
+    x1: Math.ceil((sMax + dMax) / 2),
+    y1: Math.ceil((sMax - dMin) / 2),
+  };
+}
+
+/**
+ * Прямоугольник переноса в пикселях холста.
+ *
+ * Берём экранные границы изменённых клеток и сжимаем запасом CLIP_MARGIN,
+ * который уже заложен в перерисованную область: всё внутри прямоугольника
+ * нарисовано полностью, потому что каждый влияющий на него тайл попал
+ * в проход отрисовки.
+ */
+function blitRect(
+  r: TileRect,
+  ox: number,
+  oy: number,
+  scale: number,
+  cw: number,
+  ch: number,
+): { x: number; y: number; w: number; h: number } | null {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let y = r.y0; y <= r.y1 + 1; y++) {
+    for (let x = r.x0; x <= r.x1 + 1; x++) {
+      // Берём щедрый диапазон высот: правка могла и поднять землю, и опустить,
+      // а стереть нужно и то, что было нарисовано до неё.
+      for (const l of [LEVEL_MAX, LEVEL_MIN]) {
+        const p = isoToScreen(x, y, l);
+        minX = Math.min(minX, p.x);
+        maxX = Math.max(maxX, p.x);
+        minY = Math.min(minY, p.y);
+        maxY = Math.max(maxY, p.y);
+      }
+    }
+  }
+  // Запас на берег, кромку воды и разлёт клякс
+  const pad = TILE_W * SPLATTER * 0.5;
+  const x0 = Math.max(0, Math.floor((minX - pad - ox) * scale));
+  const y0 = Math.max(0, Math.floor((minY - pad - oy) * scale));
+  const x1 = Math.min(cw, Math.ceil((maxX + pad - ox) * scale));
+  const y1 = Math.min(ch, Math.ceil((maxY + pad - oy) * scale));
+  if (x1 <= x0 || y1 <= y0) return null;
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
 
 function drawBase(ctx: Ctx, atm: Atmosphere): void {
   const c0 = isoToScreen(0, 0);
@@ -167,13 +393,13 @@ function drawTileFill(ctx: Ctx, world: World, x: number, y: number, t: Tile, atm
 }
 
 /** Крупные размывы поверх земли. Режим multiply — краска ложится слоями, как акварель. */
-function drawGlobalWash(ctx: Ctx, world: World, atm: Atmosphere): void {
+function drawGlobalWash(ctx: Ctx, world: World, atm: Atmosphere, b: Bounds): void {
   ctx.save();
   ctx.globalCompositeOperation = 'multiply';
 
   // Слой 1: широкие мягкие тени — объём и «дыхание» лужайки
-  for (let gy = 0; gy < GRID; gy += 2.1) {
-    for (let gx = 0; gx < GRID; gx += 2.1) {
+  for (let gy = phase(b.by0, 0, 2.1); gy <= b.by1; gy += 2.1) {
+    for (let gx = phase(b.bx0, 0, 2.1); gx <= b.bx1; gx += 2.1) {
       const x = Math.floor(gx);
       const y = Math.floor(gy);
       const t = world.at(x, y);
@@ -203,8 +429,8 @@ function drawGlobalWash(ctx: Ctx, world: World, atm: Atmosphere): void {
   }
 
   // Слой 2: тёмные затёки поменьше — кромки высохшей краски
-  for (let gy = 0; gy < GRID; gy += 1.2) {
-    for (let gx = 0; gx < GRID; gx += 1.2) {
+  for (let gy = phase(b.by0, 0, 1.2); gy <= b.by1; gy += 1.2) {
+    for (let gx = phase(b.bx0, 0, 1.2); gx <= b.bx1; gx += 1.2) {
       const x = Math.floor(gx);
       const y = Math.floor(gy);
       const t = world.at(x, y);
@@ -232,8 +458,8 @@ function drawGlobalWash(ctx: Ctx, world: World, atm: Atmosphere): void {
 
   // Слой 3: редкие солнечные прогалины — светлее, «просвет в листве»
   ctx.save();
-  for (let gy = 0; gy < GRID; gy += 3.4) {
-    for (let gx = 0; gx < GRID; gx += 3.4) {
+  for (let gy = phase(b.by0, 0, 3.4); gy <= b.by1; gy += 3.4) {
+    for (let gx = phase(b.bx0, 0, 3.4); gx <= b.bx1; gx += 3.4) {
       const x = Math.floor(gx);
       const y = Math.floor(gy);
       const t = world.at(x, y);
@@ -251,15 +477,15 @@ function drawGlobalWash(ctx: Ctx, world: World, atm: Atmosphere): void {
 }
 
 /** Зимой землю укрывает снег: непрерывный покров, без следов сетки. */
-function drawSnowCover(ctx: Ctx, world: World, atm: Atmosphere): void {
+function drawSnowCover(ctx: Ctx, world: World, atm: Atmosphere, b: Bounds): void {
   const snow = shade(mix({ r: 250, g: 251, b: 254 }, atm.lightTint, atm.lightAmount * 0.8), atm.exposure);
   const shadowSnow = shade(mix({ r: 212, g: 223, b: 240 }, atm.lightTint, atm.lightAmount), atm.exposure);
 
   // 1) Сплошная непрозрачная шапка одной фигурой — швов быть не может
   ctx.save();
   ctx.beginPath();
-  for (let y = 0; y < GRID; y++) {
-    for (let x = 0; x < GRID; x++) {
+  for (let y = b.by0; y <= b.by1; y++) {
+    for (let x = b.bx0; x <= b.bx1; x++) {
       const t = world.at(x, y)!;
       if (t.water || t.indoor || t.veranda) continue;
       const a = isoToScreen(x - 0.04, y - 0.04, t.level);
@@ -278,8 +504,8 @@ function drawSnowCover(ctx: Ctx, world: World, atm: Atmosphere): void {
 
   // 2) Внутри этой формы — мягкая лепка сугробов (клип не даёт вылезти за край)
   ctx.clip();
-  for (let gy = -1; gy < GRID; gy += 1.1) {
-    for (let gx = -1; gx < GRID; gx += 1.1) {
+  for (let gy = phase(b.by0 - 1, -1, 1.1); gy <= b.by1; gy += 1.1) {
+    for (let gx = phase(b.bx0 - 1, -1, 1.1); gx <= b.bx1; gx += 1.1) {
       const t = world.at(Math.max(0, Math.floor(gx)), Math.max(0, Math.floor(gy)));
       const lvl = t ? t.level : 0;
       const n = fbm(gx * 0.33, gy * 0.33, 4, 311);
