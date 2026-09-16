@@ -12,6 +12,7 @@ import { buildAtmosphere } from './world/palette';
 import { World } from './world/world';
 import { UI, Selection } from './ui/ui';
 import { ITEM_BY_ID } from './world/catalog';
+import { Life } from './world/life';
 
 const app = document.getElementById('app')!;
 
@@ -26,6 +27,7 @@ if (world.load()) {
   world.save();
 }
 
+const life = new Life();
 const scene = new Scene(canvas);
 scene.centerOn(GRID / 2, GRID / 2 + 1.5);
 scene.camera.zoom = 0.85;
@@ -375,13 +377,14 @@ function frame(now: number): void {
     flushMilestones();
   }
 
-  // Ветер медленно дышит
-  scene.wind = 0.45 + Math.sin(now * 0.00013) * 0.3 + Math.sin(now * 0.00041) * 0.15;
+  // Живность и ветер
+  life.update(world, t, dt, now);
+  scene.wind = life.windBase;
 
   // Интерфейс растворяется в бездействии
   if (!zenMode && !ui.buildOpen && now - lastInteraction > IDLE_MS) setZen(true);
 
-  scene.render(world, atm, now, dt);
+  scene.render(world, atm, now, dt, life);
   ui.tick(t, atm);
 
   requestAnimationFrame(frame);

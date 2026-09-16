@@ -21,7 +21,7 @@ export class Weather {
   private snow: Particle[] = [];
   private flies: Particle[] = [];
   private leaves: Particle[] = [];
-  private rnd = makeRng(4242);
+  rnd = makeRng(4242);
   private w = 0;
   private h = 0;
 
@@ -59,11 +59,29 @@ export class Weather {
     };
   }
 
+  /** Лепесток/лист, сорванный с конкретного дерева, — уже в экранных координатах. */
+  emitAt(sx: number, sy: number, kind: 'petal' | 'leaf', seed: number): void {
+    const r = this.rnd;
+    const p: Particle = {
+      x: sx,
+      y: sy,
+      z: 0.55 + r() * 0.45,
+      vx: 0.1 + r() * 0.3,
+      vy: 0.12 + r() * 0.16,
+      rot: r() * Math.PI * 2,
+      vr: (r() - 0.5) * 0.05,
+      life: 1,
+      seed,
+    };
+    if (kind === 'petal') this.petals.push(p);
+    else this.leaves.push(p);
+  }
+
   update(dt: number, atm: Atmosphere): void {
     const season = atm.season;
-    const targetPetals = season === 'spring' ? 46 : season === 'summer' ? 6 : 0;
+    const targetPetals = season === 'spring' ? 22 : season === 'summer' ? 4 : 0;
     const targetSnow = season === 'winter' ? 90 : 0;
-    const targetLeaves = season === 'autumn' ? 34 : 0;
+    const targetLeaves = season === 'autumn' ? 16 : 0;
     const targetFlies = Math.round(34 * atm.fireflies);
 
     this.fill(this.petals, targetPetals, 'petal');
@@ -99,7 +117,7 @@ export class Weather {
 
   private fill(arr: Particle[], target: number, kind: 'petal' | 'snow' | 'fly' | 'leaf'): void {
     while (arr.length < target) arr.push(this.spawn(kind));
-    while (arr.length > target + 8) arr.pop();
+    while (arr.length > target + 40) arr.shift();
   }
 
   draw(ctx: Ctx, atm: Atmosphere): void {

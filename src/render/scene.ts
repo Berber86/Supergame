@@ -10,6 +10,8 @@ import { Ctx, getPaperTile, glow, vignette } from './paint';
 import { TerrainLayer, drawWaterAnimation, renderTerrain } from './terrain';
 import { drawObject } from './sprites';
 import { drawHouseRoof, drawHouseWalls } from './building';
+import { Life } from '../world/life';
+import { drawBird, drawCat, drawFish, drawFlutter } from './creatures';
 import { Weather, drawMist, drawSunShafts } from './weather';
 
 export interface Camera {
@@ -45,6 +47,7 @@ export class Scene {
   ghost: GhostPreview | null = null;
   showGrid = false;
   wind = 0.5;
+  life: Life | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -113,7 +116,8 @@ export class Scene {
     )}|${Math.round(atm.lightTint.b / 9)}`;
   }
 
-  render(world: World, atm: Atmosphere, time: number, dt: number): void {
+  render(world: World, atm: Atmosphere, time: number, dt: number, life?: Life): void {
+    if (life) this.life = life;
     const ctx = this.ctx;
     const W = this.viewW;
     const H = this.viewH;
@@ -147,6 +151,11 @@ export class Scene {
     // анимированная вода
     drawWaterAnimation(ctx, world, atm, time);
 
+    // карпы — в толще воды, до наземных объектов
+    if (this.life) {
+      for (const f of this.life.fish) drawFish(ctx, f, world, atm, time);
+    }
+
     // дальние стены дома — за объектами интерьера
     drawHouseWalls(ctx, world, atm);
 
@@ -167,6 +176,18 @@ export class Scene {
     // --- Атмосферные слои поверх сцены ---
     drawSunShafts(ctx, W, H, atm, time);
     drawMist(ctx, W, H, atm, time);
+    // лепестки и листья, сорванные ветром с конкретных деревьев
+    if (this.life) {
+      for (const e of this.life.takeEmitted()) {
+        const tile = world.at(Math.floor(e.x), Math.floor(e.y));
+        const lvl = tile ? tile.level : 0;
+        const wp = isoToScreen(e.x, e.y, lvl);
+        const sp = this.worldToScreen(wp.x, wp.y - 70);
+        if (sp.x > -60 && sp.x < W + 60 && sp.y > -60 && sp.y < H + 60) {
+          this.weather.emitAt(sp.x, sp.y, e.kind, e.seed);
+        }
+      }
+    }
     this.weather.update(dt, atm);
     this.weather.draw(ctx, atm);
 
@@ -389,25 +410,55 @@ export class Scene {
 
   private drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: number): void {
     const now = Date.now();
-    type Entry = { o: PlacedObject; depth: number; x: number; y: number; g: number };
+    // Единый список: статичные объекты и живность сортируются вместе,
+    // иначе кот будет проходить «сквозь» дерево.
+    type Entry = { depth: number; draw: () => void };
     const list: Entry[] = [];
+
     for (const o of world.objects) {
       const item = ITEM_BY_ID.get(o.type);
       if (!item) continue;
+      // кот и карпы рисуются системой жизни, а не как статичные предметы
+      if (o.type === 'cat' || o.type === 'koi') continue;
       const cx = o.tx + item.w / 2;
       const cy = o.ty + item.h / 2;
       const tile = world.at(Math.floor(cx), Math.floor(cy));
       const lvl = tile ? (tile.water ? tile.level - 0.28 : tile.level) : 0;
       const p = isoToScreen(cx, cy, lvl);
-      // Отсечение за пределами экрана
       const s = this.worldToScreen(p.x, p.y);
-      if (s.x < -220 || s.x > this.viewW + 220 || s.y < -260 || s.y > this.viewH + 220) continue;
-      list.push({ o, depth: (cx + cy) * 100 + lvl * 20, x: p.x, y: p.y, g: world.growth(o, now) });
+      if (s.x < -240 || s.x > this.viewW + 240 || s.y < -280 || s.y > this.viewH + 240) continue;
+      const g = world.growth(o, now);
+      // ветер берём в точке дерева — порыв проходит волной
+      const wind = this.life ? this.life.windAt(cx, cy) : this.wind;
+      list.push({
+        depth: (cx + cy) * 100 + lvl * 20,
+        draw: () => drawObject({ ctx, x: p.x, y: p.y, atm, g, obj: o, time, wind, alpha: 1 }),
+      });
     }
+
+    if (this.life) {
+      for (const c of this.life.cats) {
+        const tile = world.at(Math.floor(c.tx), Math.floor(c.ty));
+        const lvl = tile ? tile.level : 0;
+        const p = isoToScreen(c.tx, c.ty, lvl);
+        list.push({ depth: (c.tx + c.ty) * 100 + lvl * 20 + 4, draw: () => drawCat(ctx, c, p.x, p.y, atm, time) });
+      }
+      for (const b of this.life.birds) {
+        const tile = world.at(Math.floor(b.tx), Math.floor(b.ty));
+        const lvl = tile ? tile.level : 0;
+        const p = isoToScreen(b.tx, b.ty, lvl);
+        list.push({ depth: (b.tx + b.ty) * 100 + lvl * 20 + 6, draw: () => drawBird(ctx, b, p.x, p.y, atm, time) });
+      }
+      for (const f of this.life.flutters) {
+        const tile = world.at(Math.floor(f.tx), Math.floor(f.ty));
+        const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
+        const p = isoToScreen(f.tx, f.ty, lvl);
+        list.push({ depth: (f.tx + f.ty) * 100 + lvl * 20 + 8, draw: () => drawFlutter(ctx, f, p.x, p.y, atm, time) });
+      }
+    }
+
     list.sort((a, b) => a.depth - b.depth);
-    for (const e of list) {
-      drawObject({ ctx, x: e.x, y: e.y, atm, g: e.g, obj: e.o, time, wind: this.wind, alpha: 1 });
-    }
+    for (const e of list) e.draw();
 
     // Тёплое свечение окон дома изнутри
     this.drawWindowGlow(ctx, world, atm);
