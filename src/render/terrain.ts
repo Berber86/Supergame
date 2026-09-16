@@ -167,6 +167,17 @@ export function renderTerrain(world: World, atm: Atmosphere, scale = 1, into?: T
   // 4.5) Снежный покров
   if (atm.season === 'winter') drawSnowCover(ctx, world, atm, bounds);
 
+  // 4.7) Возвращаем поверхность воды поверх разводов.
+  //
+  // Кляксы разводов крупнее клетки и заливают соседнюю воду, отчего пруд
+  // выглядит прозрачным — сквозь него просвечивает трава. На уровне земли
+  // это сходило за игру света, но приподнятый пруд от этого становится
+  // стеклянным. Вода — не земля, акварельных затёков на ней быть не должно.
+  for (const { x, y } of order) {
+    const t = world.at(x, y)!;
+    if (t.water) drawWaterTop(ctx, x, y, t.level, atm);
+  }
+
   // 5) Мягкие границы между разными материалами
   for (const { x, y } of order) drawMaterialEdges(ctx, world, x, y, atm);
 

@@ -27,7 +27,7 @@ export interface TerrainBrush {
   id: string;
   name: string;
   hint: string;
-  kind: 'ground' | 'water' | 'hill' | 'lower' | 'floor';
+  kind: 'ground' | 'water' | 'hill' | 'lower' | 'floor' | 'spring' | 'cascade' | 'steps' | 'terrace';
   ground?: GroundId;
   /** Размер модульного блока. */
   w: number;
@@ -53,6 +53,7 @@ export const TABS: CatalogTab[] = [
   { id: 'pond', name: 'Пруд', icon: 'lotus', requires: 'first_pond' },
   { id: 'light', name: 'Свет', icon: 'lantern', requires: 'first_evening' },
   { id: 'house', name: 'Усадьба', icon: 'house', requires: 'first_deck' },
+  { id: 'shore', name: 'Берег', icon: 'water', requires: 'running_water' },
   { id: 'cat', name: 'Коту', icon: 'cat', requires: 'first_cat' },
 ];
 
@@ -68,10 +69,14 @@ export const TERRAIN_BRUSHES: TerrainBrush[] = [
   { id: 'w_pond4', name: 'Пруд 4×4', hint: 'глубокий покой', kind: 'water', w: 4, h: 4, tab: 'water' },
   { id: 'w_stream', name: 'Ручей 1×3', hint: 'вода, что течёт', kind: 'water', w: 1, h: 3, tab: 'water' },
   { id: 'w_fill', name: 'Осушить', hint: 'вернуть землю', kind: 'ground', ground: 'moss', w: 1, h: 1, tab: 'water' },
+  { id: 'w_spring', name: 'Исток 2×2', hint: 'вода на высоте — отсюда потечёт', kind: 'spring', w: 2, h: 2, tab: 'water' },
+  { id: 'w_cascade', name: 'Каскад 3×3', hint: 'три ступени вниз с водой', kind: 'cascade', w: 3, h: 3, tab: 'water' },
 
   { id: 'h_hill3', name: 'Холм 3×3', hint: 'мягкое возвышение', kind: 'hill', w: 3, h: 3, tab: 'relief' },
   { id: 'h_hill2', name: 'Пригорок 2×2', hint: 'едва заметный подъём', kind: 'hill', w: 2, h: 2, tab: 'relief' },
   { id: 'h_low', name: 'Ложбина 3×3', hint: 'опустить землю', kind: 'lower', w: 3, h: 3, tab: 'relief' },
+  { id: 'h_steps', name: 'Ступени 1×3', hint: 'подняться по склону', kind: 'steps', w: 1, h: 3, tab: 'relief' },
+  { id: 'h_terrace', name: 'Терраса 4×4', hint: 'ровная площадка со стенкой', kind: 'terrace', w: 4, h: 4, tab: 'relief' },
   { id: 'f_deck', name: 'Веранда', hint: 'тёплые доски энгава', kind: 'floor', ground: 'deck', w: 1, h: 1, tab: 'relief' },
   { id: 'f_tatami', name: 'Татами', hint: 'комната усадьбы', kind: 'floor', ground: 'tatami', w: 1, h: 1, tab: 'relief' },
 ];
@@ -163,6 +168,24 @@ export const MILESTONES: Record<string, Milestone> = {
     title: 'Гость',
     text: 'Кот пришёл сам и остался. Ему нужны подушки и миски.',
     unlocks: 'Коту',
+  },
+  running_water: {
+    id: 'running_water',
+    title: 'Вода пошла',
+    text: 'Ручей нашёл дорогу вниз. Теперь в саду слышно течение.',
+    unlocks: 'Берег',
+  },
+  first_steps: {
+    id: 'first_steps',
+    title: 'Ступени',
+    text: 'По склону можно подняться. Сад обрёл высоту.',
+    unlocks: 'Рельеф',
+  },
+  first_terrace: {
+    id: 'first_terrace',
+    title: 'Терраса',
+    text: 'Ровная площадка над садом — есть где поставить беседку.',
+    unlocks: 'Рельеф',
   },
   grove: {
     id: 'grove',

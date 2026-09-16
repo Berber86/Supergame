@@ -9,6 +9,8 @@ import { GroundId, PlacedObject, SaveData, Tile } from './types';
 const SAVE_KEY = 'usadba.save.v3';
 
 export class World {
+  /** Сторона сада в тайлах — чтобы рендер не импортировал GRID отдельно. */
+  readonly size = GRID;
   tiles: Tile[] = [];
   objects: PlacedObject[] = [];
   nextId = 1;
@@ -450,8 +452,177 @@ export class World {
       case 'floor':
         for (let y = y0; y < y0 + bh; y++) for (let x = x0; x < x0 + bw; x++) this.setGround(x, y, brush.ground!);
         return true;
+      case 'spring':
+        this.applySpring(x0, y0, bw, bh);
+        return true;
+      case 'cascade':
+        this.applyCascade(x0, y0, bw, bh);
+        return true;
+      case 'steps':
+        this.applySteps(x0, y0, bw, bh);
+        return true;
+      case 'terrace':
+        this.applyTerrace(x0, y0, bw, bh);
+        return true;
     }
     return false;
+  }
+
+  /**
+   * Исток: приподнятая площадка с водой наверху. Сам по себе он никуда
+   * не течёт — но стоит опустить землю рядом, и вода найдёт дорогу вниз.
+   */
+  applySpring(x0: number, y0: number, w: number, h: number): void {
+    const cx = x0 + (w - 1) / 2;
+    const cy = y0 + (h - 1) / 2;
+    const rx = w / 2;
+    const ry = h / 2;
+    // Поднимаем площадку с запасом: широкий берег вокруг, иначе вода
+    // выглядит стеклянной плитой, повисшей в воздухе.
+    for (let y = y0 - 2; y < y0 + h + 2; y++) {
+      for (let x = x0 - 2; x < x0 + w + 2; x++) {
+        const t = this.at(x, y);
+        if (!t || t.indoor || t.veranda) continue;
+        const nx = (x - cx) / (rx + 1.6);
+        const ny = (y - cy) / (ry + 1.6);
+        if (Math.sqrt(nx * nx + ny * ny) > 1.15) continue;
+        t.level = Math.max(t.level, 1);
+        this.touch(x, y);
+      }
+    }
+    // Вода — мягким пятном, как у обычного пруда, и с каменной кромкой
+    for (let y = y0 - 1; y < y0 + h + 1; y++) {
+      for (let x = x0 - 1; x < x0 + w + 1; x++) {
+        const t = this.at(x, y);
+        if (!t || t.indoor || t.veranda) continue;
+        const nx = (x - cx) / rx;
+        const ny = (y - cy) / ry;
+        const wob = (fbm(x * 0.55, y * 0.55, 2, 37) - 0.5) * 0.3;
+        const d = Math.sqrt(nx * nx + ny * ny) + wob;
+        if (d <= 1.02) {
+          t.water = true;
+          t.ground = 'water';
+          this.touch(x, y);
+        } else if (d <= 1.5 && !t.water) {
+          // камень по кромке — источник выглядит обложенным
+          t.ground = 'stone';
+          this.touch(x, y);
+        }
+      }
+    }
+    this.checkMilestone('first_pond');
+    this.checkMilestone('running_water');
+  }
+
+  /**
+   * Каскад: лестница из водяных ступеней, каждая ниже предыдущей.
+   * Готовый водопад одним движением — самый наглядный способ показать
+   * игроку, что вода умеет падать.
+   */
+  applyCascade(x0: number, y0: number, w: number, h: number): void {
+    const steps = Math.max(2, Math.min(w, h));
+    // Ступени идут по диагонали на юго-восток: там низ экрана, и падающая
+    // вода обращена к зрителю.
+    const bandOf = (x: number, y: number) => {
+      const k = (x - x0 + (y - y0)) / 2;
+      return Math.max(0, Math.min(steps - 1, Math.floor(k)));
+    };
+
+    // 1) Рельеф: каждая полоса ниже предыдущей, вокруг — покатый берег
+    for (let y = y0 - 2; y < y0 + h + 2; y++) {
+      for (let x = x0 - 2; x < x0 + w + 2; x++) {
+        const t = this.at(x, y);
+        if (!t || t.indoor || t.veranda) continue;
+        const inside = x >= x0 - 1 && x < x0 + w + 1 && y >= y0 - 1 && y < y0 + h + 1;
+        if (!inside) continue;
+        const lvl = steps - 1 - bandOf(x, y);
+        t.level = lvl;
+        this.touch(x, y);
+      }
+    }
+
+    // 2) Русло: извилистая лента вниз по ступеням, а не весь квадрат
+    for (let y = y0; y < y0 + h; y++) {
+      for (let x = x0; x < x0 + w; x++) {
+        const t = this.at(x, y);
+        if (!t || t.indoor || t.veranda) continue;
+        // Отклонение от осевой линии русла. Русло должно быть шире ступени,
+        // иначе на большинстве уступов воды не окажется и падать будет нечему.
+        const axis = (x - x0) - (y - y0);
+        const wob = (fbm(x * 0.7, y * 0.7, 2, 53) - 0.5) * 1.2;
+        if (Math.abs(axis + wob) > 2.1) continue;
+        t.water = true;
+        t.ground = 'water';
+        this.touch(x, y);
+      }
+    }
+
+    // 3) Камень по берегам русла — вода прорезает скалу
+    for (let y = y0 - 1; y < y0 + h + 1; y++) {
+      for (let x = x0 - 1; x < x0 + w + 1; x++) {
+        const t = this.at(x, y);
+        if (!t || t.water || t.indoor || t.veranda) continue;
+        let nearWater = false;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][]) {
+          if (this.at(x + dx, y + dy)?.water) nearWater = true;
+        }
+        if (!nearWater) continue;
+        if (hash2(x, y, 71) > 0.35) {
+          t.ground = 'stone';
+          this.touch(x, y);
+        }
+      }
+    }
+
+    this.checkMilestone('first_pond');
+    this.checkMilestone('running_water');
+  }
+
+  /** Ступени: плавный подъём в одну клетку шириной. */
+  applySteps(x0: number, y0: number, w: number, h: number): void {
+    // определяем, куда подниматься: сравниваем концы полосы
+    const a = this.at(x0, y0);
+    const b = this.at(x0 + w - 1, y0 + h - 1);
+    const from = a ? a.level : 0;
+    const to = b ? b.level : 0;
+    const n = Math.max(w, h);
+    for (let i = 0; i < n; i++) {
+      const k = n > 1 ? i / (n - 1) : 0;
+      const lvl = Math.round(from + (to - from) * k);
+      const x = w > h ? x0 + i : x0;
+      const y = h >= w ? y0 + i : y0;
+      const t = this.at(x, y);
+      if (!t || t.indoor) continue;
+      t.level = lvl;
+      t.water = false;
+      if (t.ground === 'water') t.ground = 'stone';
+      else t.ground = 'stone';
+      this.touch(x, y);
+    }
+    this.checkMilestone('first_steps');
+  }
+
+  /** Терраса: ровная площадка, приподнятая над округой. */
+  applyTerrace(x0: number, y0: number, w: number, h: number): void {
+    // берём самую высокую точку под пятном и равняем всё по ней
+    let top = -9;
+    for (let y = y0; y < y0 + h; y++)
+      for (let x = x0; x < x0 + w; x++) {
+        const t = this.at(x, y);
+        if (t) top = Math.max(top, t.level);
+      }
+    const lvl = clamp(top + 1, -1, 3);
+    for (let y = y0; y < y0 + h; y++) {
+      for (let x = x0; x < x0 + w; x++) {
+        const t = this.at(x, y);
+        if (!t || t.indoor || t.veranda) continue;
+        t.level = lvl;
+        t.water = false;
+        if (t.ground === 'water') t.ground = 'moss';
+        this.touch(x, y);
+      }
+    }
+    this.checkMilestone('first_terrace');
   }
 
   // ---- Объекты ----

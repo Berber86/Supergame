@@ -15,6 +15,8 @@ import { drawBird, drawCat, drawFish, drawFlutter } from './creatures';
 import { Weather, drawMist, drawSunShafts } from './weather';
 import { RainRenderer, drawFog, drawLightning, drawWetSheen } from './rain';
 import { WeatherState } from '../world/weatherState';
+import { WaterFlow } from '../world/waterFlow';
+import { drawCurrent, drawFalls, drawShoreRipple } from './water';
 
 export interface Camera {
   x: number;
@@ -58,6 +60,8 @@ export class Scene {
   movingId = -1;
   /** id объекта под указателем — подсвечивается пипеткой и переносом. */
   highlightId = -1;
+  /** Течение воды: считается по рельефу, обновляется при правках земли. */
+  flow = new WaterFlow();
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -87,6 +91,7 @@ export class Scene {
   markTerrainDirty(): void {
     this.terrainDirty = true;
     this.dirtyRect = null;
+    this.flow.markDirty();
   }
 
   /**
@@ -112,6 +117,7 @@ export class Scene {
       this.dirtyRect = r;
     }
     this.terrainDirty = true;
+    this.flow.markDirty();
   }
 
   centerOn(tx: number, ty: number): void {
@@ -192,8 +198,12 @@ export class Scene {
       ctx.drawImage(this.terrain.canvas, this.terrain.ox, this.terrain.oy);
     }
 
-    // анимированная вода
+    // анимированная вода: сначала общие блики, потом течение и водопады
+    this.flow.ensure(world);
     drawWaterAnimation(ctx, world, atm, time);
+    drawCurrent(ctx, world, this.flow, atm, time);
+    drawShoreRipple(ctx, world, this.flow, atm, time);
+    drawFalls(ctx, world, this.flow, atm, time);
 
     // карпы — в толще воды, до наземных объектов
     if (this.life) {

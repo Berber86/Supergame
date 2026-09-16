@@ -151,7 +151,18 @@ export class GardenAudio {
     dt: number,
     t: TimeState,
     weather: WeatherState,
-    ctxInfo: { wind: number; waterNearby: number; hasChime: boolean; hasShishi: boolean; catNear: boolean; trees: number },
+    ctxInfo: {
+      wind: number;
+      waterNearby: number;
+      hasChime: boolean;
+      hasShishi: boolean;
+      catNear: boolean;
+      trees: number;
+      /** Течение: 0 — стоячая вода, 1 — быстрый ручей. */
+      current?: number;
+      /** Водопады: 0 — нет, 1 — шумный каскад. */
+      falling?: number;
+    },
   ): void {
     if (!this.ctx || !this.enabled) return;
     const night = t.daylight < 0.28;
@@ -166,8 +177,17 @@ export class GardenAudio {
     // --- Ветер: низкий гул на сильных порывах ---
     this.wind?.slider.to(clamp01((ctxInfo.wind - 0.7) * 0.6) * 0.14, 1.2);
 
-    // --- Вода: ручей/пруд рядом ---
-    this.stream?.slider.to(clamp01(ctxInfo.waterNearby) * 0.07, 1.6);
+    // --- Вода: стоячая слышна еле-еле, текущая заметно, водопад громче всего ---
+    const still = clamp01(ctxInfo.waterNearby) * 0.05;
+    const running = clamp01(ctxInfo.current ?? 0) * 0.1;
+    const falling = clamp01(ctxInfo.falling ?? 0) * 0.17;
+    this.stream?.slider.to(still + running + falling, 1.6);
+    if (this.stream) {
+      // Водопад шумит выше и шире ручья — сдвигаем полосу вверх
+      const bright = lerp(620, 1350, clamp01((ctxInfo.falling ?? 0) * 0.8 + (ctxInfo.current ?? 0) * 0.3));
+      this.stream.filter.frequency.value = bright;
+      this.stream.filter.Q.value = lerp(1.6, 0.7, clamp01(ctxInfo.falling ?? 0));
+    }
 
     // --- Дождь ---
     this.rain?.slider.to(weather.rain * 0.19, 1.1);

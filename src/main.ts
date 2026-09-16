@@ -20,6 +20,7 @@ import { DevPanel } from './ui/devPanel';
 import { History } from './core/history';
 import { GardenStore } from './world/gardens';
 import { GardensPanel } from './ui/gardensPanel';
+import { waterLoudness } from './render/water';
 import { PlacedObject } from './world/types';
 
 const app = document.getElementById('app')!;
@@ -665,7 +666,11 @@ function gatherAudioContext() {
   }
   for (let y = 0; y < 26; y += 2)
     for (let x = 0; x < 26; x += 2) if (world.at(x, y)?.water) water += 0.03;
+  // Шум воды выводим из настоящего течения, а не из «где-то есть пруд»
+  const loud = waterLoudness(scene.flow);
   return {
+    current: loud.stream,
+    falling: loud.fall,
     wind: life.windBase + life.gusts.reduce((a, g) => a + g.strength, 0) * 0.5,
     waterNearby: Math.min(1, water),
     hasChime,

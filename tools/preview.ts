@@ -53,6 +53,14 @@ async function main() {
   const d = new Date(base);
   d.setHours(Math.floor(hour), Math.round((hour % 1) * 60), 0, 0);
 
+  // Тестовый водопад: приподнятый исток и спуск к пруду
+  if (process.env.FALLS) {
+    const { BRUSH_BY_ID } = await import('../src/world/catalog');
+    world.applyBrush(BRUSH_BY_ID.get('w_cascade')!, 9, 17);
+    world.applyBrush(BRUSH_BY_ID.get('w_spring')!, 5, 14);
+    world.applyBrush(BRUSH_BY_ID.get('h_steps')!, 12, 20);
+  }
+
   const t = computeTime(d.getTime());
   const ws = new WeatherSystem();
   const wkind = (process.env.WEATHER ?? 'clear') as 'clear' | 'rain' | 'storm' | 'fog' | 'snow';
