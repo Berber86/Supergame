@@ -1,13 +1,17 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  base: './',
   server: {
-    host: true,
+    host: '0.0.0.0',
     port: 5173,
+    strictPort: true,
+    allowedHosts: true,
+    hmr: { clientPort: 443, protocol: 'wss' },
   },
-  build: {
-    target: 'es2020',
-    sourcemap: true,
+  preview: {
+    host: '0.0.0.0',
+    port: 4173,
+    strictPort: true,
   },
+  base: './',
 });
