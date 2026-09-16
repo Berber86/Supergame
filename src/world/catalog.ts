@@ -91,6 +91,9 @@ export const ITEMS: CatalogItem[] = [
   { id: 'ginkgo', name: 'Гинкго', hint: 'золотые веера', kind: 'tree', w: 1, h: 1, step: 0.5, growDays: 8, tab: 'trees' },
   { id: 'azalea', name: 'Азалия', hint: 'круглый цветущий куст', kind: 'shrub', w: 1, h: 1, step: 0.25, growDays: 3, tab: 'trees' },
   { id: 'hedge', name: 'Стриженый куст', hint: 'облако из листвы', kind: 'shrub', w: 1, h: 1, step: 0.25, growDays: 3, tab: 'trees' },
+  { id: 'wisteria', name: 'Глициния', hint: 'весной свисает лиловыми гроздями', kind: 'tree', w: 1, h: 1, step: 0.5, growDays: 6, tab: 'trees' },
+  { id: 'persimmon', name: 'Хурма', hint: 'осенью — оранжевые фонарики', kind: 'tree', w: 1, h: 1, step: 0.5, growDays: 7, tab: 'trees' },
+  { id: 'camellia', name: 'Камелия', hint: 'цветёт в снегу', kind: 'shrub', w: 1, h: 1, step: 0.25, growDays: 4, tab: 'trees' },
 
   // Камни
   { id: 'rock_big', name: 'Валун 2×2', hint: 'сердце сада камней', kind: 'rock', w: 2, h: 2, step: 0.5, growDays: 0, rotatable: true, tab: 'stones' },
@@ -113,6 +116,12 @@ export const ITEMS: CatalogItem[] = [
   { id: 'koi', name: 'Карпы кои', hint: 'ходят кругами', kind: 'creature', w: 1, h: 1, step: 0.5, growDays: 0, needsWater: true, onWater: true, tab: 'pond' },
   { id: 'shishi', name: 'Сиси-одоси', hint: 'стучит бамбуком', kind: 'deco', w: 1, h: 1, step: 0.5, growDays: 0, tab: 'pond' },
 
+  // Берег (открывается, когда вода пошла)
+  { id: 'reed', name: 'Камыш', hint: 'шуршит у самой воды', kind: 'flower', w: 1, h: 1, step: 0.25, growDays: 1, tab: 'shore' },
+  { id: 'horsetail', name: 'Хвощ', hint: 'строгие зелёные стебли', kind: 'flower', w: 1, h: 1, step: 0.25, growDays: 1, tab: 'shore' },
+  { id: 'water_stone', name: 'Камень в воде', hint: 'вода обтекает его', kind: 'rock', w: 1, h: 1, step: 0.25, growDays: 0, onWater: true, needsWater: true, tab: 'shore' },
+  { id: 'plank_bridge', name: 'Мостки 1×2', hint: 'доски над водой', kind: 'bridge', w: 1, h: 2, step: 1, growDays: 0, rotatable: true, onWater: true, tab: 'shore' },
+
   // Свет
   { id: 'lantern_stone', name: 'Каменный фонарь', hint: 'тёплый огонёк', kind: 'lantern', w: 1, h: 1, step: 0.5, growDays: 0, tab: 'light' },
   { id: 'lantern_paper', name: 'Бумажный фонарь', hint: 'качается на ветру', kind: 'lantern', w: 1, h: 1, step: 0.5, growDays: 0, tab: 'light' },
@@ -126,6 +135,12 @@ export const ITEMS: CatalogItem[] = [
   { id: 'table', name: 'Столик', hint: 'чай остывает', kind: 'deco', w: 1, h: 1, step: 0.5, growDays: 0, tab: 'house' },
   { id: 'tsukubai', name: 'Цукубаи', hint: 'чаша с водой', kind: 'deco', w: 1, h: 1, step: 0.5, growDays: 0, tab: 'house' },
   { id: 'wind_chime', name: 'Фурин', hint: 'звенит в тишине', kind: 'deco', w: 1, h: 1, step: 0.5, growDays: 0, tab: 'house' },
+  { id: 'fusuma', name: 'Фусума', hint: 'перегородка с росписью', kind: 'deco', w: 1, h: 1, step: 1, growDays: 0, rotatable: true, tab: 'house' },
+  { id: 'tokonoma', name: 'Токонома', hint: 'ниша со свитком', kind: 'deco', w: 1, h: 1, step: 1, growDays: 0, rotatable: true, tab: 'house' },
+  { id: 'irori', name: 'Ирори', hint: 'очаг в полу, котелок над огнём', kind: 'lantern', w: 1, h: 1, step: 0.5, growDays: 0, tab: 'house' },
+  { id: 'futon', name: 'Футон', hint: 'постель на татами', kind: 'deco', w: 1, h: 1, step: 0.5, growDays: 0, rotatable: true, tab: 'house' },
+  { id: 'byobu', name: 'Ширма бёбу', hint: 'три створки с золотом', kind: 'deco', w: 1, h: 1, step: 0.5, growDays: 0, rotatable: true, tab: 'house' },
+  { id: 'bonsai', name: 'Бонсай', hint: 'сад размером с ладонь', kind: 'deco', w: 1, h: 1, step: 0.25, growDays: 5, tab: 'house' },
 
   // Коту
   { id: 'cat', name: 'Кот', hint: 'приходит сам', kind: 'creature', w: 1, h: 1, step: 0.5, growDays: 0, tab: 'cat' },

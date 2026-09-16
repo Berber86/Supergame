@@ -9,7 +9,7 @@ import { World } from '../world/world';
 import { Ctx, getPaperTile, glow, vignette } from './paint';
 import { TerrainLayer, TileRect, drawWaterAnimation, renderTerrain } from './terrain';
 import { drawObject } from './sprites';
-import { drawHouseRoof, drawHouseWalls } from './building';
+import { drawHouseRoof, drawHouseWalls, roofOpacity } from './building';
 import { Life } from '../world/life';
 import { drawBird, drawCat, drawFish, drawFlutter } from './creatures';
 import { Weather, drawMist, drawSunShafts } from './weather';
@@ -88,6 +88,18 @@ export class Scene {
   }
 
   /** Перерисовать весь ландшафт (смена сезона, загрузка, отмена). */
+  /** Слой для полупрозрачной кровли — заводится один раз. */
+  private roof: HTMLCanvasElement | null = null;
+
+  private roofLayer(w: number, h: number): HTMLCanvasElement {
+    if (!this.roof || this.roof.width !== Math.ceil(w) || this.roof.height !== Math.ceil(h)) {
+      this.roof = document.createElement('canvas');
+      this.roof.width = Math.ceil(w);
+      this.roof.height = Math.ceil(h);
+    }
+    return this.roof;
+  }
+
   markTerrainDirty(): void {
     this.terrainDirty = true;
     this.dirtyRect = null;
@@ -222,8 +234,34 @@ export class Scene {
     // --- Объекты, отсортированные по глубине ---
     this.drawObjects(ctx, world, atm, time);
 
-    // кровля и столбы — поверх интерьера
-    drawHouseRoof(ctx, world, atm, time);
+    // Кровля поверх интерьера.
+    //
+    // Когда в комнатах что-то стоит, крыша становится полупрозрачной —
+    // дом и сад по замыслу одна сцена, и обстановку должно быть видно.
+    // Рисуем её на отдельном слое и накладываем разом: скаты перекрывают
+    // друг друга, и прозрачность, заданная каждому по отдельности,
+    // складывалась бы обратно в непрозрачную крышу.
+    const roofA = roofOpacity(world);
+    if (roofA > 0.99) {
+      drawHouseRoof(ctx, world, atm, time);
+    } else {
+      const layer = this.roofLayer(W, H);
+      const lc = layer.getContext('2d')!;
+      lc.setTransform(1, 0, 0, 1, 0, 0);
+      lc.clearRect(0, 0, layer.width, layer.height);
+      lc.save();
+      lc.translate(W / 2, H / 2);
+      lc.scale(this.camera.zoom, this.camera.zoom);
+      lc.translate(-this.camera.x, -this.camera.y);
+      drawHouseRoof(lc, world, atm, time);
+      lc.restore();
+
+      ctx.save();
+      ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      ctx.globalAlpha = roofA;
+      ctx.drawImage(layer, 0, 0);
+      ctx.restore();
+    }
 
     // мокрый блеск и круги от капель
     if (ws) {

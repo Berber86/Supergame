@@ -151,9 +151,35 @@ function drawWall(
 }
 
 /** Столбы и кровля — рисуются ПОСЛЕ объектов, чтобы смыкать картинку. */
+/**
+ * Прозрачность кровли.
+ *
+ * Дом и сад — одна сцена, и всё, что игрок поставил в комнатах, должно быть
+ * видно. Но и крыша нужна: без неё усадьба перестаёт читаться как дом.
+ * Решение — кровля тает, когда под ней есть что разглядывать, и остаётся
+ * плотной, пока комнаты пусты.
+ */
+export function roofOpacity(world: World): number {
+  const h = findHouse(world);
+  if (!h) return 1;
+  let inside = 0;
+  for (const o of world.objects) {
+    const t = world.at(Math.floor(o.tx), Math.floor(o.ty));
+    if (t?.indoor) inside++;
+  }
+  if (!inside) return 1;
+  // Крыша именно тает, а не исчезает: силуэт кровли держит образ усадьбы,
+  // без него остаётся парящая площадка татами.
+  return lerp(1, 0.55, Math.min(1, inside / 4));
+}
+
 export function drawHouseRoof(ctx: Ctx, world: World, atm: Atmosphere, time: number): void {
   const h = findHouse(world);
   if (!h) return;
+  // Прозрачностью занимается сцена: она кладёт всю кровлю одним слоем.
+  // Гасить здесь каждый скат по отдельности нельзя — они перекрываются,
+  // и полупрозрачные слои складываются обратно в плотную крышу.
+  ctx.save();
   const T = woodTones(atm);
   const lvl = h.level;
 
@@ -333,6 +359,7 @@ function drawPosts(ctx: Ctx, world: World, h: HouseBox, T: ReturnType<typeof woo
     ctx.fillRect(p.x - w * 0.9, p.y + postTop, w * 1.8, 4);
     void hash2;
   }
+  ctx.restore();
 }
 
 export { LEVEL_H, TILE_H, TILE_W };

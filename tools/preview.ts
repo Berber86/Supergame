@@ -61,6 +61,18 @@ async function main() {
     world.applyBrush(BRUSH_BY_ID.get('h_steps')!, 12, 20);
   }
 
+  // Тестовая расстановка новых предметов
+  if (process.env.ITEMS) {
+    const spots: [string, number, number][] = [
+      ['wisteria', 7.5, 7.5], ['persimmon', 5.5, 9.5], ['camellia', 8.25, 10.25],
+      ['fusuma', 6, 5], ['tokonoma', 8, 4], ['irori', 7.5, 6.5],
+      ['futon', 5.5, 6.5], ['byobu', 9.5, 5.5], ['bonsai', 6.25, 4.25],
+      ['reed', 13.25, 16.25], ['reed', 13.75, 16.75], ['horsetail', 14.25, 17.25],
+      ['water_stone', 16.25, 13.25], ['plank_bridge', 15, 15],
+    ];
+    for (const [id, x, y] of spots) world.place(id, x, y, 0, Date.now() - 864e5 * 30);
+  }
+
   const t = computeTime(d.getTime());
   const ws = new WeatherSystem();
   const wkind = (process.env.WEATHER ?? 'clear') as 'clear' | 'rain' | 'storm' | 'fog' | 'snow';

@@ -1374,6 +1374,795 @@ const drawCat: Drawer = (d) => {
 
 // ---------------- Реестр ----------------
 
+
+// ---------------- Глициния, хурма, камелия ----------------
+
+/**
+ * Глициния: пергола, с которой свисают лиловые грозди.
+ * Весной цветёт, летом остаётся зелёной ширмой, зимой — голые плети.
+ */
+const drawWisteria: Drawer = (d) => {
+  const { ctx, atm, g, obj } = d;
+  const scale = lerp(0.35, 1, Math.pow(g, 0.7));
+  const w = 42 * scale;
+  const h = 62 * scale;
+  shadowUnder(d, w * 0.8, 8 * scale, 0.9);
+
+  // Опоры перголы
+  const post = litc({ r: 122, g: 96, b: 70 }, atm);
+  for (const sx of [-1, 1]) {
+    taperStroke(ctx, d.x + sx * w * 0.8, d.y, d.x + sx * w * 0.8, d.y - h, 3.4 * scale, 2.6 * scale, post, 0.95, 0);
+  }
+  // Перекладина
+  ctx.strokeStyle = css(post, 0.95);
+  ctx.lineWidth = 3.2 * scale;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(d.x - w * 0.92, d.y - h);
+  ctx.lineTo(d.x + w * 0.92, d.y - h + 1);
+  ctx.stroke();
+
+  const bare = atm.season === 'winter';
+  const leafBase = atm.season === 'autumn' ? { r: 186, g: 168, b: 96 } : { r: 104, g: 146, b: 92 };
+  const leaf = litc(leafBase, atm);
+
+  // Листва по перекладине: несколько пятен вместо одной плиты —
+  // сплошной прямоугольник читался как навес, а не как растение
+  if (!bare) {
+    const puffs = 4;
+    for (let i = 0; i < puffs; i++) {
+      const r1 = hash2(i, obj.seed, 13);
+      const px = d.x + (i / (puffs - 1) - 0.5) * w * 1.7;
+      washBlob(
+        ctx,
+        px,
+        d.y - h + (2 + r1 * 5) * scale,
+        w * (0.36 + r1 * 0.2),
+        (9 + r1 * 5) * scale,
+        i % 2 ? leaf : litc(shade(leafBase, 0.86), atm),
+        obj.seed + i * 5,
+        { layers: 2, alpha: 0.46, edge: 0.14, wobble: 0.3 },
+      );
+    }
+  }
+
+  // Свисающие грозди
+  const bunches = Math.round(6 + scale * 4);
+  const bloom = atm.season === 'spring';
+  const cluster = litc({ r: 158, g: 130, b: 202 }, atm, 0.04);
+  for (let i = 0; i < bunches; i++) {
+    const r1 = hash2(i, obj.seed, 19);
+    const px = d.x + (i / (bunches - 1) - 0.5) * w * 1.6 + (r1 - 0.5) * 5;
+    // Весной грозди длинные — это главный силуэт глицинии
+    const len = (bloom ? 40 : 13) * scale * (0.65 + r1 * 0.7);
+    const sway = Math.sin(d.time * 0.0011 + i * 0.9 + obj.seed) * 2.4 * d.wind;
+
+    if (bare) {
+      // зимой только плети
+      ctx.strokeStyle = css(litc({ r: 116, g: 98, b: 84 }, atm), 0.7);
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.moveTo(px, d.y - h + 4 * scale);
+      ctx.quadraticCurveTo(px + sway, d.y - h + len * 0.6, px + sway * 1.6, d.y - h + len);
+      ctx.stroke();
+      continue;
+    }
+
+    if (bloom) {
+      // Гроздь сужается книзу — вытянутая капля из мелких цветков
+      const steps = Math.max(3, Math.round(len / 4));
+      for (let k = 0; k < steps; k++) {
+        const tt = k / steps;
+        const yy = d.y - h + 6 * scale + tt * len;
+        const xx = px + sway * tt * 1.4;
+        const rr = (4 - tt * 2.5) * scale;
+        ctx.fillStyle = css(mix(cluster, WHITE, tt * 0.35), 0.72 - tt * 0.18);
+        blobPath(ctx, xx, yy, rr, rr * 0.82, obj.seed + i * 7 + k, 0.34, 6);
+        ctx.fill();
+      }
+    } else {
+      ctx.fillStyle = css(leaf, 0.5);
+      blobPath(ctx, px + sway, d.y - h + 8 * scale + len * 0.4, 5 * scale, len * 0.42, obj.seed + i, 0.3, 7);
+      ctx.fill();
+    }
+  }
+  ctx.lineCap = 'butt';
+};
+
+/** Хурма: осенью на голых ветках висят оранжевые фонарики. */
+const drawPersimmon: Drawer = (d) => {
+  const { ctx, atm, g, obj } = d;
+  const scale = lerp(0.3, 1, Math.pow(g, 0.72));
+  const h = 74 * scale;
+  const rx = 30 * scale;
+  const ry = 24 * scale;
+  shadowUnder(d, rx * 0.95, ry * 0.42, 0.9);
+
+  const bend = Math.sin(d.time * 0.0005 + obj.seed) * 3 * d.wind;
+  const top = drawTrunk(d, h, 5.4 * scale, litc({ r: 112, g: 92, b: 76 }, atm), bend);
+
+  const autumn = atm.season === 'autumn';
+  const winter = atm.season === 'winter';
+  const leafBase = autumn ? { r: 208, g: 138, b: 72 } : { r: 96, g: 138, b: 88 };
+
+  if (!winter) {
+    const main = litc(leafBase, atm);
+    washBlob(ctx, top.tx, top.ty, rx, ry, litc(shade(leafBase, 0.82), atm), obj.seed, {
+      layers: 2,
+      alpha: 0.44,
+      edge: 0.16,
+      wobble: 0.24,
+    });
+    washBlob(ctx, top.tx, top.ty - ry * 0.2, rx * 0.86, ry * 0.86, main, obj.seed + 5, {
+      layers: 3,
+      alpha: 0.4,
+      edge: 0.15,
+      wobble: 0.22,
+    });
+  }
+
+  // Зимой — голые ветки, и плоды вешаем на их концы
+  const tips: { x: number; y: number }[] = [];
+  if (winter) {
+    const br = litc({ r: 104, g: 88, b: 76 }, atm);
+    for (let i = 0; i < 5; i++) {
+      const a = -Math.PI * 0.82 + (i / 4) * Math.PI * 0.64 + (hash2(i, obj.seed, 11) - 0.5) * 0.3;
+      const len = rx * (0.7 + hash2(i, obj.seed, 23) * 0.5);
+      const ex = top.tx + Math.cos(a) * len;
+      const ey = top.ty + Math.sin(a) * len;
+      taperStroke(ctx, top.tx, top.ty + ry * 0.2, ex, ey, 2.4 * scale, 0.8, br, 0.8, 0);
+      tips.push({ x: ex, y: ey });
+    }
+  }
+
+  // Плоды: осенью много в кроне, зимой несколько забытых на концах веток —
+  // именно этим хурма и красива в снегу
+  if (autumn || winter) {
+    const count = autumn ? Math.round(7 + scale * 4) : 3;
+    const fruit = litc({ r: 234, g: 122, b: 44 }, atm, 0.06);
+    for (let i = 0; i < count; i++) {
+      const r1 = hash2(i, obj.seed, 37);
+      const r2 = hash2(i, obj.seed, 53);
+      let px: number;
+      let py: number;
+      if (winter) {
+        // на конец ветки, чуть ниже — плод оттягивает её вниз
+        const tip = tips[(i * 2 + 1) % tips.length];
+        px = tip.x + (r1 - 0.5) * 3;
+        py = tip.y + 3 + r2 * 2;
+      } else {
+        px = top.tx + (r1 - 0.5) * rx * 1.5;
+        py = top.ty + (r2 - 0.4) * ry * 1.1;
+      }
+      const rr = (winter ? 4.4 : 3.6) * scale;
+      ctx.fillStyle = css(fruit, 0.92);
+      ctx.beginPath();
+      ctx.ellipse(px, py, rr, rr * 0.88, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // блик и чашелистик
+      ctx.fillStyle = css(mix(fruit, WHITE, 0.45), 0.5);
+      ctx.beginPath();
+      ctx.ellipse(px - rr * 0.3, py - rr * 0.3, rr * 0.3, rr * 0.24, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = css(litc({ r: 96, g: 112, b: 72 }, atm), 0.8);
+      ctx.beginPath();
+      ctx.ellipse(px, py - rr * 0.85, rr * 0.5, rr * 0.24, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+};
+
+/** Камелия: плотный тёмный куст, цветёт зимой и ранней весной. */
+const drawCamellia: Drawer = (d) => {
+  const { ctx, atm, g, obj } = d;
+  const scale = lerp(0.32, 1, Math.pow(g, 0.7));
+  const rx = 28 * scale;
+  const ry = 22 * scale;
+  shadowUnder(d, rx * 0.9, ry * 0.42, 0.85);
+
+  // Листва тёмная и глянцевая круглый год — этим камелия и ценна
+  const base = { r: 62, g: 104, b: 74 };
+  const main = litc(base, atm);
+  const sway = Math.sin(d.time * 0.0006 + obj.seed) * 1.8 * d.wind;
+  washBlob(ctx, d.x + sway, d.y - ry * 0.7, rx, ry, litc(shade(base, 0.78), atm), obj.seed, {
+    layers: 2,
+    alpha: 0.46,
+    edge: 0.14,
+    wobble: 0.2,
+  });
+  washBlob(ctx, d.x + sway, d.y - ry * 0.92, rx * 0.88, ry * 0.86, main, obj.seed + 9, {
+    layers: 3,
+    alpha: 0.42,
+    edge: 0.14,
+    wobble: 0.18,
+  });
+  // глянец
+  ctx.fillStyle = css(litc(mix(base, WHITE, 0.4), atm, 0.05), 0.24);
+  blobPath(ctx, d.x - atm.sunDir.x * rx * 0.32 + sway, d.y - ry * 1.2, rx * 0.44, ry * 0.3, obj.seed + 3, 0.26, 7);
+  ctx.fill();
+
+  // Цветы — зимой и ранней весной
+  const blooms = atm.season === 'winter' || atm.season === 'spring';
+  if (blooms) {
+    const count = Math.round(5 + scale * 4);
+    const petal = litc({ r: 224, g: 78, b: 100 }, atm, 0.06);
+    for (let i = 0; i < count; i++) {
+      const r1 = hash2(i, obj.seed, 29);
+      const r2 = hash2(i, obj.seed, 41);
+      const px = d.x + (r1 - 0.5) * rx * 1.5 + sway;
+      const py = d.y - ry * 0.9 + (r2 - 0.5) * ry * 1.2;
+      const rr = 5.6 * scale;
+      // пять лепестков вокруг жёлтой сердцевины
+      for (let k = 0; k < 5; k++) {
+        const a = (k / 5) * Math.PI * 2 + r1 * 2;
+        ctx.fillStyle = css(petal, 0.92);
+        ctx.beginPath();
+        ctx.ellipse(px + Math.cos(a) * rr * 0.5, py + Math.sin(a) * rr * 0.4, rr * 0.52, rr * 0.42, a, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = css(litc({ r: 248, g: 218, b: 118 }, atm, 0.08), 0.96);
+      ctx.beginPath();
+      ctx.arc(px, py, rr * 0.28, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Зимой на кусте лежит снег
+  if (atm.season === 'winter') {
+    ctx.fillStyle = css(litc({ r: 248, g: 250, b: 255 }, atm, 0.05), 0.6);
+    blobPath(ctx, d.x + sway, d.y - ry * 1.3, rx * 0.68, ry * 0.3, obj.seed + 17, 0.3, 8);
+    ctx.fill();
+  }
+};
+
+
+// ---------------- Интерьер усадьбы ----------------
+
+/** Изометрическая «стенка»: плоскость, стоящая вдоль одной из осей. */
+function panelQuad(
+  ctx: Ctx,
+  x: number,
+  y: number,
+  len: number,
+  height: number,
+  rot: number,
+): { a: { x: number; y: number }; b: { x: number; y: number } } {
+  // rot 0/2 — вдоль оси X экрана, 1/3 — вдоль Y
+  const along = rot % 2 === 0 ? { x: TILE_W / 2, y: TILE_H / 2 } : { x: -TILE_W / 2, y: TILE_H / 2 };
+  const a = { x: x - along.x * len * 0.5, y: y - along.y * len * 0.5 };
+  const b = { x: x + along.x * len * 0.5, y: y + along.y * len * 0.5 };
+  void height;
+  void ctx;
+  return { a, b };
+}
+
+/** Фусума: раздвижная перегородка с росписью. */
+const drawFusuma: Drawer = (d) => {
+  const { ctx, atm, obj } = d;
+  const h = 40;
+  const { a, b } = panelQuad(ctx, d.x, d.y, 0.94, h, obj.rot);
+  shadowUnder(d, 22, 7, 0.7);
+
+  const paper = litc({ r: 226, g: 214, b: 184 }, atm);
+  const frame = litc({ r: 92, g: 66, b: 46 }, atm);
+
+  // Полотно
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y - h);
+  ctx.lineTo(b.x, b.y - h);
+  ctx.lineTo(b.x, b.y);
+  ctx.lineTo(a.x, a.y);
+  ctx.closePath();
+  ctx.fillStyle = css(paper, 1);
+  ctx.fill();
+
+  // Роспись: гора и пара сосен тушью — то, чем фусума и отличается от сёдзи
+  ctx.save();
+  ctx.clip();
+  const ink = litc({ r: 88, g: 108, b: 110 }, atm);
+  ctx.fillStyle = css(ink, 0.45);
+  ctx.beginPath();
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  ctx.moveTo(mx - 20, my - 8);
+  ctx.lineTo(mx - 6, my - h * 0.62);
+  ctx.lineTo(mx + 3, my - h * 0.4);
+  ctx.lineTo(mx + 9, my - h * 0.56);
+  ctx.lineTo(mx + 22, my - 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = css(ink, 0.5);
+  ctx.lineWidth = 1.2;
+  for (let i = 0; i < 2; i++) {
+    const px = mx - 14 + i * 24;
+    ctx.beginPath();
+    ctx.moveTo(px, my - 6);
+    ctx.lineTo(px, my - 16);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(px, my - 18, 5, 2.6, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Рама: обводим полотно заново — путь после клипа уже не тот
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y - h);
+  ctx.lineTo(b.x, b.y - h);
+  ctx.lineTo(b.x, b.y);
+  ctx.lineTo(a.x, a.y);
+  ctx.closePath();
+  ctx.strokeStyle = css(frame, 1);
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // Стойка посередине — фусума всегда двустворчатая
+  ctx.beginPath();
+  ctx.moveTo((a.x + b.x) / 2, (a.y + b.y) / 2 - h);
+  ctx.lineTo((a.x + b.x) / 2, (a.y + b.y) / 2);
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Утопленная ручка
+  ctx.fillStyle = css(litc({ r: 58, g: 50, b: 44 }, atm), 0.9);
+  ctx.beginPath();
+  ctx.ellipse((a.x + b.x) / 2 - 8, (a.y + b.y) / 2 - h * 0.45, 2.4, 3.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+};
+
+/** Токонома: ниша со свитком и одиноким цветком. */
+const drawTokonoma: Drawer = (d) => {
+  const { ctx, atm, obj } = d;
+  const h = 46;
+  const { a, b } = panelQuad(ctx, d.x, d.y, 0.94, h, obj.rot);
+  shadowUnder(d, 24, 8, 0.8);
+
+  // Тёмная глубина ниши
+  const back = litc({ r: 188, g: 174, b: 150 }, atm);
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y - h);
+  ctx.lineTo(b.x, b.y - h);
+  ctx.lineTo(b.x, b.y);
+  ctx.lineTo(a.x, a.y);
+  ctx.closePath();
+  ctx.fillStyle = css(shade(back, 0.82), 0.97);
+  ctx.fill();
+
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+
+  // Свиток какэмоно
+  const scroll = litc({ r: 244, g: 238, b: 222 }, atm);
+  ctx.fillStyle = css(scroll, 0.96);
+  ctx.fillRect(mx - 7, my - h + 5, 14, h * 0.62);
+  ctx.strokeStyle = css(litc({ r: 150, g: 120, b: 92 }, atm), 0.7);
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(mx - 8, my - h + 5);
+  ctx.lineTo(mx + 8, my - h + 5);
+  ctx.moveTo(mx - 8, my - h + 5 + h * 0.62);
+  ctx.lineTo(mx + 8, my - h + 5 + h * 0.62);
+  ctx.stroke();
+  // иероглиф тушью — пара мазков
+  ctx.strokeStyle = css(litc({ r: 60, g: 56, b: 54 }, atm), 0.62);
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(mx - 3, my - h + 13);
+  ctx.lineTo(mx + 3, my - h + 13);
+  ctx.moveTo(mx, my - h + 11);
+  ctx.lineTo(mx, my - h + 22);
+  ctx.moveTo(mx - 4, my - h + 19);
+  ctx.lineTo(mx + 4, my - h + 24);
+  ctx.stroke();
+  ctx.lineCap = 'butt';
+
+  // Ваза с одной веткой
+  const vase = litc({ r: 92, g: 96, b: 104 }, atm);
+  ctx.fillStyle = css(vase, 0.95);
+  ctx.beginPath();
+  ctx.ellipse(mx + 1, my - 5, 3.4, 4.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = css(litc({ r: 104, g: 88, b: 74 }, atm), 0.8);
+  ctx.lineWidth = 1.1;
+  ctx.beginPath();
+  ctx.moveTo(mx + 1, my - 9);
+  ctx.quadraticCurveTo(mx + 5, my - 16, mx + 3, my - 22);
+  ctx.stroke();
+  const fl = atm.season === 'winter' ? { r: 226, g: 96, b: 112 } : { r: 244, g: 226, b: 236 };
+  ctx.fillStyle = css(litc(fl, atm, 0.05), 0.9);
+  ctx.beginPath();
+  ctx.arc(mx + 3, my - 23, 2.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Рама ниши
+  ctx.strokeStyle = css(litc({ r: 112, g: 84, b: 60 }, atm), 0.95);
+  ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y - h);
+  ctx.lineTo(b.x, b.y - h);
+  ctx.lineTo(b.x, b.y);
+  ctx.lineTo(a.x, a.y);
+  ctx.closePath();
+  ctx.stroke();
+};
+
+/** Ирори: очаг в полу, живой огонь и котелок. */
+const drawIrori: Drawer = (d) => {
+  const { ctx, atm, obj } = d;
+  shadowUnder(d, 18, 8, 0.7);
+
+  // Квадрат очага, утопленный в татами
+  const rim = litc({ r: 96, g: 74, b: 56 }, atm);
+  const ash = litc({ r: 118, g: 112, b: 106 }, atm);
+  const w = 17;
+  const hh = 9;
+  ctx.beginPath();
+  ctx.moveTo(d.x, d.y - hh);
+  ctx.lineTo(d.x + w, d.y);
+  ctx.lineTo(d.x, d.y + hh);
+  ctx.lineTo(d.x - w, d.y);
+  ctx.closePath();
+  ctx.fillStyle = css(rim, 0.96);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(d.x, d.y - hh * 0.62);
+  ctx.lineTo(d.x + w * 0.66, d.y);
+  ctx.lineTo(d.x, d.y + hh * 0.62);
+  ctx.lineTo(d.x - w * 0.66, d.y);
+  ctx.closePath();
+  ctx.fillStyle = css(ash, 0.95);
+  ctx.fill();
+
+  // Угли и пламя — живые, как в жаровне
+  const flick = 0.55 + Math.sin(d.time * 0.007 + obj.seed) * 0.2 + Math.sin(d.time * 0.013) * 0.12;
+  const ember = litc({ r: 226, g: 118, b: 52 }, atm, 0.1);
+  for (let i = 0; i < 4; i++) {
+    const r1 = hash2(i, obj.seed, 13);
+    ctx.fillStyle = css(ember, 0.5 + r1 * 0.35);
+    ctx.beginPath();
+    ctx.ellipse(d.x + (r1 - 0.5) * 12, d.y + (hash2(i, obj.seed, 21) - 0.5) * 5, 2.4, 1.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (let i = 0; i < 3; i++) {
+    const r1 = hash2(i, obj.seed, 31);
+    const fh = (7 + r1 * 6) * flick;
+    ctx.fillStyle = css(litc({ r: 250, g: 190, b: 96 }, atm, 0.16), 0.5 + r1 * 0.3);
+    ctx.beginPath();
+    ctx.moveTo(d.x + (r1 - 0.5) * 9 - 2.4, d.y);
+    ctx.quadraticCurveTo(d.x + (r1 - 0.5) * 9, d.y - fh, d.x + (r1 - 0.5) * 9 + 2.4, d.y);
+    ctx.closePath();
+    ctx.fill();
+  }
+  glow(ctx, d.x, d.y - 4, 34, { r: 252, g: 170, b: 88 }, (0.3 + flick * 0.22) * (0.4 + atm.lampGlow));
+
+  // Крюк дзидзай с котелком
+  const iron = litc({ r: 72, g: 68, b: 66 }, atm);
+  ctx.strokeStyle = css(iron, 0.9);
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(d.x, d.y - 42);
+  ctx.lineTo(d.x, d.y - 20);
+  ctx.stroke();
+  ctx.fillStyle = css(iron, 0.95);
+  ctx.beginPath();
+  ctx.ellipse(d.x, d.y - 15, 7, 5.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = css(shade(iron, 0.8), 0.9);
+  ctx.beginPath();
+  ctx.ellipse(d.x, d.y - 18, 6.4, 2.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Пар
+  const steam = clamp01(0.35 + Math.sin(d.time * 0.0018) * 0.3);
+  ctx.strokeStyle = css({ r: 255, g: 255, b: 255 }, 0.16 * steam);
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(d.x, d.y - 22);
+  ctx.quadraticCurveTo(d.x + 5, d.y - 30, d.x + 1, d.y - 38);
+  ctx.stroke();
+};
+
+/** Футон: свёрнутая или расстеленная постель. */
+const drawFuton: Drawer = (d) => {
+  const { ctx, atm, obj } = d;
+  shadowUnder(d, 24, 9, 0.8);
+  const cloth = litc({ r: 238, g: 230, b: 214 }, atm);
+  const band = litc({ r: 152, g: 96, b: 100 }, atm);
+
+  // Матрас: ромб по сетке, с толщиной — плоский лист читался пятном
+  const hw = 26;
+  const hh = 13;
+  const thick = 4;
+  // боковина
+  ctx.beginPath();
+  ctx.moveTo(d.x - hw, d.y);
+  ctx.lineTo(d.x, d.y + hh);
+  ctx.lineTo(d.x + hw, d.y);
+  ctx.lineTo(d.x + hw, d.y + thick);
+  ctx.lineTo(d.x, d.y + hh + thick);
+  ctx.lineTo(d.x - hw, d.y + thick);
+  ctx.closePath();
+  ctx.fillStyle = css(shade(cloth, 0.84), 1);
+  ctx.fill();
+  // верх
+  ctx.beginPath();
+  ctx.moveTo(d.x, d.y - hh);
+  ctx.lineTo(d.x + hw, d.y);
+  ctx.lineTo(d.x, d.y + hh);
+  ctx.lineTo(d.x - hw, d.y);
+  ctx.closePath();
+  ctx.fillStyle = css(cloth, 1);
+  ctx.fill();
+  ctx.strokeStyle = css(shade(cloth, 0.76), 0.6);
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // Одеяло откинуто углом — постель выглядит живой, а не музейной
+  ctx.beginPath();
+  ctx.moveTo(d.x + 2, d.y - hh * 0.5);
+  ctx.lineTo(d.x + hw * 0.84, d.y - 1);
+  ctx.lineTo(d.x + 2, d.y + hh * 0.72);
+  ctx.lineTo(d.x - hw * 0.4, d.y + 1);
+  ctx.closePath();
+  ctx.fillStyle = css(band, 0.92);
+  ctx.fill();
+  // отворот
+  ctx.beginPath();
+  ctx.moveTo(d.x + 2, d.y - hh * 0.5);
+  ctx.lineTo(d.x - hw * 0.4, d.y + 1);
+  ctx.lineTo(d.x - hw * 0.24, d.y - 3);
+  ctx.lineTo(d.x + 5, d.y - hh * 0.72);
+  ctx.closePath();
+  ctx.fillStyle = css(mix(band, WHITE, 0.55), 0.9);
+  ctx.fill();
+
+  // Подушка в изголовье
+  ctx.fillStyle = css(litc({ r: 248, g: 244, b: 234 }, atm), 1);
+  ctx.beginPath();
+  ctx.ellipse(d.x - hw * 0.56, d.y - 3, 7, 4.2, -0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = css(shade(cloth, 0.8), 0.5);
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  void obj;
+};
+
+/** Бёбу: складная ширма в две-три створки. */
+const drawByobu: Drawer = (d) => {
+  const { ctx, atm, obj } = d;
+  const h = 34;
+  shadowUnder(d, 22, 7, 0.75);
+  const paper = litc({ r: 242, g: 232, b: 206 }, atm);
+  const gold = litc({ r: 226, g: 196, b: 128 }, atm, 0.04);
+  const frame = litc({ r: 92, g: 68, b: 50 }, atm);
+
+  // Три створки зигзагом — ширма стоит, а не лежит плоско
+  const panels = 3;
+  const step = 13;
+  for (let i = 0; i < panels; i++) {
+    const zig = i % 2 === 0 ? 0 : 4;
+    const px = d.x - step * (panels - 1) * 0.5 + i * step;
+    const py = d.y + zig * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(px - step * 0.5, py - h - zig);
+    ctx.lineTo(px + step * 0.5, py - h - zig + 3);
+    ctx.lineTo(px + step * 0.5, py + 3);
+    ctx.lineTo(px - step * 0.5, py);
+    ctx.closePath();
+    ctx.fillStyle = css(i % 2 === 0 ? paper : mix(paper, gold, 0.4), 0.96);
+    ctx.fill();
+    ctx.strokeStyle = css(frame, 0.85);
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+
+    // золотое облако и ветка
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = css(gold, 0.42);
+    blobPath(ctx, px, py - h * 0.62, step * 0.6, 6, obj.seed + i, 0.3, 8);
+    ctx.fill();
+    ctx.strokeStyle = css(litc({ r: 86, g: 78, b: 70 }, atm), 0.4);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(px - 4, py - 2);
+    ctx.quadraticCurveTo(px, py - h * 0.5, px + 4, py - h * 0.72);
+    ctx.stroke();
+    ctx.restore();
+  }
+};
+
+/** Дзэн-сад в ящике: маленький суйсэки на подставке. */
+const drawBonsai: Drawer = (d) => {
+  const { ctx, atm, g, obj } = d;
+  const scale = lerp(0.5, 1, Math.pow(g, 0.6));
+  shadowUnder(d, 11, 5, 0.7);
+  // Плошка
+  const pot = litc({ r: 104, g: 78, b: 66 }, atm);
+  ctx.fillStyle = css(pot, 0.96);
+  ctx.beginPath();
+  ctx.moveTo(d.x - 9, d.y - 7);
+  ctx.lineTo(d.x + 9, d.y - 7);
+  ctx.lineTo(d.x + 7, d.y - 1);
+  ctx.lineTo(d.x - 7, d.y - 1);
+  ctx.closePath();
+  ctx.fill();
+  // Ствол с характерным изгибом
+  const bark = litc({ r: 108, g: 88, b: 74 }, atm);
+  const sway = Math.sin(d.time * 0.0007 + obj.seed) * 1.2 * d.wind;
+  taperStroke(ctx, d.x, d.y - 7, d.x - 5 + sway, d.y - 18 * scale, 3 * scale, 1.4, bark, 0.95, -4);
+  taperStroke(ctx, d.x - 5 + sway, d.y - 18 * scale, d.x + 4 + sway, d.y - 24 * scale, 2 * scale, 1, bark, 0.9, 3);
+  // Крона подушками
+  const leafBase = atm.season === 'autumn' ? { r: 190, g: 140, b: 78 } : { r: 84, g: 126, b: 84 };
+  const leaf = litc(leafBase, atm);
+  for (const [ox, oy, rr] of [
+    [4, -25, 8],
+    [-6, -20, 6],
+    [9, -20, 5],
+  ] as [number, number, number][]) {
+    washBlob(ctx, d.x + ox * scale + sway, d.y + oy * scale, rr * scale, rr * 0.6 * scale, leaf, obj.seed + ox, {
+      layers: 2,
+      alpha: 0.46,
+      edge: 0.12,
+      wobble: 0.24,
+    });
+  }
+};
+
+
+// ---------------- Прибрежные растения ----------------
+
+/** Камыш: высокие стебли с бархатными початками. */
+const drawReed: Drawer = (d) => {
+  const { ctx, atm, g, obj } = d;
+  const scale = lerp(0.45, 1, Math.pow(g, 0.7));
+  const stalks = 5 + Math.round(scale * 3);
+  const stemCol = litc(atm.season === 'winter' ? { r: 176, g: 164, b: 130 } : { r: 116, g: 148, b: 92 }, atm);
+  const head = litc({ r: 132, g: 96, b: 66 }, atm);
+
+  ctx.lineCap = 'round';
+  for (let i = 0; i < stalks; i++) {
+    const r1 = hash2(i, obj.seed, 17);
+    const r2 = hash2(i, obj.seed, 29);
+    const bx = d.x + (r1 - 0.5) * 13;
+    const hgt = (20 + r2 * 16) * scale;
+    // Камыш гнётся сильнее деревьев — стебель тонкий и длинный
+    const sway = Math.sin(d.time * 0.0016 + i * 1.3 + obj.seed) * (3.5 + r1 * 3) * d.wind;
+    ctx.strokeStyle = css(stemCol, 0.85);
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(bx, d.y);
+    ctx.quadraticCurveTo(bx + sway * 0.4, d.y - hgt * 0.6, bx + sway, d.y - hgt);
+    ctx.stroke();
+
+    // початок на части стеблей
+    if (r2 > 0.45) {
+      ctx.fillStyle = css(head, 0.9);
+      ctx.beginPath();
+      ctx.ellipse(bx + sway, d.y - hgt - 2, 1.5, 4.4 * scale, sway * 0.02, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.lineCap = 'butt';
+};
+
+/** Хвощ: строгие членистые стебли без листьев. */
+const drawHorsetail: Drawer = (d) => {
+  const { ctx, atm, g, obj } = d;
+  const scale = lerp(0.45, 1, Math.pow(g, 0.7));
+  const stalks = 6 + Math.round(scale * 4);
+  const col = litc(atm.season === 'winter' ? { r: 150, g: 158, b: 138 } : { r: 96, g: 142, b: 104 }, atm);
+
+  for (let i = 0; i < stalks; i++) {
+    const r1 = hash2(i, obj.seed, 23);
+    const r2 = hash2(i, obj.seed, 37);
+    const bx = d.x + (r1 - 0.5) * 12;
+    const hgt = (14 + r2 * 12) * scale;
+    const sway = Math.sin(d.time * 0.0012 + i + obj.seed) * 1.6 * d.wind;
+    ctx.strokeStyle = css(col, 0.88);
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(bx, d.y);
+    ctx.lineTo(bx + sway, d.y - hgt);
+    ctx.stroke();
+    // членения — то, чем хвощ узнаётся
+    ctx.strokeStyle = css(shade(col, 0.72), 0.6);
+    ctx.lineWidth = 0.9;
+    const joints = Math.max(2, Math.round(hgt / 6));
+    for (let k = 1; k < joints; k++) {
+      const tt = k / joints;
+      const jx = bx + sway * tt;
+      const jy = d.y - hgt * tt;
+      ctx.beginPath();
+      ctx.moveTo(jx - 1.6, jy);
+      ctx.lineTo(jx + 1.6, jy);
+      ctx.stroke();
+    }
+  }
+};
+
+/** Камень, стоящий в воде: с мокрой полосой и кругами у основания. */
+const drawWaterStone: Drawer = (d) => {
+  const { ctx, atm, obj } = d;
+  const rx = 11;
+  const ry = 8;
+  const base = { r: 132, g: 130, b: 126 };
+  const stone = litc(base, atm);
+
+  // Круги на воде вокруг камня — вода его обтекает
+  const ring = litc(mix(atm.palette.water, WHITE, 0.6), atm);
+  for (let i = 0; i < 2; i++) {
+    const ph = ((d.time * 0.0009 + i * 0.5 + obj.seed * 0.01) % 1 + 1) % 1;
+    ctx.strokeStyle = css(ring, 0.22 * (1 - ph));
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.ellipse(d.x, d.y + 2, rx * (0.9 + ph * 0.9), ry * (0.55 + ph * 0.6), 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Сам камень
+  washBlob(ctx, d.x, d.y - ry * 0.5, rx, ry, stone, obj.seed, { layers: 2, alpha: 0.6, edge: 0.1, wobble: 0.3 });
+  // мокрая полоса у ватерлинии — камень темнее там, где его лижет вода
+  ctx.save();
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.fillStyle = css(mix(WHITE, mix(base, atm.palette.waterDeep, 0.5), 0.5), 1);
+  blobPath(ctx, d.x, d.y + 1, rx * 0.95, ry * 0.34, obj.seed + 5, 0.26, 8);
+  ctx.fill();
+  ctx.restore();
+  // блик сверху
+  ctx.fillStyle = css(litc(mix(base, WHITE, 0.45), atm, 0.04), 0.4);
+  blobPath(ctx, d.x - atm.sunDir.x * rx * 0.3, d.y - ry * 0.9, rx * 0.42, ry * 0.28, obj.seed + 9, 0.3, 7);
+  ctx.fill();
+};
+
+/** Мостки: простые доски над водой, без изгиба. */
+const drawPlankBridge: Drawer = (d) => {
+  const { ctx, atm, obj } = d;
+  const len = TILE_H * 2;
+  const wood = litc({ r: 158, g: 118, b: 82 }, atm);
+  const dark = litc({ r: 112, g: 84, b: 60 }, atm);
+  const horiz = obj.rot % 2 === 0;
+
+  ctx.save();
+  ctx.translate(d.x, d.y - 6);
+  if (!horiz) ctx.scale(-1, 1);
+
+  // Отражение в воде под мостками
+  ctx.save();
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.fillStyle = css(mix(WHITE, atm.palette.waterDeep, 0.28), 1);
+  ctx.beginPath();
+  ctx.ellipse(0, 10, len * 0.5, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Настил: несколько досок поперёк
+  const boards = 5;
+  for (let i = 0; i < boards; i++) {
+    const tt = (i + 0.5) / boards - 0.5;
+    const cx = tt * len;
+    const cy = tt * TILE_H * 0.5;
+    ctx.fillStyle = css(i % 2 === 0 ? wood : shade(wood, 0.93), 0.97);
+    ctx.beginPath();
+    ctx.moveTo(cx - 3, cy - 7);
+    ctx.lineTo(cx + 3, cy - 5.6);
+    ctx.lineTo(cx + 3, cy + 5.6);
+    ctx.lineTo(cx - 3, cy + 4.2);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // Продольные лаги
+  ctx.strokeStyle = css(dark, 0.7);
+  ctx.lineWidth = 1.4;
+  for (const off of [-5, 5]) {
+    ctx.beginPath();
+    ctx.moveTo(-len * 0.5, -TILE_H * 0.25 + off);
+    ctx.lineTo(len * 0.5, TILE_H * 0.25 + off);
+    ctx.stroke();
+  }
+  ctx.restore();
+};
+
 const DRAWERS: Record<string, Drawer> = {
   sakura: drawSakura,
   maple: drawMaple,
@@ -1383,6 +2172,9 @@ const DRAWERS: Record<string, Drawer> = {
   ginkgo: drawGinkgo,
   azalea: drawShrub,
   hedge: drawShrub,
+  wisteria: drawWisteria,
+  persimmon: drawPersimmon,
+  camellia: drawCamellia,
   rock_big: makeRock(1.55, 1),
   rock_mid: makeRock(0.95, 1),
   rock_trio: makeRock(0.85, 3),
@@ -1408,6 +2200,16 @@ const DRAWERS: Record<string, Drawer> = {
   tsukubai: drawTsukubai,
   wind_chime: drawWindChime,
   shishi: drawShishi,
+  reed: drawReed,
+  horsetail: drawHorsetail,
+  water_stone: drawWaterStone,
+  plank_bridge: drawPlankBridge,
+  fusuma: drawFusuma,
+  tokonoma: drawTokonoma,
+  irori: drawIrori,
+  futon: drawFuton,
+  byobu: drawByobu,
+  bonsai: drawBonsai,
   cushion: drawCushion,
   bowl: drawBowl,
   cat: drawCat,
