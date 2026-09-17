@@ -77,6 +77,8 @@ export class GardenAudio {
   enabled = false;
   volume = 0.75;
   private started = false;
+  /** Насколько сад приглушён сеансом практики. */
+  private duck = 0;
 
   /** Контекст можно создать только после жеста пользователя. */
   async start(): Promise<void> {
@@ -146,6 +148,14 @@ export class GardenAudio {
     if (this.enabled) this.masterSlider?.to(this.volume, 0.4);
   }
 
+  /**
+   * Приглушить сад: на время сеанса практики мир слышен издали,
+   * как из комнаты с прикрытой дверью. 0 — как обычно, 1 — почти тихо.
+   */
+  setDuck(v: number): void {
+    this.duck = clamp01(v);
+  }
+
   /** Главное обновление: раскладывает сцену на звуковые слои. */
   update(
     dt: number,
@@ -167,21 +177,23 @@ export class GardenAudio {
     if (!this.ctx || !this.enabled) return;
     const night = t.daylight < 0.28;
     const season = t.season;
+    // Сеанс практики: сад слышен издали, дыхание и чаши — близко.
+    const k = 1 - this.duck * 0.72;
 
     // --- Листва: зависит от ветра и количества деревьев, зимой почти нет ---
     const foliage = season === 'winter' ? 0.18 : 1;
     const leafAmt = clamp01(ctxInfo.wind * 0.42) * clamp01(ctxInfo.trees / 10) * foliage;
-    this.leaves?.slider.to(leafAmt * 0.16, 1.4);
+    this.leaves?.slider.to(leafAmt * 0.16 * k, 1.4);
     if (this.leaves) this.leaves.filter.frequency.value = lerp(1500, 2700, clamp01(ctxInfo.wind * 0.5));
 
     // --- Ветер: низкий гул на сильных порывах ---
-    this.wind?.slider.to(clamp01((ctxInfo.wind - 0.7) * 0.6) * 0.14, 1.2);
+    this.wind?.slider.to(clamp01((ctxInfo.wind - 0.7) * 0.6) * 0.14 * k, 1.2);
 
     // --- Вода: стоячая слышна еле-еле, текущая заметно, водопад громче всего ---
     const still = clamp01(ctxInfo.waterNearby) * 0.05;
     const running = clamp01(ctxInfo.current ?? 0) * 0.1;
     const falling = clamp01(ctxInfo.falling ?? 0) * 0.17;
-    this.stream?.slider.to(still + running + falling, 1.6);
+    this.stream?.slider.to((still + running + falling) * k, 1.6);
     if (this.stream) {
       // Водопад шумит выше и шире ручья — сдвигаем полосу вверх
       const bright = lerp(620, 1350, clamp01((ctxInfo.falling ?? 0) * 0.8 + (ctxInfo.current ?? 0) * 0.3));
@@ -190,8 +202,8 @@ export class GardenAudio {
     }
 
     // --- Дождь ---
-    this.rain?.slider.to(weather.rain * 0.19, 1.1);
-    this.rainHeavy?.slider.to(Math.pow(weather.rain, 1.6) * 0.16, 1.1);
+    this.rain?.slider.to(weather.rain * 0.19 * k, 1.1);
+    this.rainHeavy?.slider.to(Math.pow(weather.rain, 1.6) * 0.16 * k, 1.1);
 
     // --- Насекомые: цикады днём летом, сверчки ночью ---
     let insects = 0;
@@ -199,14 +211,14 @@ export class GardenAudio {
     else if ((season === 'summer' || season === 'autumn') && night) insects = 0.34;
     else if (season === 'spring' && night) insects = 0.16;
     insects *= 1 - weather.rain * 0.85; // в дождь замолкают
-    this.insectSlider?.to(insects * 0.1, 2.2);
+    this.insectSlider?.to(insects * 0.1 * k, 2.2);
 
     // Стрекот: короткие всплески поверх ровного фона
     if (insects > 0.02) {
       this.insectTimer -= dt;
       if (this.insectTimer <= 0) {
         this.insectTimer = night ? 240 + rnd() * 500 : 90 + rnd() * 220;
-        this.chirp(night ? 'cricket' : 'cicada', insects);
+        this.chirp(night ? 'cricket' : 'cicada', insects * k);
       }
     }
 
@@ -351,6 +363,68 @@ export class GardenAudio {
         setTimeout(() => g.disconnect(), (life + 1.4) * 1000);
       }
     }
+  }
+
+  /**
+   * Хан: сухой деревянный удар, которым отмечают круги сидения.
+   * Короче и суше чаши: не звон, а стук дерева о дерево.
+   */
+  han(amount = 0.8): void {
+    if (!this.ctx || !this.enabled) return;
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf!;
+    src.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = 780 + rnd() * 90;
+    f.Q.value = 5.5;
+    src.connect(f);
+    const g = this.env(f, 0.09 * amount, 0.002, 0.1);
+    src.start();
+    src.stop(ctx.currentTime + 0.25);
+    setTimeout(() => g.disconnect(), 500);
+
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(210, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.09);
+    this.env(osc, 0.06 * amount, 0.002, 0.12);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.3);
+    setTimeout(() => osc.disconnect(), 600);
+  }
+
+  /**
+   * Дыхание: мягкий шумовой вдох или выдох, ведущий практику.
+   * Полоса ползёт вверх на вдохе и вниз на выдохе — воздух слышно,
+   * но он не похож ни на ветер, ни на волну.
+   */
+  breath(phase: 'in' | 'out', seconds: number): void {
+    if (!this.ctx || !this.enabled) return;
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf!;
+    src.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = 0.9;
+    const from = phase === 'in' ? 320 : 900;
+    const to = phase === 'in' ? 900 : 320;
+    f.frequency.setValueAtTime(from, ctx.currentTime);
+    f.frequency.linearRampToValueAtTime(to, ctx.currentTime + seconds);
+    src.connect(f);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.linearRampToValueAtTime(0.028, ctx.currentTime + seconds * 0.45);
+    g.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + seconds);
+    f.connect(g).connect(this.master!);
+    src.start();
+    src.stop(ctx.currentTime + seconds + 0.1);
+    setTimeout(() => {
+      g.disconnect();
+      src.disconnect();
+    }, (seconds + 0.4) * 1000);
   }
 
   /** Сиси-одоси: глухой деревянный стук о камень. */
