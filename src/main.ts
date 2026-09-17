@@ -605,6 +605,10 @@ window.addEventListener('orientationchange', () => {
     syncOrientation();
     scene.resize();
     scene.markTerrainDirty();
+    // Вид подбирается под ориентацию: в альбоме сад помещается целиком,
+    // в книжной — только его середина. Без пересчёта после поворота
+    // остался бы масштаб от прошлой ориентации.
+    if (touchMode) scene.fitToView();
     scene.clampCamera();
   }, 160);
 });
@@ -1048,7 +1052,13 @@ requestAnimationFrame(frame);
 setInterval(saveWorld, 20000);
 window.addEventListener('beforeunload', saveWorld);
 
-// Тихая подсказка при первом входе
+// Тихая подсказка при первом входе. На телефоне клавиш нет — называем
+// то, что там действительно есть: кнопки и жесты.
 setTimeout(() => {
-  if (!zenMode) ui.setHint('B — открыть каталог · Z — созерцание · H — свиток');
+  if (zenMode) return;
+  ui.setHint(
+    touchMode
+      ? 'Рука — каталог · щипок — приблизить · часы — время года'
+      : 'B — открыть каталог · Z — созерцание · H — свиток',
+  );
 }, 6000);

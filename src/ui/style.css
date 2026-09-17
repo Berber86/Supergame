@@ -1399,10 +1399,6 @@ body.touch .tool-btn .label {
     display: grid;
     grid-template-columns: repeat(2, var(--touch-min));
     gap: 7px;
-    direction: rtl; /* первая кнопка — ближе к краю экрана */
-  }
-  .tools > * {
-    direction: ltr;
   }
   .tool-btn {
     width: var(--touch-min);
@@ -1650,10 +1646,6 @@ body.touch.portrait .rotate-note.dismissed {
     display: grid;
     grid-template-columns: repeat(2, var(--touch-min));
     gap: 7px;
-    direction: rtl;
-  }
-  .tools > * {
-    direction: ltr;
   }
   .tools > *,
   .tool-btn {
@@ -1678,8 +1670,13 @@ body.touch.portrait .rotate-note.dismissed {
   .rotate-note {
     bottom: calc(14px + var(--safe-b));
   }
+  /* Подсказку поднимаем, только пока внизу и правда есть подсказка
+     о повороте: иначе она висит посреди экрана без причины. */
   body.touch.portrait .hint-bar {
     bottom: calc(58px + var(--safe-b));
+  }
+  body.touch.portrait:has(.rotate-note.dismissed) .hint-bar {
+    bottom: calc(14px + var(--safe-b));
   }
 
   /* Каталог снизу — в книжной ориентации это уместно */

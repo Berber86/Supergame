@@ -169,8 +169,24 @@ export class Scene {
     return Math.min(this.viewW / (w * 1.04), this.viewH / (h * 1.12));
   }
 
-  /** Показать сад целиком. */
+  /**
+   * Показать сад целиком.
+   *
+   * В книжной ориентации «целиком» не годится: узкий экран даёт масштаб
+   * около 0.085, сад выходит размером с почтовую марку и разглядеть в нём
+   * нечего. Поэтому там показываем не весь участок, а его обжитую середину —
+   * дом с прудом, — и даём игроку отвести камеру самому.
+   */
   fitToView(): void {
+    const portrait = this.viewH > this.viewW;
+    if (portrait) {
+      // Впишем по ширине: по высоте место есть, а мельчить незачем
+      const w = GRID * TILE_W * 0.62;
+      this.camera.zoom = clamp(this.viewW / w, 0.16, 2.4);
+      this.centerOn(GRID / 2, GRID / 2 + 1);
+      this.clampCamera();
+      return;
+    }
     this.camera.zoom = clamp(this.fitZoom(), 0.12, 2.4);
     this.centerOn(GRID / 2, GRID / 2);
   }

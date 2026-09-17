@@ -505,8 +505,17 @@ function drawSnowCover(ctx: Ctx, world: World, atm: Atmosphere, b: Bounds): void
   // и ровное поле выглядит грязной крапинкой, а не сугробами.
   const modelling = 0.35 + clamp01(atm.exposure) * 0.65;
   const snowBase = mix({ r: 242, g: 245, b: 250 }, { r: 214, g: 226, b: 240 }, bright * 0.55);
-  const snow = shade(mix(snowBase, atm.lightTint, atm.lightAmount * 0.8), Math.min(atm.exposure, 1.04));
-  const shadowSnow = shade(mix({ r: 196, g: 212, b: 234 }, atm.lightTint, atm.lightAmount), Math.min(atm.exposure, 1.04));
+  // На рассвете и закате свет очень тёплый (lightTint уходит в оранжевый),
+  // и снег, покрашенный им в полную силу, становится бежевым — зимнее утро
+  // превращалось в однотонную молочную пелену. Снег ловит тёплый отсвет,
+  // но остаётся снегом: примесь света для него вдвое слабее обычной.
+  const snowLight = atm.lightAmount * (1 - atm.golden * 0.55);
+  const snow = shade(mix(snowBase, atm.lightTint, snowLight * 0.8), Math.min(atm.exposure, 1.04));
+  const shadowSnow = shade(
+    // Тени на снегу наоборот холодные — так глаз и читает «снег»
+    mix({ r: 196, g: 212, b: 234 }, atm.lightTint, snowLight * 0.7),
+    Math.min(atm.exposure, 1.04),
+  );
 
   // 1) Сплошная непрозрачная шапка одной фигурой — швов быть не может
   ctx.save();

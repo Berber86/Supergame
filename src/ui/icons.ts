@@ -151,13 +151,13 @@ export const GLYPHS: Record<string, string> = {
     '<path d="M14.5 4.8a2.6 2.6 0 013.7 3.7l-1.3 1.3 1 1-1.6 1.6-1-1L9 18.7l-3.6.9.9-3.6 6.3-6.3-1-1L13.2 7l1 1z"/>',
   move: '<path d="M12 3v18M3 12h18"/><path d="M12 3l-2.4 2.6M12 3l2.4 2.6M12 21l-2.4-2.6M12 21l2.4-2.6"/><path d="M3 12l2.6-2.4M3 12l2.6 2.4M21 12l-2.6-2.4M21 12l2.6 2.4"/>',
   fill: '<path d="M11 3l8 8-7.5 7.5a2 2 0 01-2.8 0L4 13a2 2 0 010-2.8z"/><path d="M6 8.5h11"/><path d="M20 15c1.4 2 2 3.1 2 4a2 2 0 11-4 0c0-.9.6-2 2-4z"/>',
-  gardens: '<path d="M4 20V9l6-4 6 4v11"/><path d="M16 20V12h4v8"/><path d="M4 20h16"/>',
+  gardens: '<path d="M3 20v-7l4.5-3 4.5 3v7"/><path d="M13.5 20v-5l4-2.5 3.5 2.5v5"/><path d="M2 20h20"/>',
   file: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
   trash: '<path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/>',
   phone: '<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M3 12a9 9 0 0 1 3-6.7"/><path d="M21 12a9 9 0 0 1-3 6.7"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/>',
-  roof: '<path d="M3 12L12 5l9 7"/><path d="M5 12v7h14v-7"/>',
-  'roof-off': '<path d="M3 12L12 5l9 7"/><path d="M4 4l16 16"/>',
+  roof: '<path d="M2 13L12 6l10 7"/><path d="M4.5 13c2.5 1.6 4.8 2.4 7.5 2.4s5-0.8 7.5-2.4"/><path d="M12 6V3.5"/>',
+  'roof-off': '<path d="M2 13L12 6l10 7"/><path d="M4.5 13c2.5 1.6 4.8 2.4 7.5 2.4s5-0.8 7.5-2.4"/><path d="M4 4l16 16"/>',
   path: '<path d="M7 21c0-4 3-4 3-8s-3-4-3-7"/><path d="M14 21c1.5-3 3-3.5 3-7s-2-4-2-7"/><circle cx="7" cy="3" r="1"/><circle cx="15" cy="4" r="1"/>',
 };
 

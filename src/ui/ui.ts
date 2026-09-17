@@ -119,7 +119,25 @@ export class UI {
     // заглушка: играть можно и вертикально, просто хуже.
     const rotate = this.el('div', 'rotate-note');
     rotate.innerHTML = `${svgIcon('phone', 19)}<span>Поверните телефон — сад шире, чем экран</span>`;
-    rotate.addEventListener('click', () => rotate.classList.add('dismissed'));
+    // Подсказка сама уходит через несколько секунд и больше не возвращается:
+    // висеть постоянно ей незачем, она занимает нижний край экрана.
+    const hideRotate = () => {
+      rotate.classList.add('dismissed');
+      try {
+        localStorage.setItem('usadba.rotateSeen', '1');
+      } catch {
+        /* приватный режим — переживём */
+      }
+    };
+    rotate.addEventListener('click', hideRotate);
+    let rotateSeen = false;
+    try {
+      rotateSeen = localStorage.getItem('usadba.rotateSeen') === '1';
+    } catch {
+      rotateSeen = false;
+    }
+    if (rotateSeen) rotate.classList.add('dismissed');
+    else setTimeout(hideRotate, 9000);
     layer.appendChild(rotate);
     this.els.rotate = rotate;
 
