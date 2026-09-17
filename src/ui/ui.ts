@@ -136,7 +136,7 @@ export class UI {
     try {
       rotateSeen = localStorage.getItem('usadba.rotateSeen') === '1';
     } catch {
-      rotateSeen = false;
+      /* приватный режим — переживём */
     }
     if (rotateSeen) rotate.classList.add('dismissed');
     else setTimeout(hideRotate, 9000);
@@ -385,7 +385,15 @@ export class UI {
       const sel = this.selection.kind === 'brush' && this.selection.brush.id === b.id;
       if (sel) e.classList.add('selected');
       const icon =
-        b.kind === 'water' ? 'water' : b.kind === 'hill' ? 'hill' : b.kind === 'lower' ? 'hill' : b.kind === 'floor' ? 'house' : 'ground';
+        b.kind === 'water'
+          ? 'water'
+          : b.kind === 'hill'
+            ? 'hill'
+            : b.kind === 'lower'
+              ? 'hill'
+              : b.kind === 'floor'
+                ? 'house'
+                : 'ground';
       const size = b.w > 1 || b.h > 1 ? ` ${b.w}×${b.h}` : '';
       e.innerHTML = `<div class="thumb">${svgIcon(icon, 34)}</div><div class="name">${b.name}${size}</div><div class="hint">${b.hint}</div>`;
       e.addEventListener('click', () => this.select({ kind: 'brush', brush: b }));
@@ -493,7 +501,8 @@ export class UI {
           : `${sel.item.name} — клик, чтобы поставить · R — поворот`,
       );
     } else if (sel.kind === 'brush') {
-      const sz = sel.brush.kind === 'ground' && this.brushSize > 1 ? ` · кисть ${this.brushSize}×${this.brushSize}` : '';
+      const sz =
+        sel.brush.kind === 'ground' && this.brushSize > 1 ? ` · кисть ${this.brushSize}×${this.brushSize}` : '';
       this.setHint(touch ? `${sel.brush.name} — ведите пальцем${sz}` : `${sel.brush.name} — зажмите и ведите${sz}`);
     } else if (sel.kind === 'erase') {
       this.setHint(`${tap[0].toUpperCase()}${tap.slice(1)} по предмету, чтобы убрать`);
@@ -502,7 +511,9 @@ export class UI {
     } else if (sel.kind === 'fill') {
       this.setHint(`Заливка «${sel.name}» — ${tap} по области`);
     } else if (sel.kind === 'move') {
-      this.setHint(touch ? 'Перенос — коснитесь предмета, затем места' : 'Перенос — тяните поставленное на новое место');
+      this.setHint(
+        touch ? 'Перенос — коснитесь предмета, затем места' : 'Перенос — тяните поставленное на новое место',
+      );
     } else if (sel.kind === 'path') {
       this.setHint('Тропа — отметьте начало, потом конец; дорога ляжет сама');
     }

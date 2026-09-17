@@ -139,7 +139,7 @@ async function main() {
     ctx.scale(3.4, 3.4);
     drawFlutter(ctx, f, 0, 6, atm, 2500);
     ctx.restore();
-    label(openWings ? kind + " раскрыта" : kind, cx, cy);
+    label(openWings ? kind + ' раскрыта' : kind, cx, cy);
   }
 
   const out = process.argv[2] ?? 'creature-sheet.png';

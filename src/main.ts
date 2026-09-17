@@ -6,12 +6,10 @@
 import './ui/style.css';
 import { GRID, floorTo, inBounds } from './core/iso';
 import { computeTime } from './core/clock';
-import { clamp } from './core/rng';
 import { Scene } from './render/scene';
-import { buildAtmosphere } from './world/palette';
 import { World } from './world/world';
 import { UI, Selection } from './ui/ui';
-import { ITEM_BY_ID, TERRAIN_BRUSHES } from './world/catalog';
+import { ITEM_BY_ID, TERRAIN_BRUSHES, footprintCells } from './world/catalog';
 import { Life } from './world/life';
 import { TimeControl } from './core/timeControl';
 import { WeatherSystem } from './world/weatherState';
@@ -20,14 +18,14 @@ import { DevPanel } from './ui/devPanel';
 import { History } from './core/history';
 import { GardenStore } from './world/gardens';
 import { GardensPanel } from './ui/gardensPanel';
-import { waterLoudness } from './render/water';
 import { findPath, layPath } from './world/paths';
 import { ShotRatio, composeScroll } from './ui/snapshot';
 import { SettingsPanel, applyView, loadView } from './ui/settings';
-import { TouchInput, isTouchDevice } from './ui/touch';
+import { isTouchDevice } from './ui/touch';
+import { pointer, moving, pathStart, setupInput, touchMode } from './app/input';
+import { startLoop } from './app/gameLoop';
 import { PracticePanel } from './ui/practicePanel';
 import { StartScreen } from './ui/startScreen';
-import { PlacedObject } from './world/types';
 
 const app = document.getElementById('app')!;
 
@@ -41,10 +39,69 @@ if (!gardens.load(world)) gardens.save(world);
 
 const history = new History(world);
 
+/**
+ * Плашка про хранилище. Тихие сбои сохранения недопустимы: если хранилище
+ * заполнено, игрок должен узнать об этом сразу и успеть выгрузить сад
+ * файлом, пока он есть в памяти.
+ */
+let storageWarn: HTMLElement | null = null;
+let storageWarnKind: 'quota' | 'error' | 'broken' | null = null;
+
+function showStorageWarn(kind: 'quota' | 'error' | 'broken'): void {
+  if (storageWarnKind === kind) return;
+  hideStorageWarn();
+  storageWarnKind = kind;
+  const el = document.createElement('div');
+  el.className = 'storage-warn paper';
+  const text =
+    kind === 'broken'
+      ? 'Прежнее сохранение оказалось повреждено и не открылось даже из копии — открыта чистая земля. Старые данные не удалены: они отложены отдельной копией.'
+      : kind === 'quota'
+        ? 'Хранилище браузера заполнено — сад перестал сохраняться. Выгрузите усадьбу файлом, пока она жива в памяти.'
+        : 'Браузер не смог записать сад. Выгрузите усадьбу файлом на всякий случай.';
+  const textEl = document.createElement('div');
+  textEl.className = 'sw-text';
+  textEl.textContent = text;
+  const row = document.createElement('div');
+  row.className = 'sw-row';
+  if (kind !== 'broken') {
+    const exp = document.createElement('span');
+    exp.className = 'sw-btn';
+    exp.textContent = 'Выгрузить сад';
+    exp.addEventListener('click', () => {
+      gardens.exportFile(world);
+      hideStorageWarn();
+    });
+    row.appendChild(exp);
+  }
+  const ok = document.createElement('span');
+  ok.className = 'sw-btn';
+  ok.textContent = kind === 'broken' ? 'Понятно' : 'Скрыть';
+  ok.addEventListener('click', hideStorageWarn);
+  row.appendChild(ok);
+  el.appendChild(textEl);
+  el.appendChild(row);
+  app.appendChild(el);
+  storageWarn = el;
+}
+
+function hideStorageWarn(): void {
+  storageWarn?.remove();
+  storageWarn = null;
+  storageWarnKind = null;
+}
+
 /** Сохранение теперь всегда идёт в активный слот усадьбы. */
 function saveWorld(): void {
-  gardens.save(world);
+  const res = gardens.save(world);
+  // Запись снова пошла — плашку убираем сами, без лишних слов.
+  if (res.ok) hideStorageWarn();
+  else showStorageWarn(res.reason);
 }
+
+// Слот был, но не прочитался даже из копии — честно скажем об этом:
+// данные уже отложены карантином, перед игроком чистая земля.
+if (gardens.lastLoadFailed) showStorageWarn('broken');
 
 /**
  * Видимость кровли — настройка взгляда, а не сада: она одна на все усадьбы
@@ -100,7 +157,7 @@ const ui = new UI(app, world, {
     canvas.classList.toggle('building', sel.kind !== 'none');
     canvas.classList.toggle('picking', sel.kind === 'pick' || sel.kind === 'move');
     if (sel.kind !== 'path') {
-      pathStart = null;
+      pathStart.current = null;
       scene.pathFrom = null;
       scene.pathPreview = null;
     }
@@ -169,6 +226,9 @@ const gardensPanel = new GardensPanel(app, world, gardens, {
   onSwitch() {
     // Мир заменился целиком: история чужой усадьбы больше не имеет смысла
     history.clear();
+    // Незавершённое действие относилось к прошлому саду — отпускаем его:
+    // переносимый предмет, начатая тропа, мазок кистью.
+    input.cancelOngoingAction();
     scene.markTerrainDirty();
     life.reset();
     ui.select({ kind: 'none' });
@@ -244,408 +304,43 @@ function wake(): void {
 const IDLE_MS = 14000;
 
 // ---------------- Ввод ----------------
+// Жесты, клавиши и их состояние — в app/input.ts; здесь только связка.
 
-let dragging = false;
-let painting = false;
-/** Объект, который сейчас переносят, и его исходное место. */
-let moving: { obj: PlacedObject; fromX: number; fromY: number } | null = null;
-/** Начало тропы: первый клик инструмента «Тропа». */
-let pathStart: { x: number; y: number } | null = null;
-let lastX = 0;
-let lastY = 0;
-let pointerX = 0;
-let pointerY = 0;
-let hasPointer = false;
-
-canvas.addEventListener('pointerdown', (e) => {
-  // На пальце работает TouchInput; браузер дублирует касания
-  // синтетическими pointer-событиями, и без этой отсечки
-  // каждое касание срабатывало бы дважды.
-  if (e.pointerType === 'touch') return;
-  canvas.setPointerCapture(e.pointerId);
-  lastX = e.clientX;
-  lastY = e.clientY;
-  wake();
-
-  if (e.button === 2) {
-    // ПКМ — убрать объект
-    applyErase(e.clientX, e.clientY);
-    return;
-  }
-  if (selection.kind === 'move' && e.button === 0) {
-    const p = scene.pickTile(e.clientX, e.clientY, world);
-    const obj = world.pickObject(p.tx, p.ty);
-    if (obj) {
-      history.begin('перенос', null);
-      moving = { obj, fromX: obj.tx, fromY: obj.ty };
-      scene.movingId = obj.id;
-      painting = true;
-      audio.place();
-    } else {
-      dragging = true;
-      canvas.classList.add('dragging');
-    }
-    return;
-  }
-  if (selection.kind !== 'none' && e.button === 0) {
-    painting = true;
-    applyAt(e.clientX, e.clientY, true);
-  } else {
-    dragging = true;
-    canvas.classList.add('dragging');
-  }
-});
-
-canvas.addEventListener('pointermove', (e) => {
-  if (e.pointerType === 'touch') return;
-  pointerX = e.clientX;
-  pointerY = e.clientY;
-  hasPointer = true;
-  const dx = e.clientX - lastX;
-  const dy = e.clientY - lastY;
-  if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
-    wake();
-  }
-  if (dragging) {
-    scene.camera.x -= dx / scene.camera.zoom;
-    scene.camera.y -= dy / scene.camera.zoom;
-    scene.clampCamera();
-  } else if (moving) {
-    const p = scene.pickTile(e.clientX, e.clientY, world);
-    const item = ITEM_BY_ID.get(moving.obj.type);
-    if (item) {
-      const s2 =
-        item.step === 1
-          ? { tx: Math.floor(p.tx - (item.w - 1) / 2), ty: Math.floor(p.ty - (item.h - 1) / 2) }
-          : { tx: floorTo(p.tx, item.step), ty: floorTo(p.ty, item.step) };
-      world.moveObject(moving.obj, s2.tx, s2.ty);
-    }
-  } else if (painting && selection.kind === 'brush') {
-    applyAt(e.clientX, e.clientY, false);
-  } else if (painting && selection.kind === 'item' && selection.item.step < 1) {
-    // мелочи можно «рассыпать» движением
-    applyAt(e.clientX, e.clientY, false);
-  }
-  lastX = e.clientX;
-  lastY = e.clientY;
-  updateGhost();
-});
-
-const endPointer = () => {
-  if (moving) {
-    const m = moving;
-    moving = null;
-    scene.movingId = -1;
-    if (m.obj.tx === m.fromX && m.obj.ty === m.fromY) {
-      history.abort();
-    } else if (history.commit()) {
-      const item = ITEM_BY_ID.get(m.obj.type);
-      ui.toast(`${item?.name ?? 'Предмет'} переставлен`);
-      syncHistoryUI();
-    }
-  } else if (painting) {
-    // мазок кистью закончен — следующий станет отдельным шагом отмены
-    if (history.commit()) syncHistoryUI();
-    history.breakMerge();
-  }
-  dragging = false;
-  painting = false;
-  canvas.classList.remove('dragging');
-  saveWorld();
-};
-canvas.addEventListener('pointerup', (e) => {
-  if (e.pointerType === 'touch') return;
-  endPointer();
-});
-canvas.addEventListener('pointercancel', (e) => {
-  if (e.pointerType === 'touch') return;
-  endPointer();
-});
-canvas.addEventListener('pointerleave', () => {
-  hasPointer = false;
-  scene.ghost = null;
-});
-canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-
-canvas.addEventListener(
-  'wheel',
-  (e) => {
-    e.preventDefault();
-    wake();
-    const before = scene.screenToWorld(e.clientX, e.clientY);
-    const k = Math.exp(-e.deltaY * 0.0012);
-    scene.camera.zoom = clamp(scene.camera.zoom * k, 0.12, 2.4);
-    const after = scene.screenToWorld(e.clientX, e.clientY);
-    scene.camera.x += before.x - after.x;
-    scene.camera.y += before.y - after.y;
-    scene.clampCamera();
-    updateGhost();
+const input = setupInput({
+  canvas,
+  scene,
+  world,
+  history,
+  ui,
+  audio,
+  timeCtl,
+  gardensPanel,
+  settingsPanel,
+  devPanel,
+  selection: () => selection,
+  isZenMode: () => zenMode,
+  isStartOpen: () => startOpen,
+  isPracticeOpen: () => practice.isOpen,
+  closePractice: () => practice.close(),
+  actions: {
+    applyAt,
+    applyErase,
+    updateGhost,
+    wake,
+    saveWorld,
+    syncHistoryUI,
+    doUndo,
+    doRedo,
+    setZen,
+    takeScreenshot,
+    cycleShotRatio,
+    setRoofVisible,
+    toggleSound,
+    rotateGhost: () => {
+      ghostRot = (ghostRot + 1) % 4;
+      updateGhost();
+    },
   },
-  { passive: false },
-);
-
-// ---------------- Управление пальцем ----------------
-//
-// На телефоне работает отдельный разбор жестов: у пальца нет правой кнопки,
-// колеса и наведения. Мышиные обработчики при этом остаются — на планшете
-// с трекпадом могут пригодиться оба.
-
-const touchMode = isTouchDevice();
-if (touchMode) document.body.classList.add('touch');
-
-/** Масштаб вокруг точки: картинка не должна уезжать из-под пальцев. */
-function zoomAt(k: number, sx: number, sy: number): void {
-  const before = scene.screenToWorld(sx, sy);
-  scene.camera.zoom = clamp(scene.camera.zoom * k, 0.12, 2.4);
-  const after = scene.screenToWorld(sx, sy);
-  scene.camera.x += before.x - after.x;
-  scene.camera.y += before.y - after.y;
-  scene.clampCamera();
-}
-
-if (touchMode) {
-  new TouchInput(canvas, {
-    isPainting: () => selection.kind !== 'none',
-
-    onTap(x, y) {
-      wake();
-      if (selection.kind === 'none') return;
-      pointerX = x;
-      pointerY = y;
-      hasPointer = true;
-      // Перенос пальцем идёт в два касания: взять и поставить.
-      // Тащить объект и одновременно видеть его под пальцем невозможно.
-      if (selection.kind === 'move') {
-        tapMove(x, y);
-        return;
-      }
-      applyAt(x, y, true);
-      if (history.commit()) syncHistoryUI();
-      history.breakMerge();
-      saveWorld();
-    },
-
-    onHold(x, y) {
-      // Долгое нажатие заменяет правую кнопку мыши
-      wake();
-      applyErase(x, y);
-      saveWorld();
-    },
-
-    onDragStart(x, y) {
-      wake();
-      // Кистью и мелочью рисуем, всем остальным — возим камеру.
-      const paintable =
-        selection.kind === 'brush' || (selection.kind === 'item' && selection.item.step < 1);
-      if (paintable) {
-        painting = true;
-        pointerX = x;
-        pointerY = y;
-        hasPointer = true;
-        applyAt(x, y, true);
-      } else {
-        dragging = true;
-      }
-    },
-
-    onDragMove(x, y, dx, dy) {
-      if (painting) {
-        pointerX = x;
-        pointerY = y;
-        applyAt(x, y, false);
-      } else if (dragging) {
-        scene.camera.x -= dx / scene.camera.zoom;
-        scene.camera.y -= dy / scene.camera.zoom;
-        scene.clampCamera();
-      }
-    },
-
-    onDragEnd() {
-      if (painting) {
-        if (history.commit()) syncHistoryUI();
-        history.breakMerge();
-        saveWorld();
-      }
-      painting = false;
-      dragging = false;
-      // Призрак под пальцем больше не нужен — палец убран
-      scene.ghost = null;
-      hasPointer = false;
-    },
-
-    onPinch(k, cx, cy, dx, dy) {
-      wake();
-      zoomAt(k, cx, cy);
-      scene.camera.x -= dx / scene.camera.zoom;
-      scene.camera.y -= dy / scene.camera.zoom;
-      scene.clampCamera();
-    },
-
-    onPinchEnd() {
-      scene.ghost = null;
-      hasPointer = false;
-    },
-  });
-}
-
-/** Перенос в два касания: первое берёт предмет, второе ставит. */
-function tapMove(sx: number, sy: number): void {
-  const p = scene.pickTile(sx, sy, world);
-  if (!moving) {
-    const obj = world.pickObject(p.tx, p.ty);
-    if (!obj) {
-      ui.toast('Здесь нечего переносить');
-      return;
-    }
-    history.begin('перенос', null);
-    moving = { obj, fromX: obj.tx, fromY: obj.ty };
-    scene.movingId = obj.id;
-    audio.place();
-    ui.setHint('Теперь коснитесь места, куда поставить');
-    return;
-  }
-
-  const item = ITEM_BY_ID.get(moving.obj.type);
-  if (item) {
-    const s2 =
-      item.step === 1
-        ? { tx: Math.floor(p.tx - (item.w - 1) / 2), ty: Math.floor(p.ty - (item.h - 1) / 2) }
-        : { tx: floorTo(p.tx, item.step), ty: floorTo(p.ty, item.step) };
-    world.moveObject(moving.obj, s2.tx, s2.ty);
-  }
-  const m = moving;
-  moving = null;
-  scene.movingId = -1;
-  if (m.obj.tx === m.fromX && m.obj.ty === m.fromY) {
-    history.abort();
-  } else if (history.commit()) {
-    ui.toast(`${item?.name ?? 'Предмет'} переставлен`);
-    syncHistoryUI();
-  }
-  ui.setHint('Перенос — коснитесь предмета, затем места');
-  saveWorld();
-}
-
-window.addEventListener('keydown', (e) => {
-  const k = e.key.toLowerCase();
-  // Не перехватываем набор текста (переименование усадьбы)
-  const el = e.target as HTMLElement | null;
-  if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
-  // Пока висит свиток, сад ещё не начался: клавиши ему не принадлежат.
-  if (startOpen) return;
-  // Под листом практики сад не живёт: клавиши не проходят сквозь него.
-  if (practice.isOpen) {
-    if (e.key === 'Escape') practice.close();
-    return;
-  }
-  wake();
-
-  // Отмена и повтор — до остальных клавиш
-  if ((e.ctrlKey || e.metaKey) && k === 'z') {
-    e.preventDefault();
-    if (e.shiftKey) doRedo();
-    else doUndo();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && k === 'y') {
-    e.preventDefault();
-    doRedo();
-    return;
-  }
-  if (e.ctrlKey || e.metaKey) return;
-
-  if (k === 'b') {
-    ui.toggleBuild();
-  } else if (k === 'z') {
-    setZen(!zenMode);
-  } else if (k === 'p') {
-    // Shift меняет формат кадра, без него — снимаем
-    if (e.shiftKey) cycleShotRatio();
-    else takeScreenshot();
-  } else if (k === 'h' || k === '?') {
-    ui.toggleHelp();
-  } else if (k === 'r') {
-    ghostRot = (ghostRot + 1) % 4;
-    updateGhost();
-  } else if (k === 'x') {
-    ui.select({ kind: 'erase' });
-    ui.toggleBuild(true);
-  } else if (k === 'escape') {
-    if (gardensPanel.isOpen) gardensPanel.setOpen(false);
-    else if (ui.selection.kind !== 'none') ui.select({ kind: 'none' });
-    else ui.toggleBuild(false);
-    ui.toggleHelp(false);
-  } else if (k === 'g') {
-    scene.showGrid = !scene.showGrid;
-  } else if (k === 'i') {
-    ui.toggleBuild(true);
-    ui.select(ui.selection.kind === 'pick' ? { kind: 'none' } : { kind: 'pick' });
-  } else if (k === 'v') {
-    ui.toggleBuild(true);
-    ui.select(ui.selection.kind === 'move' ? { kind: 'none' } : { kind: 'move' });
-  } else if (k === 'f') {
-    ui.toggleBuild(true);
-    ui.fillFromKeyboard();
-  } else if (k === 'l') {
-    ui.toggleBuild(true);
-    ui.select(ui.selection.kind === 'path' ? { kind: 'none' } : { kind: 'path' });
-  } else if (k === 'r') {
-    setRoofVisible(!scene.roofVisible);
-  } else if (k === 's') {
-    settingsPanel.toggle();
-  } else if (k === 'u') {
-    gardensPanel.toggle();
-  } else if (k === '1' || k === '2' || k === '3') {
-    ui.setBrushSize(k === '1' ? 1 : k === '2' ? 3 : 5);
-  } else if (k === 't') {
-    devPanel.toggle();
-    devPanel.refresh();
-  } else if (k === 'm') {
-    toggleSound();
-  } else if (k === 'arrowleft' || k === 'arrowright') {
-    e.preventDefault();
-    const dir = k === 'arrowright' ? 1 : -1;
-    if (e.shiftKey) timeCtl.nextSeason(dir);
-    else timeCtl.nudgeHour(dir * (e.altKey ? 0.25 : 1));
-    scene.markTerrainDirty();
-    devPanel.refresh();
-  }
-});
-
-/** Книжная ориентация — для подсказки «поверните телефон». */
-function syncOrientation(): void {
-  const portrait = window.innerHeight > window.innerWidth;
-  document.body.classList.toggle('portrait', portrait);
-}
-syncOrientation();
-window.addEventListener('orientationchange', () => {
-  // Размеры окна после поворота приходят не сразу — ждём кадр-другой
-  setTimeout(() => {
-    syncOrientation();
-    scene.resize();
-    scene.markTerrainDirty();
-    // Вид подбирается под ориентацию: в альбоме сад помещается целиком,
-    // в книжной — только его середина. Без пересчёта после поворота
-    // остался бы масштаб от прошлой ориентации.
-    if (touchMode) scene.fitToView();
-    scene.clampCamera();
-  }, 160);
-});
-
-// В мобильных браузерах адресная строка сворачивается на ходу и меняет
-// высоту окна. visualViewport сообщает об этом точнее, чем resize.
-if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', () => {
-    scene.resize();
-    scene.markTerrainDirty();
-    scene.clampCamera();
-  });
-}
-
-window.addEventListener('resize', () => {
-  syncOrientation();
-  scene.resize();
-  scene.markTerrainDirty();
 });
 
 // ---------------- Действия ----------------
@@ -663,18 +358,18 @@ function snapForSelection(tx: number, ty: number): { tx: number; ty: number } {
 }
 
 function updateGhost(): void {
-  if (!hasPointer || selection.kind === 'none') {
+  if (!pointer.has || selection.kind === 'none') {
     scene.ghost = null;
     scene.highlightId = -1;
     return;
   }
-  const p = scene.pickTile(pointerX, pointerY, world);
+  const p = scene.pickTile(pointer.x, pointer.y, world);
   const s = snapForSelection(p.tx, p.ty);
 
   // Пипетка и перенос не показывают призрак — они подсвечивают то, что под курсором
   if (selection.kind === 'pick' || selection.kind === 'move') {
     scene.ghost = null;
-    const hit = moving ? null : world.pickObject(p.tx, p.ty);
+    const hit = moving.current ? null : world.pickObject(p.tx, p.ty);
     scene.highlightId = hit ? hit.id : -1;
     return;
   }
@@ -683,7 +378,9 @@ function updateGhost(): void {
   if (selection.kind === 'path') {
     scene.ghost = null;
     // Пока выбран только старт — показываем, куда ляжет дорога
-    scene.pathPreview = pathStart ? findPath(world, pathStart, { x: Math.floor(p.tx), y: Math.floor(p.ty) }) : null;
+    scene.pathPreview = pathStart.current
+      ? findPath(world, pathStart.current, { x: Math.floor(p.tx), y: Math.floor(p.ty) })
+      : null;
     return;
   }
 
@@ -702,8 +399,9 @@ function updateGhost(): void {
 
   if (selection.kind === 'item') {
     const item = selection.item;
-    const valid = inBounds(Math.floor(s.tx), Math.floor(s.ty)) && world.canPlace(item.id, s.tx, s.ty);
-    scene.ghost = { kind: 'item', itemId: item.id, tx: s.tx, ty: s.ty, rot: ghostRot, valid, w: item.w, h: item.h };
+    const valid = inBounds(Math.floor(s.tx), Math.floor(s.ty)) && world.canPlace(item.id, s.tx, s.ty, ghostRot);
+    const hl = footprintCells(item, s.tx, s.ty, ghostRot);
+    scene.ghost = { kind: 'item', itemId: item.id, tx: s.tx, ty: s.ty, rot: ghostRot, valid, w: item.w, h: item.h, hl };
   } else if (selection.kind === 'brush') {
     const b = selection.brush;
     // Кисти земли растягиваются размером 1/3/5, блоки держат свой размер
@@ -771,7 +469,7 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
   if (selection.kind === 'item') {
     const item = selection.item;
     const s = snapForSelection(p.tx, p.ty);
-    if (!world.canPlace(item.id, s.tx, s.ty)) {
+    if (!world.canPlace(item.id, s.tx, s.ty, ghostRot)) {
       if (isClick) ui.toast(item.needsWater ? 'Это растёт только в воде' : 'Здесь вода — нужно другое место');
       return;
     }
@@ -804,15 +502,15 @@ function layPathStep(tx: number, ty: number): void {
     return;
   }
 
-  if (!pathStart) {
-    pathStart = { x, y };
-    scene.pathFrom = pathStart;
+  if (!pathStart.current) {
+    pathStart.current = { x, y };
+    scene.pathFrom = pathStart.current;
     ui.setHint('Теперь отметьте, куда ведёт тропа');
     return;
   }
 
-  const cells = findPath(world, pathStart, { x, y });
-  pathStart = null;
+  const cells = findPath(world, pathStart.current, { x, y });
+  pathStart.current = null;
   scene.pathFrom = null;
   scene.pathPreview = null;
   if (!cells) {
@@ -1002,100 +700,26 @@ start.mount(document.body);
 
 // ---------------- Игровой цикл ----------------
 
-let last = performance.now();
-let eveningChecked = '';
-let audioAccum = 0;
-let observeAccum = 1200;
-
-/** Что сейчас звучит вокруг: считаем по составу сада рядом с камерой. */
-function gatherAudioContext() {
-  let water = 0;
-  let trees = 0;
-  let hasChime = false;
-  let hasShishi = false;
-  for (const o of world.objects) {
-    const item = ITEM_BY_ID.get(o.type);
-    if (!item) continue;
-    if (item.kind === 'tree') trees++;
-    if (o.type === 'wind_chime') hasChime = true;
-    if (o.type === 'shishi') hasShishi = true;
-  }
-  for (let y = 0; y < 26; y += 2)
-    for (let x = 0; x < 26; x += 2) if (world.at(x, y)?.water) water += 0.03;
-  // Шум воды выводим из настоящего течения, а не из «где-то есть пруд»
-  const loud = waterLoudness(scene.flow);
-  return {
-    current: loud.stream,
-    falling: loud.fall,
-    wind: life.windBase + life.gusts.reduce((a, g) => a + g.strength, 0) * 0.5,
-    waterNearby: Math.min(1, water),
-    hasChime,
-    hasShishi,
-    catNear: life.cats.length > 0,
-    trees,
-  };
-}
-
-function frame(now: number): void {
-  const dt = Math.min(now - last, 60);
-  last = now;
-
-  timeCtl.tick(dt);
-  const t = timeCtl.compute();
-  weatherSys.update(dt, t);
-  const atm = buildAtmosphere(t, weatherSys.state.overcast);
-
-  // Веха «Сумерки» — когда игрок впервые застаёт вечер
-  const dayKey = `${t.year}-${t.seasonIndex}-${Math.floor(t.dayT * 4)}`;
-  if (atm.lampGlow > 0.4 && eveningChecked !== dayKey) {
-    eveningChecked = dayKey;
-    world.noteEvening();
-    flushMilestones();
-  }
-
-  // Вехи, которые сад замечает сам. Раз в пару секунд: они про то,
-  // что уже случилось, спешить некуда.
-  observeAccum -= dt;
-  if (observeAccum <= 0) {
-    observeAccum = 2500;
-    world.observe(now, t.season, atm.lampGlow > 0.55, weatherSys.state.rain > 0.3);
-    flushMilestones();
-  }
-
-  // Живность и ветер
-  life.update(world, t, dt, now);
-  scene.wind = life.windBase;
-
-  // Интерфейс растворяется в бездействии
-  if (!zenMode && !ui.buildOpen && now - lastInteraction > IDLE_MS) setZen(true);
-
-  // Плавное возвращение камеры после входа: сколько бы ни шёл шаг,
-  // через порог игрок входит, а не оказывается.
-  if (entryZoom > 0) {
-    const k = 1 - Math.pow(0.004, dt / 1000);
-    scene.camera.zoom += (entryZoom - scene.camera.zoom) * k;
-    if (Math.abs(entryZoom - scene.camera.zoom) < 0.002) {
-      scene.camera.zoom = entryZoom;
-      entryZoom = 0;
-    }
-    scene.clampCamera();
-  }
-
-  // Под листом практики сад не рисуется вовсе; свиток старта непрозрачен,
-  // но за ним сад живёт и греет первый кадр ко входу.
-  if (!practiceActive) scene.render(world, atm, now, dt, life, weatherSys.state);
-  ui.tick(t, atm);
-  devPanel.tick();
-
-  // Звук: пересобираем «что слышно» из состава сада
-  audioAccum -= dt;
-  if (audioAccum <= 0) {
-    audioAccum = 400;
-    audio.update(400, t, weatherSys.state, gatherAudioContext());
-  }
-
-  requestAnimationFrame(frame);
-}
+startLoop({
+  world,
+  scene,
+  life,
+  weatherSys,
+  audio,
+  timeCtl,
+  ui,
+  devPanel,
+  idleMs: IDLE_MS,
+  isPracticeActive: () => practiceActive,
+  isZenMode: () => zenMode,
+  igniteZen: () => setZen(true),
+  lastInteractionMs: () => lastInteraction,
+  getEntryZoom: () => entryZoom,
+  setEntryZoom: (v) => {
+    entryZoom = v;
+  },
+  flushMilestones,
+});
 
 // Кровля: восстанавливаем прошлый выбор игрока до первого кадра,
 // чтобы крыша не мигала на старте.
@@ -1103,8 +727,6 @@ scene.roofVisible = loadRoofPref();
 scene.snapRoof();
 ui.setRoofState(scene.roofVisible);
 scene.particles = view.particles;
-
-requestAnimationFrame(frame);
 
 // Периодическое автосохранение — сад не должен теряться
 setInterval(saveWorld, 20000);

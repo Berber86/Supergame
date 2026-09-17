@@ -1,0 +1,105 @@
+/* Интерфейс из материалов мира: тёплое дерево, рисовая бумага, шёлковые шнуры. */
+
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Noto+Serif+JP:wght@300;400;600&display=swap');
+
+:root {
+  --wood: #6b4a33;
+  --wood-dark: #4a3122;
+  --wood-light: #8b6344;
+  --paper: #f3ead6;
+  --paper-warm: #eadfc4;
+  --paper-deep: #ddd0b0;
+  --ink: #3b3028;
+  --ink-soft: #6d5d4c;
+  --silk: #b0533f;
+  --silk-light: #cf7159;
+  --moss: #7d9668;
+  --gold: #c9a227;
+  --shadow: 0 10px 34px rgba(48, 34, 22, 0.34), 0 2px 8px rgba(48, 34, 22, 0.2);
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --serif: 'Cormorant Garamond', 'Noto Serif JP', Georgia, serif;
+  --jp: 'Noto Serif JP', 'Cormorant Garamond', serif;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #1a1f26;
+  font-family: var(--serif);
+  color: var(--ink);
+  user-select: none;
+  touch-action: none;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+#garden {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+}
+
+#garden.dragging {
+  cursor: grabbing;
+}
+
+#garden.building {
+  cursor: crosshair;
+}
+
+/* ---------- Общие текстуры ---------- */
+
+.paper {
+  background:
+    radial-gradient(120% 90% at 20% 0%, rgba(255, 252, 240, 0.9), rgba(255, 252, 240, 0) 60%),
+    linear-gradient(170deg, var(--paper) 0%, var(--paper-warm) 55%, var(--paper-deep) 100%);
+  position: relative;
+}
+
+.paper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.4;
+  mix-blend-mode: multiply;
+  background-image:
+    repeating-linear-gradient(90deg, rgba(120, 96, 64, 0.05) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(0deg, rgba(120, 96, 64, 0.04) 0 1px, transparent 1px 7px);
+  border-radius: inherit;
+}
+
+.wood {
+  background: linear-gradient(180deg, var(--wood-light) 0%, var(--wood) 42%, var(--wood-dark) 100%);
+  position: relative;
+}
+
+.wood::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  mix-blend-mode: overlay;
+  background-image: repeating-linear-gradient(
+    92deg,
+    rgba(255, 235, 200, 0.13) 0 2px,
+    rgba(60, 36, 20, 0.15) 2px 5px,
+    transparent 5px 11px
+  );
+  border-radius: inherit;
+}

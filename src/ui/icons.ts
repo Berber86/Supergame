@@ -65,11 +65,7 @@ export function itemIcon(itemId: string, atm: Atmosphere, size = 56): string {
 /** Границы предмета в его собственных координатах — для вписывания в иконку. */
 const boxCache = new Map<string, { w: number; h: number; cx: number; cy: number }>();
 
-function measure(
-  itemId: string,
-  atm: Atmosphere,
-  obj: PlacedObject,
-): { w: number; h: number; cx: number; cy: number } {
+function measure(itemId: string, atm: Atmosphere, obj: PlacedObject): { w: number; h: number; cx: number; cy: number } {
   const key = `${itemId}|${atm.season}`;
   const hit = boxCache.get(key);
   if (hit) return hit;
@@ -126,22 +122,24 @@ export const GLYPHS: Record<string, string> = {
   hill: '<path d="M2 18l6-8 4 5 3-3 7 6z"/>',
   tree: '<path d="M12 21v-7"/><path d="M12 15c-4 0-6-2.2-6-5s2.4-5.5 6-5.5S18 7.2 18 10s-2 5-6 5z"/>',
   rock: '<path d="M4 18l4-8 6-2 6 6-2 4z"/>',
-  micro: '<circle cx="8" cy="15" r="2"/><circle cx="14" cy="17" r="1.5"/><circle cx="17" cy="13" r="1.2"/><circle cx="11" cy="11" r="1.4"/>',
-  lotus: '<path d="M12 19c-5 0-8-3-8-3s3-2 8-2 8 2 8 2-3 3-8 3z"/><path d="M12 14c0-4 2-7 2-7s2 3 2 6"/><path d="M12 14c0-4-2-7-2-7s-2 3-2 6"/>',
+  micro:
+    '<circle cx="8" cy="15" r="2"/><circle cx="14" cy="17" r="1.5"/><circle cx="17" cy="13" r="1.2"/><circle cx="11" cy="11" r="1.4"/>',
+  lotus:
+    '<path d="M12 19c-5 0-8-3-8-3s3-2 8-2 8 2 8 2-3 3-8 3z"/><path d="M12 14c0-4 2-7 2-7s2 3 2 6"/><path d="M12 14c0-4-2-7-2-7s-2 3-2 6"/>',
   lantern: '<path d="M7 8h10l-1.5 8h-7z"/><path d="M5 8h14"/><path d="M12 4v4"/><path d="M12 16v3"/>',
   house: '<path d="M3 11l9-6 9 6"/><path d="M5 11v9h14v-9"/><path d="M10 20v-6h4v6"/>',
   cat: '<path d="M6 10L5 5l4 2.5"/><path d="M18 10l1-5-4 2.5"/><path d="M12 19c-4 0-6.5-2.5-6.5-6S8 7 12 7s6.5 2.5 6.5 6-2.5 6-6.5 6z"/><circle cx="9.5" cy="12" r=".8"/><circle cx="14.5" cy="12" r=".8"/>',
   hand: '<path d="M8 13V6.5a1.5 1.5 0 013 0V12"/><path d="M11 12V5.5a1.5 1.5 0 013 0V12"/><path d="M14 12V7.5a1.5 1.5 0 013 0V13"/><path d="M8 13l-1.5-2a1.4 1.4 0 00-2.2 1.7L7 18a6 6 0 0010 0v-5"/>',
   erase: '<path d="M4 16l8-8 6 6-4 4H7z"/><path d="M9 20h11"/>',
   eye: '<path d="M2 12s3.8-6 10-6 10 6 10 6-3.8 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="2.6"/>',
-  camera: '<rect x="3" y="7" width="18" height="12" rx="2.5"/><circle cx="12" cy="13" r="3.4"/><path d="M8 7l1.5-2.5h5L16 7"/>',
+  camera:
+    '<rect x="3" y="7" width="18" height="12" rx="2.5"/><circle cx="12" cy="13" r="3.4"/><path d="M8 7l1.5-2.5h5L16 7"/>',
   rotate: '<path d="M4 12a8 8 0 1 1 2.6 5.9"/><path d="M3 18.5l1.2-4.4 4.4 1.2"/>',
   scroll: '<path d="M6 4h12v16H6z"/><path d="M9 8h6M9 12h6M9 16h4"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   'sound-on':
     '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M16 9.2a4 4 0 010 5.6"/><path d="M18.6 6.6a7.6 7.6 0 010 10.8"/>',
-  'sound-off':
-    '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M16.5 10l4 4M20.5 10l-4 4"/>',
+  'sound-off': '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M16.5 10l4 4M20.5 10l-4 4"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
   grid: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5" opacity=".5"/>',
@@ -154,10 +152,13 @@ export const GLYPHS: Record<string, string> = {
   gardens: '<path d="M3 20v-7l4.5-3 4.5 3v7"/><path d="M13.5 20v-5l4-2.5 3.5 2.5v5"/><path d="M2 20h20"/>',
   file: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
   trash: '<path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/>',
-  phone: '<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M3 12a9 9 0 0 1 3-6.7"/><path d="M21 12a9 9 0 0 1-3 6.7"/>',
-  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/>',
+  phone:
+    '<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M3 12a9 9 0 0 1 3-6.7"/><path d="M21 12a9 9 0 0 1-3 6.7"/>',
+  settings:
+    '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/>',
   roof: '<path d="M2 13L12 6l10 7"/><path d="M4.5 13c2.5 1.6 4.8 2.4 7.5 2.4s5-0.8 7.5-2.4"/><path d="M12 6V3.5"/>',
-  'roof-off': '<path d="M2 13L12 6l10 7"/><path d="M4.5 13c2.5 1.6 4.8 2.4 7.5 2.4s5-0.8 7.5-2.4"/><path d="M4 4l16 16"/>',
+  'roof-off':
+    '<path d="M2 13L12 6l10 7"/><path d="M4.5 13c2.5 1.6 4.8 2.4 7.5 2.4s5-0.8 7.5-2.4"/><path d="M4 4l16 16"/>',
   path: '<path d="M7 21c0-4 3-4 3-8s-3-4-3-7"/><path d="M14 21c1.5-3 3-3.5 3-7s-2-4-2-7"/><circle cx="7" cy="3" r="1"/><circle cx="15" cy="4" r="1"/>',
 };
 

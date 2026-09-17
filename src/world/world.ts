@@ -2,8 +2,9 @@
 
 import { GRID, inBounds } from '../core/iso';
 import { clamp, fbm, hash2 } from '../core/rng';
-import { BRUSH_BY_ID, ITEM_BY_ID, MILESTONES, TerrainBrush } from './catalog';
+import { BRUSH_BY_ID, ITEM_BY_ID, MILESTONES, TerrainBrush, footprintCells } from './catalog';
 import { DAY_MS } from '../core/clock';
+import { SAVE_VERSION, parseSave, serializeSave } from './saveFormat';
 import { GroundId, PlacedObject, SaveData, Tile } from './types';
 
 const SAVE_KEY = 'usadba.save.v3';
@@ -138,7 +139,16 @@ export class World {
 
     // Дорожка
     const path: [number, number][] = [
-      [11, 9], [11, 10], [12, 11], [13, 11], [14, 11], [15, 10], [16, 10], [17, 9], [17, 8], [18, 7],
+      [11, 9],
+      [11, 10],
+      [12, 11],
+      [13, 11],
+      [14, 11],
+      [15, 10],
+      [16, 10],
+      [17, 9],
+      [17, 8],
+      [18, 7],
     ];
     for (const [x, y] of path) {
       const t = this.at(x, y);
@@ -175,8 +185,10 @@ export class World {
     this.place('rock_mid', 4.25, 14.5, 2, old);
     this.place('rock_trio', 18.5, 12, 0, old);
 
-    // Мостик через пруд
-    this.place('bridge', 16, 12, 0, old);
+    // Мостик через пруд: северо-западный конец у каменистого мысика,
+    // юго-восточный — на песчаной кромке под скальным трио. Раньше дуга
+    // стояла посреди воды и «висела в воздухе».
+    this.place('bridge', 17, 11, 0, old);
 
     // Фонари
     this.place('lantern_stone', 11.5, 10.5, 0, old);
@@ -228,13 +240,27 @@ export class World {
 
     // Южная роща и дальний берег — чтобы кадр был наполнен во все стороны
     const more: [string, number, number][] = [
-      ['maple', 2.5, 12.5], ['pine', 3.5, 8.5], ['sakura', 2.5, 19],
-      ['ginkgo', 11.5, 20.5], ['maple', 13.5, 22.5], ['pine', 17.5, 21.5],
-      ['sakura', 20.5, 22.5], ['willow', 19.5, 15.5], ['maple', 22.5, 11.5],
-      ['pine', 23.5, 16.5], ['ginkgo', 6.5, 23], ['sakura', 16.5, 19.5],
-      ['hedge', 15.25, 8.5], ['hedge', 18.75, 19.25], ['azalea', 21.25, 16.75],
-      ['azalea', 3.25, 10.5], ['azalea', 12.75, 18.5], ['hedge', 9.25, 12.25],
-      ['bamboo', 23.5, 8.5], ['bamboo', 23, 9.75], ['bamboo', 22.5, 22.5],
+      ['maple', 2.5, 12.5],
+      ['pine', 3.5, 8.5],
+      ['sakura', 2.5, 19],
+      ['ginkgo', 11.5, 20.5],
+      ['maple', 13.5, 22.5],
+      ['pine', 17.5, 21.5],
+      ['sakura', 20.5, 22.5],
+      ['willow', 19.5, 15.5],
+      ['maple', 22.5, 11.5],
+      ['pine', 23.5, 16.5],
+      ['ginkgo', 6.5, 23],
+      ['sakura', 16.5, 19.5],
+      ['hedge', 15.25, 8.5],
+      ['hedge', 18.75, 19.25],
+      ['azalea', 21.25, 16.75],
+      ['azalea', 3.25, 10.5],
+      ['azalea', 12.75, 18.5],
+      ['hedge', 9.25, 12.25],
+      ['bamboo', 23.5, 8.5],
+      ['bamboo', 23, 9.75],
+      ['bamboo', 22.5, 22.5],
     ];
     for (const [type, tx, ty] of more) this.place(type, tx, ty, 0, old);
 
@@ -251,7 +277,14 @@ export class World {
     this.place('brazier', 18.5, 17.5, 0, old);
 
     // Каменная тропа к беседке
-    for (const [x, y] of [[18, 16], [19, 17], [20, 17], [21, 18], [21, 19], [22, 20]] as [number, number][]) {
+    for (const [x, y] of [
+      [18, 16],
+      [19, 17],
+      [20, 17],
+      [21, 18],
+      [21, 19],
+      [22, 20],
+    ] as [number, number][]) {
       const t = this.at(x, y);
       if (t && !t.water && !t.indoor) t.ground = 'stone';
     }
@@ -264,7 +297,8 @@ export class World {
       const ty = Math.round((16 + r2 * 8) * 4) / 4;
       const t = this.at(Math.floor(tx), Math.floor(ty));
       if (!t || t.water || t.indoor || t.veranda) continue;
-      const kind = r2 > 0.72 ? 'moss_clump' : r2 > 0.5 ? 'grass_tuft' : r2 > 0.3 ? 'fern' : r2 > 0.15 ? 'iris' : 'pebbles';
+      const kind =
+        r2 > 0.72 ? 'moss_clump' : r2 > 0.5 ? 'grass_tuft' : r2 > 0.3 ? 'fern' : r2 > 0.15 ? 'iris' : 'pebbles';
       this.place(kind, tx, ty, 0, old);
     }
     // Ирисы у воды
@@ -556,7 +590,7 @@ export class World {
         if (!t || t.indoor || t.veranda) continue;
         // Отклонение от осевой линии русла. Русло должно быть шире ступени,
         // иначе на большинстве уступов воды не окажется и падать будет нечему.
-        const axis = (x - x0) - (y - y0);
+        const axis = x - x0 - (y - y0);
         const wob = (fbm(x * 0.7, y * 0.7, 2, 53) - 0.5) * 1.2;
         if (Math.abs(axis + wob) > 2.1) continue;
         t.water = true;
@@ -571,7 +605,12 @@ export class World {
         const t = this.at(x, y);
         if (!t || t.water || t.indoor || t.veranda) continue;
         let nearWater = false;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][]) {
+        for (const [dx, dy] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ] as [number, number][]) {
           if (this.at(x + dx, y + dy)?.water) nearWater = true;
         }
         if (!nearWater) continue;
@@ -635,19 +674,29 @@ export class World {
 
   // ---- Объекты ----
 
-  canPlace(type: string, tx: number, ty: number): boolean {
+  /**
+   * Может ли предмет встать на место. Проверяются клетки настоящего
+   * отпечатка — с учётом поворота: мост 1×3 в положении 0 лежит вдоль
+   * оси x, и у правого края сада встать уже не может.
+   */
+  canPlace(type: string, tx: number, ty: number, rot = 0): boolean {
     const item = ITEM_BY_ID.get(type);
     if (!item) return false;
-    const x0 = Math.floor(tx);
-    const y0 = Math.floor(ty);
-    for (let y = y0; y < y0 + item.h; y++) {
-      for (let x = x0; x < x0 + item.w; x++) {
+    const r = footprintCells(item, tx, ty, rot);
+    let anyWater = false;
+    let anyLand = false;
+    for (let y = r.y0; y <= r.y1; y++) {
+      for (let x = r.x0; x <= r.x1; x++) {
         const t = this.at(x, y);
         if (!t) return false;
         if (item.needsWater && !t.water) return false;
         if (!item.onWater && t.water) return false;
+        if (t.water) anyWater = true;
+        else anyLand = true;
       }
     }
+    // Мост обязан соединять берега: посреди пруда и посреди лужайки он не стоит.
+    if (item.spansWater && (!anyWater || !anyLand)) return false;
     return true;
   }
 
@@ -664,6 +713,7 @@ export class World {
       seed: Math.floor(Math.random() * 100000),
     };
     this.objects.push(obj);
+    this.noteObjectsChanged();
     if (type === 'cat') this.checkMilestone('first_cat');
     if (item.kind === 'tree') {
       const trees = this.objects.filter((o) => ITEM_BY_ID.get(o.type)?.kind === 'tree').length;
@@ -673,25 +723,78 @@ export class World {
   }
 
   /**
-   * Что находится под указателем. Ищем ближайший центр, но крупные
-   * объекты имеют больший радиус захвата — иначе в валун 2×2 трудно попасть.
+   * Сетка-индекс для выбора объектов. Строится лениво и только после
+   * изменения расстановки: в саду сотни предметов, а указатель
+   * интересуется одной точкой.
    */
-  pickObject(tx: number, ty: number): PlacedObject | null {
-    let best: PlacedObject | null = null;
-    let bestScore = Infinity;
+  private pickBuckets = new Map<number, PlacedObject[]>();
+  private pickVersion = 0;
+  private pickBuilt = -1;
+  /** Сторона ковша сетки в тайлах. */
+  private static PICK_CELL = 4;
+
+  /**
+   * Расстановка изменилась (постановка, снос, перенос, загрузка,
+   * отмена). Вызывается и снаружи — история правит список напрямую.
+   */
+  noteObjectsChanged(): void {
+    this.pickVersion++;
+  }
+
+  private static bucketKey(bx: number, by: number): number {
+    return bx * 1024 + by;
+  }
+
+  private buildPickIndex(): void {
+    this.pickBuckets.clear();
+    const S = World.PICK_CELL;
     for (const o of this.objects) {
       const item = ITEM_BY_ID.get(o.type);
       if (!item) continue;
       const cx = o.tx + item.w / 2;
       const cy = o.ty + item.h / 2;
-      const reach = Math.max(item.w, item.h) * 0.5 + 0.3;
-      const d = Math.hypot(cx - tx, cy - ty);
-      if (d > reach) continue;
-      // при равном расстоянии выигрывает тот, кто поставлен позже
-      const score = d / reach - o.id * 1e-7;
-      if (score < bestScore) {
-        bestScore = score;
-        best = o;
+      const k = World.bucketKey(Math.floor(cx / S), Math.floor(cy / S));
+      const bucket = this.pickBuckets.get(k);
+      if (bucket) bucket.push(o);
+      else this.pickBuckets.set(k, [o]);
+    }
+    this.pickBuilt = this.pickVersion;
+  }
+
+  /**
+   * Что находится под указателем. Ищем ближайший центр, но крупные
+   * объекты имеют больший радиус захвата — иначе в валун 2×2 трудно попасть.
+   *
+   * Первым делом проверяется центр объекта, поэтому сетка обязана отдавать
+   * те же результаты, что и полный перебор: ковш вдвое дальше ближайшего
+   * возможного касания уже не может содержать подходящих центров.
+   */
+  pickObject(tx: number, ty: number): PlacedObject | null {
+    if (this.pickBuilt !== this.pickVersion) this.buildPickIndex();
+    const S = World.PICK_CELL;
+    const bx = Math.floor(tx / S);
+    const by = Math.floor(ty / S);
+
+    let best: PlacedObject | null = null;
+    let bestScore = Infinity;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const bucket = this.pickBuckets.get(World.bucketKey(bx + dx, by + dy));
+        if (!bucket) continue;
+        for (const o of bucket) {
+          const item = ITEM_BY_ID.get(o.type)!;
+          const cx = o.tx + item.w / 2;
+          const cy = o.ty + item.h / 2;
+          const reach = Math.max(item.w, item.h) * 0.5 + 0.3;
+          const d = Math.hypot(cx - tx, cy - ty);
+          if (d > reach) continue;
+          // при равном расстоянии выигрывает тот, кто поставлен позже
+          const score = d / reach - o.id * 1e-7;
+          if (score < bestScore) {
+            bestScore = score;
+            best = o;
+          }
+        }
       }
     }
     return best;
@@ -699,6 +802,7 @@ export class World {
 
   removeObject(obj: PlacedObject): void {
     this.objects = this.objects.filter((o) => o !== obj);
+    this.noteObjectsChanged();
   }
 
   removeAt(tx: number, ty: number): PlacedObject | null {
@@ -710,16 +814,21 @@ export class World {
   /**
    * Перенести уже поставленное. Возраст сохраняется — дерево, которое
    * растили неделю, не должно снова стать саженцем из-за переезда.
+   *
+   * Объект, которого уже нет в списке (например, пока шёл перенос,
+   * усадьбу сменили), обратно не возвращается — иначе чужой предмет
+   * появлялся бы в новом саду.
    */
   moveObject(obj: PlacedObject, tx: number, ty: number, rot = obj.rot): boolean {
     const item = ITEM_BY_ID.get(obj.type);
     if (!item) return false;
+    if (!this.objects.includes(obj)) return false;
     const oldX = obj.tx;
     const oldY = obj.ty;
     const oldRot = obj.rot;
     // проверяем место без самого объекта — он себе не мешает
     this.removeObject(obj);
-    const ok = this.canPlace(obj.type, tx, ty);
+    const ok = this.canPlace(obj.type, tx, ty, rot);
     if (ok) {
       obj.tx = tx;
       obj.ty = ty;
@@ -731,6 +840,7 @@ export class World {
     }
     this.objects.push(obj);
     this.objects.sort((a, b) => a.id - b.id);
+    this.noteObjectsChanged();
     return ok;
   }
 
@@ -755,7 +865,7 @@ export class World {
 
   toJSON(): SaveData {
     return {
-      version: 3,
+      version: SAVE_VERSION,
       tiles: this.tiles,
       objects: this.objects,
       nextId: this.nextId,
@@ -767,30 +877,45 @@ export class World {
 
   save(): void {
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(this.toJSON()));
+      localStorage.setItem(SAVE_KEY, serializeSave(this.toJSON()));
     } catch {
       /* тишина */
     }
   }
 
-  /** Принять разобранное сохранение. Используется и файлом, и слотами. */
-  fromJSON(d: SaveData): boolean {
-    if (!d || !Array.isArray(d.tiles) || d.tiles.length !== GRID * GRID) return false;
-    this.tiles = d.tiles.map((t) => ({
+  /**
+   * Применить уже проверенное сохранение. Отдельно от разбора, чтобы
+   * хранилище могло само выбрать живую копию (основная, резервная,
+   * временная), а мир получал только чистые данные.
+   */
+  applySave(p: SaveData): void {
+    this.tiles = p.tiles.map((t) => ({
       ground: t.ground,
-      level: t.level ?? 0,
-      water: !!t.water,
-      indoor: !!t.indoor,
-      veranda: !!t.veranda,
+      level: t.level,
+      water: t.water,
+      indoor: t.indoor,
+      veranda: t.veranda,
     }));
-    this.objects = (d.objects ?? []).filter((o) => ITEM_BY_ID.has(o.type));
-    this.nextId = d.nextId ?? 1;
+    this.objects = p.objects.map((o) => ({ ...o }));
+    this.nextId = p.nextId;
     for (const o of this.objects) this.nextId = Math.max(this.nextId, o.id + 1);
-    this.milestones = new Set(d.milestones ?? []);
-    this.seasonsSeen = new Set(d.seasons ?? []);
-    this.seenTabs = new Set(d.seen ?? []);
+    this.milestones = new Set(p.milestones);
+    this.seasonsSeen = new Set(p.seasons);
+    this.seenTabs = new Set(p.seen);
     this.pendingMilestones = [];
     this.lastTouched = null;
+    this.noteObjectsChanged();
+  }
+
+  /**
+   * Принять разобранное сохранение любой прошлой версии. Данные проверяются
+   * целиком до того, как мир будет тронут: битый файл возвращает false
+   * и оставляет текущий сад нетронутым.
+   */
+  fromJSON(d: unknown): boolean {
+    const parsed = parseSave(d);
+    if (!parsed) return false;
+    this.applySave(parsed);
     return true;
   }
 
@@ -848,7 +973,8 @@ export class World {
     for (const t of this.tiles) if (t.ground === 'gravel') gravel++;
     if (gravel >= 20) {
       let rocks = 0;
-      for (const o of this.objects) if (o.type === 'rock_big' || o.type === 'rock_trio' || o.type === 'rock_mid') rocks++;
+      for (const o of this.objects)
+        if (o.type === 'rock_big' || o.type === 'rock_trio' || o.type === 'rock_mid') rocks++;
       if (rocks >= 3) this.checkMilestone('stone_garden');
     }
 

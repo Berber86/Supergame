@@ -1,6 +1,8 @@
 /**
- * Время синхронизировано с часами игрока.
- * Сезон длится 3 реальных дня, полный год — 12 дней.
+ * Время синхронизировано с часами и календарём игрока.
+ * Сезоны — настоящие, как за окном: март — весна, июнь — лето,
+ * сентябрь — осень, декабрь — зима. (Раньше сезон крутился за 3 реальных
+ * дня, и сад мог встретить гостя снегом в сентябре.)
  */
 
 import { clamp01, lerp, smoothstep } from './rng';
@@ -24,9 +26,12 @@ export const SEASON_POEM: Record<SeasonId, string> = {
 };
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
-export const SEASON_DAYS = 3;
-export const SEASON_MS = SEASON_DAYS * DAY_MS;
-export const YEAR_MS = SEASON_MS * 4;
+
+/** Месяцы (0-based), с которых начинается каждый сезон: март, июнь, сентябрь, декабрь. */
+const SEASON_START_MONTH = [2, 5, 8, 11];
+
+/** Год, с которого усадьба считает свои годы: её первая весна. */
+const EPOCH_YEAR = 2024;
 
 export interface TimeState {
   /** Абсолютное время мира в мс (обычно Date.now(), но может быть смещено «созерцанием»). */
@@ -39,7 +44,7 @@ export interface TimeState {
   seasonIndex: number;
   /** 0..1 прогресс внутри сезона. */
   seasonT: number;
-  /** Год усадьбы, с 1. */
+  /** Год усадьбы, с 1. Новый год начинается с весны. */
   year: number;
   /** 0 = глубокая ночь, 1 = яркий полдень. */
   daylight: number;
@@ -49,22 +54,29 @@ export interface TimeState {
   label: string;
 }
 
-/** Опорная точка отсчёта: начало времён усадьбы. */
-const EPOCH = Date.UTC(2024, 2, 20, 0, 0, 0); // весеннее равноденствие
-
 export function computeTime(now: number): TimeState {
   const local = new Date(now);
   const dayT =
     (local.getHours() * 3600 + local.getMinutes() * 60 + local.getSeconds() + local.getMilliseconds() / 1000) / 86400;
 
-  const elapsed = now - EPOCH;
-  const yearProgress = ((elapsed % YEAR_MS) + YEAR_MS) % YEAR_MS;
-  const seasonIndex = Math.floor(yearProgress / SEASON_MS) % 4;
-  const seasonT = (yearProgress % SEASON_MS) / SEASON_MS;
-  const year = Math.floor(elapsed / YEAR_MS) + 1;
+  // Сезон по календарному месяцу: мар–май весна, июн–авг лето, сен–ноя осень, дек–фев зима.
+  const m = local.getMonth();
+  const seasonIndex = Math.floor(((m - 2 + 12) % 12) / 3);
+  const season = SEASONS[seasonIndex];
+
+  // Прогресс сезона — от 1-го числа первого месяца до 1-го числа следующего сезона.
+  const startMonth = SEASON_START_MONTH[seasonIndex];
+  let startYear = local.getFullYear();
+  if (startMonth === 11 && m <= 1) startYear -= 1; // январь/февраль — хвост декабрьской зимы
+  const startMs = new Date(startYear, startMonth, 1).getTime();
+  const endYear = startMonth + 3 >= 12 ? startYear + 1 : startYear;
+  const endMs = new Date(endYear, (startMonth + 3) % 12, 1).getTime();
+  const seasonT = clamp01((now - startMs) / (endMs - startMs));
+
+  // Год усадьбы начинается весной: всё, что до марта, — хвост уходящего года.
+  const year = Math.max(1, local.getFullYear() - EPOCH_YEAR + (m >= 2 ? 1 : 0));
 
   // Кривая света: восход ~5:30, закат ~19:30 (мягко плавает по сезонам).
-  const season = SEASONS[seasonIndex];
   const seasonShift = season === 'winter' ? 1.1 : season === 'summer' ? -0.9 : 0;
   const sunrise = (5.6 + seasonShift) / 24;
   const sunset = (19.4 - seasonShift) / 24;
@@ -94,6 +106,27 @@ export function computeTime(now: number): TimeState {
     isNight: daylight < 0.22,
     label: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
   };
+}
+
+/**
+ * Момент в середине указанного сезона, ближайший к refMs.
+ * Нужен инструментам и панели времени, чтобы собирать картинку сезона,
+ * не убегая далеко от настоящей даты (посадки предметов меряются от now).
+ */
+export function midSeasonMs(seasonIndex: number, refMs = Date.now()): number {
+  const ref = new Date(refMs);
+  const sm = SEASON_START_MONTH[((seasonIndex % 4) + 4) % 4];
+  let best = Infinity;
+  let bestMs = 0;
+  for (let y = ref.getFullYear() - 1; y <= ref.getFullYear() + 1; y++) {
+    const cand = new Date(y, sm, 15).getTime();
+    const d = Math.abs(cand - refMs);
+    if (d < best) {
+      best = d;
+      bestMs = cand;
+    }
+  }
+  return bestMs;
 }
 
 export function partOfDay(t: TimeState): string {

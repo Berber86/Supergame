@@ -44,11 +44,22 @@ const WALL_H = 52;
 const EAVE_DROP = 16;
 const OVERHANG = 0.85; // вылет кровли в тайлах
 
-function woodTones(atm: Atmosphere): { post: RGB; postDark: RGB; paper: RGB; roof: RGB; roofLight: RGB; roofDark: RGB } {
+function woodTones(atm: Atmosphere): {
+  post: RGB;
+  postDark: RGB;
+  paper: RGB;
+  roof: RGB;
+  roofLight: RGB;
+  roofDark: RGB;
+} {
   const post = shade(mix({ r: 124, g: 88, b: 64 }, atm.lightTint, atm.lightAmount), atm.exposure);
   const postDark = shade(mix({ r: 82, g: 58, b: 44 }, atm.lightTint, atm.lightAmount * 0.6), atm.exposure);
   const paper = shade(
-    mix(mix({ r: 244, g: 236, b: 216 }, { r: 255, g: 214, b: 156 }, atm.lampGlow * 0.55), atm.lightTint, atm.lightAmount * 0.5),
+    mix(
+      mix({ r: 244, g: 236, b: 216 }, { r: 255, g: 214, b: 156 }, atm.lampGlow * 0.55),
+      atm.lightTint,
+      atm.lightAmount * 0.5,
+    ),
     atm.exposure + atm.lampGlow * 0.16,
   );
   const roof = shade(mix({ r: 124, g: 116, b: 118 }, atm.lightTint, atm.lightAmount), atm.exposure);
@@ -176,7 +187,7 @@ export function drawHouseRoof(ctx: Ctx, world: World, atm: Atmosphere, time: num
   const w = isoToScreen(X0, Y1, lvl); // запад
 
   const cx = (n.x + s.x) / 2;
-  const ridgeLen = Math.min((X1 - X0), (Y1 - Y0)) * 0.22;
+  const ridgeLen = Math.min(X1 - X0, Y1 - Y0) * 0.22;
   const ridgeA = isoToScreen(X0 + (X1 - X0) / 2 - ridgeLen, Y0 + (Y1 - Y0) / 2 - ridgeLen, lvl);
   const ridgeB = isoToScreen(X0 + (X1 - X0) / 2 + ridgeLen, Y0 + (Y1 - Y0) / 2 + ridgeLen, lvl);
 
@@ -207,7 +218,14 @@ export function drawHouseRoof(ctx: Ctx, world: World, atm: Atmosphere, time: num
   ctx.fill();
   ctx.restore();
 
-  const slope = (p0: { x: number; y: number }, p1: { x: number; y: number }, r0: { x: number; y: number }, r1: { x: number; y: number }, col: RGB, curve: number) => {
+  const slope = (
+    p0: { x: number; y: number },
+    p1: { x: number; y: number },
+    r0: { x: number; y: number },
+    r1: { x: number; y: number },
+    col: RGB,
+    curve: number,
+  ) => {
     ctx.beginPath();
     ctx.moveTo(p0.x, p0.y);
     // вогнутая японская кровля: край слегка задран
@@ -266,7 +284,12 @@ export function drawHouseRoof(ctx: Ctx, world: World, atm: Atmosphere, time: num
     ctx.moveTo(p0.x, p0.y);
     ctx.quadraticCurveTo((p0.x + p1.x) / 2, (p0.y + p1.y) / 2 + curve, p1.x, p1.y);
     ctx.lineTo(p1.x, p1.y + EAVE_DROP * 0.42);
-    ctx.quadraticCurveTo((p0.x + p1.x) / 2, (p0.y + p1.y) / 2 + curve + EAVE_DROP * 0.42, p0.x, p0.y + EAVE_DROP * 0.42);
+    ctx.quadraticCurveTo(
+      (p0.x + p1.x) / 2,
+      (p0.y + p1.y) / 2 + curve + EAVE_DROP * 0.42,
+      p0.x,
+      p0.y + EAVE_DROP * 0.42,
+    );
     ctx.closePath();
     ctx.fillStyle = css(T.roofDark, 0.95);
     ctx.fill();

@@ -1,0 +1,99 @@
+/* ---------- Инструменты строителя ---------- */
+
+#garden.picking {
+  cursor: pointer;
+}
+
+.buildbar {
+  position: absolute;
+  left: 50%;
+  bottom: 214px;
+  transform: translate(-50%, 16px);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 9px;
+  border-radius: 4px;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.4s var(--ease);
+  z-index: 6;
+}
+
+.buildbar.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+
+.bb-group {
+  display: flex;
+  gap: 3px;
+}
+
+.bb-sep {
+  width: 1px;
+  height: 21px;
+  margin: 0 4px;
+  background: rgba(255, 244, 224, 0.22);
+}
+
+.bb-btn {
+  width: 32px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--paper);
+  opacity: 0.82;
+  transition: all 0.2s var(--ease);
+}
+
+.bb-btn:hover {
+  background: rgba(255, 244, 224, 0.16);
+  opacity: 1;
+}
+
+.bb-btn.active {
+  background: linear-gradient(180deg, var(--silk-light), var(--silk));
+  opacity: 1;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
+.bb-btn.off {
+  opacity: 0.26;
+  cursor: default;
+}
+
+.bb-btn.off:hover {
+  background: none;
+  opacity: 0.26;
+}
+
+.bb-size {
+  min-width: 26px;
+  height: 30px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--paper);
+  opacity: 0.66;
+  font-family: var(--serif);
+  font-size: 13px;
+  transition: all 0.2s var(--ease);
+}
+
+.bb-size:hover {
+  background: rgba(255, 244, 224, 0.16);
+  opacity: 1;
+}
+
+.bb-size.active {
+  background: rgba(255, 244, 224, 0.2);
+  opacity: 1;
+  color: #fff6e9;
+}

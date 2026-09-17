@@ -7,7 +7,12 @@ import { GroundId, Tile } from '../world/types';
 import { World } from '../world/world';
 import { Ctx, blobPath, granulate } from './paint';
 
-interface Bounds { bx0: number; by0: number; bx1: number; by1: number }
+interface Bounds {
+  bx0: number;
+  by0: number;
+  bx1: number;
+  by1: number;
+}
 
 /**
  * Начало цикла с сохранением фазы.
@@ -76,7 +81,13 @@ export interface TerrainLayer {
  * и сида, а не из случайных чисел. Частичный проход даёт пиксель в пиксель
  * то же, что полный.
  */
-export function renderTerrain(world: World, atm: Atmosphere, scale = 1, into?: TerrainLayer, dirty?: TileRect): TerrainLayer {
+export function renderTerrain(
+  world: World,
+  atm: Atmosphere,
+  scale = 1,
+  into?: TerrainLayer,
+  dirty?: TileRect,
+): TerrainLayer {
   const corners = [isoToScreen(0, 0, 3), isoToScreen(GRID, 0, 0), isoToScreen(GRID, GRID, 0), isoToScreen(0, GRID, 0)];
   let minX = Infinity;
   let maxX = -Infinity;
@@ -351,7 +362,6 @@ function blitRect(
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
-
 function drawBase(ctx: Ctx, atm: Atmosphere): void {
   const c0 = isoToScreen(0, 0);
   const c1 = isoToScreen(GRID, GRID);
@@ -553,7 +563,16 @@ function drawSnowCover(ctx: Ctx, world: World, atm: Atmosphere, b: Bounds): void
       } else if (n > 0.6) {
         // блик на гребне сугроба — но не в полную силу на ярком свету
         ctx.fillStyle = css({ r: 255, g: 255, b: 255 }, (n - 0.6) * 0.7 * (1 - bright * 0.45) * modelling);
-        blobPath(ctx, p.x, p.y, TILE_W * (0.4 + n * 0.6), TILE_H * (0.4 + n * 0.6), Math.round(gx * 41 + gy * 13), 0.34, 10);
+        blobPath(
+          ctx,
+          p.x,
+          p.y,
+          TILE_W * (0.4 + n * 0.6),
+          TILE_H * (0.4 + n * 0.6),
+          Math.round(gx * 41 + gy * 13),
+          0.34,
+          10,
+        );
         ctx.fill();
       }
     }
@@ -802,7 +821,17 @@ function drawTileSides(ctx: Ctx, world: World, x: number, y: number, t: Tile, at
       ctx.fillStyle = css(grassCol, 0.9);
       ctx.fill();
     }
-    granulate(ctx, (p0.x + p1.x) / 2, (p0.y + p1.y) / 2 + hpx * 0.5, TILE_W * 0.3, hpx * 0.4, col, x * 31 + y, 10, 0.11);
+    granulate(
+      ctx,
+      (p0.x + p1.x) / 2,
+      (p0.y + p1.y) / 2 + hpx * 0.5,
+      TILE_W * 0.3,
+      hpx * 0.4,
+      col,
+      x * 31 + y,
+      10,
+      0.11,
+    );
   };
 
   drawSide(south, 'south');

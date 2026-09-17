@@ -29,7 +29,7 @@ export function drawCurrent(ctx: Ctx, world: World, flow: WaterFlow, atm: Atmosp
       for (let i = 0; i < 3; i++) {
         const seed = hash2(x * 7 + i, y * 11 + i * 3, 29);
         // Полоса ползёт по клетке и уходит за край, потом появляется снова
-        const phase = ((time * 0.00016 * (0.5 + f.speed) + seed) % 1 + 1) % 1;
+        const phase = (((time * 0.00016 * (0.5 + f.speed) + seed) % 1) + 1) % 1;
         // поперечное смещение, чтобы стрежни не шли по одной линии
         const off = (seed - 0.5) * 0.62;
         const px = -f.fy * off;
@@ -202,7 +202,7 @@ function drawJets(
 
     // Бегущий сгусток — по нему глаз и читает движение
     const speed = 0.0016 + sd * 0.0012;
-    const ph = ((time * speed + sd) % 1 + 1) % 1;
+    const ph = (((time * speed + sd) % 1) + 1) % 1;
     const yTop = y0 + ph * ph * h;
     if (yTop > y0 + h) continue;
     ctx.strokeStyle = css(foam, (0.22 + sd * 0.22) * width);
@@ -253,7 +253,7 @@ function drawSplash(
     const tt = (i + 0.5) / drops;
     const mx = c0.x + (c1.x - c0.x) * tt;
     const my = c0.y + (c1.y - c0.y) * tt + h;
-    const ph = ((time * (0.0022 + sd * 0.0016) + sd) % 1 + 1) % 1;
+    const ph = (((time * (0.0022 + sd * 0.0016) + sd) % 1) + 1) % 1;
     const up = Math.sin(ph * Math.PI) * (7 + sd * 10);
     ctx.fillStyle = css(foam, 0.34 * (1 - ph) * puff * 2);
     ctx.beginPath();
@@ -264,19 +264,21 @@ function drawSplash(
   // Мокрый блеск под струёй
   ctx.fillStyle = css(mix(foam, atm.lightTint, 0.3), 0.09 * puff);
   ctx.beginPath();
-  ctx.ellipse((c0.x + c1.x) / 2, (c0.y + c1.y) / 2 + h + 2, span * 0.5 + TILE_W * 0.2, TILE_H * 0.22, 0, 0, Math.PI * 2);
+  ctx.ellipse(
+    (c0.x + c1.x) / 2,
+    (c0.y + c1.y) / 2 + h + 2,
+    span * 0.5 + TILE_W * 0.2,
+    TILE_H * 0.22,
+    0,
+    0,
+    Math.PI * 2,
+  );
   ctx.fill();
   ctx.restore();
 }
 
 /** Рябь от течения у берега — вода трётся о камни. */
-export function drawShoreRipple(
-  ctx: Ctx,
-  world: World,
-  flow: WaterFlow,
-  atm: Atmosphere,
-  time: number,
-): void {
+export function drawShoreRipple(ctx: Ctx, world: World, flow: WaterFlow, atm: Atmosphere, time: number): void {
   if (!flow.hasCurrent) return;
   const foam = shade(mix(atm.palette.water, { r: 255, g: 255, b: 255 }, 0.7), atm.exposure);
   ctx.save();

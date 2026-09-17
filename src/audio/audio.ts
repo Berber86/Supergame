@@ -13,7 +13,10 @@ const rnd = makeRng(9091);
 /** Плавно ведомый параметр — чтобы громкость не щёлкала. */
 class Slider {
   value = 0;
-  constructor(private node: GainNode, private ctx: AudioContext) {}
+  constructor(
+    private node: GainNode,
+    private ctx: AudioContext,
+  ) {}
   to(v: number, seconds = 0.6): void {
     if (Math.abs(v - this.value) < 0.0015) return;
     this.value = v;
@@ -86,7 +89,8 @@ export class GardenAudio {
       if (this.ctx?.state === 'suspended') await this.ctx.resume();
       return;
     }
-    const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const Ctor =
+      window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!Ctor) return;
     const ctx = new Ctor();
     this.ctx = ctx;
@@ -421,10 +425,13 @@ export class GardenAudio {
     f.connect(g).connect(this.master!);
     src.start();
     src.stop(ctx.currentTime + seconds + 0.1);
-    setTimeout(() => {
-      g.disconnect();
-      src.disconnect();
-    }, (seconds + 0.4) * 1000);
+    setTimeout(
+      () => {
+        g.disconnect();
+        src.disconnect();
+      },
+      (seconds + 0.4) * 1000,
+    );
   }
 
   /** Сиси-одоси: глухой деревянный стук о камень. */

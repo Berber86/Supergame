@@ -1,0 +1,99 @@
+/* ---------- Исчезающий интерфейс ---------- */
+
+.ui-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.ui-layer > * {
+  pointer-events: auto;
+}
+
+.fade {
+  transition:
+    opacity 1.1s var(--ease),
+    transform 0.85s var(--ease),
+    filter 0.9s var(--ease);
+}
+
+body.zen .fade:not(.keep) {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transform: translateY(10px) scale(0.985);
+  filter: blur(2px);
+}
+
+/* ---------- Верхняя плашка времени ---------- */
+
+.time-card {
+  position: absolute;
+  top: 22px;
+  left: 26px;
+  padding: 13px 20px 12px;
+  border-radius: 3px 3px 5px 5px;
+  box-shadow: var(--shadow);
+  min-width: 174px;
+  border: 1px solid rgba(90, 64, 40, 0.28);
+  cursor: default;
+}
+
+.time-card::before {
+  content: '';
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 46%;
+  height: 10px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--wood-light), var(--wood-dark));
+  box-shadow: 0 2px 5px rgba(40, 28, 16, 0.4);
+}
+
+.time-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.clock {
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.season-kanji {
+  font-family: var(--jp);
+  font-size: 23px;
+  color: var(--silk);
+  line-height: 1;
+}
+
+.time-sub {
+  margin-top: 6px;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  font-style: italic;
+  letter-spacing: 0.02em;
+}
+
+.season-bar {
+  margin-top: 9px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(107, 74, 51, 0.18);
+  overflow: hidden;
+}
+
+.season-bar > i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--moss), var(--gold));
+  border-radius: 2px;
+  transition: width 1s linear;
+}

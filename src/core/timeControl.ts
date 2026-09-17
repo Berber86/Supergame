@@ -6,7 +6,7 @@
  * Это инструмент периода создания игры — в готовой версии панель просто скрыта.
  */
 
-import { DAY_MS, SEASON_MS, SEASONS, SeasonId, computeTime, TimeState } from './clock';
+import { DAY_MS, SEASONS, SeasonId, computeTime, midSeasonMs, TimeState } from './clock';
 
 const STORE_KEY = 'usadba.timectl.v1';
 
@@ -20,9 +20,6 @@ export interface TimeOverride {
   /** Множитель ускорения хода времени: 0 = стоп, 1 = реальное, 600 = сутки за ~2.5 мин. */
   speed: number;
 }
-
-/** Опорная точка отсчёта — та же, что в clock.ts. */
-const EPOCH = Date.UTC(2024, 2, 20, 0, 0, 0);
 
 export class TimeControl {
   state: TimeOverride = { active: false, hour: 11, seasonIndex: 0, speed: 1 };
@@ -38,8 +35,9 @@ export class TimeControl {
     if (!this.state.active) return Date.now();
 
     // Собираем дату: нужный сезон + нужный час.
-    // Берём середину выбранного сезона, чтобы не задевать границы перехода.
-    const seasonBase = EPOCH + this.state.seasonIndex * SEASON_MS + SEASON_MS * 0.5;
+    // Берём середину выбранного сезона, ближайшую к настоящей дате,
+    // чтобы посаженное «давно» не оказывалось в будущем.
+    const seasonBase = midSeasonMs(this.state.seasonIndex);
     // Выравниваем на локальную полночь, затем добавляем выбранный час.
     const d = new Date(seasonBase);
     d.setHours(0, 0, 0, 0);
@@ -54,8 +52,8 @@ export class TimeControl {
   tick(dt: number): void {
     if (!this.state.active || this.state.speed === 1) return;
     this.simMs += dt * this.state.speed;
-    // Держим накопление в пределах сезона, чтобы не уплыть в другой
-    const span = SEASON_MS * 0.45;
+    // Держим накопление в пределах месяца с лишним, чтобы не уплыть в другой сезон
+    const span = DAY_MS * 40;
     if (this.simMs > span) this.simMs -= span * 2;
     if (this.simMs < -span) this.simMs += span * 2;
   }

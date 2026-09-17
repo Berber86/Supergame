@@ -133,6 +133,8 @@ export class GardensPanel {
           this.hooks.onSwitch();
           this.refresh();
           this.hooks.toast(`«${g.name}»`);
+        } else {
+          this.hooks.toast(`Не удалось открыть «${g.name}» — сохранение повреждено`);
         }
       });
 

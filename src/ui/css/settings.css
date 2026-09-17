@@ -1,0 +1,152 @@
+/* ---------------- Настройки вида ---------------- */
+
+.settings-panel {
+  position: absolute;
+  right: 18px;
+  top: 92px;
+  width: 300px;
+  padding: 14px 4px 8px;
+  border-radius: 12px;
+  z-index: 40;
+  font-size: 14px;
+}
+
+.sp-head {
+  padding: 0 14px 10px;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  color: #f2e6cd;
+  opacity: 0.9;
+}
+
+.sp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 14px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.sp-row:hover {
+  background: rgba(255, 248, 230, 0.08);
+}
+
+.sp-label {
+  color: #f0e4cc;
+  line-height: 1.25;
+}
+
+.sp-label em {
+  display: block;
+  font-style: normal;
+  font-size: 12px;
+  opacity: 0.55;
+  margin-top: 2px;
+}
+
+/* Переключатель — шёлковый шнур с бусиной */
+.sp-switch {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  background: rgba(40, 30, 22, 0.5);
+  border: 1px solid rgba(240, 226, 196, 0.22);
+  position: relative;
+  transition: background 0.18s ease;
+}
+
+.sp-switch i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #e8dcc0;
+  transition: left 0.18s ease;
+}
+
+.sp-switch.on {
+  background: rgba(150, 112, 70, 0.85);
+}
+.sp-switch.on i {
+  left: 20px;
+}
+
+.sp-steps {
+  display: flex;
+  gap: 4px;
+}
+
+.sp-step {
+  min-width: 26px;
+  text-align: center;
+  padding: 3px 0;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #e6d9bd;
+  background: rgba(40, 30, 22, 0.4);
+  border: 1px solid rgba(240, 226, 196, 0.16);
+}
+
+.sp-step.on {
+  background: rgba(150, 112, 70, 0.9);
+  color: #fff6e2;
+}
+
+.sp-note {
+  padding: 8px 14px 4px;
+  font-size: 12px;
+  opacity: 0.45;
+  color: #f0e4cc;
+}
+
+/* ---------------- Доступность ---------------- */
+
+/* Масштаб интерфейса: сад не трогаем, только надписи и кнопки */
+.topbar,
+.tools,
+.buildbar,
+.catalog,
+.hint,
+.toast,
+.gardens-panel,
+.settings-panel,
+.scroll-help,
+.storage-warn {
+  font-size: calc(1em * var(--ui-scale, 1));
+}
+
+.high-contrast .wood {
+  background: rgba(26, 18, 12, 0.93) !important;
+  border-color: rgba(246, 232, 202, 0.4) !important;
+}
+
+.high-contrast .hint,
+.high-contrast .storage-warn,
+.high-contrast .toast {
+  background: rgba(20, 14, 9, 0.9) !important;
+  color: #fff8e8 !important;
+}
+
+.high-contrast .tool-btn .label {
+  opacity: 1 !important;
+}
+
+/* Уважаем и системную настройку, и нашу галочку */
+.no-motion *,
+.no-motion *::before,
+.no-motion *::after {
+  transition-duration: 0.01ms !important;
+  animation-duration: 0.01ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

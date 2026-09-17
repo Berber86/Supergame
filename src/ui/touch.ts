@@ -194,9 +194,5 @@ export class TouchInput {
 
 /** Телефон или планшет: есть касания и нет точного указателя. */
 export function isTouchDevice(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    'ontouchstart' in window &&
-    window.matchMedia('(pointer: coarse)').matches
-  );
+  return typeof window !== 'undefined' && 'ontouchstart' in window && window.matchMedia('(pointer: coarse)').matches;
 }

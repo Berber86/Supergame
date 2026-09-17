@@ -19,7 +19,14 @@ async function main() {
 
   const cases: { name: string; hour: number; act: (w: InstanceType<typeof World>) => void }[] = [
     { name: 'кисть мха 1×1', hour: 13, act: (w) => w.applyBrush(BRUSH_BY_ID.get('g_moss')!, 8, 20) },
-    { name: 'кисть гравия 5×5', hour: 13, act: (w) => { w.brushSize = 5; w.applyBrush(BRUSH_BY_ID.get('g_gravel')!, 8, 20); } },
+    {
+      name: 'кисть гравия 5×5',
+      hour: 13,
+      act: (w) => {
+        w.brushSize = 5;
+        w.applyBrush(BRUSH_BY_ID.get('g_gravel')!, 8, 20);
+      },
+    },
     { name: 'пруд 4×4', hour: 9, act: (w) => w.applyBrush(BRUSH_BY_ID.get('w_pond4')!, 6, 21) },
     { name: 'холм 3×3 (меняет высоту)', hour: 17, act: (w) => w.applyBrush(BRUSH_BY_ID.get('h_hill3')!, 5, 19) },
     { name: 'ложбина 3×3', hour: 17, act: (w) => w.applyBrush(BRUSH_BY_ID.get('h_low')!, 20, 8) },
@@ -50,12 +57,19 @@ async function main() {
     w.clearTouched();
     c.act(w);
     const r = w.lastTouched;
-    if (!r) { console.log(`${c.name}: земля не тронута — пропуск`); continue; }
+    if (!r) {
+      console.log(`${c.name}: земля не тронута — пропуск`);
+      continue;
+    }
 
     const partial = renderTerrain(w, atm, 1, layer, r);
     const full = renderTerrain(w, atm, 1);
-    const a = (partial.canvas as never as HTMLCanvasElement).getContext('2d')!.getImageData(0, 0, partial.canvas.width, partial.canvas.height).data;
-    const b = (full.canvas as never as HTMLCanvasElement).getContext('2d')!.getImageData(0, 0, full.canvas.width, full.canvas.height).data;
+    const a = (partial.canvas as never as HTMLCanvasElement)
+      .getContext('2d')!
+      .getImageData(0, 0, partial.canvas.width, partial.canvas.height).data;
+    const b = (full.canvas as never as HTMLCanvasElement)
+      .getContext('2d')!
+      .getImageData(0, 0, full.canvas.width, full.canvas.height).data;
 
     let diff = 0;
     let maxd = 0;
@@ -74,7 +88,9 @@ async function main() {
     worst = Math.max(worst, diff);
     worstD = Math.max(worstD, maxd);
     const total = a.length / 4;
-    console.log(`${diff === 0 ? '✔' : '✘'} ${c.name}: участок ${r.x0},${r.y0}–${r.x1},${r.y1} · расхождений ${diff} из ${total}${maxd ? `, макс ${maxd}` : ''}`);
+    console.log(
+      `${diff === 0 ? '✔' : '✘'} ${c.name}: участок ${r.x0},${r.y0}–${r.x1},${r.y1} · расхождений ${diff} из ${total}${maxd ? `, макс ${maxd}` : ''}`,
+    );
   }
   console.log(
     worst === 0

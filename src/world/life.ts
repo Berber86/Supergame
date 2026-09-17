@@ -141,6 +141,13 @@ export class Life {
   private birdTimer = 6000;
   /** Лепестки, сорванные с деревьев: сцена забирает их каждый кадр. */
   emitted: { x: number; y: number; kind: 'petal' | 'leaf'; seed: number }[] = [];
+  /** Сид состава кои — чтобы рыбы переселялись за своими предметами. */
+  private koiKey = '';
+  /**
+   * Потолок очереди опадающего. Когда сцена не рисуется (дзен-лист),
+   * лепестки некому забирать — очередь не должна расти без предела.
+   */
+  private static EMITTED_CAP = 64;
 
   /** Забыть всю живность — при переходе в другую усадьбу. */
   reset(): void {
@@ -150,15 +157,21 @@ export class Life {
     this.fish = [];
     this.gusts = [];
     this.emitted = [];
+    this.koiKey = '';
   }
 
   /** Пересобирает агентов под текущий состав сада. */
   sync(world: World): void {
     // --- Коты: по объекту «кот» в саду ---
+    //
+    // Сверяемся по id предметов, а не по числу: если одного кота убрали,
+    // а другого завели между двумя кадрами, количество не изменилось,
+    // но это уже другой кот.
     const catObjs = world.objects.filter((o) => o.type === 'cat');
-    if (catObjs.length !== this.cats.length) {
-      this.cats = catObjs.map((o, i) => {
-        const prev = this.cats[i];
+    const sameCats = catObjs.length === this.cats.length && catObjs.every((o, i) => this.cats[i].id === o.id);
+    if (!sameCats) {
+      this.cats = catObjs.map((o) => {
+        const prev = this.cats.find((c) => c.id === o.id);
         if (prev) return prev;
         return {
           id: o.id,
@@ -177,8 +190,14 @@ export class Life {
     }
 
     // --- Карпы: по объекту «кои» ---
+    //
+    // Та же история: снесли кои из одного пруда и посадили в другой
+    // тем же числом — рыбы обязаны переселиться за своим предметом,
+    // а не кружить над опустевшим местом.
     const koiObjs = world.objects.filter((o) => o.type === 'koi');
-    if (koiObjs.length * 2 !== this.fish.length) {
+    const koiKey = koiObjs.map((o) => o.id).join(',');
+    if (koiKey !== this.koiKey) {
+      this.koiKey = koiKey;
       this.fish = [];
       for (const o of koiObjs) {
         for (let k = 0; k < 2; k++) {
@@ -479,7 +498,10 @@ export class Life {
       if (f.timer <= 0 || !f.target) {
         f.timer = 1600 + rnd() * 3200;
         if (f.kind === 'butterfly') {
-          const spot = flowers.length && rnd() < 0.7 ? flowers[Math.floor(rnd() * flowers.length)] : randomWalkable(world, { x: f.tx, y: f.ty }, 5);
+          const spot =
+            flowers.length && rnd() < 0.7
+              ? flowers[Math.floor(rnd() * flowers.length)]
+              : randomWalkable(world, { x: f.tx, y: f.ty }, 5);
           f.target = spot;
           // иногда присаживается на цветок
           if (spot && rnd() < 0.3) f.resting = 1800 + rnd() * 3000;
@@ -582,12 +604,14 @@ export class Life {
     if (!trees.length) return;
     const tree = trees[Math.floor(rnd() * trees.length)];
     const item = ITEM_BY_ID.get(tree.type)!;
-    this.emitted.push({
-      x: tree.tx + item.w / 2 + (rnd() - 0.5) * 1.4,
-      y: tree.ty + item.h / 2 + (rnd() - 0.5) * 1.4,
-      kind: isPetal ? 'petal' : 'leaf',
-      seed: Math.floor(rnd() * 10000),
-    });
+    if (this.emitted.length < Life.EMITTED_CAP) {
+      this.emitted.push({
+        x: tree.tx + item.w / 2 + (rnd() - 0.5) * 1.4,
+        y: tree.ty + item.h / 2 + (rnd() - 0.5) * 1.4,
+        kind: isPetal ? 'petal' : 'leaf',
+        seed: Math.floor(rnd() * 10000),
+      });
+    }
   }
 
   takeEmitted(): { x: number; y: number; kind: 'petal' | 'leaf'; seed: number }[] {

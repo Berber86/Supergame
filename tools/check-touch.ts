@@ -76,8 +76,14 @@ async function main() {
 
   log.length = 0;
   el.fire('touchstart', [[100, 100]]);
-  el.fire('touchstart', [[100, 100], [200, 100]]);
-  el.fire('touchmove', [[80, 100], [220, 100]]);
+  el.fire('touchstart', [
+    [100, 100],
+    [200, 100],
+  ]);
+  el.fire('touchmove', [
+    [80, 100],
+    [220, 100],
+  ]);
   el.fire('touchend', [[80, 100]]);
   el.fire('touchend', []);
   check('щипок без лишнего касания', log.join(' | '), 'pinch 1.40 | pinchEnd');

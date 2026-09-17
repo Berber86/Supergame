@@ -68,7 +68,10 @@ export class PracticePanel {
   private lastMinutes = 0;
   private endTimer = 0;
 
-  constructor(parent: HTMLElement, private hooks: PracticeHooks) {
+  constructor(
+    parent: HTMLElement,
+    private hooks: PracticeHooks,
+  ) {
     const root = document.createElement('div');
     root.className = 'practice paper';
     root.innerHTML = `
@@ -165,7 +168,9 @@ export class PracticePanel {
 
     this.body.querySelectorAll<HTMLElement>('.pr-row[data-practice]').forEach((row) => {
       const id = row.dataset.practice!;
-      row.querySelector('.pr-row-info')!.addEventListener('click', () => this.start(id, PRACTICE_BY_ID.get(id)!.minutes[0]));
+      row
+        .querySelector('.pr-row-info')!
+        .addEventListener('click', () => this.start(id, PRACTICE_BY_ID.get(id)!.minutes[0]));
       row.querySelectorAll<HTMLElement>('.pr-chip').forEach((chip) => {
         chip.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -393,7 +398,7 @@ export class PracticePanel {
     if (mode === 'listen') {
       // круги от камня, брошенного в воду: звук приходит и уходит
       for (let i = 0; i < 3; i++) {
-        const t = ((now / 5200 + i / 3) % 1);
+        const t = (now / 5200 + i / 3) % 1;
         g.strokeStyle = `rgba(${ink},${0.3 * (1 - t)})`;
         g.lineWidth = 1.6 * dpr;
         g.beginPath();

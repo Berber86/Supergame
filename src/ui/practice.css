@@ -454,7 +454,8 @@
 .sit-line {
   position: absolute;
   left: 50%;
-  bottom: calc(16px + var(--safe-b, 0px));
+  /* выше плашки-подсказки: на узком экране две строки не сливаются в кашу */
+  bottom: calc(66px + var(--safe-b, 0px));
   transform: translateX(-50%);
   min-height: var(--touch-min, 44px);
   display: flex;

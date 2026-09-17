@@ -1,19 +1,28 @@
 {
   "name": "usadba-bezmyatezhnosti",
   "private": true,
-  "version": "0.3.0-alpha",
+  "version": "0.6.0-alpha",
   "description": "Усадьба Безмятежности — браузерная дзен-песочница: ландшафтный и интерьерный конструктор в стиле акварелей Ghibli",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx tools/run-checks.ts",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@napi-rs/canvas": "^1.0.9",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.7",
     "tsx": "^4.23.13",
     "typescript": "^5.5.4",
+    "typescript-eslint": "^8.70.0",
     "vite": "^5.4.10"
   }
 }

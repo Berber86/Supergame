@@ -1,0 +1,241 @@
+/** Жители пруда и водяные растения. */
+
+import { Drawer, WHITE, litc } from './common';
+import { clamp01, hash2, lerp } from '../../core/rng';
+import { css, mix, shade } from '../../world/palette';
+import { blobPath, washBlob } from '../paint';
+
+// ---------------- Вода ----------------
+
+export const drawLilypad: Drawer = (d) => {
+  const { ctx, atm, obj } = d;
+  const bob = Math.sin(d.time * 0.0008 + obj.seed) * 1.5;
+  for (let i = 0; i < 3; i++) {
+    const r1 = hash2(i, obj.seed, 9);
+    const r2 = hash2(i, obj.seed, 19);
+    const px = d.x + (r1 - 0.5) * 22;
+    const py = d.y + (r2 - 0.5) * 11 + bob;
+    const rx = 8 + r1 * 5;
+    const c = litc(mix({ r: 116, g: 156, b: 104 }, atm.palette.foliage, 0.4), atm);
+    ctx.fillStyle = css(shade(c, 0.7), 0.3);
+    ctx.beginPath();
+    ctx.ellipse(px, py + 2, rx, rx * 0.55, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = css(c, 0.9);
+    ctx.beginPath();
+    ctx.ellipse(px, py, rx, rx * 0.55, 0, 0.35, Math.PI * 2 - 0.35);
+    ctx.lineTo(px, py);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = css(shade(c, 0.78), 0.4);
+    ctx.lineWidth = 0.8;
+    for (let k = 0; k < 4; k++) {
+      const a = 0.6 + k * 1.2;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px + Math.cos(a) * rx * 0.9, py + Math.sin(a) * rx * 0.5);
+      ctx.stroke();
+    }
+  }
+};
+
+export const drawLotus: Drawer = (d) => {
+  const { ctx, atm, obj, g } = d;
+  const bob = Math.sin(d.time * 0.0007 + obj.seed) * 1.5;
+  const open = clamp01(atm.time.daylight * 1.4);
+  const scale = lerp(0.5, 1, g);
+  const px = d.x;
+  const py = d.y + bob;
+  // лист
+  const leaf = litc({ r: 108, g: 148, b: 100 }, atm);
+  ctx.fillStyle = css(leaf, 0.85);
+  ctx.beginPath();
+  ctx.ellipse(px - 10, py + 3, 10 * scale, 5.5 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // стебель
+  ctx.strokeStyle = css(litc({ r: 120, g: 154, b: 104 }, atm), 0.8);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(px, py + 2);
+  ctx.lineTo(px + 1, py - 12 * scale);
+  ctx.stroke();
+  // цветок
+  const petal = litc({ r: 248, g: 204, b: 216 }, atm, 0.05);
+  const petalDeep = litc({ r: 236, g: 166, b: 190 }, atm);
+  const cy = py - 13 * scale;
+  const n = 7;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const spread = lerp(0.3, 1.1, open);
+    const ex = px + Math.cos(a) * 6 * scale * spread;
+    const ey = cy + Math.sin(a) * 3.4 * scale * spread - 2;
+    ctx.fillStyle = css(i % 2 === 0 ? petal : petalDeep, 0.9);
+    ctx.save();
+    ctx.translate(ex, ey);
+    ctx.rotate(a);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 5.5 * scale, 2.6 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle = css(litc({ r: 246, g: 226, b: 160 }, atm), 0.95);
+  ctx.beginPath();
+  ctx.arc(px, cy - 2, 2.4 * scale, 0, Math.PI * 2);
+  ctx.fill();
+};
+
+export const drawKoi: Drawer = (d) => {
+  const { ctx, atm, obj } = d;
+  const t = d.time * 0.00035 + obj.seed;
+  for (let i = 0; i < 2; i++) {
+    const ph = t + i * Math.PI;
+    const rx = 26;
+    const ry = 13;
+    const px = d.x + Math.cos(ph) * rx;
+    const py = d.y + Math.sin(ph) * ry;
+    const ang = Math.atan2(Math.cos(ph) * ry, -Math.sin(ph) * rx);
+    const body = i === 0 ? { r: 240, g: 136, b: 86 } : { r: 248, g: 244, b: 238 };
+    const c = litc(body, atm);
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(ang);
+    // тень в глубине
+    ctx.fillStyle = css(shade(atm.palette.waterDeep, 0.8), 0.25);
+    ctx.beginPath();
+    ctx.ellipse(1, 2, 9, 3.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // тело
+    ctx.fillStyle = css(c, 0.8);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 8.5, 3.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // хвост
+    const wag = Math.sin(d.time * 0.006 + i) * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(-7, 0);
+    ctx.quadraticCurveTo(-11, -3 + wag * 2, -14, -4 + wag * 3);
+    ctx.quadraticCurveTo(-11, 0, -14, 4 + wag * 3);
+    ctx.quadraticCurveTo(-11, 3 + wag * 2, -7, 0);
+    ctx.fillStyle = css(c, 0.5);
+    ctx.fill();
+    // пятно
+    if (i === 0) {
+      ctx.fillStyle = css(litc({ r: 250, g: 250, b: 246 }, atm), 0.7);
+      ctx.beginPath();
+      ctx.ellipse(2, -0.5, 3, 1.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = css(litc({ r: 234, g: 120, b: 90 }, atm), 0.65);
+      ctx.beginPath();
+      ctx.ellipse(1.5, 0, 2.6, 1.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+};
+
+export const drawReed: Drawer = (d) => {
+  const { ctx, atm, g, obj } = d;
+  const scale = lerp(0.45, 1, Math.pow(g, 0.7));
+  const stalks = 5 + Math.round(scale * 3);
+  const stemCol = litc(atm.season === 'winter' ? { r: 176, g: 164, b: 130 } : { r: 116, g: 148, b: 92 }, atm);
+  const head = litc({ r: 132, g: 96, b: 66 }, atm);
+
+  ctx.lineCap = 'round';
+  for (let i = 0; i < stalks; i++) {
+    const r1 = hash2(i, obj.seed, 17);
+    const r2 = hash2(i, obj.seed, 29);
+    const bx = d.x + (r1 - 0.5) * 13;
+    const hgt = (20 + r2 * 16) * scale;
+    // Камыш гнётся сильнее деревьев — стебель тонкий и длинный
+    const sway = Math.sin(d.time * 0.0016 + i * 1.3 + obj.seed) * (3.5 + r1 * 3) * d.wind;
+    ctx.strokeStyle = css(stemCol, 0.85);
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(bx, d.y);
+    ctx.quadraticCurveTo(bx + sway * 0.4, d.y - hgt * 0.6, bx + sway, d.y - hgt);
+    ctx.stroke();
+
+    // початок на части стеблей
+    if (r2 > 0.45) {
+      ctx.fillStyle = css(head, 0.9);
+      ctx.beginPath();
+      ctx.ellipse(bx + sway, d.y - hgt - 2, 1.5, 4.4 * scale, sway * 0.02, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.lineCap = 'butt';
+};
+
+/** Хвощ: строгие членистые стебли без листьев. */
+
+export const drawHorsetail: Drawer = (d) => {
+  const { ctx, atm, g, obj } = d;
+  const scale = lerp(0.45, 1, Math.pow(g, 0.7));
+  const stalks = 6 + Math.round(scale * 4);
+  const col = litc(atm.season === 'winter' ? { r: 150, g: 158, b: 138 } : { r: 96, g: 142, b: 104 }, atm);
+
+  for (let i = 0; i < stalks; i++) {
+    const r1 = hash2(i, obj.seed, 23);
+    const r2 = hash2(i, obj.seed, 37);
+    const bx = d.x + (r1 - 0.5) * 12;
+    const hgt = (14 + r2 * 12) * scale;
+    const sway = Math.sin(d.time * 0.0012 + i + obj.seed) * 1.6 * d.wind;
+    ctx.strokeStyle = css(col, 0.88);
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(bx, d.y);
+    ctx.lineTo(bx + sway, d.y - hgt);
+    ctx.stroke();
+    // членения — то, чем хвощ узнаётся
+    ctx.strokeStyle = css(shade(col, 0.72), 0.6);
+    ctx.lineWidth = 0.9;
+    const joints = Math.max(2, Math.round(hgt / 6));
+    for (let k = 1; k < joints; k++) {
+      const tt = k / joints;
+      const jx = bx + sway * tt;
+      const jy = d.y - hgt * tt;
+      ctx.beginPath();
+      ctx.moveTo(jx - 1.6, jy);
+      ctx.lineTo(jx + 1.6, jy);
+      ctx.stroke();
+    }
+  }
+};
+
+/** Камень, стоящий в воде: с мокрой полосой и кругами у основания. */
+
+export const drawWaterStone: Drawer = (d) => {
+  const { ctx, atm, obj } = d;
+  const rx = 11;
+  const ry = 8;
+  const base = { r: 132, g: 130, b: 126 };
+  const stone = litc(base, atm);
+
+  // Круги на воде вокруг камня — вода его обтекает
+  const ring = litc(mix(atm.palette.water, WHITE, 0.6), atm);
+  for (let i = 0; i < 2; i++) {
+    const ph = (((d.time * 0.0009 + i * 0.5 + obj.seed * 0.01) % 1) + 1) % 1;
+    ctx.strokeStyle = css(ring, 0.22 * (1 - ph));
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.ellipse(d.x, d.y + 2, rx * (0.9 + ph * 0.9), ry * (0.55 + ph * 0.6), 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Сам камень
+  washBlob(ctx, d.x, d.y - ry * 0.5, rx, ry, stone, obj.seed, { layers: 2, alpha: 0.6, edge: 0.1, wobble: 0.3 });
+  // мокрая полоса у ватерлинии — камень темнее там, где его лижет вода
+  ctx.save();
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.fillStyle = css(mix(WHITE, mix(base, atm.palette.waterDeep, 0.5), 0.5), 1);
+  blobPath(ctx, d.x, d.y + 1, rx * 0.95, ry * 0.34, obj.seed + 5, 0.26, 8);
+  ctx.fill();
+  ctx.restore();
+  // блик сверху
+  ctx.fillStyle = css(litc(mix(base, WHITE, 0.45), atm, 0.04), 0.4);
+  blobPath(ctx, d.x - atm.sunDir.x * rx * 0.3, d.y - ry * 0.9, rx * 0.42, ry * 0.28, obj.seed + 9, 0.3, 7);
+  ctx.fill();
+};
+
+/** Мостки: простые доски над водой, без изгиба. */

@@ -120,7 +120,15 @@ export class WeatherSystem {
     const wantSnow = this.target === 'snow' ? 1 : 0;
     const wantFog = this.target === 'fog' ? 1 : this.target === 'rain' ? 0.22 : this.target === 'storm' ? 0.3 : 0;
     const wantOvercast =
-      this.target === 'storm' ? 1 : this.target === 'rain' ? 0.75 : this.target === 'snow' ? 0.6 : this.target === 'fog' ? 0.35 : 0;
+      this.target === 'storm'
+        ? 1
+        : this.target === 'rain'
+          ? 0.75
+          : this.target === 'snow'
+            ? 0.6
+            : this.target === 'fog'
+              ? 0.35
+              : 0;
 
     s.rain = towards(s.rain, wantRain);
     s.snow = towards(s.snow, wantSnow);

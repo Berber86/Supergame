@@ -498,7 +498,13 @@ export function drawFlutter(ctx: Ctx, f: Flutter, x: number, y: number, atm: Atm
       atm,
       0.05,
     );
-    const wingDeep = litc(shade(hue > 0.66 ? { r: 236, g: 196, b: 120 } : hue > 0.33 ? { r: 226, g: 158, b: 182 } : { r: 160, g: 180, b: 226 }, 1), atm);
+    const wingDeep = litc(
+      shade(
+        hue > 0.66 ? { r: 236, g: 196, b: 120 } : hue > 0.33 ? { r: 226, g: 158, b: 182 } : { r: 160, g: 180, b: 226 },
+        1,
+      ),
+      atm,
+    );
     const ink = litc({ r: 92, g: 74, b: 68 }, atm);
 
     // Взмах: крылья почти смыкаются, потом раскрываются — видно по ширине
@@ -597,11 +603,7 @@ export function drawFish(ctx: Ctx, fish: Fish, world: World, atm: Atmosphere, ti
   const p = isoToScreen(fish.tx, fish.ty, t.level - 0.26);
   const kind = fish.seed % 3;
   const body =
-    kind === 0
-      ? { r: 240, g: 132, b: 82 }
-      : kind === 1
-        ? { r: 248, g: 246, b: 240 }
-        : { r: 246, g: 200, b: 96 };
+    kind === 0 ? { r: 240, g: 132, b: 82 } : kind === 1 ? { r: 248, g: 246, b: 240 } : { r: 246, g: 200, b: 96 };
   const c = litc(body, atm);
   // изометрическое направление
   const sx = Math.cos(fish.dir);
