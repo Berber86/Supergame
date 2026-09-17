@@ -15,7 +15,7 @@ import { World } from '../world/world';
 import { Ctx, getPaperTile, glow } from './paint';
 import { drawCost, drawObject, drawObjectShadow } from './sprites';
 import { cacheable, cachedGrowth, drawCached } from './spriteCache';
-import { drawBird, drawCat, drawFlutter, drawFrog } from './creatures';
+import { drawBird, drawCat, drawFlutter, drawFrog, drawDeer, drawHeron } from './creatures';
 import type { GhostPreview } from './scene';
 
 /** Наборка состояния сцены, нужная одному кадру сортированных объектов. */
@@ -442,6 +442,8 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
       const p = isoToScreen(b.tx, b.ty, lvl);
       list.push({ depth: (b.tx + b.ty) * 100 + lvl * 20 + 6, draw: () => drawBird(ctx, b, p.x, p.y, atm, time) });
     }
+    for (const d of opts.life.deer) { const tile=world.at(Math.floor(d.tx),Math.floor(d.ty)); const lvl=tile?.level ?? 0; const p=isoToScreen(d.tx,d.ty,lvl); list.push({ depth:(d.tx+d.ty)*100+lvl*20+7, draw:()=>drawDeer(ctx,d,p.x,p.y,atm,time) }); }
+    for (const h of opts.life.herons) { const tile=world.at(Math.floor(h.tx),Math.floor(h.ty)); const lvl=tile ? tile.level-.2 : 0; const p=isoToScreen(h.tx,h.ty,lvl); list.push({ depth:(h.tx+h.ty)*100+lvl*20+9, draw:()=>drawHeron(ctx,h,p.x,p.y,atm,time) }); }
     for (const f of opts.life.frogs) {
       const tile = world.at(Math.floor(f.tx), Math.floor(f.ty));
       const lvl = tile ? tile.level - (tile.water ? 0.22 : 0) : 0;

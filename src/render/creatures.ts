@@ -3,7 +3,7 @@
 import { isoToScreen } from '../core/iso';
 import { clamp01, hash2, lerp } from '../core/rng';
 import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
-import { Bird, Cat, Fish, Flutter, Frog } from '../world/life';
+import { Bird, Cat, Fish, Flutter, Frog, Deer, Heron } from '../world/life';
 import { World } from '../world/world';
 import { Ctx, glow, softShadow } from './paint';
 
@@ -595,6 +595,20 @@ export function drawFlutter(ctx: Ctx, f: Flutter, x: number, y: number, atm: Atm
   }
 }
 
+
+// ---------------- Олень и цапля ----------------
+export function drawDeer(ctx: Ctx, d: Deer, x: number, y: number, atm: Atmosphere, time: number): void {
+  const sway = Math.sin(time * 0.002 + d.seed) * 1.2; const fur = litc({ r: 160, g: 116, b: 78 }, atm);
+  ctx.save(); ctx.translate(x, y - 8 + sway); ctx.scale(d.facing, 1); ctx.fillStyle = css(fur, .95);
+  ctx.globalCompositeOperation = 'multiply'; softShadow(ctx, 0, 9, 15, 4, atm.shadowTint, atm.shadowAmount); ctx.globalCompositeOperation = 'source-over';
+  ctx.beginPath(); ctx.ellipse(0, 0, 13, 6, 0, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.ellipse(11, -7, 5, 5, 0, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = css(fur, .95); ctx.lineWidth=2.2; for (const ox of [-7,-2,5,9]) { ctx.beginPath(); ctx.moveTo(ox,4); ctx.lineTo(ox-1,12); ctx.stroke(); }
+  ctx.strokeStyle=css({r:120,g:82,b:55},.9); ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(13,-11); ctx.lineTo(15,-17); ctx.moveTo(15,-14); ctx.lineTo(19,-17); ctx.stroke(); ctx.restore();
+}
+export function drawHeron(ctx: Ctx, h: Heron, x: number, y: number, atm: Atmosphere, time: number): void {
+  const bob=Math.sin(time*.001+h.seed)*1.2; const body=litc({r:205,g:210,b:202},atm); const dark=litc({r:72,g:91,b:88},atm);
+  ctx.save(); ctx.translate(x,y-18+bob); ctx.fillStyle=css(body,.95); ctx.beginPath(); ctx.ellipse(0,0,6,13,0,0,Math.PI*2); ctx.fill(); ctx.strokeStyle=css(dark,.9); ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(0,8); ctx.lineTo(-2,20); ctx.moveTo(3,8); ctx.lineTo(5,20); ctx.stroke(); ctx.fillStyle=css(dark,.95); ctx.beginPath(); ctx.arc(1,-12,4,0,Math.PI*2); ctx.fill(); ctx.fillStyle=css({r:190,g:145,b:70},.95); ctx.beginPath(); ctx.moveTo(5,-13); ctx.lineTo(18,-11); ctx.lineTo(5,-9); ctx.closePath(); ctx.fill(); ctx.restore();
+}
 
 // ---------------- Лягушки ----------------
 

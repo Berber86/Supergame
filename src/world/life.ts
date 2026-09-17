@@ -11,10 +11,10 @@ import { World } from './world';
 
 export type CatState = 'sleep' | 'sit' | 'walk' | 'wash' | 'stretch' | 'loaf';
 export type BirdState = 'fly-in' | 'hop' | 'peck' | 'fly-out';
-export interface Frog {
-  tx: number; ty: number; phase: number; seed: number;
-  timer: number;
-}
+export interface Frog { tx: number; ty: number; phase: number; seed: number; timer: number; }
+export interface Deer { tx: number; ty: number; phase: number; seed: number; timer: number; facing: number; }
+export interface Heron { tx: number; ty: number; phase: number; seed: number; timer: number; }
+
 
 export interface Vec {
   x: number;
@@ -137,6 +137,8 @@ export class Life {
   cats: Cat[] = [];
   birds: Bird[] = [];
   frogs: Frog[] = [];
+  deer: Deer[] = [];
+  herons: Heron[] = [];
   flutters: Flutter[] = [];
   fish: Fish[] = [];
   gusts: Gust[] = [];
@@ -159,6 +161,8 @@ export class Life {
     this.cats = [];
     this.birds = [];
     this.frogs = [];
+    this.deer = [];
+    this.herons = [];
     this.flutters = [];
     this.fish = [];
     this.gusts = [];
@@ -209,6 +213,21 @@ export class Life {
       this.frogs.push({ tx: spot.x, ty: spot.y, phase: rnd() * 10, seed: rnd() * 10000, timer: 1000 + rnd() * 3000 });
     }
     while (this.frogs.length > frogWant) this.frogs.pop();
+    const hasFeeder = world.objects.some((o) => o.type === 'bowl' || o.type === 'birdfeeder');
+    const catCount = world.objects.filter((o) => o.type === 'cat').length;
+    // Второй кот приходит не кнопкой, а после того, как в саду есть место для него.
+    const catWant = catCount > 0 && hasFeeder ? 1 : 0;
+    if (catWant && this.cats.length === catCount) {
+      const first = this.cats[0];
+      this.cats.push({ ...first, id: -999, seed: first.seed + 7919, tx: first.tx + 1.2, ty: first.ty + 0.8, home: null });
+    }
+    const deerWant = world.objects.some((o) => o.type === 'maple' || o.type === 'ginkgo' || o.type === 'persimmon') ? 1 : 0;
+    while (this.deer.length < deerWant) { const spot = randomWalkable(world); if (!spot) break; this.deer.push({ tx: spot.x, ty: spot.y, phase: rnd() * 10, seed: rnd() * 10000, timer: 3000, facing: 1 }); }
+    while (this.deer.length > deerWant) this.deer.pop();
+    const heronWant = world.objects.some((o) => o.type === 'pond' || o.type === 'lotus') ? 1 : 0;
+    while (this.herons.length < heronWant) { const spot = this.findWaterSpot(world); if (!spot) break; this.herons.push({ tx: spot.x, ty: spot.y, phase: rnd() * 10, seed: rnd() * 10000, timer: 3500 }); }
+    while (this.herons.length > heronWant) this.herons.pop();
+
 
     const koiObjs = world.objects.filter((o) => o.type === 'koi');
     const koiKey = koiObjs.map((o) => o.id).join(',');
@@ -239,6 +258,8 @@ export class Life {
     this.updateCats(world, t, dt);
     this.updateBirds(world, t, dt);
     this.updateFrogs(world, dt);
+    this.updateDeer(world, dt);
+    this.updateHerons(world, dt);
     this.updateFlutters(world, t, dt, now);
     this.updateFish(world, dt);
     this.updateFalling(world, t, dt);
@@ -444,6 +465,9 @@ export class Life {
     b.state = 'fly-out';
     b.timer = 4000;
   }
+
+  private updateDeer(world: World, dt: number): void { for (const d of this.deer) { d.timer -= dt; d.phase += dt * 0.001; if (d.timer <= 0) { d.timer = 4000 + rnd() * 5000; const n = randomWalkable(world, { x: d.tx, y: d.ty }, 5); if (n) { d.facing = n.x > d.tx ? 1 : -1; d.tx = n.x; d.ty = n.y; } } } }
+  private updateHerons(world: World, dt: number): void { for (const h of this.herons) { h.timer -= dt; h.phase += dt * 0.001; if (h.timer <= 0) { h.timer = 3000 + rnd() * 5000; const n = this.findWaterSpot(world); if (n) { h.tx = n.x; h.ty = n.y; } } } }
 
   private updateFrogs(world: World, dt: number): void {
     for (const f of this.frogs) {
