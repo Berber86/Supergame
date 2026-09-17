@@ -11,7 +11,7 @@ import { Scene } from './render/scene';
 import { buildAtmosphere } from './world/palette';
 import { World } from './world/world';
 import { UI, Selection } from './ui/ui';
-import { ITEM_BY_ID, TERRAIN_BRUSHES } from './world/catalog';
+import { ITEM_BY_ID, TERRAIN_BRUSHES, footprintCells } from './world/catalog';
 import { Life } from './world/life';
 import { TimeControl } from './core/timeControl';
 import { WeatherSystem } from './world/weatherState';
@@ -228,6 +228,9 @@ const gardensPanel = new GardensPanel(app, world, gardens, {
   onSwitch() {
     // Мир заменился целиком: история чужой усадьбы больше не имеет смысла
     history.clear();
+    // Незавершённое действие относилось к прошлому саду — отпускаем его:
+    // переносимый предмет, начатая тропа, мазок кистью.
+    cancelOngoingAction();
     scene.markTerrainDirty();
     life.reset();
     ui.select({ kind: 'none' });
@@ -315,6 +318,23 @@ let lastY = 0;
 let pointerX = 0;
 let pointerY = 0;
 let hasPointer = false;
+
+/**
+ * Сбросить незавершённое действие — при смене усадьбы на середине
+ * мазка, переноса или разметки тропы. След прошлого сада не должен
+ * оставаться нажатым состоянием в новом.
+ */
+function cancelOngoingAction(): void {
+  moving = null;
+  scene.movingId = -1;
+  dragging = false;
+  painting = false;
+  pathStart = null;
+  scene.pathFrom = null;
+  scene.pathPreview = null;
+  canvas.classList.remove('dragging');
+  updateGhost();
+}
 
 canvas.addEventListener('pointerdown', (e) => {
   // На пальце работает TouchInput; браузер дублирует касания
@@ -761,8 +781,9 @@ function updateGhost(): void {
 
   if (selection.kind === 'item') {
     const item = selection.item;
-    const valid = inBounds(Math.floor(s.tx), Math.floor(s.ty)) && world.canPlace(item.id, s.tx, s.ty);
-    scene.ghost = { kind: 'item', itemId: item.id, tx: s.tx, ty: s.ty, rot: ghostRot, valid, w: item.w, h: item.h };
+    const valid = inBounds(Math.floor(s.tx), Math.floor(s.ty)) && world.canPlace(item.id, s.tx, s.ty, ghostRot);
+    const hl = footprintCells(item, s.tx, s.ty, ghostRot);
+    scene.ghost = { kind: 'item', itemId: item.id, tx: s.tx, ty: s.ty, rot: ghostRot, valid, w: item.w, h: item.h, hl };
   } else if (selection.kind === 'brush') {
     const b = selection.brush;
     // Кисти земли растягиваются размером 1/3/5, блоки держат свой размер
@@ -830,7 +851,7 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
   if (selection.kind === 'item') {
     const item = selection.item;
     const s = snapForSelection(p.tx, p.ty);
-    if (!world.canPlace(item.id, s.tx, s.ty)) {
+    if (!world.canPlace(item.id, s.tx, s.ty, ghostRot)) {
       if (isClick) ui.toast(item.needsWater ? 'Это растёт только в воде' : 'Здесь вода — нужно другое место');
       return;
     }

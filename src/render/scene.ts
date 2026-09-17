@@ -35,6 +35,8 @@ export interface GhostPreview {
   valid: boolean;
   w: number;
   h: number;
+  /** Клетки настоящего отпечатка с учётом поворота; если нет — w×h от (tx,ty). */
+  hl?: { x0: number; y0: number; x1: number; y1: number };
 }
 
 export class Scene {
@@ -601,11 +603,13 @@ export class Scene {
     const badCol: RGB = { r: 226, g: 130, b: 110 };
     const col = gh.valid ? okCol : badCol;
 
-    // Подсветка занимаемых клеток
-    const x0 = Math.floor(gh.tx);
-    const y0 = Math.floor(gh.ty);
-    for (let y = y0; y < y0 + gh.h; y++) {
-      for (let x = x0; x < x0 + gh.w; x++) {
+    // Подсветка занимаемых клеток — по настоящему отпечатку с поворотом
+    const hx0 = gh.hl ? gh.hl.x0 : Math.floor(gh.tx);
+    const hy0 = gh.hl ? gh.hl.y0 : Math.floor(gh.ty);
+    const hx1 = gh.hl ? gh.hl.x1 : Math.floor(gh.tx) + gh.w - 1;
+    const hy1 = gh.hl ? gh.hl.y1 : Math.floor(gh.ty) + gh.h - 1;
+    for (let y = hy0; y <= hy1; y++) {
+      for (let x = hx0; x <= hx1; x++) {
         const t = world.at(x, y);
         const lvl = t ? t.level : 0;
         const a = isoToScreen(x, y, lvl);

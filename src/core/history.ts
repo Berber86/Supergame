@@ -300,5 +300,7 @@ export class History {
     let maxId = 0;
     for (const o of this.world.objects) maxId = Math.max(maxId, o.id);
     this.world.nextId = Math.max(this.world.nextId, maxId + 1);
+    // История правит список напрямую — сетке выбора нужно знать об этом
+    this.world.noteObjectsChanged();
   }
 }

@@ -7,3 +7,7 @@ preview-*.png
 creature-sheet.png
 splash-*.png
 practice-*.png
+
+# артефакты прогонов
+item-sheet.png
+*.log

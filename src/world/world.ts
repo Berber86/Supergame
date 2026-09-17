@@ -2,7 +2,7 @@
 
 import { GRID, inBounds } from '../core/iso';
 import { clamp, fbm, hash2 } from '../core/rng';
-import { BRUSH_BY_ID, ITEM_BY_ID, MILESTONES, TerrainBrush } from './catalog';
+import { BRUSH_BY_ID, ITEM_BY_ID, MILESTONES, TerrainBrush, footprintCells } from './catalog';
 import { DAY_MS } from '../core/clock';
 import { SAVE_VERSION, parseSave, serializeSave } from './saveFormat';
 import { GroundId, PlacedObject, SaveData, Tile } from './types';
@@ -636,13 +636,17 @@ export class World {
 
   // ---- Объекты ----
 
-  canPlace(type: string, tx: number, ty: number): boolean {
+  /**
+   * Может ли предмет встать на место. Проверяются клетки настоящего
+   * отпечатка — с учётом поворота: мост 1×3 в положении 0 лежит вдоль
+   * оси x, и у правого края сада встать уже не может.
+   */
+  canPlace(type: string, tx: number, ty: number, rot = 0): boolean {
     const item = ITEM_BY_ID.get(type);
     if (!item) return false;
-    const x0 = Math.floor(tx);
-    const y0 = Math.floor(ty);
-    for (let y = y0; y < y0 + item.h; y++) {
-      for (let x = x0; x < x0 + item.w; x++) {
+    const r = footprintCells(item, tx, ty, rot);
+    for (let y = r.y0; y <= r.y1; y++) {
+      for (let x = r.x0; x <= r.x1; x++) {
         const t = this.at(x, y);
         if (!t) return false;
         if (item.needsWater && !t.water) return false;
@@ -665,6 +669,7 @@ export class World {
       seed: Math.floor(Math.random() * 100000),
     };
     this.objects.push(obj);
+    this.noteObjectsChanged();
     if (type === 'cat') this.checkMilestone('first_cat');
     if (item.kind === 'tree') {
       const trees = this.objects.filter((o) => ITEM_BY_ID.get(o.type)?.kind === 'tree').length;
@@ -674,25 +679,78 @@ export class World {
   }
 
   /**
-   * Что находится под указателем. Ищем ближайший центр, но крупные
-   * объекты имеют больший радиус захвата — иначе в валун 2×2 трудно попасть.
+   * Сетка-индекс для выбора объектов. Строится лениво и только после
+   * изменения расстановки: в саду сотни предметов, а указатель
+   * интересуется одной точкой.
    */
-  pickObject(tx: number, ty: number): PlacedObject | null {
-    let best: PlacedObject | null = null;
-    let bestScore = Infinity;
+  private pickBuckets = new Map<number, PlacedObject[]>();
+  private pickVersion = 0;
+  private pickBuilt = -1;
+  /** Сторона ковша сетки в тайлах. */
+  private static PICK_CELL = 4;
+
+  /**
+   * Расстановка изменилась (постановка, снос, перенос, загрузка,
+   * отмена). Вызывается и снаружи — история правит список напрямую.
+   */
+  noteObjectsChanged(): void {
+    this.pickVersion++;
+  }
+
+  private static bucketKey(bx: number, by: number): number {
+    return bx * 1024 + by;
+  }
+
+  private buildPickIndex(): void {
+    this.pickBuckets.clear();
+    const S = World.PICK_CELL;
     for (const o of this.objects) {
       const item = ITEM_BY_ID.get(o.type);
       if (!item) continue;
       const cx = o.tx + item.w / 2;
       const cy = o.ty + item.h / 2;
-      const reach = Math.max(item.w, item.h) * 0.5 + 0.3;
-      const d = Math.hypot(cx - tx, cy - ty);
-      if (d > reach) continue;
-      // при равном расстоянии выигрывает тот, кто поставлен позже
-      const score = d / reach - o.id * 1e-7;
-      if (score < bestScore) {
-        bestScore = score;
-        best = o;
+      const k = World.bucketKey(Math.floor(cx / S), Math.floor(cy / S));
+      const bucket = this.pickBuckets.get(k);
+      if (bucket) bucket.push(o);
+      else this.pickBuckets.set(k, [o]);
+    }
+    this.pickBuilt = this.pickVersion;
+  }
+
+  /**
+   * Что находится под указателем. Ищем ближайший центр, но крупные
+   * объекты имеют больший радиус захвата — иначе в валун 2×2 трудно попасть.
+   *
+   * Первым делом проверяется центр объекта, поэтому сетка обязана отдавать
+   * те же результаты, что и полный перебор: ковш вдвое дальше ближайшего
+   * возможного касания уже не может содержать подходящих центров.
+   */
+  pickObject(tx: number, ty: number): PlacedObject | null {
+    if (this.pickBuilt !== this.pickVersion) this.buildPickIndex();
+    const S = World.PICK_CELL;
+    const bx = Math.floor(tx / S);
+    const by = Math.floor(ty / S);
+
+    let best: PlacedObject | null = null;
+    let bestScore = Infinity;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const bucket = this.pickBuckets.get(World.bucketKey(bx + dx, by + dy));
+        if (!bucket) continue;
+        for (const o of bucket) {
+          const item = ITEM_BY_ID.get(o.type)!;
+          const cx = o.tx + item.w / 2;
+          const cy = o.ty + item.h / 2;
+          const reach = Math.max(item.w, item.h) * 0.5 + 0.3;
+          const d = Math.hypot(cx - tx, cy - ty);
+          if (d > reach) continue;
+          // при равном расстоянии выигрывает тот, кто поставлен позже
+          const score = d / reach - o.id * 1e-7;
+          if (score < bestScore) {
+            bestScore = score;
+            best = o;
+          }
+        }
       }
     }
     return best;
@@ -700,6 +758,7 @@ export class World {
 
   removeObject(obj: PlacedObject): void {
     this.objects = this.objects.filter((o) => o !== obj);
+    this.noteObjectsChanged();
   }
 
   removeAt(tx: number, ty: number): PlacedObject | null {
@@ -711,16 +770,21 @@ export class World {
   /**
    * Перенести уже поставленное. Возраст сохраняется — дерево, которое
    * растили неделю, не должно снова стать саженцем из-за переезда.
+   *
+   * Объект, которого уже нет в списке (например, пока шёл перенос,
+   * усадьбу сменили), обратно не возвращается — иначе чужой предмет
+   * появлялся бы в новом саду.
    */
   moveObject(obj: PlacedObject, tx: number, ty: number, rot = obj.rot): boolean {
     const item = ITEM_BY_ID.get(obj.type);
     if (!item) return false;
+    if (!this.objects.includes(obj)) return false;
     const oldX = obj.tx;
     const oldY = obj.ty;
     const oldRot = obj.rot;
     // проверяем место без самого объекта — он себе не мешает
     this.removeObject(obj);
-    const ok = this.canPlace(obj.type, tx, ty);
+    const ok = this.canPlace(obj.type, tx, ty, rot);
     if (ok) {
       obj.tx = tx;
       obj.ty = ty;
@@ -732,6 +796,7 @@ export class World {
     }
     this.objects.push(obj);
     this.objects.sort((a, b) => a.id - b.id);
+    this.noteObjectsChanged();
     return ok;
   }
 
@@ -795,6 +860,7 @@ export class World {
     this.seenTabs = new Set(p.seen);
     this.pendingMilestones = [];
     this.lastTouched = null;
+    this.noteObjectsChanged();
   }
 
   /**

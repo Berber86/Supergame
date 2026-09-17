@@ -151,6 +151,38 @@ export const ITEMS: CatalogItem[] = [
 export const ITEM_BY_ID = new Map(ITEMS.map((i) => [i.id, i]));
 export const BRUSH_BY_ID = new Map(TERRAIN_BRUSHES.map((b) => [b.id, b]));
 
+/**
+ * Отпечаток предмета с учётом поворота. Якорь предмета привязан
+ * к центру его номинального прямоугольника (так он и рисуется),
+ * а нарисованный размер при чётном повороте меняет оси местами:
+ * мост 1×3 в положении 0 лежит вдоль оси x.
+ */
+export function footprint(item: CatalogItem, rot: number): { w: number; h: number } {
+  return rot % 2 === 0 ? { w: item.h, h: item.w } : { w: item.w, h: item.h };
+}
+
+/**
+ * Клетки, которые предмет реально занимает: центр как при рисовании,
+ * размер — отпечаток с учётом поворота. Граничная клетка, задетая
+ * только ребром, не считается.
+ */
+export function footprintCells(
+  item: CatalogItem,
+  tx: number,
+  ty: number,
+  rot: number,
+): { x0: number; y0: number; x1: number; y1: number } {
+  const cx = tx + item.w / 2;
+  const cy = ty + item.h / 2;
+  const f = footprint(item, rot);
+  return {
+    x0: Math.floor(cx - f.w / 2),
+    y0: Math.floor(cy - f.h / 2),
+    x1: Math.ceil(cx + f.w / 2) - 1,
+    y1: Math.ceil(cy + f.h / 2) - 1,
+  };
+}
+
 /** Вехи мастерства. */
 export interface Milestone {
   id: string;

@@ -9,6 +9,7 @@
 
 import { GRID, inBounds } from '../core/iso';
 import { fbm } from '../core/rng';
+import { ITEM_BY_ID, footprintCells } from './catalog';
 import { GroundId } from './types';
 import { World } from './world';
 
@@ -48,27 +49,28 @@ function stepCost(world: World, x: number, y: number, fromLevel: number): number
   return c;
 }
 
-/** Есть ли на клетке что-то, что тропа должна обойти. */
-function blockedByObject(world: World, x: number, y: number): boolean {
+/** Типы, которые тропа обходит: микро-декор она сминает, крупное — нет. */
+const BLOCKING = new Set(['rock_big', 'rock_trio', 'pavilion', 'lantern_stone', 'torii', 'tsukubai', 'shishi']);
+
+/**
+ * Клетки, закрытые крупными предметами. Считаются один раз на поиск пути
+ * и по настоящему отпечатку с учётом поворота: беседка закрывает все
+ * четыре свои клетки, а не только якорную.
+ */
+function blockedTiles(world: World): Set<number> {
+  const out = new Set<number>();
   for (const o of world.objects) {
-    // микро-декор тропа сминает, крупное — обходит
-    const ox = Math.floor(o.tx);
-    const oy = Math.floor(o.ty);
-    if (ox !== x || oy !== y) continue;
-    const t = o.type;
-    if (
-      t === 'rock_big' ||
-      t === 'rock_trio' ||
-      t === 'pavilion' ||
-      t === 'lantern_stone' ||
-      t === 'torii' ||
-      t === 'tsukubai' ||
-      t === 'shishi'
-    ) {
-      return true;
+    if (!BLOCKING.has(o.type)) continue;
+    const item = ITEM_BY_ID.get(o.type);
+    if (!item) continue;
+    const r = footprintCells(item, o.tx, o.ty, o.rot);
+    for (let y = r.y0; y <= r.y1; y++) {
+      for (let x = r.x0; x <= r.x1; x++) {
+        if (inBounds(x, y)) out.add(y * GRID + x);
+      }
     }
   }
-  return false;
+  return out;
 }
 
 /**
@@ -99,6 +101,8 @@ export function findPath(
   const start = idx(sx, sy);
   g[start] = 0;
   f[start] = h(sx, sy);
+  // Клетки, закрытые крупными предметами — один раз на весь поиск
+  const blocked = blockedTiles(world);
   // Небольшая открытая очередь: сад 26×26, куча тут излишня
   const open: number[] = [start];
 
@@ -124,7 +128,7 @@ export function findPath(
       let c = stepCost(world, nx, ny, curLevel);
       if (!isFinite(c)) continue;
       // Крупные предметы обходим, но у самой цели разрешаем подойти вплотную
-      if (blockedByObject(world, nx, ny) && ni !== idx(tx, ty)) c += 9;
+      if (blocked.has(ni) && ni !== idx(tx, ty)) c += 9;
 
       // Поворот стоит чуть дороже прямого шага: тропа получается плавной,
       // а не ступенчатой лесенкой.
