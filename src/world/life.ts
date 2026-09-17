@@ -11,6 +11,10 @@ import { World } from './world';
 
 export type CatState = 'sleep' | 'sit' | 'walk' | 'wash' | 'stretch' | 'loaf';
 export type BirdState = 'fly-in' | 'hop' | 'peck' | 'fly-out';
+export interface Frog {
+  tx: number; ty: number; phase: number; seed: number;
+  timer: number;
+}
 
 export interface Vec {
   x: number;
@@ -132,6 +136,7 @@ function findObjects(world: World, types: string[]): Vec[] {
 export class Life {
   cats: Cat[] = [];
   birds: Bird[] = [];
+  frogs: Frog[] = [];
   flutters: Flutter[] = [];
   fish: Fish[] = [];
   gusts: Gust[] = [];
@@ -153,6 +158,7 @@ export class Life {
   reset(): void {
     this.cats = [];
     this.birds = [];
+    this.frogs = [];
     this.flutters = [];
     this.fish = [];
     this.gusts = [];
@@ -194,6 +200,16 @@ export class Life {
     // Та же история: снесли кои из одного пруда и посадили в другой
     // тем же числом — рыбы обязаны переселиться за своим предметом,
     // а не кружить над опустевшим местом.
+    // Лягушки появляются только рядом с водой: пруд становится причиной возвращения.
+    const pondCount = world.objects.filter((o) => o.type === 'pond' || o.type === 'lotus' || o.type === 'lilypad').length;
+    const frogWant = pondCount ? 2 : 0;
+    while (this.frogs.length < frogWant) {
+      const spot = this.findWaterSpot(world);
+      if (!spot) break;
+      this.frogs.push({ tx: spot.x, ty: spot.y, phase: rnd() * 10, seed: rnd() * 10000, timer: 1000 + rnd() * 3000 });
+    }
+    while (this.frogs.length > frogWant) this.frogs.pop();
+
     const koiObjs = world.objects.filter((o) => o.type === 'koi');
     const koiKey = koiObjs.map((o) => o.id).join(',');
     if (koiKey !== this.koiKey) {
@@ -222,6 +238,7 @@ export class Life {
     this.updateWind(dt, t);
     this.updateCats(world, t, dt);
     this.updateBirds(world, t, dt);
+    this.updateFrogs(world, dt);
     this.updateFlutters(world, t, dt, now);
     this.updateFish(world, dt);
     this.updateFalling(world, t, dt);
@@ -426,6 +443,17 @@ export class Life {
   private birdLeave(b: Bird): void {
     b.state = 'fly-out';
     b.timer = 4000;
+  }
+
+  private updateFrogs(world: World, dt: number): void {
+    for (const f of this.frogs) {
+      f.timer -= dt; f.phase += dt * 0.003;
+      if (f.timer <= 0) {
+        f.timer = 1400 + rnd() * 3600;
+        const spot = this.findWaterSpot(world);
+        if (spot) { f.tx = spot.x; f.ty = spot.y; }
+      }
+    }
   }
 
   // ---------------- Бабочки и стрекозы ----------------

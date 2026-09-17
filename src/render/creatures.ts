@@ -3,7 +3,7 @@
 import { isoToScreen } from '../core/iso';
 import { clamp01, hash2, lerp } from '../core/rng';
 import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
-import { Bird, Cat, Fish, Flutter } from '../world/life';
+import { Bird, Cat, Fish, Flutter, Frog } from '../world/life';
 import { World } from '../world/world';
 import { Ctx, glow, softShadow } from './paint';
 
@@ -593,6 +593,23 @@ export function drawFlutter(ctx: Ctx, f: Flutter, x: number, y: number, atm: Atm
       ctx.restore();
     }
   }
+}
+
+
+// ---------------- Лягушки ----------------
+
+export function drawFrog(ctx: Ctx, frog: Frog, x: number, y: number, atm: Atmosphere, time: number): void {
+  const jump = Math.max(0, Math.sin(frog.phase + time * 0.001)) * 3;
+  const green = litc({ r: 92, g: 142, b: 91 }, atm);
+  const belly = litc({ r: 190, g: 193, b: 122 }, atm);
+  ctx.save(); ctx.translate(x, y - jump);
+  ctx.globalCompositeOperation = 'multiply';
+  softShadow(ctx, 0, 2, 7, 2, atm.shadowTint, atm.shadowAmount);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = css(green, 0.96); ctx.beginPath(); ctx.ellipse(0, -4, 6, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = css(belly, 0.8); ctx.beginPath(); ctx.ellipse(1, -2.5, 3.8, 2, 0, 0, Math.PI * 2); ctx.fill();
+  for (const ox of [-3.5, 3.5]) { ctx.fillStyle = css(green, 0.98); ctx.beginPath(); ctx.arc(ox, -8, 2.5, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = css({r:35,g:42,b:30}, 0.9); ctx.beginPath(); ctx.arc(ox, -8, 0.65, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
 }
 
 // ---------------- Карпы ----------------

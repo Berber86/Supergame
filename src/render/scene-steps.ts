@@ -15,7 +15,7 @@ import { World } from '../world/world';
 import { Ctx, getPaperTile, glow } from './paint';
 import { drawCost, drawObject, drawObjectShadow } from './sprites';
 import { cacheable, cachedGrowth, drawCached } from './spriteCache';
-import { drawBird, drawCat, drawFlutter } from './creatures';
+import { drawBird, drawCat, drawFlutter, drawFrog } from './creatures';
 import type { GhostPreview } from './scene';
 
 /** Наборка состояния сцены, нужная одному кадру сортированных объектов. */
@@ -441,6 +441,12 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
       const lvl = tile ? tile.level : 0;
       const p = isoToScreen(b.tx, b.ty, lvl);
       list.push({ depth: (b.tx + b.ty) * 100 + lvl * 20 + 6, draw: () => drawBird(ctx, b, p.x, p.y, atm, time) });
+    }
+    for (const f of opts.life.frogs) {
+      const tile = world.at(Math.floor(f.tx), Math.floor(f.ty));
+      const lvl = tile ? tile.level - (tile.water ? 0.22 : 0) : 0;
+      const p = isoToScreen(f.tx, f.ty, lvl);
+      list.push({ depth: (f.tx + f.ty) * 100 + lvl * 20 + 7, draw: () => drawFrog(ctx, f, p.x, p.y, atm, time) });
     }
     // бабочки, стрекозы и светлячки — тоже частицы
     for (const f of opts.particles ? opts.life.flutters : []) {
