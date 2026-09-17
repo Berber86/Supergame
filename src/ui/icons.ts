@@ -84,6 +84,7 @@ export const GLYPHS: Record<string, string> = {
   gardens: '<path d="M4 20V9l6-4 6 4v11"/><path d="M16 20V12h4v8"/><path d="M4 20h16"/>',
   file: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
   trash: '<path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="M6 7l1 13h10l1-13"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/>',
   roof: '<path d="M3 12L12 5l9 7"/><path d="M5 12v7h14v-7"/>',
   'roof-off': '<path d="M3 12L12 5l9 7"/><path d="M4 4l16 16"/>',
   path: '<path d="M7 21c0-4 3-4 3-8s-3-4-3-7"/><path d="M14 21c1.5-3 3-3.5 3-7s-2-4-2-7"/><circle cx="7" cy="3" r="1"/><circle cx="15" cy="4" r="1"/>',

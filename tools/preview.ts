@@ -44,6 +44,7 @@ async function main() {
   scene.centerOn(GRID / 2, GRID / 2 + 1.5);
   scene.camera.zoom = Number(process.env.ZOOM ?? 0.85);
   if (process.env.NOROOF) { scene.roofVisible = false; scene.snapRoof(); }
+  if (process.env.NOPARTICLES) scene.particles = false;
   if (process.env.CX) scene.centerOn(Number(process.env.CX), Number(process.env.CY ?? 12));
 
   // Собираем момент времени: нужный час нужного сезона

@@ -35,6 +35,8 @@ export interface UIHooks {
   onGardens(): void;
   /** Показать или убрать кровлю усадьбы. */
   onRoof(): void;
+  /** Панель настроек вида. */
+  onSettings(): void;
 }
 
 export class UI {
@@ -99,6 +101,7 @@ export class UI {
     this.els.btnSound = mk('sound-off', 'Звук (M)');
     this.els.btnRoof = mk('roof', 'Крыша (R)');
     this.els.btnGardens = mk('gardens', 'Усадьбы (U)');
+    this.els.btnSettings = mk('settings', 'Настройки (S)');
     this.els.btnHelp = mk('scroll', 'Свиток (H)');
     layer.appendChild(tools);
 
@@ -107,6 +110,7 @@ export class UI {
     this.els.btnShot.addEventListener('click', () => this.hooks.onScreenshot());
     this.els.btnSound.addEventListener('click', () => this.onSound?.());
     this.els.btnRoof.addEventListener('click', () => this.hooks.onRoof());
+    this.els.btnSettings.addEventListener('click', () => this.hooks.onSettings());
     this.els.btnGardens.addEventListener('click', () => this.hooks.onGardens());
     this.els.btnHelp.addEventListener('click', () => this.toggleHelp());
 
@@ -206,6 +210,8 @@ export class UI {
         <dt>1 2 3</dt><dd>Размер кисти земли</dd>
         <dt>Ctrl+Z</dt><dd>Отменить · с Shift — вернуть</dd>
         <dt>R</dt><dd>Убрать крышу — заглянуть в комнаты</dd>
+        <dt>S</dt><dd>Настройки: частицы, контраст, размер</dd>
+        <dt>Shift+P</dt><dd>Формат снимка: широкий · квадрат · свиток</dd>
         <dt>U</dt><dd>Усадьбы: несколько садов, файл на диск</dd>
         <dt>Esc</dt><dd>Отложить инструмент</dd>
       </dl>

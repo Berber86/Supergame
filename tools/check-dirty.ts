@@ -28,9 +28,13 @@ async function main() {
     { name: 'зима, снег', hour: 16, act: (w) => w.applyBrush(BRUSH_BY_ID.get('g_soil')!, 9, 18) },
   ];
 
-  // Порог заметности. Расхождение в 1–2 единицы на канал даёт округление
-  // при переносе картинки между холстами; глазом такое не различить.
-  const EPS = 8;
+  // Порог заметности — на канал, а не на сумму каналов.
+  //
+  // Раньше складывались все четыре канала и сравнивались с тем же числом:
+  // расхождение 3/255 на каждом канале давало сумму 9 и «проваливало»
+  // проверку, хотя глазом такое не различить. Меряем максимум по каналу —
+  // так порог означает ровно то, что написано.
+  const EPS = 4;
   let worst = 0;
   let worstD = 0;
   for (const c of cases) {
@@ -56,8 +60,16 @@ async function main() {
     let diff = 0;
     let maxd = 0;
     for (let i = 0; i < a.length; i += 4) {
-      const dr = Math.abs(a[i]-b[i]) + Math.abs(a[i+1]-b[i+1]) + Math.abs(a[i+2]-b[i+2]) + Math.abs(a[i+3]-b[i+3]);
-      if (dr > EPS) { diff++; maxd = Math.max(maxd, dr); }
+      const dr = Math.max(
+        Math.abs(a[i] - b[i]),
+        Math.abs(a[i + 1] - b[i + 1]),
+        Math.abs(a[i + 2] - b[i + 2]),
+        Math.abs(a[i + 3] - b[i + 3]),
+      );
+      if (dr > EPS) {
+        diff++;
+        maxd = Math.max(maxd, dr);
+      }
     }
     worst = Math.max(worst, diff);
     worstD = Math.max(worstD, maxd);

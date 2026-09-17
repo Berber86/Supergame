@@ -119,7 +119,13 @@ export function renderTerrain(world: World, atm: Atmosphere, scale = 1, into?: T
   const ctx = target.getContext('2d')!;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (partial) ctx.clearRect(rect!.x, rect!.y, rect!.w, rect!.h);
+  // Чистим весь холст, а не только участок переноса.
+  //
+  // Тайлы за пределами прямоугольника тоже рисуются (их краска может
+  // залететь внутрь), и следы прошлой правки, оставшиеся рядом, попадали
+  // бы в перенос. Ловилось это одним пикселем на шести миллионах —
+  // но один настоящий пиксель важнее удобной погрешности.
+  if (partial) ctx.clearRect(0, 0, target.width, target.height);
   ctx.scale(scale, scale);
   ctx.translate(-minX, -minY);
 
@@ -489,8 +495,14 @@ function drawGlobalWash(ctx: Ctx, world: World, atm: Atmosphere, b: Bounds): voi
 
 /** Зимой землю укрывает снег: непрерывный покров, без следов сетки. */
 function drawSnowCover(ctx: Ctx, world: World, atm: Atmosphere, b: Bounds): void {
-  const snow = shade(mix({ r: 250, g: 251, b: 254 }, atm.lightTint, atm.lightAmount * 0.8), atm.exposure);
-  const shadowSnow = shade(mix({ r: 212, g: 223, b: 240 }, atm.lightTint, atm.lightAmount), atm.exposure);
+  // Снег не белила: в полдень экспозиция и так вытягивает его к белому,
+  // и если брать чистый белый за основу, лепка сугробов пропадает —
+  // сад превращается в лист бумаги. Держим основу чуть голубее,
+  // а на ярком свету дополнительно придерживаем.
+  const bright = clamp01((atm.exposure - 1) * 1.2);
+  const snowBase = mix({ r: 242, g: 245, b: 250 }, { r: 214, g: 226, b: 240 }, bright * 0.55);
+  const snow = shade(mix(snowBase, atm.lightTint, atm.lightAmount * 0.8), Math.min(atm.exposure, 1.04));
+  const shadowSnow = shade(mix({ r: 196, g: 212, b: 234 }, atm.lightTint, atm.lightAmount), Math.min(atm.exposure, 1.04));
 
   // 1) Сплошная непрозрачная шапка одной фигурой — швов быть не может
   ctx.save();
@@ -526,7 +538,8 @@ function drawSnowCover(ctx: Ctx, world: World, atm: Atmosphere, b: Bounds): void
         blobPath(ctx, p.x, p.y, TILE_W * (0.5 + n), TILE_H * (0.5 + n), Math.round(gx * 19 + gy * 7), 0.36, 10);
         ctx.fill();
       } else if (n > 0.6) {
-        ctx.fillStyle = css({ r: 255, g: 255, b: 255 }, (n - 0.6) * 0.7);
+        // блик на гребне сугроба — но не в полную силу на ярком свету
+        ctx.fillStyle = css({ r: 255, g: 255, b: 255 }, (n - 0.6) * 0.7 * (1 - bright * 0.45));
         blobPath(ctx, p.x, p.y, TILE_W * (0.4 + n * 0.6), TILE_H * (0.4 + n * 0.6), Math.round(gx * 41 + gy * 13), 0.34, 10);
         ctx.fill();
       }

@@ -75,6 +75,8 @@ export class Scene {
     this.roofFade = this.roofVisible ? 1 : 0;
   }
 
+  /** Показывать ли частицы: лепестки, светлячков, бабочек, дождь. */
+  particles = true;
   /** Начало прокладываемой тропы. */
   pathFrom: { x: number; y: number } | null = null;
   /** Предпросмотр тропы — клетки, по которым она ляжет. */
@@ -294,7 +296,7 @@ export class Scene {
     // мокрый блеск и круги от капель
     if (ws) {
       drawWetSheen(ctx, world, atm, ws, time);
-      this.rain.drawWorldLayer(ctx, world, atm, ws);
+      if (this.particles) this.rain.drawWorldLayer(ctx, world, atm, ws);
     }
 
     ctx.restore();
@@ -314,11 +316,15 @@ export class Scene {
         }
       }
     }
-    this.weather.update(dt, atm);
-    this.weather.draw(ctx, atm);
+    // Частицы можно отключить в настройках: кого-то от них укачивает,
+    // а сад и без них остаётся садом.
+    if (this.particles) {
+      this.weather.update(dt, atm);
+      this.weather.draw(ctx, atm);
+    }
 
     // дождь, туман и молнии — поверх сцены
-    if (ws) {
+    if (ws && this.particles) {
       this.rain.drawScreenLayer(ctx, atm, ws);
       drawFog(ctx, W, H, atm, ws, time);
       drawLightning(ctx, W, H, ws);
@@ -660,7 +666,8 @@ export class Scene {
         const p = isoToScreen(b.tx, b.ty, lvl);
         list.push({ depth: (b.tx + b.ty) * 100 + lvl * 20 + 6, draw: () => drawBird(ctx, b, p.x, p.y, atm, time) });
       }
-      for (const f of this.life.flutters) {
+      // бабочки, стрекозы и светлячки — тоже частицы
+      for (const f of this.particles ? this.life.flutters : []) {
         const tile = world.at(Math.floor(f.tx), Math.floor(f.ty));
         const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
         const p = isoToScreen(f.tx, f.ty, lvl);

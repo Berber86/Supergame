@@ -23,6 +23,7 @@ import { GardensPanel } from './ui/gardensPanel';
 import { waterLoudness } from './render/water';
 import { findPath, layPath } from './world/paths';
 import { ShotRatio, composeScroll } from './ui/snapshot';
+import { SettingsPanel, applyView, loadView } from './ui/settings';
 import { PlacedObject } from './world/types';
 
 const app = document.getElementById('app')!;
@@ -127,9 +128,21 @@ const ui = new UI(app, world, {
   onRoof() {
     setRoofVisible(!scene.roofVisible);
   },
+  onSettings() {
+    settingsPanel.toggle();
+  },
   onGardens() {
     gardensPanel.toggle();
   },
+});
+
+// Настройки вида применяем до первого кадра, чтобы интерфейс
+// сразу открылся таким, каким игрок его оставил.
+const view = loadView();
+applyView(view);
+
+const settingsPanel = new SettingsPanel(app, view, (v) => {
+  scene.particles = v.particles;
 });
 
 const gardensPanel = new GardensPanel(app, world, gardens, {
@@ -422,6 +435,8 @@ window.addEventListener('keydown', (e) => {
     ui.select(ui.selection.kind === 'path' ? { kind: 'none' } : { kind: 'path' });
   } else if (k === 'r') {
     setRoofVisible(!scene.roofVisible);
+  } else if (k === 's') {
+    settingsPanel.toggle();
   } else if (k === 'u') {
     gardensPanel.toggle();
   } else if (k === '1' || k === '2' || k === '3') {
@@ -861,6 +876,7 @@ function frame(now: number): void {
 scene.roofVisible = loadRoofPref();
 scene.snapRoof();
 ui.setRoofState(scene.roofVisible);
+scene.particles = view.particles;
 
 requestAnimationFrame(frame);
 
