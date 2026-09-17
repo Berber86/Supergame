@@ -1,0 +1,494 @@
+/**
+ * Ввод: мышь, клавиатура и отдельный разбор касаний.
+ *
+ * Мышиные обработчики и TouchInput живут вместе — на планшете с трекпадом
+ * работают оба; синтетические pointer-события от касаний отсекаются.
+ * Состояние жестов — закрытое; наружу видны только указатель для призрака,
+ * несомый предмет и отметка начала тропы.
+ */
+
+import { clamp } from '../core/rng';
+import { floorTo } from '../core/iso';
+import { ITEM_BY_ID } from '../world/catalog';
+import { PlacedObject } from '../world/types';
+import { TouchInput, isTouchDevice } from '../ui/touch';
+import type { Scene } from '../render/scene';
+import type { World } from '../world/world';
+import type { History } from '../core/history';
+import type { UI, Selection } from '../ui/ui';
+import type { GardenAudio } from '../audio/audio';
+import type { TimeControl } from '../core/timeControl';
+import type { GardensPanel } from '../ui/gardensPanel';
+import type { SettingsPanel } from '../ui/settings';
+import type { DevPanel } from '../ui/devPanel';
+
+/** Положение указателя для призрака — на пальце его нет. */
+export const pointer = { x: 0, y: 0, has: false };
+
+/** Объект, который сейчас переносят, и его исходное место. */
+export const moving: { current: { obj: PlacedObject; fromX: number; fromY: number } | null } = {
+  current: null,
+};
+
+/** Начало тропы: первый клик инструмента «Тропа». */
+export const pathStart: { current: { x: number; y: number } | null } = { current: null };
+
+export const touchMode = isTouchDevice();
+
+/** Действия, которые ввод просит у игры. */
+export interface InputActions {
+  applyAt(sx: number, sy: number, isClick: boolean): void;
+  applyErase(sx: number, sy: number): void;
+  updateGhost(): void;
+  wake(): void;
+  saveWorld(): void;
+  syncHistoryUI(): void;
+  doUndo(): void;
+  doRedo(): void;
+  setZen(on: boolean): void;
+  takeScreenshot(): void;
+  cycleShotRatio(): void;
+  setRoofVisible(visible: boolean): void;
+  toggleSound(): void;
+  /** Поворот призрака на 90° — состояние ghostRot живёт в main. */
+  rotateGhost(): void;
+}
+
+export interface InputDeps {
+  canvas: HTMLCanvasElement;
+  scene: Scene;
+  world: World;
+  history: History;
+  ui: UI;
+  audio: GardenAudio;
+  timeCtl: TimeControl;
+  gardensPanel: GardensPanel;
+  settingsPanel: SettingsPanel;
+  devPanel: DevPanel;
+  selection(): Selection;
+  isZenMode(): boolean;
+  isStartOpen(): boolean;
+  isPracticeOpen(): boolean;
+  closePractice(): void;
+  actions: InputActions;
+}
+
+export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
+  const { canvas, scene, world, history, ui, audio, timeCtl, gardensPanel, settingsPanel, devPanel } = deps;
+  const { selection, isZenMode, isStartOpen, isPracticeOpen, closePractice, actions } = deps;
+
+  // ---------------- Ввод ----------------
+
+  let dragging = false;
+  let painting = false;
+  let lastX = 0;
+  let lastY = 0;
+
+  /**
+   * Сбросить незавершённое действие — при смене усадьбы на середине
+   * мазка, переноса или разметки тропы. След прошлого сада не должен
+   * оставаться нажатым состоянием в новом.
+   */
+  function cancelOngoingAction(): void {
+    moving.current = null;
+    scene.movingId = -1;
+    dragging = false;
+    painting = false;
+    pathStart.current = null;
+    scene.pathFrom = null;
+    scene.pathPreview = null;
+    canvas.classList.remove('dragging');
+    actions.updateGhost();
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    // На пальце работает TouchInput; браузер дублирует касания
+    // синтетическими pointer-событиями, и без этой отсечки
+    // каждое касание срабатывало бы дважды.
+    if (e.pointerType === 'touch') return;
+    canvas.setPointerCapture(e.pointerId);
+    lastX = e.clientX;
+    lastY = e.clientY;
+    actions.wake();
+
+    if (e.button === 2) {
+      // ПКМ — убрать объект
+      actions.applyErase(e.clientX, e.clientY);
+      return;
+    }
+    if (selection().kind === 'move' && e.button === 0) {
+      const p = scene.pickTile(e.clientX, e.clientY, world);
+      const obj = world.pickObject(p.tx, p.ty);
+      if (obj) {
+        history.begin('перенос', null);
+        moving.current = { obj, fromX: obj.tx, fromY: obj.ty };
+        scene.movingId = obj.id;
+        painting = true;
+        audio.place();
+      } else {
+        dragging = true;
+        canvas.classList.add('dragging');
+      }
+      return;
+    }
+    if (selection().kind !== 'none' && e.button === 0) {
+      painting = true;
+      actions.applyAt(e.clientX, e.clientY, true);
+    } else {
+      dragging = true;
+      canvas.classList.add('dragging');
+    }
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch') return;
+    pointer.x = e.clientX;
+    pointer.y = e.clientY;
+    pointer.has = true;
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+      actions.wake();
+    }
+    if (dragging) {
+      scene.camera.x -= dx / scene.camera.zoom;
+      scene.camera.y -= dy / scene.camera.zoom;
+      scene.clampCamera();
+    } else if (moving.current) {
+      const p = scene.pickTile(e.clientX, e.clientY, world);
+      const item = ITEM_BY_ID.get(moving.current.obj.type);
+      if (item) {
+        const s2 =
+          item.step === 1
+            ? { tx: Math.floor(p.tx - (item.w - 1) / 2), ty: Math.floor(p.ty - (item.h - 1) / 2) }
+            : { tx: floorTo(p.tx, item.step), ty: floorTo(p.ty, item.step) };
+        world.moveObject(moving.current.obj, s2.tx, s2.ty);
+      }
+    } else if (painting && selection().kind === 'brush') {
+      actions.applyAt(e.clientX, e.clientY, false);
+    } else if (painting && selection().kind === 'item' && (selection() as { item: { step: number } }).item.step < 1) {
+      // мелочи можно «рассыпать» движением
+      actions.applyAt(e.clientX, e.clientY, false);
+    }
+    lastX = e.clientX;
+    lastY = e.clientY;
+    actions.updateGhost();
+  });
+
+  const endPointer = () => {
+    if (moving.current) {
+      const m = moving.current;
+      moving.current = null;
+      scene.movingId = -1;
+      if (m.obj.tx === m.fromX && m.obj.ty === m.fromY) {
+        history.abort();
+      } else if (history.commit()) {
+        const item = ITEM_BY_ID.get(m.obj.type);
+        ui.toast(`${item?.name ?? 'Предмет'} переставлен`);
+        actions.syncHistoryUI();
+      }
+    } else if (painting) {
+      // мазок кистью закончен — следующий станет отдельным шагом отмены
+      if (history.commit()) actions.syncHistoryUI();
+      history.breakMerge();
+    }
+    dragging = false;
+    painting = false;
+    canvas.classList.remove('dragging');
+    actions.saveWorld();
+  };
+  canvas.addEventListener('pointerup', (e) => {
+    if (e.pointerType === 'touch') return;
+    endPointer();
+  });
+  canvas.addEventListener('pointercancel', (e) => {
+    if (e.pointerType === 'touch') return;
+    endPointer();
+  });
+  canvas.addEventListener('pointerleave', () => {
+    pointer.has = false;
+    scene.ghost = null;
+  });
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  canvas.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      actions.wake();
+      const before = scene.screenToWorld(e.clientX, e.clientY);
+      const k = Math.exp(-e.deltaY * 0.0012);
+      scene.camera.zoom = clamp(scene.camera.zoom * k, 0.12, 2.4);
+      const after = scene.screenToWorld(e.clientX, e.clientY);
+      scene.camera.x += before.x - after.x;
+      scene.camera.y += before.y - after.y;
+      scene.clampCamera();
+      actions.updateGhost();
+    },
+    { passive: false },
+  );
+
+  if (touchMode) document.body.classList.add('touch');
+
+  // ---------------- Управление пальцем ----------------
+  //
+  // На телефоне работает отдельный разбор жестов: у пальца нет правой кнопки,
+  // колеса и наведения. Мышиные обработчики при этом остаются — на планшете
+  // с трекпадом могут пригодиться оба.
+
+  if (touchMode) document.body.classList.add('touch');
+
+  /** Масштаб вокруг точки: картинка не должна уезжать из-под пальцев. */
+  function zoomAt(k: number, sx: number, sy: number): void {
+    const before = scene.screenToWorld(sx, sy);
+    scene.camera.zoom = clamp(scene.camera.zoom * k, 0.12, 2.4);
+    const after = scene.screenToWorld(sx, sy);
+    scene.camera.x += before.x - after.x;
+    scene.camera.y += before.y - after.y;
+    scene.clampCamera();
+  }
+
+  if (touchMode) {
+    new TouchInput(canvas, {
+      isPainting: () => selection().kind !== 'none',
+
+      onTap(x, y) {
+        actions.wake();
+        if (selection().kind === 'none') return;
+        pointer.x = x;
+        pointer.y = y;
+        pointer.has = true;
+        // Перенос пальцем идёт в два касания: взять и поставить.
+        // Тащить объект и одновременно видеть его под пальцем невозможно.
+        if (selection().kind === 'move') {
+          tapMove(x, y);
+          return;
+        }
+        actions.applyAt(x, y, true);
+        if (history.commit()) actions.syncHistoryUI();
+        history.breakMerge();
+        actions.saveWorld();
+      },
+
+      onHold(x, y) {
+        // Долгое нажатие заменяет правую кнопку мыши
+        actions.wake();
+        actions.applyErase(x, y);
+        actions.saveWorld();
+      },
+
+      onDragStart(x, y) {
+        actions.wake();
+        // Кистью и мелочью рисуем, всем остальным — возим камеру.
+        const sel2 = selection();
+        const paintable = sel2.kind === 'brush' || (sel2.kind === 'item' && sel2.item.step < 1);
+        if (paintable) {
+          painting = true;
+          pointer.x = x;
+          pointer.y = y;
+          pointer.has = true;
+          actions.applyAt(x, y, true);
+        } else {
+          dragging = true;
+        }
+      },
+
+      onDragMove(x, y, dx, dy) {
+        if (painting) {
+          pointer.x = x;
+          pointer.y = y;
+          actions.applyAt(x, y, false);
+        } else if (dragging) {
+          scene.camera.x -= dx / scene.camera.zoom;
+          scene.camera.y -= dy / scene.camera.zoom;
+          scene.clampCamera();
+        }
+      },
+
+      onDragEnd() {
+        if (painting) {
+          if (history.commit()) actions.syncHistoryUI();
+          history.breakMerge();
+          actions.saveWorld();
+        }
+        painting = false;
+        dragging = false;
+        // Призрак под пальцем больше не нужен — палец убран
+        scene.ghost = null;
+        pointer.has = false;
+      },
+
+      onPinch(k, cx, cy, dx, dy) {
+        actions.wake();
+        zoomAt(k, cx, cy);
+        scene.camera.x -= dx / scene.camera.zoom;
+        scene.camera.y -= dy / scene.camera.zoom;
+        scene.clampCamera();
+      },
+
+      onPinchEnd() {
+        scene.ghost = null;
+        pointer.has = false;
+      },
+    });
+  }
+
+  /** Перенос в два касания: первое берёт предмет, второе ставит. */
+  function tapMove(sx: number, sy: number): void {
+    const p = scene.pickTile(sx, sy, world);
+    if (!moving.current) {
+      const obj = world.pickObject(p.tx, p.ty);
+      if (!obj) {
+        ui.toast('Здесь нечего переносить');
+        return;
+      }
+      history.begin('перенос', null);
+      moving.current = { obj, fromX: obj.tx, fromY: obj.ty };
+      scene.movingId = obj.id;
+      audio.place();
+      ui.setHint('Теперь коснитесь места, куда поставить');
+      return;
+    }
+
+    const item = ITEM_BY_ID.get(moving.current.obj.type);
+    if (item) {
+      const s2 =
+        item.step === 1
+          ? { tx: Math.floor(p.tx - (item.w - 1) / 2), ty: Math.floor(p.ty - (item.h - 1) / 2) }
+          : { tx: floorTo(p.tx, item.step), ty: floorTo(p.ty, item.step) };
+      world.moveObject(moving.current.obj, s2.tx, s2.ty);
+    }
+    const m = moving.current;
+    moving.current = null;
+    scene.movingId = -1;
+    if (m.obj.tx === m.fromX && m.obj.ty === m.fromY) {
+      history.abort();
+    } else if (history.commit()) {
+      ui.toast(`${item?.name ?? 'Предмет'} переставлен`);
+      actions.syncHistoryUI();
+    }
+    ui.setHint('Перенос — коснитесь предмета, затем места');
+    actions.saveWorld();
+  }
+
+  window.addEventListener('keydown', (e) => {
+    const k = e.key.toLowerCase();
+    // Не перехватываем набор текста (переименование усадьбы)
+    const el = e.target as HTMLElement | null;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
+    // Пока висит свиток, сад ещё не начался: клавиши ему не принадлежат.
+    if (isStartOpen()) return;
+    // Под листом практики сад не живёт: клавиши не проходят сквозь него.
+    if (isPracticeOpen()) {
+      if (e.key === 'Escape') closePractice();
+      return;
+    }
+    actions.wake();
+
+    // Отмена и повтор — до остальных клавиш
+    if ((e.ctrlKey || e.metaKey) && k === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) actions.doRedo();
+      else actions.doUndo();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && k === 'y') {
+      e.preventDefault();
+      actions.doRedo();
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) return;
+
+    if (k === 'b') {
+      ui.toggleBuild();
+    } else if (k === 'z') {
+      actions.setZen(!isZenMode());
+    } else if (k === 'p') {
+      // Shift меняет формат кадра, без него — снимаем
+      if (e.shiftKey) actions.cycleShotRatio();
+      else actions.takeScreenshot();
+    } else if (k === 'h' || k === '?') {
+      ui.toggleHelp();
+    } else if (k === 'r') {
+      actions.rotateGhost();
+    } else if (k === 'x') {
+      ui.select({ kind: 'erase' });
+      ui.toggleBuild(true);
+    } else if (k === 'escape') {
+      if (gardensPanel.isOpen) gardensPanel.setOpen(false);
+      else if (ui.selection.kind !== 'none') ui.select({ kind: 'none' });
+      else ui.toggleBuild(false);
+      ui.toggleHelp(false);
+    } else if (k === 'g') {
+      scene.showGrid = !scene.showGrid;
+    } else if (k === 'i') {
+      ui.toggleBuild(true);
+      ui.select(ui.selection.kind === 'pick' ? { kind: 'none' } : { kind: 'pick' });
+    } else if (k === 'v') {
+      ui.toggleBuild(true);
+      ui.select(ui.selection.kind === 'move' ? { kind: 'none' } : { kind: 'move' });
+    } else if (k === 'f') {
+      ui.toggleBuild(true);
+      ui.fillFromKeyboard();
+    } else if (k === 'l') {
+      ui.toggleBuild(true);
+      ui.select(ui.selection.kind === 'path' ? { kind: 'none' } : { kind: 'path' });
+    } else if (k === 's') {
+      settingsPanel.toggle();
+    } else if (k === 'u') {
+      gardensPanel.toggle();
+    } else if (k === '1' || k === '2' || k === '3') {
+      ui.setBrushSize(k === '1' ? 1 : k === '2' ? 3 : 5);
+    } else if (k === 't') {
+      devPanel.toggle();
+      devPanel.refresh();
+    } else if (k === 'm') {
+      actions.toggleSound();
+    } else if (k === 'arrowleft' || k === 'arrowright') {
+      e.preventDefault();
+      const dir = k === 'arrowright' ? 1 : -1;
+      if (e.shiftKey) timeCtl.nextSeason(dir);
+      else timeCtl.nudgeHour(dir * (e.altKey ? 0.25 : 1));
+      scene.markTerrainDirty();
+      devPanel.refresh();
+    }
+  });
+
+  /** Книжная ориентация — для подсказки «поверните телефон». */
+  function syncOrientation(): void {
+    const portrait = window.innerHeight > window.innerWidth;
+    document.body.classList.toggle('portrait', portrait);
+  }
+  syncOrientation();
+  window.addEventListener('orientationchange', () => {
+    // Размеры окна после поворота приходят не сразу — ждём кадр-другой
+    setTimeout(() => {
+      syncOrientation();
+      scene.resize();
+      scene.markTerrainDirty();
+      // Вид подбирается под ориентацию: в альбоме сад помещается целиком,
+      // в книжной — только его середина. Без пересчёта после поворота
+      // остался бы масштаб от прошлой ориентации.
+      if (touchMode) scene.fitToView();
+      scene.clampCamera();
+    }, 160);
+  });
+
+  // В мобильных браузерах адресная строка сворачивается на ходу и меняет
+  // высоту окна. visualViewport сообщает об этом точнее, чем resize.
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+      scene.resize();
+      scene.markTerrainDirty();
+      scene.clampCamera();
+    });
+  }
+
+  window.addEventListener('resize', () => {
+    syncOrientation();
+    scene.resize();
+    scene.markTerrainDirty();
+  });
+
+  return { cancelOngoingAction };
+}

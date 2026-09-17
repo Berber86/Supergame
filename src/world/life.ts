@@ -168,8 +168,7 @@ export class Life {
     // а другого завели между двумя кадрами, количество не изменилось,
     // но это уже другой кот.
     const catObjs = world.objects.filter((o) => o.type === 'cat');
-    const sameCats =
-      catObjs.length === this.cats.length && catObjs.every((o, i) => this.cats[i].id === o.id);
+    const sameCats = catObjs.length === this.cats.length && catObjs.every((o, i) => this.cats[i].id === o.id);
     if (!sameCats) {
       this.cats = catObjs.map((o) => {
         const prev = this.cats.find((c) => c.id === o.id);
@@ -499,7 +498,10 @@ export class Life {
       if (f.timer <= 0 || !f.target) {
         f.timer = 1600 + rnd() * 3200;
         if (f.kind === 'butterfly') {
-          const spot = flowers.length && rnd() < 0.7 ? flowers[Math.floor(rnd() * flowers.length)] : randomWalkable(world, { x: f.tx, y: f.ty }, 5);
+          const spot =
+            flowers.length && rnd() < 0.7
+              ? flowers[Math.floor(rnd() * flowers.length)]
+              : randomWalkable(world, { x: f.tx, y: f.ty }, 5);
           f.target = spot;
           // иногда присаживается на цветок
           if (spot && rnd() < 0.3) f.resting = 1800 + rnd() * 3000;

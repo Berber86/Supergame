@@ -1,0 +1,528 @@
+/**
+ * Шаги отрисовки сцены — чистые функции над контекстом холста.
+ *
+ * Порядок и обоснования слоёв остаются в Scene.render; здесь — сами мазки:
+ * небо и горы, тень-подложка, строительная сетка, призрак и подсветки,
+ * сортированные объекты, свечение окон, зерно бумаги и цветокоррекция.
+ */
+
+import { GRID, TILE_H, TILE_W, isoToScreen } from '../core/iso';
+import { clamp01, hash2 } from '../core/rng';
+import { ITEM_BY_ID } from '../world/catalog';
+import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
+import { PlacedObject } from '../world/types';
+import { World } from '../world/world';
+import { Ctx, getPaperTile, glow } from './paint';
+import { drawCost, drawObject, drawObjectShadow } from './sprites';
+import { cacheable, cachedGrowth, drawCached } from './spriteCache';
+import { drawBird, drawCat, drawFlutter } from './creatures';
+import type { GhostPreview } from './scene';
+
+/** Наборка состояния сцены, нужная одному кадру сортированных объектов. */
+export interface ObjectsOpts {
+  life: import('../world/life').Life | null;
+  wind: number;
+  zoom: number;
+  camX: number;
+  camY: number;
+  viewW: number;
+  viewH: number;
+  movingId: number;
+  highlightId: number;
+  useSpriteCache: boolean;
+  particles: boolean;
+}
+
+export function drawSky(ctx: Ctx, W: number, H: number, atm: Atmosphere, time: number): void {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, css(atm.skyTop, 1));
+  g.addColorStop(0.62, css(mix(atm.skyTop, atm.skyBottom, 0.7), 1));
+  g.addColorStop(1, css(atm.skyBottom, 1));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  // Солнце / луна
+  const t = atm.time;
+  const sunT = clamp01((t.dayT - 0.22) / 0.58);
+  const isDay = t.dayT > 0.2 && t.dayT < 0.84;
+  const bodyX = W * (0.12 + sunT * 0.76);
+  const bodyY = H * (0.62 - Math.sin(sunT * Math.PI) * 0.52);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  if (isDay) {
+    const warm = mix({ r: 255, g: 246, b: 214 }, { r: 255, g: 198, b: 140 }, atm.golden);
+    glow(ctx, bodyX, bodyY, 190, warm, 0.5 + atm.golden * 0.4);
+    ctx.fillStyle = css(warm, 0.85);
+    ctx.beginPath();
+    ctx.arc(bodyX, bodyY, 26, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    const nightT = t.dayT < 0.2 ? (t.dayT + 0.16) / 0.36 : (t.dayT - 0.84 + 0.16) / 0.36;
+    const mx = W * (0.15 + clamp01(nightT) * 0.7);
+    const my = H * (0.5 - Math.sin(clamp01(nightT) * Math.PI) * 0.4);
+    const moon: RGB = { r: 238, g: 242, b: 226 };
+    glow(ctx, mx, my, 130, moon, 0.35);
+    ctx.fillStyle = css(moon, 0.8);
+    ctx.beginPath();
+    ctx.arc(mx, my, 19, 0, Math.PI * 2);
+    ctx.fill();
+    // лёгкий серп-тень
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = css(atm.skyTop, 0.55);
+    ctx.beginPath();
+    ctx.arc(mx - 8, my - 4, 17, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Звёзды
+  if (t.daylight < 0.35) {
+    const a = (1 - t.daylight / 0.35) * 0.85;
+    for (let i = 0; i < 70; i++) {
+      const sx = hash2(i, 3, 5) * W;
+      const sy = hash2(i, 7, 9) * H * 0.62;
+      const tw = 0.4 + 0.6 * Math.abs(Math.sin(time * 0.001 + i));
+      ctx.fillStyle = css({ r: 255, g: 253, b: 240 }, a * tw * (0.3 + hash2(i, 11, 13) * 0.7));
+      ctx.beginPath();
+      ctx.arc(sx, sy, 0.6 + hash2(i, 13, 17) * 1.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Облака — мягкие акварельные полосы
+  const cloudCol = mix({ r: 255, g: 252, b: 246 }, atm.skyBottom, 0.35);
+  for (let i = 0; i < 5; i++) {
+    const seed = hash2(i, 21, 3);
+    const speed = 0.0018 + seed * 0.0022;
+    const cx = ((time * speed + seed * 2000) % (W + 600)) - 300;
+    const cy = H * (0.06 + seed * 0.3);
+    const sc = 0.6 + seed * 0.9;
+    ctx.save();
+    ctx.globalAlpha = (0.14 + seed * 0.16) * (0.4 + atm.time.daylight * 0.8);
+    ctx.fillStyle = css(cloudCol, 1);
+    for (let k = 0; k < 5; k++) {
+      const kx = cx + (k - 2) * 62 * sc + hash2(i, k, 5) * 30;
+      const ky = cy + (hash2(i, k, 9) - 0.5) * 22;
+      ctx.beginPath();
+      ctx.ellipse(kx, ky, (58 + hash2(i, k, 11) * 46) * sc, (16 + hash2(i, k, 13) * 12) * sc, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Далёкие горы — силуэты на горизонте
+  drawMountains(ctx, W, H, atm);
+}
+
+export function drawMountains(ctx: Ctx, W: number, H: number, atm: Atmosphere): void {
+  const horizon = H * 0.58;
+  const layers = 3;
+  for (let l = layers - 1; l >= 0; l--) {
+    const depth = l / (layers - 1);
+    const col = mix(
+      mix(atm.palette.foliageDeep, atm.skyBottom, 0.55 + depth * 0.32),
+      atm.lightTint,
+      atm.lightAmount * 0.5,
+    );
+    ctx.fillStyle = css(shade(col, atm.exposure * (0.8 + depth * 0.15)), 0.5 - depth * 0.16);
+    ctx.beginPath();
+    ctx.moveTo(-50, H);
+    const baseY = horizon - (1 - depth) * 60;
+    ctx.lineTo(-50, baseY);
+    const peaks = 7 + l * 3;
+    for (let i = 0; i <= peaks; i++) {
+      const t = i / peaks;
+      const x = -50 + t * (W + 100);
+      const n = hash2(i * 3 + l * 17, l * 7, 23);
+      const n2 = hash2(i * 5 + l, l * 11, 31);
+      const y = baseY - n * (90 - depth * 45) - n2 * 24;
+      const px = x - (W + 100) / peaks / 2;
+      ctx.quadraticCurveTo(px, y + 18, x, y);
+    }
+    ctx.lineTo(W + 50, baseY);
+    ctx.lineTo(W + 50, H);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+export function drawIslandShadow(ctx: Ctx, atm: Atmosphere): void {
+  const c0 = isoToScreen(0, 0);
+  const c1 = isoToScreen(GRID, GRID);
+  const cx = (c0.x + c1.x) / 2;
+  const cy = (c0.y + c1.y) / 2 + 30;
+  const rx = (GRID * TILE_W) / 2 + 110;
+  const ry = (GRID * TILE_H) / 2 + 90;
+  const g = ctx.createRadialGradient(cx, cy, rx * 0.5, cx, cy, rx);
+  const col = mix(atm.shadowTint, { r: 40, g: 40, b: 50 }, 0.3);
+  g.addColorStop(0, css(col, 0.2));
+  g.addColorStop(1, css(col, 0));
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(1, ry / rx);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, 0, rx, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+export function drawGrid(ctx: Ctx, world: World, atm: Atmosphere, zoom: number): void {
+  ctx.save();
+  ctx.lineWidth = 1 / zoom;
+  const col = mix(atm.lightTint, { r: 255, g: 255, b: 255 }, 0.5);
+  for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < GRID; x++) {
+      const t = world.at(x, y)!;
+      const a = isoToScreen(x, y, t.level);
+      const b = isoToScreen(x + 1, y, t.level);
+      const c = isoToScreen(x + 1, y + 1, t.level);
+      const d = isoToScreen(x, y + 1, t.level);
+      ctx.strokeStyle = css(col, 0.13);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.lineTo(c.x, c.y);
+      ctx.lineTo(d.x, d.y);
+      ctx.closePath();
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+export function drawObjectMarker(
+  ctx: Ctx,
+  cx: number,
+  cy: number,
+  lvl: number,
+  strong: boolean,
+  time: number,
+  zoom: number,
+): void {
+  const p = isoToScreen(cx, cy, lvl);
+  const pulse = 0.6 + Math.sin(time * 0.005) * 0.2;
+  const col: RGB = strong ? { r: 250, g: 244, b: 216 } : { r: 236, g: 206, b: 138 };
+  ctx.save();
+  ctx.strokeStyle = css(col, (strong ? 0.75 : 0.5) * pulse);
+  ctx.lineWidth = 1.8 / zoom;
+  ctx.setLineDash([5 / zoom, 4 / zoom]);
+  ctx.beginPath();
+  ctx.ellipse(p.x, p.y, TILE_W * 0.42, TILE_H * 0.42, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = css(col, 0.14 * pulse);
+  ctx.fill();
+  ctx.restore();
+}
+
+export function drawPathPreview(
+  ctx: Ctx,
+  world: World,
+  time: number,
+  pathFrom: { x: number; y: number } | null,
+  pathPreview: { x: number; y: number }[] | null,
+  zoom: number,
+): void {
+  const pulse = 0.6 + Math.sin(time * 0.005) * 0.2;
+  const col: RGB = { r: 248, g: 242, b: 214 };
+
+  // Отметка начала — кружок, чтобы было видно, откуда ведём
+  if (pathFrom) {
+    const t = world.at(pathFrom.x, pathFrom.y);
+    const p = isoToScreen(pathFrom.x + 0.5, pathFrom.y + 0.5, t ? t.level : 0);
+    ctx.save();
+    ctx.strokeStyle = css(col, 0.8 * pulse);
+    ctx.lineWidth = 2 / zoom;
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y, TILE_W * 0.26, TILE_H * 0.26, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  const cells = pathPreview;
+  if (!cells || cells.length < 2) return;
+
+  ctx.save();
+  for (let i = 0; i < cells.length; i++) {
+    const c = cells[i];
+    const t = world.at(c.x, c.y);
+    const p = isoToScreen(c.x + 0.5, c.y + 0.5, t ? t.level : 0);
+    // След тем ярче, чем ближе к началу — видно направление
+    const k = 1 - (i / cells.length) * 0.45;
+    ctx.fillStyle = css(col, 0.3 * pulse * k);
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y, TILE_W * 0.3, TILE_H * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+export function drawGhost(
+  ctx: Ctx,
+  world: World,
+  atm: Atmosphere,
+  time: number,
+  ghost: GhostPreview,
+  wind: number,
+  zoom: number,
+): void {
+  const gh = ghost;
+  const pulse = 0.55 + Math.sin(time * 0.004) * 0.15;
+  const okCol: RGB = { r: 246, g: 240, b: 214 };
+  const badCol: RGB = { r: 226, g: 130, b: 110 };
+  const col = gh.valid ? okCol : badCol;
+
+  // Подсветка занимаемых клеток — по настоящему отпечатку с поворотом
+  const hx0 = gh.hl ? gh.hl.x0 : Math.floor(gh.tx);
+  const hy0 = gh.hl ? gh.hl.y0 : Math.floor(gh.ty);
+  const hx1 = gh.hl ? gh.hl.x1 : Math.floor(gh.tx) + gh.w - 1;
+  const hy1 = gh.hl ? gh.hl.y1 : Math.floor(gh.ty) + gh.h - 1;
+  for (let y = hy0; y <= hy1; y++) {
+    for (let x = hx0; x <= hx1; x++) {
+      const t = world.at(x, y);
+      const lvl = t ? t.level : 0;
+      const a = isoToScreen(x, y, lvl);
+      const b = isoToScreen(x + 1, y, lvl);
+      const c = isoToScreen(x + 1, y + 1, lvl);
+      const d = isoToScreen(x, y + 1, lvl);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.lineTo(c.x, c.y);
+      ctx.lineTo(d.x, d.y);
+      ctx.closePath();
+      ctx.fillStyle = css(col, 0.2 * pulse);
+      ctx.fill();
+      // Тёмная подложка под светлым контуром: ночью и на снегу одна
+      // светлая линия сливается с фоном и метку под пальцем не видно.
+      ctx.strokeStyle = css({ r: 30, g: 24, b: 18 }, 0.34 * pulse);
+      ctx.lineWidth = 3.2 / zoom;
+      ctx.stroke();
+      ctx.strokeStyle = css(col, 0.85 * pulse);
+      ctx.lineWidth = 1.6 / zoom;
+      ctx.stroke();
+    }
+  }
+
+  // Призрак самого объекта
+  if (gh.kind === 'item' && gh.itemId) {
+    const item = ITEM_BY_ID.get(gh.itemId);
+    if (item) {
+      const t = world.at(Math.floor(gh.tx), Math.floor(gh.ty));
+      const lvl = t ? t.level : 0;
+      const p = isoToScreen(gh.tx + item.w / 2, gh.ty + item.h / 2, lvl);
+      const fake: PlacedObject = {
+        id: -1,
+        type: gh.itemId,
+        tx: gh.tx,
+        ty: gh.ty,
+        planted: Date.now(),
+        rot: gh.rot,
+        seed: 777,
+      };
+      drawObject({
+        ctx,
+        x: p.x,
+        y: p.y,
+        atm,
+        g: item.growDays > 0 ? 0.55 : 1,
+        obj: fake,
+        time,
+        wind: wind,
+        alpha: gh.valid ? 0.62 : 0.3,
+      });
+    }
+  }
+}
+
+export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: number, opts: ObjectsOpts): void {
+  const now = Date.now();
+  // Единый список: статичные объекты и живность сортируются вместе,
+  // иначе кот будет проходить «сквозь» дерево.
+  type Entry = { depth: number; draw: () => void };
+  const list: Entry[] = [];
+
+  for (const o of world.objects) {
+    const item = ITEM_BY_ID.get(o.type);
+    if (!item) continue;
+    // кот и карпы рисуются системой жизни, а не как статичные предметы
+    if (o.type === 'cat' || o.type === 'koi') continue;
+    const cx = o.tx + item.w / 2;
+    const cy = o.ty + item.h / 2;
+    const tile = world.at(Math.floor(cx), Math.floor(cy));
+    const lvl = tile ? (tile.water ? tile.level - 0.28 : tile.level) : 0;
+    const p = isoToScreen(cx, cy, lvl);
+    const s = { x: (p.x - opts.camX) * opts.zoom + opts.viewW / 2, y: (p.y - opts.camY) * opts.zoom + opts.viewH / 2 };
+    if (s.x < -240 || s.x > opts.viewW + 240 || s.y < -280 || s.y > opts.viewH + 240) continue;
+
+    // На общем плане мелочь не читается: подушка мха размером в три
+    // пикселя стоит столько же, сколько вблизи, но её попросту не видно.
+    // На телефоне сад по умолчанию показан целиком, так что это
+    // основной режим просмотра, а не редкий случай.
+    if (opts.zoom < 0.42 && (item.kind === 'micro' || item.kind === 'flower')) continue;
+    const g = world.growth(o, now);
+    // ветер берём в точке дерева — порыв проходит волной
+    const wind = opts.life ? opts.life.windAt(cx, cy) : opts.wind;
+    const isMoving = o.id === opts.movingId;
+    const isHot = o.id === opts.highlightId;
+    // Переносимое слегка всплывает над землёй — видно, что оно «в руке»
+    const lift = isMoving ? 9 + Math.sin(time * 0.006) * 1.6 : 0;
+    list.push({
+      depth: (cx + cy) * 100 + lvl * 20,
+      draw: () => {
+        if (isMoving || isHot) drawObjectMarker(ctx, cx, cy, lvl, isMoving, time, opts.zoom);
+
+        // Дорогие неподвижные объекты идём через кэш спрайтов: дерево
+        // стоит 638 мкс, и перерисовывать его каждый кадр незачем —
+        // меняется только покачивание, а его даёт сдвиг при копировании.
+        const cost = drawCost(o.type);
+        if (opts.useSpriteCache && cacheable(o.type, cost)) {
+          // Ветер даём сдвигом готового спрайта. Формула повторяет ту,
+          // что внутри makeTree: та же фаза, та же амплитуда с учётом
+          // стадии роста. Ствол там качается втрое слабее кроны, поэтому
+          // берём среднее — сдвиг всего спрайта мягче, чем у одной кроны.
+          // Тот же огрублённый размер, что у спрайта в кэше: иначе тень
+          // будет от дерева другой стадии роста, и края разойдутся.
+          const gq = cachedGrowth(g);
+          const scale = 0.18 + 0.82 * Math.pow(gq, 0.72);
+          const sway = Math.sin(time * 0.0004 + o.seed) * 3 * wind * scale * 0.7;
+          // Тень рисуем прямо здесь: она идёт режимом multiply по земле,
+          // и в прозрачном холсте кэша ей не на что умножаться.
+          drawObjectShadow({
+            ctx,
+            x: p.x,
+            y: p.y,
+            atm,
+            g: gq,
+            obj: o,
+            time,
+            wind,
+            alpha: isMoving ? 0.72 : 1,
+          });
+          const drawn = drawCached({
+            ctx,
+            x: p.x + sway,
+            y: p.y - lift,
+            atm,
+            g,
+            obj: o,
+            time,
+            wind,
+            alpha: isMoving ? 0.72 : 1,
+          });
+          if (drawn) return;
+        }
+
+        drawObject({
+          ctx,
+          x: p.x,
+          y: p.y - lift,
+          atm,
+          g,
+          obj: o,
+          time,
+          wind,
+          alpha: isMoving ? 0.72 : 1,
+        });
+      },
+    });
+  }
+
+  if (opts.life) {
+    for (const c of opts.life.cats) {
+      const tile = world.at(Math.floor(c.tx), Math.floor(c.ty));
+      const lvl = tile ? tile.level : 0;
+      const p = isoToScreen(c.tx, c.ty, lvl);
+      list.push({ depth: (c.tx + c.ty) * 100 + lvl * 20 + 4, draw: () => drawCat(ctx, c, p.x, p.y, atm, time) });
+    }
+    for (const b of opts.life.birds) {
+      const tile = world.at(Math.floor(b.tx), Math.floor(b.ty));
+      const lvl = tile ? tile.level : 0;
+      const p = isoToScreen(b.tx, b.ty, lvl);
+      list.push({ depth: (b.tx + b.ty) * 100 + lvl * 20 + 6, draw: () => drawBird(ctx, b, p.x, p.y, atm, time) });
+    }
+    // бабочки, стрекозы и светлячки — тоже частицы
+    for (const f of opts.particles ? opts.life.flutters : []) {
+      const tile = world.at(Math.floor(f.tx), Math.floor(f.ty));
+      const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
+      const p = isoToScreen(f.tx, f.ty, lvl);
+      list.push({ depth: (f.tx + f.ty) * 100 + lvl * 20 + 8, draw: () => drawFlutter(ctx, f, p.x, p.y, atm, time) });
+    }
+  }
+
+  list.sort((a, b) => a.depth - b.depth);
+  for (const e of list) e.draw();
+
+  // Тёплое свечение окон дома изнутри
+  drawWindowGlow(ctx, world, atm);
+}
+
+export function drawWindowGlow(ctx: Ctx, world: World, atm: Atmosphere): void {
+  if (atm.lampGlow < 0.05) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const warm: RGB = { r: 255, g: 196, b: 122 };
+  for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < GRID; x++) {
+      const t = world.at(x, y)!;
+      if (!t.indoor) continue;
+      // светятся только клетки у кромки дома
+      const edge = !world.at(x, y + 1)?.indoor || !world.at(x + 1, y)?.indoor;
+      if (!edge) continue;
+      const p = isoToScreen(x + 0.5, y + 0.5, t.level);
+      glow(ctx, p.x, p.y - 10, 66, warm, atm.lampGlow * 0.28);
+    }
+  }
+  ctx.restore();
+}
+
+export function drawPaperGrain(
+  ctx: Ctx,
+  W: number,
+  H: number,
+  paperPattern: CanvasPattern | null,
+): CanvasPattern | null {
+  if (!paperPattern) {
+    const p = ctx.createPattern(getPaperTile(), 'repeat');
+    if (p) paperPattern = p;
+  }
+  if (!paperPattern) return paperPattern;
+  ctx.save();
+  ctx.globalCompositeOperation = 'overlay';
+  ctx.globalAlpha = 0.14;
+  ctx.fillStyle = paperPattern;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+
+  // лёгкое размытие краёв кадра — «краска ушла в бумагу»
+  ctx.save();
+  ctx.globalCompositeOperation = 'soft-light';
+  ctx.globalAlpha = 0.1;
+  ctx.fillStyle = paperPattern;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+  return paperPattern;
+}
+
+export function drawColorGrade(ctx: Ctx, W: number, H: number, atm: Atmosphere): void {
+  // Общий тёплый/холодный «фильтр» по времени суток
+  const t = atm.time;
+  ctx.save();
+  if (atm.golden > 0.05) {
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.fillStyle = css({ r: 255, g: 186, b: 116 }, atm.golden * 0.26);
+    ctx.fillRect(0, 0, W, H);
+  }
+  if (t.daylight < 0.5) {
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.fillStyle = css({ r: 70, g: 96, b: 176 }, (1 - t.daylight * 2) * 0.32);
+    ctx.fillRect(0, 0, W, H);
+  }
+  if (atm.season === 'winter') {
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.fillStyle = css({ r: 190, g: 214, b: 236 }, 0.14);
+    ctx.fillRect(0, 0, W, H);
+  }
+  ctx.restore();
+}

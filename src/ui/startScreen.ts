@@ -29,7 +29,6 @@ const ENTER_MS = 2100;
 /** Уход заставки — та же длительность, что в CSS у `.splash`. */
 const LEAVE_MS = 1400;
 
-
 export class StartScreen {
   /** Корень заставки: он же место, куда приходят переменные листа. */
   readonly el: HTMLDivElement;
@@ -48,8 +47,7 @@ export class StartScreen {
 
   constructor(opts: StartScreenOptions) {
     this.opts = opts;
-    this.reduced =
-      !opts.motion || matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.reduced = !opts.motion || matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     this.el = document.createElement('div');
     this.el.className = 'splash';
@@ -95,10 +93,7 @@ export class StartScreen {
     // латинский подсет шрифта и знаки останутся чужими.
     const fonts = document.fonts;
     if (fonts?.load) {
-      Promise.all([
-        fonts.load('300 48px "Noto Serif JP"', '静かな庭'),
-        fonts.load('600 32px "Noto Serif JP"', '静'),
-      ])
+      Promise.all([fonts.load('300 48px "Noto Serif JP"', '静かな庭'), fonts.load('600 32px "Noto Serif JP"', '静')])
         .then(() => fonts.ready)
         .then(() => this.art.reloadFonts())
         .catch(() => {

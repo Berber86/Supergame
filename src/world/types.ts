@@ -1,15 +1,6 @@
 /** Типы данных усадьбы. */
 
-export type GroundId =
-  | 'moss'
-  | 'grass'
-  | 'gravel'
-  | 'sand'
-  | 'stone'
-  | 'soil'
-  | 'water'
-  | 'tatami'
-  | 'deck';
+export type GroundId = 'moss' | 'grass' | 'gravel' | 'sand' | 'stone' | 'soil' | 'water' | 'tatami' | 'deck';
 
 export interface Tile {
   ground: GroundId;
@@ -24,16 +15,7 @@ export interface Tile {
 }
 
 export type ObjKind =
-  | 'tree'
-  | 'shrub'
-  | 'flower'
-  | 'rock'
-  | 'lantern'
-  | 'bridge'
-  | 'pavilion'
-  | 'deco'
-  | 'micro'
-  | 'creature';
+  'tree' | 'shrub' | 'flower' | 'rock' | 'lantern' | 'bridge' | 'pavilion' | 'deco' | 'micro' | 'creature';
 
 export interface PlacedObject {
   id: number;

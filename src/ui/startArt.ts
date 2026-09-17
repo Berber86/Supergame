@@ -195,7 +195,7 @@ export class StartArt {
     }
     if (this.seal) {
       const c = StartArt.circle(lay);
-      const s2 = c.r * 0.30;
+      const s2 = c.r * 0.3;
       const pad = s2 * 0.5;
       const seal = StartArt.sealAt(c);
       ctx.globalAlpha = sealA;
@@ -337,12 +337,7 @@ export class StartArt {
       for (const side of [-1, 1]) {
         g.beginPath();
         g.moveTo(cx, pegY);
-        g.quadraticCurveTo(
-          cx + side * lay.w * 0.18,
-          pegY + (rodY - pegY) * 0.45,
-          cx + side * rodW * 0.42,
-          rodY,
-        );
+        g.quadraticCurveTo(cx + side * lay.w * 0.18, pegY + (rodY - pegY) * 0.45, cx + side * rodW * 0.42, rodY);
         g.stroke();
       }
     }
@@ -359,7 +354,14 @@ export class StartArt {
     // Концы валика — тёмные наконечники.
     for (const side of [-1, 1]) {
       g.fillStyle = css(shade(WOOD, 0.55), 0.95);
-      roundRect(g, cx + side * rodW * 0.5 - (side > 0 ? 0 : rodH * 1.2), rodY - rodH * 0.7, rodH * 1.2, rodH * 1.4, rodH * 0.5);
+      roundRect(
+        g,
+        cx + side * rodW * 0.5 - (side > 0 ? 0 : rodH * 1.2),
+        rodY - rodH * 0.7,
+        rodH * 1.2,
+        rodH * 1.4,
+        rodH * 0.5,
+      );
       g.fill();
     }
 
@@ -433,7 +435,7 @@ export class StartArt {
       g.fillStyle = grain;
       g.fillRect(colX, colY, colW, colH);
     }
-    g.globalAlpha = 0.20;
+    g.globalAlpha = 0.2;
     g.strokeStyle = '#000';
     g.lineWidth = Math.max(0.6, size * 0.035);
     for (let i = 0; i < 7; i++) {

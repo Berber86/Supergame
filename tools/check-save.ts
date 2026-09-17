@@ -126,42 +126,74 @@ async function main(): Promise<void> {
   console.log('круговорот сохранения:');
   const gardens: [string, World][] = [
     ['стартовый сад', new World()],
-    ['пустая земля', (() => { const w = new World(); w.objects = []; w.milestones = new Set(); return w; })()],
+    [
+      'пустая земля',
+      (() => {
+        const w = new World();
+        w.objects = [];
+        w.milestones = new Set();
+        return w;
+      })(),
+    ],
     ['разнобой c1', variedWorld(11, 250)],
     ['разнобой c2', variedWorld(23, 90)],
     ['разнобой c3', variedWorld(47, 400)],
-    ['сплошной дом', (() => {
-      const w = new World();
-      for (const t of w.tiles) { t.ground = 'tatami'; t.indoor = true; }
-      return w;
-    })()],
-    ['моно-мох', (() => {
-      const w = new World();
-      for (const t of w.tiles) { t.ground = 'moss'; t.level = 0; t.water = t.indoor = t.veranda = false; }
-      w.seasonsSeen = new Set(['spring', 'summer', 'autumn', 'winter']);
-      return w;
-    })()],
-    ['вода и веранды', (() => {
-      const w = new World();
-      for (let i = 0; i < w.tiles.length; i++) {
-        w.tiles[i].ground = 'water';
-        w.tiles[i].level = -1;
-        w.tiles[i].water = i % 2 === 0;
-        w.tiles[i].veranda = i % 3 === 0;
-      }
-      return w;
-    })()],
-    ['все уровни', (() => {
-      const w = new World();
-      w.tiles.forEach((t, i) => { t.level = (i % 4) - 1; });
-      return w;
-    })()],
-    ['длинные списки', (() => {
-      const w = variedWorld(99, 300);
-      w.milestones = new Set(Array.from({ length: 50 }, (_, i) => `m${i}`));
-      w.seenTabs = new Set(Array.from({ length: 30 }, (_, i) => `tab${i}`));
-      return w;
-    })()],
+    [
+      'сплошной дом',
+      (() => {
+        const w = new World();
+        for (const t of w.tiles) {
+          t.ground = 'tatami';
+          t.indoor = true;
+        }
+        return w;
+      })(),
+    ],
+    [
+      'моно-мох',
+      (() => {
+        const w = new World();
+        for (const t of w.tiles) {
+          t.ground = 'moss';
+          t.level = 0;
+          t.water = t.indoor = t.veranda = false;
+        }
+        w.seasonsSeen = new Set(['spring', 'summer', 'autumn', 'winter']);
+        return w;
+      })(),
+    ],
+    [
+      'вода и веранды',
+      (() => {
+        const w = new World();
+        for (let i = 0; i < w.tiles.length; i++) {
+          w.tiles[i].ground = 'water';
+          w.tiles[i].level = -1;
+          w.tiles[i].water = i % 2 === 0;
+          w.tiles[i].veranda = i % 3 === 0;
+        }
+        return w;
+      })(),
+    ],
+    [
+      'все уровни',
+      (() => {
+        const w = new World();
+        w.tiles.forEach((t, i) => {
+          t.level = (i % 4) - 1;
+        });
+        return w;
+      })(),
+    ],
+    [
+      'длинные списки',
+      (() => {
+        const w = variedWorld(99, 300);
+        w.milestones = new Set(Array.from({ length: 50 }, (_, i) => `m${i}`));
+        w.seenTabs = new Set(Array.from({ length: 30 }, (_, i) => `tab${i}`));
+        return w;
+      })(),
+    ],
   ];
 
   let roundtripV4 = 0;
@@ -181,19 +213,31 @@ async function main(): Promise<void> {
     if (ok3 && canon(back3.toJSON()) === before) roundtripV3++;
     else check(`v3 ${name}`, false, ok3 ? 'содержимое поплыло' : 'не принят');
   }
-  check(`все ${gardens.length} садов пережили круг v4`, roundtripV4 === gardens.length, `${roundtripV4}/${gardens.length}`);
-  check(`все ${gardens.length} садов открылись из v3`, roundtripV3 === gardens.length, `${roundtripV3}/${gardens.length}`);
+  check(
+    `все ${gardens.length} садов пережили круг v4`,
+    roundtripV4 === gardens.length,
+    `${roundtripV4}/${gardens.length}`,
+  );
+  check(
+    `все ${gardens.length} садов открылись из v3`,
+    roundtripV3 === gardens.length,
+    `${roundtripV3}/${gardens.length}`,
+  );
 
   // ---------- Компактность ----------
   console.log('компактность:');
   const starter = new World().toJSON();
   const starterV3 = legacyJson(starter).length;
   const starterV4 = serializeSave(starter).length;
-  console.log(`  стартовый сад: v3 ${(starterV3 / 1024).toFixed(1)} КБ → v4 ${(starterV4 / 1024).toFixed(1)} КБ (×${(starterV3 / starterV4).toFixed(1)})`);
+  console.log(
+    `  стартовый сад: v3 ${(starterV3 / 1024).toFixed(1)} КБ → v4 ${(starterV4 / 1024).toFixed(1)} КБ (×${(starterV3 / starterV4).toFixed(1)})`,
+  );
   const big = variedWorld(47, 400).toJSON();
   const bigV3 = legacyJson(big).length;
   const bigV4 = serializeSave(big).length;
-  console.log(`  сад из 400 предметов: v3 ${(bigV3 / 1024).toFixed(1)} КБ → v4 ${(bigV4 / 1024).toFixed(1)} КБ (×${(bigV3 / bigV4).toFixed(1)})`);
+  console.log(
+    `  сад из 400 предметов: v3 ${(bigV3 / 1024).toFixed(1)} КБ → v4 ${(bigV4 / 1024).toFixed(1)} КБ (×${(bigV3 / bigV4).toFixed(1)})`,
+  );
   check('стартовый сад ужался минимум втрое', starterV4 * 3 < starterV3, `×${(starterV3 / starterV4).toFixed(2)}`);
   check('сад из 400 предметов ужался минимум втрое', bigV4 * 3 < bigV3, `×${(bigV3 / bigV4).toFixed(2)}`);
 
@@ -203,29 +247,162 @@ async function main(): Promise<void> {
     const sample = variedWorld(5, 40).toJSON();
     const good = () => JSON.parse(legacyJson(sample)) as Record<string, unknown>;
     const packedGood = () => JSON.parse(serializeSave(sample)) as Record<string, unknown>;
-    const tiles = () => (good().tiles as Tile[]);
-    const objects = () => (good().objects as PlacedObject[]);
+    const tiles = () => good().tiles as Tile[];
+    const objects = () => good().objects as PlacedObject[];
 
     const cases: [string, () => unknown][] = [
-      ['версия из будущего', () => { const d = good(); d.version = 99; return d; }],
-      ['не хватает тайлов', () => { const d = good(); (d.tiles as Tile[]).length = 675; return d; }],
-      ['неизвестная земля', () => { const d = good(); (d.tiles as Tile[])[10].ground = 'песочек' as Tile['ground']; return d; }],
-      ['уровень строкой', () => { const d = good(); (d.tiles as Tile[])[10].level = 'ой' as unknown as number; return d; }],
-      ['уровень дробный', () => { const d = good(); (d.tiles as Tile[])[10].level = 2.5; return d; }],
-      ['уровень за пределом', () => { const d = good(); (d.tiles as Tile[])[10].level = 30; return d; }],
-      ['вода строкой', () => { const d = good(); (d.tiles as Tile[])[10].water = 'да' as unknown as boolean; return d; }],
-      ['предмет-дракон', () => { const d = good(); (d.objects as PlacedObject[])[0].type = 'дракон'; return d; }],
-      ['id строкой', () => { const d = good(); (d.objects as PlacedObject[])[0].id = 'дом' as unknown as number; return d; }],
-      ['tx — не число', () => { const d = good(); (d.objects as PlacedObject[])[0].tx = NaN; return d; }],
-      ['предмет за садом', () => { const d = good(); (d.objects as PlacedObject[])[0].tx = 999; return d; }],
-      ['поворот 9 из 3', () => { const d = good(); (d.objects as PlacedObject[])[0].rot = 9; return d; }],
-      ['посадка в минусе', () => { const d = good(); (d.objects as PlacedObject[])[0].planted = -5; return d; }],
-      ['два предмета с одним id', () => { const d = good(); (d.objects as PlacedObject[])[1].id = (d.objects as PlacedObject[])[0].id; return d; }],
-      ['вехи не строки', () => { const d = good(); d.milestones = [1, 2]; return d; }],
-      ['вехи не список', () => { const d = good(); d.milestones = 'boom'; return d; }],
-      ['v4 короче нормы', () => { const d = packedGood(); d.t = (d.t as string).slice(0, -3); return d; }],
-      ['v4 с чужим знаком', () => { const d = packedGood(); d.t = (d.t as string).slice(0, 5) + '!' + (d.t as string).slice(6); return d; }],
-      ['v4 предмет не ряд', () => { const d = packedGood(); (d.o as unknown[])[0] = { id: 1 }; return d; }],
+      [
+        'версия из будущего',
+        () => {
+          const d = good();
+          d.version = 99;
+          return d;
+        },
+      ],
+      [
+        'не хватает тайлов',
+        () => {
+          const d = good();
+          (d.tiles as Tile[]).length = 675;
+          return d;
+        },
+      ],
+      [
+        'неизвестная земля',
+        () => {
+          const d = good();
+          (d.tiles as Tile[])[10].ground = 'песочек' as Tile['ground'];
+          return d;
+        },
+      ],
+      [
+        'уровень строкой',
+        () => {
+          const d = good();
+          (d.tiles as Tile[])[10].level = 'ой' as unknown as number;
+          return d;
+        },
+      ],
+      [
+        'уровень дробный',
+        () => {
+          const d = good();
+          (d.tiles as Tile[])[10].level = 2.5;
+          return d;
+        },
+      ],
+      [
+        'уровень за пределом',
+        () => {
+          const d = good();
+          (d.tiles as Tile[])[10].level = 30;
+          return d;
+        },
+      ],
+      [
+        'вода строкой',
+        () => {
+          const d = good();
+          (d.tiles as Tile[])[10].water = 'да' as unknown as boolean;
+          return d;
+        },
+      ],
+      [
+        'предмет-дракон',
+        () => {
+          const d = good();
+          (d.objects as PlacedObject[])[0].type = 'дракон';
+          return d;
+        },
+      ],
+      [
+        'id строкой',
+        () => {
+          const d = good();
+          (d.objects as PlacedObject[])[0].id = 'дом' as unknown as number;
+          return d;
+        },
+      ],
+      [
+        'tx — не число',
+        () => {
+          const d = good();
+          (d.objects as PlacedObject[])[0].tx = NaN;
+          return d;
+        },
+      ],
+      [
+        'предмет за садом',
+        () => {
+          const d = good();
+          (d.objects as PlacedObject[])[0].tx = 999;
+          return d;
+        },
+      ],
+      [
+        'поворот 9 из 3',
+        () => {
+          const d = good();
+          (d.objects as PlacedObject[])[0].rot = 9;
+          return d;
+        },
+      ],
+      [
+        'посадка в минусе',
+        () => {
+          const d = good();
+          (d.objects as PlacedObject[])[0].planted = -5;
+          return d;
+        },
+      ],
+      [
+        'два предмета с одним id',
+        () => {
+          const d = good();
+          (d.objects as PlacedObject[])[1].id = (d.objects as PlacedObject[])[0].id;
+          return d;
+        },
+      ],
+      [
+        'вехи не строки',
+        () => {
+          const d = good();
+          d.milestones = [1, 2];
+          return d;
+        },
+      ],
+      [
+        'вехи не список',
+        () => {
+          const d = good();
+          d.milestones = 'boom';
+          return d;
+        },
+      ],
+      [
+        'v4 короче нормы',
+        () => {
+          const d = packedGood();
+          d.t = (d.t as string).slice(0, -3);
+          return d;
+        },
+      ],
+      [
+        'v4 с чужим знаком',
+        () => {
+          const d = packedGood();
+          d.t = (d.t as string).slice(0, 5) + '!' + (d.t as string).slice(6);
+          return d;
+        },
+      ],
+      [
+        'v4 предмет не ряд',
+        () => {
+          const d = packedGood();
+          (d.o as unknown[])[0] = { id: 1 };
+          return d;
+        },
+      ],
       ['просто строка', () => 'это не сохранение'],
       ['просто число', () => 42],
       ['null', () => null],
@@ -238,7 +415,11 @@ async function main(): Promise<void> {
       if (!ok && canon(w.toJSON()) === before) rejected++;
       else check(`отклонён: ${name}`, false, ok ? 'принят' : 'мир тронут');
     }
-    check(`все ${cases.length} битых варианта отклонены, мир не тронут`, rejected === cases.length, `${rejected}/${cases.length}`);
+    check(
+      `все ${cases.length} битых варианта отклонены, мир не тронут`,
+      rejected === cases.length,
+      `${rejected}/${cases.length}`,
+    );
     // контроль: рядом лежачие целые файлы обязаны открываться
     const w = new World();
     check('целый v3 рядом открывается', w.fromJSON(good()) && canon(w.toJSON()) === canon(sample));
@@ -258,12 +439,15 @@ async function main(): Promise<void> {
     backing.set(SLOT_PREFIX + id, legacyJson(sample.toJSON()));
     const w = variedWorld(3, 30); // явно другой мир, чтобы чтение было видно
     check('слот с v3 открывается', store.load(w) && canon(w.toJSON()) === sampleCanon);
-    check('после записи слот становится v4 и читается', (() => {
-      const res = store.save(w);
-      if (!res.ok) return false;
-      const back = new World();
-      return back.fromJSON(JSON.parse(backing.get(SLOT_PREFIX + id)!)) && canon(back.toJSON()) === canon(w.toJSON());
-    })());
+    check(
+      'после записи слот становится v4 и читается',
+      (() => {
+        const res = store.save(w);
+        if (!res.ok) return false;
+        const back = new World();
+        return back.fromJSON(JSON.parse(backing.get(SLOT_PREFIX + id)!)) && canon(back.toJSON()) === canon(w.toJSON());
+      })(),
+    );
     check('отказа при перезаписи не было', store.lastLoadFailed === false);
   }
   {
@@ -272,9 +456,11 @@ async function main(): Promise<void> {
     backing.set(LEGACY_KEY, legacyJson(sample.toJSON()));
     const store = new GardenStore(); // bootstrap подбирает его в первый слот
     const w = variedWorld(8, 8);
-    check('старое одиночное сохранение переехало в первый слот',
+    check(
+      'старое одиночное сохранение переехало в первый слот',
       store.list.length === 1 && store.load(w) && canon(w.toJSON()) === canon(sample.toJSON()),
-      store.list.length ? `слотов ${store.list.length}` : 'список пуст');
+      store.list.length ? `слотов ${store.list.length}` : 'список пуст',
+    );
   }
 
   // ---------- Запись, отказ хранилища, откат на копию ----------
@@ -290,7 +476,13 @@ async function main(): Promise<void> {
     check('переполнение возвращается, а не молчит', !res.ok && res.reason === 'quota');
     check('после отказа нет полузаписанного', !backing.has(key) && !backing.has(key + '.tmp'));
     quotaMode = false;
-    check('после отказа запись оживает', (() => { const r = store.save(w); return r.ok; })());
+    check(
+      'после отказа запись оживает',
+      (() => {
+        const r = store.save(w);
+        return r.ok;
+      })(),
+    );
   }
   {
     clearStore();
@@ -308,7 +500,16 @@ async function main(): Promise<void> {
     backing.set(key, '{битые данные');
     const w = new World();
     check('побитая основа читается из копии', store.load(w) && canon(w.toJSON()) === firstCanon);
-    check('основа починена копией', (() => { try { return !!parseSave(JSON.parse(backing.get(key)!)); } catch { return false; } })());
+    check(
+      'основа починена копией',
+      (() => {
+        try {
+          return !!parseSave(JSON.parse(backing.get(key)!));
+        } catch {
+          return false;
+        }
+      })(),
+    );
 
     // Побились основа и копия, но жива временная запись
     backing.set(key, 'мусор');
@@ -327,8 +528,17 @@ async function main(): Promise<void> {
     check('совсем битый слот не открывается и не портит мир', !ok && canon(w3.toJSON()) === w3Canon);
     check('признак повреждения поднят', store.lastLoadFailed === true);
     check('остатки отложены карантином, не удалены', (backing.get(key + '.broken') ?? '').includes('мусор1'));
-    check('место слота расчищено для новой записи', !backing.has(key) && !backing.has(key + '.bak') && !backing.has(key + '.tmp'));
-    check('на месте битого слота можно начать заново', (() => { const r = store.save(w3); return r.ok && !!parseSave(JSON.parse(backing.get(key)!)); })());
+    check(
+      'место слота расчищено для новой записи',
+      !backing.has(key) && !backing.has(key + '.bak') && !backing.has(key + '.tmp'),
+    );
+    check(
+      'на месте битого слота можно начать заново',
+      (() => {
+        const r = store.save(w3);
+        return r.ok && !!parseSave(JSON.parse(backing.get(key)!));
+      })(),
+    );
   }
   {
     clearStore();
@@ -344,7 +554,10 @@ async function main(): Promise<void> {
     backing.set(key, 'мусор');
     backing.set(key + '.bak', 'мусор');
     const ok = store.switchTo(w, b.id);
-    check('битая усадьба не открывается и не затирает текущую', !ok && store.activeId === aId && canon(w.toJSON()) === aCanon);
+    check(
+      'битая усадьба не открывается и не затирает текущую',
+      !ok && store.activeId === aId && canon(w.toJSON()) === aCanon,
+    );
     check('битая усадьба тоже карантинится', (backing.get(key + '.broken') ?? '').length > 0);
     store.remove(w, b.id);
     check('удаление убирает и карантин', !backing.has(key + '.broken') && !backing.has(key));
@@ -363,17 +576,30 @@ async function main(): Promise<void> {
       ({ name, text: async () => json }) as unknown as File;
 
     const okBare = await store.importFile(current, fakeFile(legacyJson(sample.toJSON())));
-    check('принят старый файл без обёртки', okBare !== null && canon(current.toJSON()) === sampleCanon && store.active?.objects === 45);
+    check(
+      'принят старый файл без обёртки',
+      okBare !== null && canon(current.toJSON()) === sampleCanon && store.active?.objects === 45,
+    );
 
     const packed = JSON.parse(serializeSave(variedWorld(64, 20).toJSON())) as unknown;
     const sample2 = parseSave(packed)!;
-    const okWrap = await store.importFile(current, fakeFile(JSON.stringify({ kind: 'usadba-garden', name: 'Дальний двор', data: packed })));
+    const okWrap = await store.importFile(
+      current,
+      fakeFile(JSON.stringify({ kind: 'usadba-garden', name: 'Дальний двор', data: packed })),
+    );
     check('принят новый файл в обёртке', okWrap === 'Дальний двор' && canon(current.toJSON()) === canon(sample2));
 
     const before = store.list.length;
     const worldBefore = canon(current.toJSON());
-    check('мусор из файла не создаёт усадьбу', (await store.importFile(current, fakeFile('это вам не сад'))) === null && store.list.length === before);
-    check('битый файл не трогает мир', (await store.importFile(current, fakeFile(JSON.stringify({ data: { v: 4, t: 'о' } })))) === null && canon(current.toJSON()) === worldBefore);
+    check(
+      'мусор из файла не создаёт усадьбу',
+      (await store.importFile(current, fakeFile('это вам не сад'))) === null && store.list.length === before,
+    );
+    check(
+      'битый файл не трогает мир',
+      (await store.importFile(current, fakeFile(JSON.stringify({ data: { v: 4, t: 'о' } })))) === null &&
+        canon(current.toJSON()) === worldBefore,
+    );
   }
 
   // ---------- История: упаковка и потолок ----------
@@ -390,14 +616,25 @@ async function main(): Promise<void> {
       }
       h.commit();
     }
-    const retained = (h as unknown as { past: { tiles: number[] }[] }).past
-      .reduce((n, e) => n + e.tiles.length / 3, 0);
-    check('правки тайлов упакованы и умещаются в потолок', retained <= TILE_BUDGET && retained >= TILE_BUDGET - 676 * 2, `хранится ${retained} из ${TILE_BUDGET}`);
+    const retained = (h as unknown as { past: { tiles: number[] }[] }).past.reduce((n, e) => n + e.tiles.length / 3, 0);
+    check(
+      'правки тайлов упакованы и умещаются в потолок',
+      retained <= TILE_BUDGET && retained >= TILE_BUDGET - 676 * 2,
+      `хранится ${retained} из ${TILE_BUDGET}`,
+    );
     check('после вытеснения отмена всё ещё работает', h.canUndo);
     h.undo();
-    check('одна отмена возвращает прошлое состояние', w.tiles[0].ground === 'gravel' && w.tiles[0].level === 1, `${w.tiles[0].ground}/${w.tiles[0].level}`);
+    check(
+      'одна отмена возвращает прошлое состояние',
+      w.tiles[0].ground === 'gravel' && w.tiles[0].level === 1,
+      `${w.tiles[0].ground}/${w.tiles[0].level}`,
+    );
     h.undo();
-    check('вторая отмена идёт дальше', w.tiles[0].ground === 'sand' && w.tiles[0].level === 0, `${w.tiles[0].ground}/${w.tiles[0].level}`);
+    check(
+      'вторая отмена идёт дальше',
+      w.tiles[0].ground === 'sand' && w.tiles[0].level === 0,
+      `${w.tiles[0].ground}/${w.tiles[0].level}`,
+    );
     h.redo();
     check('повтор возвращается вперёд', w.tiles[0].ground === 'gravel' && w.tiles[0].level === 1);
   }
@@ -411,7 +648,11 @@ async function main(): Promise<void> {
     w.tiles[1].ground = 'gravel';
     h.commit();
     const edits = (h as unknown as { past: { tiles: number[] }[] }).past;
-    check('ведение кистью сливается в один шаг', edits.length === 1 && edits[0].tiles.length === 6, `шагов ${edits.length}`);
+    check(
+      'ведение кистью сливается в один шаг',
+      edits.length === 1 && edits[0].tiles.length === 6,
+      `шагов ${edits.length}`,
+    );
     h.undo();
     check('слитный мазок отменяется целиком', w.tiles[0].ground !== 'gravel' && w.tiles[1].ground !== 'gravel');
   }

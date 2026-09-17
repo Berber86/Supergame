@@ -13,7 +13,16 @@ export function makeCanvas(w: number, h: number): HTMLCanvasElement {
 }
 
 /** Неровный многоугольник-клякса вокруг центра. */
-export function blobPath(ctx: Ctx, cx: number, cy: number, rx: number, ry: number, seed: number, wobble = 0.22, pts = 9): void {
+export function blobPath(
+  ctx: Ctx,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  seed: number,
+  wobble = 0.22,
+  pts = 9,
+): void {
   ctx.beginPath();
   const step = (Math.PI * 2) / pts;
   const prev: [number, number][] = [];
@@ -77,7 +86,15 @@ export function glow(ctx: Ctx, cx: number, cy: number, r: number, color: RGB, st
 }
 
 /** Мягкая эллиптическая тень под объектом. */
-export function softShadow(ctx: Ctx, cx: number, cy: number, rx: number, ry: number, color: RGB, strength: number): void {
+export function softShadow(
+  ctx: Ctx,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  color: RGB,
+  strength: number,
+): void {
   if (strength <= 0.001) return;
   const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(rx, ry));
   g.addColorStop(0, css(color, 0.55 * strength));

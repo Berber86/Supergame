@@ -130,7 +130,10 @@ async function main(): Promise<void> {
   console.log('содержание:');
   {
     check('десять уроков', LESSONS.length === 10, `${LESSONS.length}`);
-    check('номера уроков по порядку', LESSONS.every((l, i) => l.n === i + 1));
+    check(
+      'номера уроков по порядку',
+      LESSONS.every((l, i) => l.n === i + 1),
+    );
     check(
       'каждый урок ссылается на существующую практику',
       LESSONS.every((l) => PRACTICE_BY_ID.has(l.practice)),

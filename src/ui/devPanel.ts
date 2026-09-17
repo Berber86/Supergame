@@ -207,7 +207,8 @@ export class DevPanel {
     });
 
     const wk = this.weather.forced;
-    this.els.weatherVal.textContent = WEATHER_NAMES[wk] + (wk === 'auto' ? ` · ${WEATHER_NAMES[this.weather.current]}` : '');
+    this.els.weatherVal.textContent =
+      WEATHER_NAMES[wk] + (wk === 'auto' ? ` · ${WEATHER_NAMES[this.weather.current]}` : '');
     this.root.querySelectorAll<HTMLElement>('.dev-chip.weather').forEach((b) => {
       b.classList.toggle('on', b.dataset.weather === wk);
     });

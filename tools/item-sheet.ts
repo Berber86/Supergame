@@ -21,7 +21,7 @@ g.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} 
 async function main() {
   const { drawObject } = await import('../src/render/sprites');
   const { buildAtmosphere } = await import('../src/world/palette');
-  const { computeTime, SEASON_MS } = await import('../src/core/clock');
+  const { computeTime, midSeasonMs } = await import('../src/core/clock');
   const { ITEM_BY_ID } = await import('../src/world/catalog');
   const type = await import('../src/world/types');
 
@@ -38,10 +38,8 @@ async function main() {
   ctx.fillStyle = '#efe8da';
   ctx.fillRect(0, 0, W, H);
 
-  const EPOCH = Date.UTC(2024, 2, 20, 0, 0, 0);
-
   for (let si = 0; si < seasons.length; si++) {
-    const d = new Date(EPOCH + si * SEASON_MS + 86400e3 * 1.5);
+    const d = new Date(midSeasonMs(si));
     d.setHours(13, 0, 0, 0);
     const atm = buildAtmosphere(computeTime(d.getTime()), 0);
 

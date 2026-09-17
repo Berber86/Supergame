@@ -199,7 +199,7 @@ export function buildAtmosphere(t: TimeState, overcast = 0): Atmosphere {
     skyTop,
     skyBottom,
     lampGlow: clamp01(Math.max(1 - d * 1.35, overcast * 0.55 * (1 - d * 0.5))),
-    fireflies: clamp01((1 - d * 1.5)) * (blend.from === 'summer' || blend.from === 'spring' ? 1 : 0.25),
+    fireflies: clamp01(1 - d * 1.5) * (blend.from === 'summer' || blend.from === 'spring' ? 1 : 0.25),
     sunDir,
     season: blend.from,
     overcast,

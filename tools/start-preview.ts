@@ -88,9 +88,7 @@ async function main() {
   const ctx = canvas.getContext('2d');
 
   // CROP=x,y,w,h и SCALE=2 — посмотреть на мазок вблизи, а не на весь экран.
-  const crop = (process.env.CROP ?? '')
-    .split(',')
-    .map((s) => Number(s.trim()));
+  const crop = (process.env.CROP ?? '').split(',').map((s) => Number(s.trim()));
   const scale = Number(process.env.SCALE ?? 1);
 
   const shot = (source: ReturnType<typeof createCanvas>): Buffer => {

@@ -1,0 +1,110 @@
+/* ---------- Прочее ---------- */
+
+.zen-note {
+  position: absolute;
+  bottom: 22px;
+  right: 26px;
+  font-size: 13px;
+  font-style: italic;
+  color: rgba(255, 248, 232, 0.4);
+  letter-spacing: 0.06em;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+}
+
+.toast {
+  position: absolute;
+  top: 26px;
+  left: 50%;
+  transform: translate(-50%, -14px);
+  padding: 9px 22px;
+  border-radius: 3px;
+  font-size: 14.5px;
+  color: var(--ink);
+  opacity: 0;
+  transition: all 0.5s var(--ease);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  z-index: 7;
+  letter-spacing: 0.02em;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* Плашка про хранилище: переполнение или повреждённое сохранение.
+   В отличие от тоста, не растворяется сама — пока игрок не решит. */
+.storage-warn {
+  position: absolute;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(346px, calc(100vw - 48px));
+  padding: 14px 18px 12px;
+  border-radius: 4px;
+  box-shadow: var(--shadow);
+  z-index: 9;
+  color: var(--ink);
+}
+
+.sw-text {
+  font-size: 13.5px;
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+.sw-row {
+  display: flex;
+  gap: 14px;
+  justify-content: flex-end;
+}
+
+.sw-btn {
+  font-size: 13px;
+  padding: 6px 13px;
+  min-height: 30px;
+  box-sizing: border-box;
+  border-radius: 3px;
+  cursor: pointer;
+  background: rgba(74, 60, 44, 0.12);
+  transition: background 0.25s var(--ease);
+  user-select: none;
+}
+
+.sw-btn:hover {
+  background: rgba(74, 60, 44, 0.22);
+}
+
+@media (max-width: 720px) {
+  .time-card {
+    top: 14px;
+    left: 14px;
+    padding: 10px 15px 9px;
+    min-width: 146px;
+  }
+  .clock {
+    font-size: 24px;
+  }
+  .tools {
+    right: 12px;
+    gap: 10px;
+  }
+  .tool-btn {
+    width: 44px;
+    height: 44px;
+  }
+  .item {
+    width: 80px;
+  }
+  .hint-bar {
+    font-size: 12.5px;
+    bottom: 16px;
+    padding: 7px 14px;
+  }
+  /* Название и вход сами меряются от ширины листа (--sw), поэтому
+     здесь их уменьшать не нужно — только убрать тихую подпись версии. */
+  .splash-mark {
+    display: none;
+  }
+}

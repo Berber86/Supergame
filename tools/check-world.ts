@@ -84,10 +84,16 @@ async function main(): Promise<void> {
     const bridge = ITEM_BY_ID.get('bridge')!; // 1×3
     const r0 = footprintCells(bridge, 10, 10, 0);
     const r1 = footprintCells(bridge, 10, 10, 1);
-    check('мост в положении 0 лежит вдоль оси x',
-      r0.x0 === 9 && r0.x1 === 11 && r0.y0 === 11 && r0.y1 === 11, `${JSON.stringify(r0)}`);
-    check('мост в положении 1 лежит вдоль оси y',
-      r1.x0 === 10 && r1.x1 === 10 && r1.y0 === 10 && r1.y1 === 12, `${JSON.stringify(r1)}`);
+    check(
+      'мост в положении 0 лежит вдоль оси x',
+      r0.x0 === 9 && r0.x1 === 11 && r0.y0 === 11 && r0.y1 === 11,
+      `${JSON.stringify(r0)}`,
+    );
+    check(
+      'мост в положении 1 лежит вдоль оси y',
+      r1.x0 === 10 && r1.x1 === 10 && r1.y0 === 10 && r1.y1 === 12,
+      `${JSON.stringify(r1)}`,
+    );
     const rock = ITEM_BY_ID.get('rock_big')!; // 2×2
     const rr = footprintCells(rock, 10, 10, 0);
     check('валун 2×2 занимает все четыре клетки', rr.x0 === 10 && rr.x1 === 11 && rr.y0 === 10 && rr.y1 === 11);
@@ -96,17 +102,50 @@ async function main(): Promise<void> {
     check('отпечаток на нечётном повороте — как в каталоге', tr.w === 1 && tr.h === 3);
   }
 
+  // ---------- Календарь времени ----------
+  console.log('календарь времени:');
+  {
+    const { midSeasonMs, seasonBlend } = await import('../src/core/clock');
+    const seasonAt = (y: number, m: number, d: number) => computeTime(new Date(y, m - 1, d, 12).getTime());
+    check('середина марта — весна', seasonAt(2026, 3, 15).season === 'spring');
+    check('середина июня — лето', seasonAt(2026, 6, 16).season === 'summer');
+    check('середина сентября — осень (не зима!)', seasonAt(2026, 9, 17).season === 'autumn');
+    check('конец декабря — зима', seasonAt(2026, 12, 25).season === 'winter');
+    check('конец января — всё ещё зима', seasonAt(2026, 1, 20).season === 'winter');
+    check('конец ноября — осень подходит к зиме', seasonBlend(seasonAt(2026, 11, 28)).to === 'winter');
+    check(
+      'год усадьбы начинается весной',
+      seasonAt(2026, 9, 17).year === 3 && seasonAt(2026, 2, 20).year === 2 && seasonAt(2024, 3, 20).year === 1,
+    );
+    check(
+      'прогресс сезона в пределах 0..1',
+      [2, 5, 8, 11].every((m) => {
+        const t = seasonAt(2026, m, 28);
+        return t.seasonT >= 0 && t.seasonT <= 1;
+      }),
+    );
+    // Середина каждого сезона из midSeasonMs действительно лежит в этом сезоне
+    check(
+      'midSeasonMs попадает в свои сезоны',
+      [0, 1, 2, 3].every((i) => {
+        const t = computeTime(midSeasonMs(i));
+        return t.seasonIndex === i;
+      }),
+    );
+  }
+
   // ---------- Постановка и границы ----------
   console.log('постановка у границ:');
   {
     const w = flatWorld();
-    // Мост по вертикали встал бы у края, по горизонтали — висит в пустоте
-    check('мост rot1 у правого края — можно', w.canPlace('bridge', 24, 2, 1));
-    check('мост rot0 у правой кромки висит за садом — нельзя', !w.canPlace('bridge', 25, 2, 0));
-    check('мост rot0 у левой кромки висит за садом — нельзя', !w.canPlace('bridge', 0, 2, 0));
-    check('мост rot0 на воле — можно', w.canPlace('bridge', 24, 2, 0));
-    check('мост rot1 у нижней кромки — нельзя', !w.canPlace('bridge', 4, 24, 1));
-    check('мост rot1 шагом выше — можно', w.canPlace('bridge', 4, 23, 1));
+    // Ручей с запада на восток: мост обязан соединять берега
+    waterAt(w, 0, 12, GRID - 1, 12);
+    check('мост поперёк ручья — можно', w.canPlace('bridge', 10, 10, 1) && w.canPlace('bridge', 10, 11, 1));
+    check('мост вдоль ручья — не мост, нельзя', !w.canPlace('bridge', 10, 11, 0));
+    check('мост посреди лужайки висит в воздухе — нельзя', !w.canPlace('bridge', 10, 5, 1));
+    check('мост у правого края через ручей — можно', w.canPlace('bridge', GRID - 2, 11, 1));
+    check('мост за правой кромкой — нельзя', !w.canPlace('bridge', GRID - 1, 11, 0));
+    check('мост rot0 висит за садом — нельзя', !w.canPlace('bridge', 25, 2, 0) && !w.canPlace('bridge', 0, 2, 0));
     // Валун в углу
     check('валун 2×2 вписывается в угол', w.canPlace('rock_big', 24, 24, 0));
     check('валун 2×2 за углом — нельзя', !w.canPlace('rock_big', 25, 25, 0));
@@ -117,10 +156,16 @@ async function main(): Promise<void> {
   {
     const w = flatWorld();
     waterAt(w, 8, 8, 11, 11);
-    check('беседка не встаёт в воду', !w.canPlace('pavilion', 8, 8, 0) && !w.canPlace('pavilion', 7, 7, 0) && !w.canPlace('pavilion', 10, 10, 2));
+    check(
+      'беседка не встаёт в воду',
+      !w.canPlace('pavilion', 8, 8, 0) && !w.canPlace('pavilion', 7, 7, 0) && !w.canPlace('pavilion', 10, 10, 2),
+    );
     check('беседка стоит рядом с водой', w.canPlace('pavilion', 5, 5, 0));
     check('лотос требует воду', w.canPlace('lotus', 8, 8, 0) && !w.canPlace('lotus', 3, 3, 0));
-    check('мост идёт по воде', w.canPlace('bridge', 9, 8, 1));
+    check('мост посреди пруда — не мост, нельзя', !w.canPlace('bridge', 9, 8, 1));
+    check('мост с берега на край пруда — можно', w.canPlace('bridge', 9, 7, 1));
+    check('мостки поперёк края пруда — можно', w.canPlace('plank_bridge', 7, 9, 0));
+    check('посреди пруда мостки — нельзя', !w.canPlace('plank_bridge', 9, 9, 1));
     check('дерево не встаёт в воду', !w.canPlace('sakura', 8, 8, 0));
   }
 
@@ -132,10 +177,22 @@ async function main(): Promise<void> {
     const id = tree.id;
     const seed = tree.seed;
     check('перенос в дозволенное место', w.moveObject(tree, 12, 12) && tree.tx === 12);
-    check('перенос за край отклонён, место не сбилось', !w.moveObject(tree, GRID - 0.1, 12) === true && tree.tx === 12 && tree.ty === 12);
-    const bridge = w.place('bridge', 10, 4, 1)!;
-    check('мост нельзя повернуть переносом в стену', !w.moveObject(bridge, 25, 4, 0) && bridge.tx === 10 && bridge.rot === 1);
-    check('мост можно повернуть переносом на воле', w.moveObject(bridge, 24, 4, 0) && bridge.rot === 0 && bridge.tx === 24);
+    check(
+      'перенос за край отклонён, место не сбилось',
+      !w.moveObject(tree, GRID - 0.1, 12) === true && tree.tx === 12 && tree.ty === 12,
+    );
+    // Ручей и мост через него: переносами мост можно только двигать вдоль берега
+    waterAt(w, 0, 12, GRID - 1, 12);
+    const bridge = w.place('bridge', 10, 10, 1)!;
+    check(
+      'мост нельзя повернуть переносом в стену',
+      !w.moveObject(bridge, 25, 4, 0) && bridge.tx === 10 && bridge.rot === 1,
+    );
+    check('мост нельзя развернуть вдоль ручья', !w.moveObject(bridge, 10, 11, 0) && bridge.rot === 1);
+    check(
+      'мост можно перенести поперёк ручья дальше по берегу',
+      w.moveObject(bridge, 20, 10, 1) && bridge.rot === 1 && bridge.tx === 20,
+    );
     check('возраст и сид пережили переезды', tree.id === id && tree.seed === seed && tree.planted === 1000);
 
     // Смена усадьбы на середине переноса: чужой объект обратно не возвращается
@@ -168,7 +225,10 @@ async function main(): Promise<void> {
     h.begin('перенос');
     w.moveObject(tree, 18, 6, 2);
     h.commit();
-    check('после второго переезда возраст и сид целы', tree.planted === planted && tree.seed === seed && tree.rot === 2);
+    check(
+      'после второго переезда возраст и сид целы',
+      tree.planted === planted && tree.seed === seed && tree.rot === 2,
+    );
     h.undo();
     check('отмена второго переезда вернула и поворот', tree.tx === 14 && tree.rot === 0);
 
@@ -192,7 +252,11 @@ async function main(): Promise<void> {
     check('дорога через сад находится', !!path && path.length > 8);
     if (path) {
       const crossesWater = path.some((c) => w.at(c.x, c.y)!.water);
-      check('тропа не идёт по воде', !crossesWater, crossesWater ? JSON.stringify(path.filter((c) => w.at(c.x, c.y)!.water)) : '');
+      check(
+        'тропа не идёт по воде',
+        !crossesWater,
+        crossesWater ? JSON.stringify(path.filter((c) => w.at(c.x, c.y)!.water)) : '',
+      );
       // Беседка 2×2 закрывает все свои клетки, а не якорную
       const pavilion = w.objects.find((o) => o.type === 'pavilion')!;
       const r = footprintCells(ITEM_BY_ID.get('pavilion')!, pavilion.tx, pavilion.ty, pavilion.rot);
@@ -221,7 +285,10 @@ async function main(): Promise<void> {
     h3.commit();
     check('тропа легла камнем', laid > 5 && cells.every((c) => w3.at(c.x, c.y)!.ground === 'stone'));
     h3.undo();
-    check('отмена вернула мох', cells.every((c) => w3.at(c.x, c.y)!.ground === 'moss'));
+    check(
+      'отмена вернула мох',
+      cells.every((c) => w3.at(c.x, c.y)!.ground === 'moss'),
+    );
   }
 
   // ---------- Вода ----------
@@ -229,8 +296,6 @@ async function main(): Promise<void> {
   {
     const w = flatWorld();
     waterAt(w, 10, 10, 13, 13, -1);
-    const dry = w.at(9, 9)!;
-    dry;
     const flow = new WaterFlow();
     flow.ensure(w);
     check('стоячий пруд не течёт', !flow.hasCurrent && flow.falls.length === 0);
@@ -238,23 +303,28 @@ async function main(): Promise<void> {
     // Исток на плато повыше, канал пониже, пруд в конце. Плато по бокам —
     // чтобы слив был только в одну сторону, как в настоящем пруду.
     const w2 = flatWorld();
-    for (let y = 3; y <= 8; y++)
-      for (let x = 3; x <= 6; x++) w2.at(x, y)!.level = 1; // плато
-    waterAt(w2, 5, 5, 6, 6, 1);   // верхний бассейн
-    waterAt(w2, 7, 5, 10, 6, 0);  // канал
+    for (let y = 3; y <= 8; y++) for (let x = 3; x <= 6; x++) w2.at(x, y)!.level = 1; // плато
+    waterAt(w2, 5, 5, 6, 6, 1); // верхний бассейн
+    waterAt(w2, 7, 5, 10, 6, 0); // канал
     waterAt(w2, 11, 4, 14, 7, 0); // пруд
     const flow2 = new WaterFlow();
     flow2.ensure(w2);
     check('перепад даёт водопад', flow2.falls.length === 2, `уступов ${flow2.falls.length}`);
-    check('соседние уступы слиты в занавес', flow2.curtains.length === 1 && flow2.curtains[0].tiles.length === 2,
-      `занавесов ${flow2.curtains.length}`);
+    check(
+      'соседние уступы слиты в занавес',
+      flow2.curtains.length === 1 && flow2.curtains[0].tiles.length === 2,
+      `занавесов ${flow2.curtains.length}`,
+    );
     const mid = flow2.at(8, 5);
     check('перепад делает воду живой', flow2.hasCurrent, mid ? `speed ${mid.speed.toFixed(3)}` : 'пусто');
     // Верхний бассейн тянет к своему уступу: вода ускоряется перед падением
     const top = flow2.at(5, 5);
     const lip = flow2.at(6, 5);
-    check('верхняя вода течёт к уступу', !!top && top.fx > 0.2 && !!lip && lip.fx > 0.5,
-      top && lip ? `f5 ${top.fx.toFixed(2)} f6 ${lip.fx.toFixed(2)}` : 'пусто');
+    check(
+      'верхняя вода течёт к уступу',
+      !!top && top.fx > 0.2 && !!lip && lip.fx > 0.5,
+      top && lip ? `f5 ${top.fx.toFixed(2)} f6 ${lip.fx.toFixed(2)}` : 'пусто',
+    );
     flow2.markDirty();
     // Выровняем воду — водопад исчезает
     for (let y = 5; y <= 6; y++) for (let x = 5; x <= 10; x++) w2.at(x, y)!.level = 0;
@@ -273,7 +343,10 @@ async function main(): Promise<void> {
     const gravel = w.tiles.filter((t) => t.ground === 'gravel').length;
     check('заливка красит область и держит предел', ok && gravel > 200 && gravel <= 420, `${gravel} клеток`);
     h.undo();
-    check('отмена заливки вернула мох', w.tiles.every((t) => t.ground === 'moss'));
+    check(
+      'отмена заливки вернула мох',
+      w.tiles.every((t) => t.ground === 'moss'),
+    );
     w.floodFill(1, 1, 'moss');
     check('заливка тем же материалом — не действие', !w.floodFill(1, 1, 'moss'));
   }
@@ -325,7 +398,11 @@ async function main(): Promise<void> {
     check('лепестки под неработающей сценой ограничены', maxEmitted <= 64, `максимум ${maxEmitted}`);
     check('коты соответствуют предметам', life.cats.length === cats, `${life.cats.length} из ${cats}`);
     check('рыбы соответствуют карпам', life.fish.length === koi * 2, `${life.fish.length} из ${koi * 2}`);
-    check('позиции агентов не развалились в NaN', life.cats.every((c) => Number.isFinite(c.tx) && Number.isFinite(c.ty)) && life.fish.every((f) => Number.isFinite(f.tx)));
+    check(
+      'позиции агентов не развалились в NaN',
+      life.cats.every((c) => Number.isFinite(c.tx) && Number.isFinite(c.ty)) &&
+        life.fish.every((f) => Number.isFinite(f.tx)),
+    );
   }
   {
     // Равный состав, но другие предметы: агенты должны переселиться
@@ -339,9 +416,11 @@ async function main(): Promise<void> {
     w.removeObject(a);
     w.place('koi', 19, 19);
     life.update(w, computeTime(Date.now()), 16, Date.now());
-    check('карпы переселились при замене предмета тем же числом',
+    check(
+      'карпы переселились при замене предмета тем же числом',
       life.fish.length === 2 && life.fish.every((f) => f.homeX === 19.5) && homeBefore === 3.5,
-      `дом ${life.fish[0]?.homeX}`);
+      `дом ${life.fish[0]?.homeX}`,
+    );
 
     const b = w.place('cat', 10, 10)!;
     life.update(w, computeTime(Date.now()), 16, Date.now());
@@ -349,7 +428,10 @@ async function main(): Promise<void> {
     w.removeObject(b);
     w.place('cat', 12, 12);
     life.update(w, computeTime(Date.now()), 16, Date.now());
-    check('кот переселился при замене предмета', life.cats.length === 1 && life.cats[0].seed !== catSeed && life.cats[0].tx === 12.5);
+    check(
+      'кот переселился при замене предмета',
+      life.cats.length === 1 && life.cats[0].seed !== catSeed && life.cats[0].tx === 12.5,
+    );
   }
 
   // ---------- Сетка выбора объекта ----------
@@ -409,7 +491,9 @@ async function main(): Promise<void> {
     const t1 = performance.now();
     for (const [tx, ty] of pts.slice(0, 2000)) w.pickObject(tx, ty);
     const gridMs = performance.now() - t1;
-    console.log(`  pickObject ×2000 по 554 объектам: перебор ${linearMs.toFixed(1)} мс → сетка ${gridMs.toFixed(1)} мс`);
+    console.log(
+      `  pickObject ×2000 по 554 объектам: перебор ${linearMs.toFixed(1)} мс → сетка ${gridMs.toFixed(1)} мс`,
+    );
     check('сетка быстрее перебора', gridMs < linearMs && gridMs < 15, `${gridMs.toFixed(1)} мс`);
 
     // Мутации держат сетку актуальной. Расчищаем два угла от случайных
@@ -440,7 +524,10 @@ async function main(): Promise<void> {
     const w = flatWorld();
     const h = new History(w);
     w.checkMilestone('first_pond');
-    check('веха засчиталась и встала в очередь', w.milestones.has('first_pond') && w.pendingMilestones[0] === 'first_pond');
+    check(
+      'веха засчиталась и встала в очередь',
+      w.milestones.has('first_pond') && w.pendingMilestones[0] === 'first_pond',
+    );
     w.checkMilestone('first_pond');
     check('повторно веха не дублируется', w.pendingMilestones.length === 1);
     h.begin('действие');

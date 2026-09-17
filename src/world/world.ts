@@ -139,7 +139,16 @@ export class World {
 
     // Дорожка
     const path: [number, number][] = [
-      [11, 9], [11, 10], [12, 11], [13, 11], [14, 11], [15, 10], [16, 10], [17, 9], [17, 8], [18, 7],
+      [11, 9],
+      [11, 10],
+      [12, 11],
+      [13, 11],
+      [14, 11],
+      [15, 10],
+      [16, 10],
+      [17, 9],
+      [17, 8],
+      [18, 7],
     ];
     for (const [x, y] of path) {
       const t = this.at(x, y);
@@ -176,8 +185,10 @@ export class World {
     this.place('rock_mid', 4.25, 14.5, 2, old);
     this.place('rock_trio', 18.5, 12, 0, old);
 
-    // Мостик через пруд
-    this.place('bridge', 16, 12, 0, old);
+    // Мостик через пруд: северо-западный конец у каменистого мысика,
+    // юго-восточный — на песчаной кромке под скальным трио. Раньше дуга
+    // стояла посреди воды и «висела в воздухе».
+    this.place('bridge', 17, 11, 0, old);
 
     // Фонари
     this.place('lantern_stone', 11.5, 10.5, 0, old);
@@ -229,13 +240,27 @@ export class World {
 
     // Южная роща и дальний берег — чтобы кадр был наполнен во все стороны
     const more: [string, number, number][] = [
-      ['maple', 2.5, 12.5], ['pine', 3.5, 8.5], ['sakura', 2.5, 19],
-      ['ginkgo', 11.5, 20.5], ['maple', 13.5, 22.5], ['pine', 17.5, 21.5],
-      ['sakura', 20.5, 22.5], ['willow', 19.5, 15.5], ['maple', 22.5, 11.5],
-      ['pine', 23.5, 16.5], ['ginkgo', 6.5, 23], ['sakura', 16.5, 19.5],
-      ['hedge', 15.25, 8.5], ['hedge', 18.75, 19.25], ['azalea', 21.25, 16.75],
-      ['azalea', 3.25, 10.5], ['azalea', 12.75, 18.5], ['hedge', 9.25, 12.25],
-      ['bamboo', 23.5, 8.5], ['bamboo', 23, 9.75], ['bamboo', 22.5, 22.5],
+      ['maple', 2.5, 12.5],
+      ['pine', 3.5, 8.5],
+      ['sakura', 2.5, 19],
+      ['ginkgo', 11.5, 20.5],
+      ['maple', 13.5, 22.5],
+      ['pine', 17.5, 21.5],
+      ['sakura', 20.5, 22.5],
+      ['willow', 19.5, 15.5],
+      ['maple', 22.5, 11.5],
+      ['pine', 23.5, 16.5],
+      ['ginkgo', 6.5, 23],
+      ['sakura', 16.5, 19.5],
+      ['hedge', 15.25, 8.5],
+      ['hedge', 18.75, 19.25],
+      ['azalea', 21.25, 16.75],
+      ['azalea', 3.25, 10.5],
+      ['azalea', 12.75, 18.5],
+      ['hedge', 9.25, 12.25],
+      ['bamboo', 23.5, 8.5],
+      ['bamboo', 23, 9.75],
+      ['bamboo', 22.5, 22.5],
     ];
     for (const [type, tx, ty] of more) this.place(type, tx, ty, 0, old);
 
@@ -252,7 +277,14 @@ export class World {
     this.place('brazier', 18.5, 17.5, 0, old);
 
     // Каменная тропа к беседке
-    for (const [x, y] of [[18, 16], [19, 17], [20, 17], [21, 18], [21, 19], [22, 20]] as [number, number][]) {
+    for (const [x, y] of [
+      [18, 16],
+      [19, 17],
+      [20, 17],
+      [21, 18],
+      [21, 19],
+      [22, 20],
+    ] as [number, number][]) {
       const t = this.at(x, y);
       if (t && !t.water && !t.indoor) t.ground = 'stone';
     }
@@ -265,7 +297,8 @@ export class World {
       const ty = Math.round((16 + r2 * 8) * 4) / 4;
       const t = this.at(Math.floor(tx), Math.floor(ty));
       if (!t || t.water || t.indoor || t.veranda) continue;
-      const kind = r2 > 0.72 ? 'moss_clump' : r2 > 0.5 ? 'grass_tuft' : r2 > 0.3 ? 'fern' : r2 > 0.15 ? 'iris' : 'pebbles';
+      const kind =
+        r2 > 0.72 ? 'moss_clump' : r2 > 0.5 ? 'grass_tuft' : r2 > 0.3 ? 'fern' : r2 > 0.15 ? 'iris' : 'pebbles';
       this.place(kind, tx, ty, 0, old);
     }
     // Ирисы у воды
@@ -557,7 +590,7 @@ export class World {
         if (!t || t.indoor || t.veranda) continue;
         // Отклонение от осевой линии русла. Русло должно быть шире ступени,
         // иначе на большинстве уступов воды не окажется и падать будет нечему.
-        const axis = (x - x0) - (y - y0);
+        const axis = x - x0 - (y - y0);
         const wob = (fbm(x * 0.7, y * 0.7, 2, 53) - 0.5) * 1.2;
         if (Math.abs(axis + wob) > 2.1) continue;
         t.water = true;
@@ -572,7 +605,12 @@ export class World {
         const t = this.at(x, y);
         if (!t || t.water || t.indoor || t.veranda) continue;
         let nearWater = false;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][]) {
+        for (const [dx, dy] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ] as [number, number][]) {
           if (this.at(x + dx, y + dy)?.water) nearWater = true;
         }
         if (!nearWater) continue;
@@ -645,14 +683,20 @@ export class World {
     const item = ITEM_BY_ID.get(type);
     if (!item) return false;
     const r = footprintCells(item, tx, ty, rot);
+    let anyWater = false;
+    let anyLand = false;
     for (let y = r.y0; y <= r.y1; y++) {
       for (let x = r.x0; x <= r.x1; x++) {
         const t = this.at(x, y);
         if (!t) return false;
         if (item.needsWater && !t.water) return false;
         if (!item.onWater && t.water) return false;
+        if (t.water) anyWater = true;
+        else anyLand = true;
       }
     }
+    // Мост обязан соединять берега: посреди пруда и посреди лужайки он не стоит.
+    if (item.spansWater && (!anyWater || !anyLand)) return false;
     return true;
   }
 
@@ -929,7 +973,8 @@ export class World {
     for (const t of this.tiles) if (t.ground === 'gravel') gravel++;
     if (gravel >= 20) {
       let rocks = 0;
-      for (const o of this.objects) if (o.type === 'rock_big' || o.type === 'rock_trio' || o.type === 'rock_mid') rocks++;
+      for (const o of this.objects)
+        if (o.type === 'rock_big' || o.type === 'rock_trio' || o.type === 'rock_mid') rocks++;
       if (rocks >= 3) this.checkMilestone('stone_garden');
     }
 

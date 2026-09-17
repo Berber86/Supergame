@@ -28,8 +28,7 @@ async function main() {
   const { buildAtmosphere } = await import('../src/world/palette');
   const { computeTime } = await import('../src/core/clock');
   const { drawObject, drawCost } = await import('../src/render/sprites');
-  const { cacheable, drawCached, spriteFrame, spriteStats, clearSprites } =
-    await import('../src/render/spriteCache');
+  const { cacheable, drawCached, spriteFrame, spriteStats, clearSprites } = await import('../src/render/spriteCache');
 
   const d = new Date();
   d.setHours(13, 0, 0, 0);
@@ -73,9 +72,7 @@ async function main() {
   const report = (name: string, ms: number, budget: number) => {
     const ok = ms <= budget;
     if (!ok) bad++;
-    console.log(
-      `${ok ? '✔' : '✘'} ${name}: ${ms.toFixed(1)} мс (бюджет ${budget}) → ${(1000 / ms).toFixed(0)} к/с`,
-    );
+    console.log(`${ok ? '✔' : '✘'} ${name}: ${ms.toFixed(1)} мс (бюджет ${budget}) → ${(1000 / ms).toFixed(0)} к/с`);
   };
 
   const starter = new World();
@@ -94,7 +91,9 @@ async function main() {
   const bigOff = bench(big, false);
   const bigOn = bench(big, true);
   console.log(`большой сад (${big.objects.length} объектов):`);
-  console.log(`    без кэша ${bigOff.toFixed(1)} мс → с кэшем ${bigOn.toFixed(1)} мс  (×${(bigOff / bigOn).toFixed(1)})`);
+  console.log(
+    `    без кэша ${bigOff.toFixed(1)} мс → с кэшем ${bigOn.toFixed(1)} мс  (×${(bigOff / bigOn).toFixed(1)})`,
+  );
   report('  большой сад', bigOn, BUDGET.objectsBig);
 
   const st = spriteStats();

@@ -139,8 +139,13 @@ function validSpot(n: unknown): n is number {
 
 /** Общие проверки полей — чтобы упакованный и старый вид судить одинаково. */
 function checkFields(
-  id: unknown, type: unknown, tx: unknown, ty: unknown,
-  planted: unknown, rot: unknown, seed: unknown,
+  id: unknown,
+  type: unknown,
+  tx: unknown,
+  ty: unknown,
+  planted: unknown,
+  rot: unknown,
+  seed: unknown,
 ): id is number {
   if (!isInt(id) || id < 1) return false;
   if (typeof type !== 'string' || !ITEM_BY_ID.has(type)) return false;
@@ -154,13 +159,29 @@ function checkFields(
 function unpackObject(raw: unknown[]): PlacedObject | null {
   const [id, type, tx, ty, planted, rot, seed] = raw;
   if (raw.length !== 7 || !checkFields(id, type, tx, ty, planted, rot, seed)) return null;
-  return { id, type: type as string, tx: tx as number, ty: ty as number, planted: planted as number, rot: rot as number, seed: seed as number };
+  return {
+    id,
+    type: type as string,
+    tx: tx as number,
+    ty: ty as number,
+    planted: planted as number,
+    rot: rot as number,
+    seed: seed as number,
+  };
 }
 
 function parseLegacyObject(raw: Record<string, unknown>): PlacedObject | null {
   const { id, type, tx, ty, planted, rot, seed } = raw;
   if (!checkFields(id, type, tx, ty, planted, rot, seed)) return null;
-  return { id, type: type as string, tx: tx as number, ty: ty as number, planted: planted as number, rot: rot as number, seed: seed as number };
+  return {
+    id,
+    type: type as string,
+    tx: tx as number,
+    ty: ty as number,
+    planted: planted as number,
+    rot: rot as number,
+    seed: seed as number,
+  };
 }
 
 function parseStringList(raw: unknown, max: number): string[] | null {

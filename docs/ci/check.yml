@@ -1,0 +1,32 @@
+# Проверки на каждый push: типы, линт, формат, логика мира, контроль кадров.
+name: проверки
+
+on:
+  push:
+    branches: [main, 'arena/**']
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Типы
+        run: npx tsc --noEmit
+
+      - name: Линт
+        run: npx eslint .
+
+      - name: Формат
+        run: npx prettier --check .
+
+      - name: Логика, сохранения, касания, кадры
+        run: npx tsx tools/run-checks.ts

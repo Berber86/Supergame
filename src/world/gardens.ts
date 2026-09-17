@@ -198,7 +198,7 @@ export class GardenStore {
   load(world: World, id = this.index.active): boolean {
     const main = slotKey(id);
     for (const key of [main, main + BAK, main + TMP]) {
-      let raw: string | null = null;
+      let raw: string | null;
       try {
         raw = localStorage.getItem(key);
       } catch {

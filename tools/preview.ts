@@ -22,7 +22,7 @@ async function main() {
   const { Scene } = await import('../src/render/scene');
   const { World } = await import('../src/world/world');
   const { buildAtmosphere } = await import('../src/world/palette');
-  const { computeTime, SEASON_MS, DAY_MS } = await import('../src/core/clock');
+  const { computeTime, midSeasonMs } = await import('../src/core/clock');
   const { GRID } = await import('../src/core/iso');
   const { Life } = await import('../src/world/life');
   const { WeatherSystem } = await import('../src/world/weatherState');
@@ -44,7 +44,10 @@ async function main() {
   scene.centerOn(GRID / 2, GRID / 2 + 1.5);
   if (process.env.FIT) scene.fitToView();
   else scene.camera.zoom = Number(process.env.ZOOM ?? 0.85);
-  if (process.env.NOROOF) { scene.roofVisible = false; scene.snapRoof(); }
+  if (process.env.NOROOF) {
+    scene.roofVisible = false;
+    scene.snapRoof();
+  }
   if (process.env.NOPARTICLES) scene.particles = false;
   if (process.env.NOCACHE) scene.useSpriteCache = false;
   if (process.env.CX) scene.centerOn(Number(process.env.CX), Number(process.env.CY ?? 12));
@@ -52,9 +55,7 @@ async function main() {
   // Собираем момент времени: нужный час нужного сезона
   const seasons = ['spring', 'summer', 'autumn', 'winter'];
   const si = Math.max(0, seasons.indexOf(seasonArg));
-  const EPOCH = Date.UTC(2024, 2, 20, 0, 0, 0);
-  const base = EPOCH + si * SEASON_MS + DAY_MS * 1.5;
-  const d = new Date(base);
+  const d = new Date(midSeasonMs(si));
   d.setHours(Math.floor(hour), Math.round((hour % 1) * 60), 0, 0);
 
   // Тестовый водопад: приподнятый исток и спуск к пруду
@@ -68,11 +69,20 @@ async function main() {
   // Тестовая расстановка новых предметов
   if (process.env.ITEMS) {
     const spots: [string, number, number][] = [
-      ['wisteria', 7.5, 7.5], ['persimmon', 5.5, 9.5], ['camellia', 8.25, 10.25],
-      ['fusuma', 6, 5], ['tokonoma', 8, 4], ['irori', 7.5, 6.5],
-      ['futon', 5.5, 6.5], ['byobu', 9.5, 5.5], ['bonsai', 6.25, 4.25],
-      ['reed', 13.25, 16.25], ['reed', 13.75, 16.75], ['horsetail', 14.25, 17.25],
-      ['water_stone', 16.25, 13.25], ['plank_bridge', 15, 15],
+      ['wisteria', 7.5, 7.5],
+      ['persimmon', 5.5, 9.5],
+      ['camellia', 8.25, 10.25],
+      ['fusuma', 6, 5],
+      ['tokonoma', 8, 4],
+      ['irori', 7.5, 6.5],
+      ['futon', 5.5, 6.5],
+      ['byobu', 9.5, 5.5],
+      ['bonsai', 6.25, 4.25],
+      ['reed', 13.25, 16.25],
+      ['reed', 13.75, 16.75],
+      ['horsetail', 14.25, 17.25],
+      ['water_stone', 16.25, 13.25],
+      ['plank_bridge', 15, 15],
     ];
     for (const [id, x, y] of spots) world.place(id, x, y, 0, Date.now() - 864e5 * 30);
   }
@@ -80,11 +90,38 @@ async function main() {
   if (process.env.PATHS) {
     const { findPath, layPath } = await import('../src/world/paths');
     for (const [a, b] of [
-      [[2, 22], [23, 19]],
-      [[20, 2], [12, 21]],
+      [
+        [2, 22],
+        [23, 19],
+      ],
+      [
+        [20, 2],
+        [12, 21],
+      ],
     ] as [number, number][][]) {
       const cells = findPath(world, { x: a[0], y: a[1] }, { x: b[0], y: b[1] });
       if (cells) layPath(world, cells);
+    }
+  }
+
+  // Мосты через пруд в обоих поворотах — контрольная сцена для отладки
+  if (process.env.BRIDGES) {
+    for (const [x, y, r] of [
+      [9, 15, 0],
+      [10, 15, 0],
+      [11, 15, 0],
+      [12, 15, 0],
+      [13, 15, 0],
+      [14, 13, 1],
+      [14, 14, 1],
+      [14, 15, 1],
+      [14, 16, 1],
+      [14, 17, 1],
+      [13, 16, 0],
+    ] as [number, number, number][]) {
+      const ok = world.canPlace('bridge', x, y, r);
+      if (ok) world.place('bridge', x, y, r, Date.now() - 864e5 * 30);
+      console.log(`bridge@${x},${y} rot=${r}: ${ok ? 'поставлен' : 'ОТКАЗ (туда мост не встанет)'}`);
     }
   }
 
@@ -104,7 +141,9 @@ async function main() {
     ws.update(16, t);
     scene.render(world, atm, 1000 + i * 16, 16, life, ws.state);
   }
-  console.log(`погода=${wkind} дождь=${ws.state.rain.toFixed(2)} туман=${ws.state.fog.toFixed(2)} тучи=${ws.state.overcast.toFixed(2)} | кот@${life.cats[0] ? life.cats[0].tx.toFixed(1)+','+life.cats[0].ty.toFixed(1)+' '+life.cats[0].state : '-'} коты=${life.cats.length} птицы=${life.birds.length} порхают=${life.flutters.length} карпы=${life.fish.length} ветер=${life.windBase.toFixed(2)}`);
+  console.log(
+    `погода=${wkind} дождь=${ws.state.rain.toFixed(2)} туман=${ws.state.fog.toFixed(2)} тучи=${ws.state.overcast.toFixed(2)} | кот@${life.cats[0] ? life.cats[0].tx.toFixed(1) + ',' + life.cats[0].ty.toFixed(1) + ' ' + life.cats[0].state : '-'} коты=${life.cats.length} птицы=${life.birds.length} порхают=${life.flutters.length} карпы=${life.fish.length} ветер=${life.windBase.toFixed(2)}`,
+  );
 
   const buf = (canvas as unknown as { toBuffer(mime: string): Buffer }).toBuffer('image/png');
   writeFileSync(out, buf);

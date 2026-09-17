@@ -63,7 +63,11 @@ function copyTile(t: Tile): Tile {
 
 function sameTile(a: Tile, b: Tile): boolean {
   return (
-    a.ground === b.ground && a.level === b.level && a.water === b.water && a.indoor === b.indoor && a.veranda === b.veranda
+    a.ground === b.ground &&
+    a.level === b.level &&
+    a.water === b.water &&
+    a.indoor === b.indoor &&
+    a.veranda === b.veranda
   );
 }
 
