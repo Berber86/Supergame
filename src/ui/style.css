@@ -1,0 +1,1759 @@
+/* Интерфейс из материалов мира: тёплое дерево, рисовая бумага, шёлковые шнуры. */
+
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Noto+Serif+JP:wght@300;400;600&display=swap');
+
+:root {
+  --wood: #6b4a33;
+  --wood-dark: #4a3122;
+  --wood-light: #8b6344;
+  --paper: #f3ead6;
+  --paper-warm: #eadfc4;
+  --paper-deep: #ddd0b0;
+  --ink: #3b3028;
+  --ink-soft: #6d5d4c;
+  --silk: #b0533f;
+  --silk-light: #cf7159;
+  --moss: #7d9668;
+  --gold: #c9a227;
+  --shadow: 0 10px 34px rgba(48, 34, 22, 0.34), 0 2px 8px rgba(48, 34, 22, 0.2);
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --serif: 'Cormorant Garamond', 'Noto Serif JP', Georgia, serif;
+  --jp: 'Noto Serif JP', 'Cormorant Garamond', serif;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #1a1f26;
+  font-family: var(--serif);
+  color: var(--ink);
+  user-select: none;
+  touch-action: none;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+#garden {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+}
+
+#garden.dragging {
+  cursor: grabbing;
+}
+
+#garden.building {
+  cursor: crosshair;
+}
+
+/* ---------- Общие текстуры ---------- */
+
+.paper {
+  background:
+    radial-gradient(120% 90% at 20% 0%, rgba(255, 252, 240, 0.9), rgba(255, 252, 240, 0) 60%),
+    linear-gradient(170deg, var(--paper) 0%, var(--paper-warm) 55%, var(--paper-deep) 100%);
+  position: relative;
+}
+
+.paper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.4;
+  mix-blend-mode: multiply;
+  background-image:
+    repeating-linear-gradient(90deg, rgba(120, 96, 64, 0.05) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(0deg, rgba(120, 96, 64, 0.04) 0 1px, transparent 1px 7px);
+  border-radius: inherit;
+}
+
+.wood {
+  background:
+    linear-gradient(180deg, var(--wood-light) 0%, var(--wood) 42%, var(--wood-dark) 100%);
+  position: relative;
+}
+
+.wood::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  mix-blend-mode: overlay;
+  background-image: repeating-linear-gradient(
+    92deg,
+    rgba(255, 235, 200, 0.13) 0 2px,
+    rgba(60, 36, 20, 0.15) 2px 5px,
+    transparent 5px 11px
+  );
+  border-radius: inherit;
+}
+
+/* ---------- Исчезающий интерфейс ---------- */
+
+.ui-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.ui-layer > * {
+  pointer-events: auto;
+}
+
+.fade {
+  transition: opacity 1.1s var(--ease), transform 0.85s var(--ease), filter 0.9s var(--ease);
+}
+
+body.zen .fade:not(.keep) {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transform: translateY(10px) scale(0.985);
+  filter: blur(2px);
+}
+
+/* ---------- Верхняя плашка времени ---------- */
+
+.time-card {
+  position: absolute;
+  top: 22px;
+  left: 26px;
+  padding: 13px 20px 12px;
+  border-radius: 3px 3px 5px 5px;
+  box-shadow: var(--shadow);
+  min-width: 174px;
+  border: 1px solid rgba(90, 64, 40, 0.28);
+  cursor: default;
+}
+
+.time-card::before {
+  content: '';
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 46%;
+  height: 10px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--wood-light), var(--wood-dark));
+  box-shadow: 0 2px 5px rgba(40, 28, 16, 0.4);
+}
+
+.time-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.clock {
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.season-kanji {
+  font-family: var(--jp);
+  font-size: 23px;
+  color: var(--silk);
+  line-height: 1;
+}
+
+.time-sub {
+  margin-top: 6px;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  font-style: italic;
+  letter-spacing: 0.02em;
+}
+
+.season-bar {
+  margin-top: 9px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(107, 74, 51, 0.18);
+  overflow: hidden;
+}
+
+.season-bar > i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--moss), var(--gold));
+  border-radius: 2px;
+  transition: width 1s linear;
+}
+
+/* ---------- Правая колонка кнопок ---------- */
+
+.tools {
+  position: absolute;
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.tool-btn {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  border: 1px solid rgba(70, 48, 30, 0.4);
+  display: grid;
+  place-items: center;
+  color: var(--paper);
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: transform 0.28s var(--ease), box-shadow 0.28s var(--ease), background 0.3s var(--ease);
+  position: relative;
+}
+
+.tool-btn:hover {
+  transform: translateX(-4px) scale(1.06);
+}
+
+.tool-btn:active {
+  transform: translateX(-2px) scale(0.97);
+}
+
+.tool-btn.active {
+  background: linear-gradient(180deg, var(--silk-light), var(--silk));
+  color: #fff6ea;
+}
+
+.tool-btn .label {
+  position: absolute;
+  right: 60px;
+  white-space: nowrap;
+  font-size: 14px;
+  padding: 5px 12px;
+  border-radius: 3px;
+  background: rgba(38, 28, 20, 0.86);
+  color: var(--paper);
+  opacity: 0;
+  transform: translateX(8px);
+  transition: all 0.26s var(--ease);
+  pointer-events: none;
+  letter-spacing: 0.02em;
+}
+
+.tool-btn:hover .label {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* ---------- Каталог ---------- */
+
+.catalog {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  transform: translateY(102%);
+  transition: transform 0.62s var(--ease);
+  z-index: 6;
+  pointer-events: auto;
+}
+
+.catalog.open {
+  transform: translateY(0);
+}
+
+.catalog-inner {
+  margin: 0 auto;
+  max-width: 1180px;
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 -14px 46px rgba(40, 28, 18, 0.42);
+  border: 1px solid rgba(80, 56, 34, 0.4);
+  border-bottom: none;
+  overflow: hidden;
+}
+
+/* шёлковый шнур-ручка */
+.catalog-handle {
+  height: 24px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  position: relative;
+}
+
+.catalog-handle .cord {
+  width: 66px;
+  height: 5px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--silk), var(--silk-light), var(--silk));
+  box-shadow: 0 1px 3px rgba(40, 20, 12, 0.5);
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid rgba(70, 48, 30, 0.3);
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 11px 17px 10px;
+  color: rgba(243, 234, 214, 0.62);
+  cursor: pointer;
+  font-size: 15.5px;
+  letter-spacing: 0.03em;
+  border-bottom: 2px solid transparent;
+  transition: all 0.25s var(--ease);
+  white-space: nowrap;
+}
+
+.tab:hover {
+  color: var(--paper);
+  background: rgba(255, 240, 210, 0.07);
+}
+
+.tab.active {
+  color: #fff3df;
+  border-bottom-color: var(--silk-light);
+  background: rgba(255, 240, 210, 0.11);
+}
+
+.tab.locked {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.tab.new::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 8px var(--gold);
+}
+
+.items {
+  display: flex;
+  gap: 12px;
+  padding: 16px 18px 20px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  min-height: 132px;
+  align-items: flex-start;
+}
+
+.items::-webkit-scrollbar {
+  height: 7px;
+}
+
+.items::-webkit-scrollbar-thumb {
+  background: rgba(107, 74, 51, 0.4);
+  border-radius: 4px;
+}
+
+.item {
+  flex: 0 0 auto;
+  width: 92px;
+  border-radius: 4px;
+  padding: 8px 6px 9px;
+  cursor: pointer;
+  text-align: center;
+  border: 1px solid rgba(107, 74, 51, 0.24);
+  transition: transform 0.24s var(--ease), box-shadow 0.24s var(--ease), border-color 0.24s var(--ease);
+  box-shadow: 0 2px 7px rgba(50, 34, 20, 0.16);
+}
+
+.item:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 9px 20px rgba(50, 34, 20, 0.28);
+  border-color: rgba(176, 83, 63, 0.55);
+}
+
+.item.selected {
+  border-color: var(--silk);
+  box-shadow: 0 0 0 2px rgba(176, 83, 63, 0.4), 0 9px 20px rgba(50, 34, 20, 0.3);
+  transform: translateY(-4px);
+}
+
+.item .thumb {
+  width: 100%;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 4px;
+}
+
+.item .thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  image-rendering: auto;
+}
+
+.item .thumb svg {
+  color: var(--ink-soft);
+}
+
+.item .name {
+  font-size: 13.5px;
+  line-height: 1.2;
+  color: var(--ink);
+  letter-spacing: 0.01em;
+}
+
+.item .hint {
+  font-size: 11px;
+  color: var(--ink-soft);
+  font-style: italic;
+  margin-top: 2px;
+  line-height: 1.15;
+  min-height: 13px;
+}
+
+.item .size-badge {
+  position: absolute;
+}
+
+/* ---------- Подсказка внизу ---------- */
+
+.hint-bar {
+  position: absolute;
+  bottom: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 20px;
+  border-radius: 20px;
+  font-size: 14px;
+  color: rgba(255, 248, 234, 0.9);
+  background: rgba(38, 28, 20, 0.62);
+  backdrop-filter: blur(7px);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/* ---------- Уведомление о вехе ---------- */
+
+.milestone {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.94);
+  width: 340px;
+  padding: 26px 30px 24px;
+  border-radius: 4px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(34, 22, 14, 0.5);
+  border: 1px solid rgba(90, 64, 40, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.8s var(--ease);
+  z-index: 8;
+}
+
+.milestone.show {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.milestone .seal {
+  width: 46px;
+  height: 46px;
+  margin: 0 auto 13px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, var(--silk-light), var(--silk));
+  display: grid;
+  place-items: center;
+  color: #fff4e6;
+  font-family: var(--jp);
+  font-size: 22px;
+  box-shadow: 0 4px 14px rgba(140, 50, 34, 0.42);
+}
+
+.milestone h3 {
+  margin: 0 0 8px;
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+
+.milestone p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+.milestone .unlock {
+  margin-top: 13px;
+  font-size: 12.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--silk);
+}
+
+/* ---------- Заставка ---------- */
+
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(120% 90% at 50% 40%, #2f3b3c, #1a2224 70%);
+  transition: opacity 1.3s var(--ease);
+}
+
+.splash.hide {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.splash-inner {
+  text-align: center;
+  color: var(--paper);
+}
+
+.splash h1 {
+  font-family: var(--jp);
+  font-weight: 300;
+  font-size: 46px;
+  letter-spacing: 0.22em;
+  margin: 0 0 10px;
+  color: #f4ecd9;
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+}
+
+.splash .sub {
+  font-size: 17px;
+  font-style: italic;
+  letter-spacing: 0.1em;
+  color: rgba(244, 236, 217, 0.66);
+  margin-bottom: 30px;
+}
+
+.splash .enter {
+  display: inline-block;
+  padding: 12px 34px;
+  border-radius: 2px;
+  border: 1px solid rgba(244, 236, 217, 0.45);
+  color: #f4ecd9;
+  font-size: 16.5px;
+  letter-spacing: 0.15em;
+  cursor: pointer;
+  transition: all 0.35s var(--ease);
+  background: rgba(244, 236, 217, 0.05);
+}
+
+.splash .enter:hover {
+  background: rgba(244, 236, 217, 0.15);
+  letter-spacing: 0.2em;
+}
+
+/* ---------- Свиток помощи ---------- */
+
+.scroll-panel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scaleY(0.02);
+  transform-origin: center;
+  width: min(520px, 90vw);
+  max-height: 78vh;
+  overflow-y: auto;
+  padding: 30px 36px 32px;
+  border-radius: 3px;
+  box-shadow: 0 24px 70px rgba(34, 22, 14, 0.55);
+  border: 1px solid rgba(90, 64, 40, 0.3);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.55s var(--ease);
+  z-index: 9;
+}
+
+.scroll-panel.show {
+  transform: translate(-50%, -50%) scaleY(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.scroll-panel h2 {
+  margin: 0 0 4px;
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.scroll-panel .lead {
+  font-style: italic;
+  color: var(--ink-soft);
+  margin-bottom: 20px;
+  font-size: 15px;
+}
+
+.scroll-panel dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 9px 16px;
+  align-items: baseline;
+}
+
+.scroll-panel dt {
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+  padding: 3px 9px;
+  border-radius: 3px;
+  background: rgba(107, 74, 51, 0.16);
+  border: 1px solid rgba(107, 74, 51, 0.24);
+  white-space: nowrap;
+  color: var(--ink);
+  font-family: ui-monospace, monospace;
+}
+
+.scroll-panel dd {
+  margin: 0;
+  font-size: 14.5px;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+.scroll-panel .section {
+  margin-top: 22px;
+  font-size: 12.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--silk);
+  margin-bottom: 11px;
+}
+
+.scroll-close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--ink-soft);
+  transition: all 0.25s var(--ease);
+}
+
+.scroll-close:hover {
+  background: rgba(107, 74, 51, 0.14);
+  color: var(--ink);
+}
+
+/* ---------- Прочее ---------- */
+
+.zen-note {
+  position: absolute;
+  bottom: 22px;
+  right: 26px;
+  font-size: 13px;
+  font-style: italic;
+  color: rgba(255, 248, 232, 0.4);
+  letter-spacing: 0.06em;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+}
+
+.toast {
+  position: absolute;
+  top: 26px;
+  left: 50%;
+  transform: translate(-50%, -14px);
+  padding: 9px 22px;
+  border-radius: 3px;
+  font-size: 14.5px;
+  color: var(--ink);
+  opacity: 0;
+  transition: all 0.5s var(--ease);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  z-index: 7;
+  letter-spacing: 0.02em;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+@media (max-width: 720px) {
+  .time-card {
+    top: 14px;
+    left: 14px;
+    padding: 10px 15px 9px;
+    min-width: 146px;
+  }
+  .clock {
+    font-size: 24px;
+  }
+  .tools {
+    right: 12px;
+    gap: 10px;
+  }
+  .tool-btn {
+    width: 44px;
+    height: 44px;
+  }
+  .item {
+    width: 80px;
+  }
+  .hint-bar {
+    font-size: 12.5px;
+    bottom: 16px;
+    padding: 7px 14px;
+  }
+  .splash h1 {
+    font-size: 30px;
+  }
+}
+
+/* ---------- Мастерская времени (панель разработчика) ---------- */
+
+.dev-panel {
+  position: absolute;
+  top: 22px;
+  right: 92px;
+  width: 268px;
+  border-radius: 4px;
+  padding: 0 0 14px;
+  box-shadow: var(--shadow);
+  border: 1px solid rgba(90, 64, 40, 0.34);
+  opacity: 0;
+  transform: translateX(14px) scale(0.97);
+  pointer-events: none;
+  transition: all 0.42s var(--ease);
+  z-index: 7;
+  font-size: 13px;
+}
+
+.dev-panel.show {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.dev-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 9px 14px;
+  border-bottom: 1px solid rgba(107, 74, 51, 0.22);
+}
+
+.dev-title {
+  font-size: 15px;
+  letter-spacing: 0.05em;
+  color: var(--ink);
+}
+
+.dev-close {
+  cursor: pointer;
+  color: var(--ink-soft);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  transition: background 0.2s var(--ease);
+}
+
+.dev-close:hover {
+  background: rgba(107, 74, 51, 0.14);
+}
+
+.dev-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px 9px;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 13.5px;
+}
+
+.dev-toggle input {
+  accent-color: var(--silk);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.dev-body {
+  padding: 0 14px;
+  transition: opacity 0.3s var(--ease);
+}
+
+.dev-body.disabled {
+  opacity: 0.42;
+}
+
+.dev-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 5px;
+}
+
+.dev-label {
+  color: var(--ink-soft);
+  letter-spacing: 0.05em;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.dev-value {
+  color: var(--ink);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+input[type='range'].dev-hour {
+  width: 100%;
+  accent-color: var(--silk);
+  margin: 2px 0 8px;
+  cursor: pointer;
+}
+
+.dev-presets,
+.dev-seasons,
+.dev-weather,
+.dev-speeds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.dev-chip {
+  flex: 0 0 auto;
+  font-family: var(--serif);
+  font-size: 12.5px;
+  padding: 4px 9px;
+  border-radius: 3px;
+  border: 1px solid rgba(107, 74, 51, 0.3);
+  background: rgba(255, 252, 242, 0.5);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: all 0.2s var(--ease);
+  letter-spacing: 0.02em;
+}
+
+.dev-chip:hover {
+  border-color: rgba(176, 83, 63, 0.5);
+  color: var(--ink);
+  background: rgba(255, 252, 242, 0.85);
+}
+
+.dev-chip.on {
+  background: linear-gradient(180deg, var(--silk-light), var(--silk));
+  border-color: var(--silk);
+  color: #fff4e8;
+}
+
+.dev-hint {
+  margin-top: 14px;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--ink-soft);
+  opacity: 0.8;
+  line-height: 1.4;
+}
+
+@media (max-width: 720px) {
+  .dev-panel {
+    right: 12px;
+    top: 74px;
+    width: min(268px, calc(100vw - 24px));
+  }
+}
+
+/* ---------- Инструменты строителя ---------- */
+
+#garden.picking {
+  cursor: pointer;
+}
+
+.buildbar {
+  position: absolute;
+  left: 50%;
+  bottom: 214px;
+  transform: translate(-50%, 16px);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 9px;
+  border-radius: 4px;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.4s var(--ease);
+  z-index: 6;
+}
+
+.buildbar.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+
+.bb-group {
+  display: flex;
+  gap: 3px;
+}
+
+.bb-sep {
+  width: 1px;
+  height: 21px;
+  margin: 0 4px;
+  background: rgba(255, 244, 224, 0.22);
+}
+
+.bb-btn {
+  width: 32px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--paper);
+  opacity: 0.82;
+  transition: all 0.2s var(--ease);
+}
+
+.bb-btn:hover {
+  background: rgba(255, 244, 224, 0.16);
+  opacity: 1;
+}
+
+.bb-btn.active {
+  background: linear-gradient(180deg, var(--silk-light), var(--silk));
+  opacity: 1;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
+.bb-btn.off {
+  opacity: 0.26;
+  cursor: default;
+}
+
+.bb-btn.off:hover {
+  background: none;
+  opacity: 0.26;
+}
+
+.bb-size {
+  min-width: 26px;
+  height: 30px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--paper);
+  opacity: 0.66;
+  font-family: var(--serif);
+  font-size: 13px;
+  transition: all 0.2s var(--ease);
+}
+
+.bb-size:hover {
+  background: rgba(255, 244, 224, 0.16);
+  opacity: 1;
+}
+
+.bb-size.active {
+  background: rgba(255, 244, 224, 0.2);
+  opacity: 1;
+  color: #fff6e9;
+}
+
+/* ---------- Усадьбы ---------- */
+
+.gardens-panel {
+  position: absolute;
+  top: 22px;
+  right: 92px;
+  width: 286px;
+  border-radius: 4px;
+  padding: 0 0 12px;
+  box-shadow: var(--shadow);
+  border: 1px solid rgba(90, 64, 40, 0.34);
+  opacity: 0;
+  transform: translateX(14px) scale(0.97);
+  pointer-events: none;
+  transition: all 0.42s var(--ease);
+  z-index: 7;
+  font-size: 13px;
+}
+
+.gardens-panel.show {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.gp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 9px 14px;
+  border-bottom: 1px solid rgba(107, 74, 51, 0.22);
+}
+
+.gp-title {
+  font-size: 15px;
+  letter-spacing: 0.05em;
+  color: var(--ink);
+}
+
+.gp-close {
+  cursor: pointer;
+  color: var(--ink-soft);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  transition: background 0.2s var(--ease);
+}
+
+.gp-close:hover {
+  background: rgba(107, 74, 51, 0.14);
+}
+
+.gp-list {
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 6px 8px 2px;
+}
+
+.gp-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s var(--ease);
+}
+
+.gp-row:hover {
+  background: rgba(255, 252, 242, 0.7);
+  border-color: rgba(107, 74, 51, 0.2);
+}
+
+.gp-row.active {
+  background: rgba(255, 249, 234, 0.9);
+  border-color: rgba(176, 83, 63, 0.42);
+}
+
+.gp-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.gp-name {
+  color: var(--ink);
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gp-row.active .gp-name::before {
+  content: '·  ';
+  color: var(--silk);
+}
+
+.gp-meta {
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  opacity: 0.82;
+  margin-top: 1px;
+}
+
+.gp-del {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--ink-soft);
+  opacity: 0;
+  transition: all 0.2s var(--ease);
+}
+
+.gp-row:hover .gp-del {
+  opacity: 0.6;
+}
+
+.gp-del:hover {
+  opacity: 1;
+  background: rgba(176, 83, 63, 0.16);
+  color: var(--silk);
+}
+
+.gp-del.confirm {
+  opacity: 1;
+  background: var(--silk);
+  color: #fff4e8;
+}
+
+.gp-del.off {
+  display: none;
+}
+
+.gp-rename {
+  width: 100%;
+  font-family: var(--serif);
+  font-size: 14px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(176, 83, 63, 0.5);
+  border-radius: 2px;
+  padding: 1px 5px;
+  outline: none;
+}
+
+.gp-actions {
+  display: flex;
+  gap: 5px;
+  padding: 8px 12px 0;
+  border-top: 1px solid rgba(107, 74, 51, 0.18);
+  margin-top: 6px;
+}
+
+.gp-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 4px;
+  border-radius: 3px;
+  border: 1px solid rgba(107, 74, 51, 0.3);
+  background: rgba(255, 252, 242, 0.5);
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s var(--ease);
+}
+
+.gp-btn:hover {
+  border-color: rgba(176, 83, 63, 0.5);
+  color: var(--ink);
+  background: rgba(255, 252, 242, 0.9);
+}
+
+.gp-hint {
+  padding: 10px 14px 0;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--ink-soft);
+  opacity: 0.78;
+  line-height: 1.45;
+}
+
+@media (max-width: 720px) {
+  .gardens-panel {
+    right: 12px;
+    top: 74px;
+    width: min(286px, calc(100vw - 24px));
+  }
+
+  .buildbar {
+    bottom: 196px;
+  }
+}
+
+
+/* ---------------- Настройки вида ---------------- */
+
+.settings-panel {
+  position: absolute;
+  right: 18px;
+  top: 92px;
+  width: 300px;
+  padding: 14px 4px 8px;
+  border-radius: 12px;
+  z-index: 40;
+  font-size: 14px;
+}
+
+.sp-head {
+  padding: 0 14px 10px;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  color: #f2e6cd;
+  opacity: 0.9;
+}
+
+.sp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 14px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.sp-row:hover { background: rgba(255, 248, 230, 0.08); }
+
+.sp-label {
+  color: #f0e4cc;
+  line-height: 1.25;
+}
+
+.sp-label em {
+  display: block;
+  font-style: normal;
+  font-size: 12px;
+  opacity: 0.55;
+  margin-top: 2px;
+}
+
+/* Переключатель — шёлковый шнур с бусиной */
+.sp-switch {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  background: rgba(40, 30, 22, 0.5);
+  border: 1px solid rgba(240, 226, 196, 0.22);
+  position: relative;
+  transition: background 0.18s ease;
+}
+
+.sp-switch i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #e8dcc0;
+  transition: left 0.18s ease;
+}
+
+.sp-switch.on { background: rgba(150, 112, 70, 0.85); }
+.sp-switch.on i { left: 20px; }
+
+.sp-steps { display: flex; gap: 4px; }
+
+.sp-step {
+  min-width: 26px;
+  text-align: center;
+  padding: 3px 0;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #e6d9bd;
+  background: rgba(40, 30, 22, 0.4);
+  border: 1px solid rgba(240, 226, 196, 0.16);
+}
+
+.sp-step.on { background: rgba(150, 112, 70, 0.9); color: #fff6e2; }
+
+.sp-note {
+  padding: 8px 14px 4px;
+  font-size: 12px;
+  opacity: 0.45;
+  color: #f0e4cc;
+}
+
+/* ---------------- Доступность ---------------- */
+
+/* Масштаб интерфейса: сад не трогаем, только надписи и кнопки */
+.topbar, .tools, .buildbar, .catalog, .hint, .toast,
+.gardens-panel, .settings-panel, .scroll-help {
+  font-size: calc(1em * var(--ui-scale, 1));
+}
+
+.high-contrast .wood {
+  background: rgba(26, 18, 12, 0.93) !important;
+  border-color: rgba(246, 232, 202, 0.4) !important;
+}
+
+.high-contrast .hint,
+.high-contrast .toast {
+  background: rgba(20, 14, 9, 0.9) !important;
+  color: #fff8e8 !important;
+}
+
+.high-contrast .tool-btn .label { opacity: 1 !important; }
+
+/* Уважаем и системную настройку, и нашу галочку */
+.no-motion *,
+.no-motion *::before,
+.no-motion *::after {
+  transition-duration: 0.01ms !important;
+  animation-duration: 0.01ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+
+/* =====================================================================
+   ТЕЛЕФОН, АЛЬБОМНАЯ ОРИЕНТАЦИЯ
+   =====================================================================
+   Основной случай для нашего игрока. Высота здесь — самый дефицитный
+   ресурс: на 360–430 px по вертикали нижняя выдвижная панель каталога
+   съедала бы половину сада. Поэтому в альбомной ориентации каталог
+   уезжает вбок, а всё управление жмётся к краям, оставляя середину
+   экрана саду.
+
+   Рабочая область считается от safe-area: вырез камеры и скруглённые
+   углы иначе срезают кнопки.
+   ===================================================================== */
+
+:root {
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  /* Палец — не курсор: минимальная цель 44 px по рекомендациям Apple и Google */
+  --touch-min: 44px;
+}
+
+/* Убираем всё, что на пальце только мешает */
+body.touch * {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+body.touch #garden {
+  touch-action: none; /* жесты разбираем сами, браузер не должен скроллить */
+}
+
+/* Подписи-«тултипы» появляются по наведению — на пальце наведения нет */
+body.touch .tool-btn .label {
+  display: none;
+}
+
+@media (hover: none) and (orientation: landscape) and (max-height: 560px) {
+  /* ---- Часы: компактная строка в углу ---- */
+  .time-card {
+    top: calc(8px + var(--safe-t));
+    left: calc(10px + var(--safe-l));
+    padding: 6px 11px 5px;
+    min-width: 0;
+  }
+  .time-row {
+    gap: 8px;
+  }
+  .clock {
+    font-size: 17px;
+  }
+  .season-kanji {
+    font-size: 17px;
+  }
+  .time-sub {
+    font-size: 10.5px;
+  }
+  .season-bar {
+    height: 2px;
+    margin-top: 4px;
+  }
+
+  /* ---- Кнопки: сетка 2×4 у правого края ----
+     Восемь кнопок по 44 px столбцом дают 401 px — больше, чем высота
+     альбомного экрана телефона (обычно 390–430 px). Ставим в две колонки:
+     197 px по высоте, и цели остаются крупными. */
+  .tools {
+    right: calc(8px + var(--safe-r));
+    top: 50%;
+    display: grid;
+    grid-template-columns: repeat(2, var(--touch-min));
+    gap: 7px;
+  }
+  .tool-btn {
+    width: var(--touch-min);
+    height: var(--touch-min);
+  }
+  /* Наведения нет — гасим анимации, они только дёргают картинку */
+  .tool-btn:hover {
+    transform: none;
+  }
+  .tool-btn:active {
+    transform: scale(0.93);
+  }
+
+  /* ---- Каталог: боковая панель, а не нижняя шторка ----
+     Снизу вверх он забирал бы больше половины высоты экрана. */
+  .catalog {
+    top: 0;
+    bottom: 0;
+    left: auto;
+    right: 0;
+    width: min(330px, 62vw);
+    transform: translateX(102%);
+    display: flex;
+    align-items: stretch;
+  }
+  .catalog.open {
+    transform: translateX(0);
+  }
+  .catalog-inner {
+    position: relative; /* точка отсчёта для ручки, съехавшей на бок */
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: none;
+    border-radius: 12px 0 0 12px;
+    border: 1px solid rgba(80, 56, 34, 0.4);
+    border-right: none;
+    box-shadow: -14px 0 46px rgba(40, 28, 18, 0.42);
+    padding-right: var(--safe-r);
+  }
+
+  /* Шнур-ручка переезжает на левый бок панели */
+  .catalog-handle {
+    position: absolute;
+    left: -22px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 22px;
+    height: 74px;
+    border-radius: 8px 0 0 8px;
+    background: rgba(48, 34, 22, 0.82);
+    border: 1px solid rgba(80, 56, 34, 0.4);
+    border-right: none;
+  }
+  .catalog-handle .cord {
+    width: 5px;
+    height: 42px;
+    background: linear-gradient(180deg, var(--silk), var(--silk-light), var(--silk));
+  }
+
+  /* Лента вкладок прокручивается вбок. Тень у левого края показывает,
+     что там есть ещё — иначе обрезанная «Земля» выглядит поломанной. */
+  .tabs {
+    padding: calc(4px + var(--safe-t)) 8px 0;
+    flex: 0 0 auto;
+    position: relative;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+  }
+  .tab {
+    padding: 9px 12px 8px;
+    font-size: 13px;
+    min-height: var(--touch-min);
+  }
+
+  /* Предметы — сеткой в две колонки: вертикальная прокрутка на телефоне
+     привычнее горизонтальной, и за раз видно больше. */
+  /* Предметы — сеткой. Ширину колонки задаём минимумом, а не 1fr:
+     при панели 330 px две колонки по 1fr давали карточку 151×74 —
+     вдвое шире своей высоты, и высокое дерево в ней выглядело
+     приплюснутым. Теперь карточка ближе к квадрату. */
+  .items {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 8px;
+    padding: 10px 10px calc(12px + var(--safe-b));
+    overflow-x: hidden;
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    align-content: start;
+    -webkit-overflow-scrolling: touch;
+  }
+  .item {
+    width: auto;
+    padding: 7px 4px 8px;
+  }
+  .item:hover {
+    transform: none;
+  }
+  /* Миниатюре нужна вертикаль: дерево выше, чем шире */
+  .item .thumb {
+    height: 62px;
+  }
+  .item .name {
+    font-size: 11.5px;
+  }
+  .item .hint {
+    display: none; /* в узкой колонке подсказка не влезает и ломает сетку */
+  }
+
+  /* ---- Панель строителя: горизонтальная лента у нижнего края ----
+     Внимание: .buildbar.show задаёт свой transform с translate(-50%),
+     и его нужно перебить здесь же, иначе панель уезжает за левый край. */
+  .buildbar {
+    left: calc(10px + var(--safe-l));
+    right: auto;
+    bottom: calc(8px + var(--safe-b));
+    transform: translate(0, 16px);
+    padding: 5px 7px;
+    gap: 4px;
+  }
+  .buildbar.show {
+    transform: translate(0, 0);
+  }
+  .bb-btn,
+  .bb-size {
+    width: 38px;
+    height: 38px;
+  }
+
+  /* ---- Подсказка: справа от панели строителя, не поверх неё ----
+     Панель строителя занимает слева около 400 px, кнопки — около 100 px
+     справа. Подсказка живёт в промежутке и обрезается многоточием. */
+  .hint-bar {
+    bottom: calc(10px + var(--safe-b));
+    left: auto;
+    right: calc(108px + var(--safe-r));
+    transform: none;
+    font-size: 11.5px;
+    padding: 6px 12px;
+    max-width: min(300px, 38vw);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Когда каталог открыт, он закрывает правый край — подсказку убираем,
+     иначе она оказывается под панелью и читается наполовину. */
+  body.building .hint-bar {
+    opacity: 0;
+  }
+
+  /* ---- Всплывающие панели: вписываем в невысокий экран ---- */
+  .gardens-panel,
+  .settings-panel,
+  .dev-panel {
+    top: calc(6px + var(--safe-t));
+    right: calc(58px + var(--safe-r));
+    width: min(300px, 64vw);
+    max-height: calc(100dvh - 12px - var(--safe-t) - var(--safe-b));
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .milestone {
+    width: min(320px, 74vw);
+    padding: 16px 20px 15px;
+  }
+  .milestone h3 {
+    font-size: 18px;
+  }
+  .milestone p {
+    font-size: 13px;
+  }
+
+  .scroll-help {
+    max-height: calc(100dvh - 16px - var(--safe-t) - var(--safe-b));
+    overflow-y: auto;
+  }
+
+  .splash h1 {
+    font-size: 26px;
+  }
+  .splash-inner p {
+    font-size: 13px;
+  }
+}
+
+/* ---------------------------------------------------------------------
+   Телефон, книжная ориентация: просим повернуть.
+   Сад — широкая картина, в вертикальный экран он не помещается так,
+   чтобы было на что смотреть. Но это подсказка, а не блокировка:
+   играть можно и стоя.
+   --------------------------------------------------------------------- */
+
+.rotate-note {
+  position: absolute;
+  left: 50%;
+  bottom: calc(18px + var(--safe-b));
+  transform: translateX(-50%);
+  display: none;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 15px;
+  border-radius: 20px;
+  background: rgba(38, 28, 20, 0.82);
+  color: var(--paper);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(7px);
+  z-index: 30;
+  white-space: nowrap;
+}
+
+.rotate-note svg {
+  animation: rotate-hint 2.6s var(--ease) infinite;
+}
+
+@keyframes rotate-hint {
+  0%, 62%, 100% { transform: rotate(0deg); }
+  78%, 92% { transform: rotate(-90deg); }
+}
+
+body.touch.portrait .rotate-note {
+  display: flex;
+}
+
+body.touch.portrait .rotate-note.dismissed {
+  display: none;
+}
+
+/* =====================================================================
+   ТЕЛЕФОН, КНИЖНАЯ ОРИЕНТАЦИЯ
+   =====================================================================
+   Не основной режим, но игрок неизбежно в нём окажется — хотя бы пока
+   не повернёт телефон. Восемь кнопок столбцом занимали 443 px из 570,
+   то есть 78% высоты экрана: сад оставался в щели между ними и часами.
+   ===================================================================== */
+
+@media (hover: none) and (orientation: portrait) {
+  .tools {
+    right: calc(8px + var(--safe-r));
+    top: 50%;
+    display: grid;
+    grid-template-columns: repeat(2, var(--touch-min));
+    gap: 7px;
+  }
+  .tools > *,
+  .tool-btn {
+    width: var(--touch-min);
+    height: var(--touch-min);
+  }
+  .tool-btn:hover {
+    transform: none;
+  }
+  .tool-btn:active {
+    transform: scale(0.93);
+  }
+
+  .time-card {
+    top: calc(8px + var(--safe-t));
+    left: calc(10px + var(--safe-l));
+    padding: 7px 12px 6px;
+  }
+
+  /* Подсказка про поворот и обычная подсказка занимали один и тот же
+     нижний край и читались одна сквозь другую. Разводим по высоте. */
+  .rotate-note {
+    bottom: calc(14px + var(--safe-b));
+  }
+  /* Подсказку поднимаем, только пока внизу и правда есть подсказка
+     о повороте: иначе она висит посреди экрана без причины. */
+  body.touch.portrait .hint-bar {
+    bottom: calc(58px + var(--safe-b));
+  }
+  body.touch.portrait:has(.rotate-note.dismissed) .hint-bar {
+    bottom: calc(14px + var(--safe-b));
+  }
+
+  /* Каталог снизу — в книжной ориентации это уместно */
+  .items {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+    gap: 8px;
+    overflow-x: hidden;
+    max-height: 42vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .item {
+    width: auto;
+  }
+  .item .thumb {
+    height: 58px;
+  }
+  .item .hint {
+    display: none;
+  }
+  .buildbar {
+    bottom: calc(44vh + 8px);
+  }
+}
+
+/* ---------- Мастерская времени на пальце ----------
+   Панель делалась под мышь: чипы сезонов около 22 px высотой, ползунок
+   часа тонкий. Пальцем в такое не попасть, а на телефоне это единственный
+   способ посмотреть сад в другом сезоне. */
+
+body.touch .time-card.clickable {
+  cursor: pointer;
+}
+
+body.touch .dev-chip {
+  font-size: 13.5px;
+  padding: 9px 13px;
+  min-height: var(--touch-min);
+  display: inline-flex;
+  align-items: center;
+}
+
+body.touch input[type='range'].dev-hour {
+  height: var(--touch-min);
+}
+
+body.touch input[type='range'].dev-hour::-webkit-slider-thumb {
+  width: 26px;
+  height: 26px;
+}
+
+body.touch .dev-close {
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+  display: grid;
+  place-items: center;
+}
+
+body.touch .dev-toggle {
+  min-height: var(--touch-min);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+body.touch .dev-toggle input[type='checkbox'] {
+  width: 21px;
+  height: 21px;
+}
+
+/* Плашка часов кликабельна — покажем это лёгким откликом */
+.time-card.clickable {
+  cursor: pointer;
+  transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+
+.time-card.clickable:active {
+  transform: scale(0.98);
+}

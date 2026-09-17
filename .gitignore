@@ -1,5 +1,7 @@
 node_modules
 dist
-.vite
-*.log
 .DS_Store
+*.local
+.vite
+preview-*.png
+creature-sheet.png
