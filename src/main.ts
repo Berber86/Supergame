@@ -25,6 +25,7 @@ import { findPath, layPath } from './world/paths';
 import { ShotRatio, composeScroll } from './ui/snapshot';
 import { SettingsPanel, applyView, loadView } from './ui/settings';
 import { TouchInput, isTouchDevice } from './ui/touch';
+import { StartScreen } from './ui/startScreen';
 import { PlacedObject } from './world/types';
 
 const app = document.getElementById('app')!;
@@ -81,9 +82,13 @@ if (isTouchDevice()) {
 }
 
 let selection: Selection = { kind: 'none' };
+/** Свиток стартовой страницы ещё висит: сад за ним живёт, но не слушает клавиш. */
+let startOpen = true;
 let ghostRot = 0;
 let zenMode = false;
 let lastInteraction = performance.now();
+/** Масштаб, к которому камера возвращается после входа: 0 — входа не было. */
+let entryZoom = 0;
 
 const ui = new UI(app, world, {
   onSelect(sel) {
@@ -519,6 +524,8 @@ window.addEventListener('keydown', (e) => {
   // Не перехватываем набор текста (переименование усадьбы)
   const el = e.target as HTMLElement | null;
   if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
+  // Пока висит свиток, сад ещё не начался: клавиши ему не принадлежат.
+  if (startOpen) return;
   wake();
 
   // Отмена и повтор — до остальных клавиш
@@ -940,21 +947,23 @@ ui.onSound = () => void toggleSound();
 
 // ---------------- Заставка ----------------
 
-const splash = document.createElement('div');
-splash.className = 'splash';
-splash.innerHTML = `
-  <div class="splash-inner">
-    <h1>静かな庭</h1>
-    <div class="sub">Усадьба Безмятежности</div>
-    <div class="enter">войти в сад</div>
-  </div>`;
-document.body.appendChild(splash);
-splash.querySelector('.enter')!.addEventListener('click', () => {
-  splash.classList.add('hide');
-  setTimeout(() => splash.remove(), 1400);
-  wake();
-  void toggleSound(true);
+// Свиток на стене: свет идёт по тем же часам, что и сад, а вход
+// одновременно разблокирует звук — без касания страницы браузер его не даст.
+const start = new StartScreen({
+  hour: () => timeCtl.compute().dayT * 24,
+  motion: view.motion,
+  onEnter() {
+    startOpen = false;
+    wake();
+    void toggleSound(true);
+    // Шаг через порог: камера подаётся вперёд, а не прыгает на место.
+    entryZoom = scene.camera.zoom;
+    scene.camera.zoom *= 0.86;
+    // Подсказка ждёт входа: за свитком её всё равно не видно.
+    showTip(5000);
+  },
 });
+start.mount(document.body);
 
 // ---------------- Игровой цикл ----------------
 
@@ -1025,6 +1034,18 @@ function frame(now: number): void {
   // Интерфейс растворяется в бездействии
   if (!zenMode && !ui.buildOpen && now - lastInteraction > IDLE_MS) setZen(true);
 
+  // Плавное возвращение камеры после входа: сколько бы ни шёл шаг,
+  // через порог игрок входит, а не оказывается.
+  if (entryZoom > 0) {
+    const k = 1 - Math.pow(0.004, dt / 1000);
+    scene.camera.zoom += (entryZoom - scene.camera.zoom) * k;
+    if (Math.abs(entryZoom - scene.camera.zoom) < 0.002) {
+      scene.camera.zoom = entryZoom;
+      entryZoom = 0;
+    }
+    scene.clampCamera();
+  }
+
   scene.render(world, atm, now, dt, life, weatherSys.state);
   ui.tick(t, atm);
   devPanel.tick();
@@ -1052,13 +1073,18 @@ requestAnimationFrame(frame);
 setInterval(saveWorld, 20000);
 window.addEventListener('beforeunload', saveWorld);
 
-// Тихая подсказка при первом входе. На телефоне клавиш нет — называем
-// то, что там действительно есть: кнопки и жесты.
-setTimeout(() => {
-  if (zenMode) return;
-  ui.setHint(
-    touchMode
-      ? 'Рука — каталог · щипок — приблизить · часы — время года'
-      : 'B — открыть каталог · Z — созерцание · H — свиток',
-  );
-}, 6000);
+// Тихая подсказка при входе. На телефоне клавиш нет — называем то, что там
+// действительно есть: кнопки и жесты. Показывается один раз и не поверх свитка.
+let tipShown = false;
+
+function showTip(delay: number): void {
+  setTimeout(() => {
+    if (zenMode || tipShown) return;
+    tipShown = true;
+    ui.setHint(
+      touchMode
+        ? 'Рука — каталог · щипок — приблизить · часы — время года'
+        : 'B — открыть каталог · Z — созерцание · H — свиток',
+    );
+  }, delay);
+}
