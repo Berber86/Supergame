@@ -141,7 +141,7 @@ import { World } from '../../world/world';
 import { Ctx, getPaperTile, glow } from '../paint';
 import { drawCost, drawObject, drawObjectShadow } from '../sprites';
 import { cacheable, cachedGrowth, drawCached } from '../spriteCache';
-import { drawBird, drawCat, drawFlutter } from '../creatures';
+import { drawBird, drawButterfly, drawCat } from '../creatures';
 import type { GhostPreview } from './scene';
 
 /** Наборка состояния сцены, нужная одному кадру сортированных объектов. */

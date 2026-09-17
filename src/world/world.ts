@@ -3,6 +3,7 @@
 import { GRID, inBounds } from '../core/iso';
 import { clamp, fbm, hash2 } from '../core/rng';
 import { BRUSH_BY_ID, ITEM_BY_ID, MILESTONES, TerrainBrush, footprintCells } from './catalog';
+import { ChronicleEntry, noteChronicle } from './chronicle';
 import { DAY_MS } from '../core/clock';
 import { SAVE_VERSION, parseSave, serializeSave } from './saveFormat';
 import { GroundId, PlacedObject, SaveData, Tile } from './types';
@@ -17,8 +18,12 @@ export class World {
   nextId = 1;
   milestones = new Set<string>();
   seenTabs = new Set<string>();
+  /** Летопись сада: первые встречи и редкие события, по одной строке. */
+  chronicle: ChronicleEntry[] = [];
   /** Очередь уведомлений о новых вехах. */
   pendingMilestones: string[] = [];
+  /** Очередь новых строк летописи — мягкие заметки поверх сада. */
+  pendingNotes: string[] = [];
   /** Границы последней правки земли — для частичной перерисовки. */
   lastTouched: { x0: number; y0: number; x1: number; y1: number } | null = null;
 
@@ -64,6 +69,9 @@ export class World {
     this.nextId = 1;
     this.milestones = new Set();
     this.seasonsSeen = new Set();
+    // Летопись нового сада пуста: встречи ещё впереди
+    this.chronicle = [];
+    this.pendingNotes = [];
     this.seenTabs = new Set(['ground', 'water', 'relief', 'trees', 'stones', 'micro']);
     this.seedStarterGarden();
 
@@ -223,6 +231,8 @@ export class World {
     this.place('cushion', 5.5, 6.5, 0, old);
     this.place('cushion', 7.5, 6.5, 0, old);
     this.place('cat', 8.5, 7.5, 0, old);
+    // Миска у кота: второму коту будет зачем остаться
+    this.place('bowl', 9.5, 7.5, 0, old);
     this.place('wind_chime', 9.5, 8.5, 0, old);
     this.place('tsukubai', 11.5, 8.25, 0, old);
     this.place('shishi', 12.5, 12.5, 0, old);
@@ -853,6 +863,25 @@ export class World {
     this.pendingMilestones.push(id);
   }
 
+  /**
+   * Строка летописи. Первые встречи не повторяются: сад помнит, кого
+   * уже видел. Некоторые строки заодно поднимают веху — но только те,
+   * что нельзя «выполнить» нарочно.
+   */
+  noteEvent(id: string, now: number): boolean {
+    if (!noteChronicle(this.chronicle, id, now)) return false;
+    this.pendingNotes.push(id);
+    if (id === 'meet_frog') this.checkMilestone('first_frog');
+    if (id === 'guest_stayed') this.checkMilestone('second_cat');
+    if (id === 'chorus') this.checkMilestone('frog_chorus');
+    if (id === 'winter_table') this.checkMilestone('winter_feeder');
+    return true;
+  }
+
+  hasEvent(id: string): boolean {
+    return this.chronicle.some((e) => e.id === id);
+  }
+
   /** Стадия роста 0..1 для объекта. */
   growth(o: PlacedObject, now: number): number {
     const item = ITEM_BY_ID.get(o.type);
@@ -872,6 +901,7 @@ export class World {
       milestones: [...this.milestones],
       seasons: [...this.seasonsSeen],
       seen: [...this.seenTabs],
+      chronicle: this.chronicle.map((e) => ({ id: e.id, at: e.at })),
     };
   }
 
@@ -902,7 +932,9 @@ export class World {
     this.milestones = new Set(p.milestones);
     this.seasonsSeen = new Set(p.seasons);
     this.seenTabs = new Set(p.seen);
+    this.chronicle = (p.chronicle ?? []).map((e) => ({ id: e.id, at: e.at }));
     this.pendingMilestones = [];
+    this.pendingNotes = [];
     this.lastTouched = null;
     this.noteObjectsChanged();
   }

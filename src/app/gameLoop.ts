@@ -35,6 +35,8 @@ export interface LoopDeps {
   getEntryZoom(): number;
   setEntryZoom(v: number): void;
   flushMilestones(): void;
+  /** Новые строки летописи: мягкие заметки и запись в сохранение. */
+  flushChronicle(): void;
 }
 
 export function startLoop(deps: LoopDeps): void {
@@ -69,6 +71,7 @@ export function startLoop(deps: LoopDeps): void {
       hasChime,
       hasShishi,
       catNear: life.cats.length > 0,
+      frogs: life.residents.frogs.filter((f) => f.hidden <= 0 && !f.gone).length,
       trees,
     };
   }
@@ -95,13 +98,17 @@ export function startLoop(deps: LoopDeps): void {
     observeAccum -= dt;
     if (observeAccum <= 0) {
       observeAccum = 2500;
-      world.observe(now, t.season, atm.lampGlow > 0.55, weatherSys.state.rain > 0.3);
+      // Возраст деревьев меряется от даты посадки: нужны настоящие
+      // миллисекунды, а не счётчик кадров (иначе «старое дерево» не созрело бы).
+      world.observe(Date.now(), t.season, atm.lampGlow > 0.55, weatherSys.state.rain > 0.3);
       deps.flushMilestones();
     }
 
-    // Живность и ветер
-    life.update(world, t, dt, now);
+    // Живность и ветер; погода достаётся жителям: лягушки любят дождь,
+    // стрекозы его прячут, птицы в ливень сидят по укрытиям.
+    life.update(world, t, dt, now, weatherSys.state);
     scene.wind = life.windBase;
+    deps.flushChronicle();
 
     // Интерфейс растворяется в бездействии
     if (!deps.isZenMode() && !ui.buildOpen && now - deps.lastInteractionMs() > deps.idleMs) deps.igniteZen();

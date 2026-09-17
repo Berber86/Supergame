@@ -61,6 +61,7 @@ export const TABS: CatalogTab[] = [
   { id: 'house', name: 'Усадьба', icon: 'house', requires: 'first_deck' },
   { id: 'shore', name: 'Берег', icon: 'water', requires: 'running_water' },
   { id: 'cat', name: 'Коту', icon: 'cat', requires: 'first_cat' },
+  { id: 'guests', name: 'Гости', icon: 'bird', requires: 'bird_guest' },
 ];
 
 export const TERRAIN_BRUSHES: TerrainBrush[] = [
@@ -693,6 +694,30 @@ export const ITEMS: CatalogItem[] = [
 
   // Коту
   { id: 'cat', name: 'Кот', hint: 'приходит сам', kind: 'creature', w: 1, h: 1, step: 0.5, growDays: 0, tab: 'cat' },
+
+  // Гости: жители открываются через постройки, а не через задания
+  {
+    id: 'feeder',
+    name: 'Кормушка',
+    hint: 'зимний стол для птиц',
+    kind: 'deco',
+    w: 1,
+    h: 1,
+    step: 0.5,
+    growDays: 0,
+    tab: 'guests',
+  },
+  {
+    id: 'birdbath',
+    name: 'Поилка',
+    hint: 'пить, купаться, сидеть на краю',
+    kind: 'deco',
+    w: 1,
+    h: 1,
+    step: 0.5,
+    growDays: 0,
+    tab: 'guests',
+  },
   {
     id: 'cushion',
     name: 'Подушка дзабутон',
@@ -875,5 +900,36 @@ export const MILESTONES: Record<string, Milestone> = {
     title: 'Сто вещей',
     text: 'В саду сотня предметов, и каждый поставлен вами.',
     unlocks: 'Мастерство',
+  },
+  // --- Жители: вехи за то, кого заметили, а не за то, что построили ---
+  bird_guest: {
+    id: 'bird_guest',
+    title: 'Пернатые',
+    text: 'В саду замечены птицы. Кормушка приглашает их остаться.',
+    unlocks: 'Гости',
+  },
+  first_frog: {
+    id: 'first_frog',
+    title: 'Голос у воды',
+    text: 'У воды поселилась лягушка. В дождь её видно и слышно.',
+    unlocks: 'Вода',
+  },
+  second_cat: {
+    id: 'second_cat',
+    title: 'Второй кот',
+    text: 'Гость обошёл сад и остался: теперь их двое.',
+    unlocks: 'Два кота',
+  },
+  frog_chorus: {
+    id: 'frog_chorus',
+    title: 'Вечерний хор',
+    text: 'Лягушки пели хором, перебивая друг друга. Сад умеет петь и без вас.',
+    unlocks: 'Голоса',
+  },
+  winter_feeder: {
+    id: 'winter_feeder',
+    title: 'Зимний стол',
+    text: 'Зимой у кормушки особенно людно: сад кормит своих.',
+    unlocks: 'Забота',
   },
 };

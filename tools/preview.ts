@@ -87,6 +87,14 @@ async function main() {
     for (const [id, x, y] of spots) world.place(id, x, y, 0, Date.now() - 864e5 * 30);
   }
 
+  // Кормушка и поилка у пруда: проверить, что жители пришли к постройкам
+  if (process.env.GUESTS) {
+    world.place('feeder', 15.5, 10.5, 0, Date.now() - 864e5 * 30);
+    world.place('birdbath', 18.5, 16.5, 0, Date.now() - 864e5 * 30);
+    world.place('reed', 13.25, 16.25, 0, Date.now() - 864e5 * 30);
+    world.place('reed', 19.75, 12.25, 0, Date.now() - 864e5 * 30);
+  }
+
   if (process.env.PATHS) {
     const { findPath, layPath } = await import('../src/world/paths');
     for (const [a, b] of [
@@ -141,8 +149,12 @@ async function main() {
     ws.update(16, t);
     scene.render(world, atm, 1000 + i * 16, 16, life, ws.state);
   }
+  const frogs = life.residents.frogs.filter((f) => f.hidden <= 0 && !f.gone);
   console.log(
-    `погода=${wkind} дождь=${ws.state.rain.toFixed(2)} туман=${ws.state.fog.toFixed(2)} тучи=${ws.state.overcast.toFixed(2)} | кот@${life.cats[0] ? life.cats[0].tx.toFixed(1) + ',' + life.cats[0].ty.toFixed(1) + ' ' + life.cats[0].state : '-'} коты=${life.cats.length} птицы=${life.birds.length} порхают=${life.flutters.length} карпы=${life.fish.length} ветер=${life.windBase.toFixed(2)}`,
+    `погода=${wkind} дождь=${ws.state.rain.toFixed(2)} туман=${ws.state.fog.toFixed(2)} тучи=${ws.state.overcast.toFixed(2)} | кот@${life.cats[0] ? life.cats[0].tx.toFixed(1) + ',' + life.cats[0].ty.toFixed(1) + ' ' + life.cats[0].state : '-'} коты=${life.cats.length}+гость=${life.guests.length} птицы=${life.birds.length}(${life.birds.filter((b) => b.place === 'feeder').length} у кормушки) бабочки=${life.flutters.length} стрекозы=${life.residents.dragonflies.length} лягушки=${frogs.length} карпы=${life.fish.length} ветер=${life.windBase.toFixed(2)}`,
+  );
+  console.log(
+    `летопись: ${world.chronicle.map((e) => e.id).join(', ') || 'пуста'} | вехи: ${[...world.milestones].filter((m) => ['bird_guest', 'first_frog', 'second_cat', 'frog_chorus', 'winter_feeder'].includes(m)).join(', ') || '-'}`,
   );
 
   const buf = (canvas as unknown as { toBuffer(mime: string): Buffer }).toBuffer('image/png');

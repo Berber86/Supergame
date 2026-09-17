@@ -1,11 +1,11 @@
-/** Отрисовка живности: кот в разных позах, птицы, бабочки, стрекозы, карпы. */
+/** Отрисовка живности: кот в разных позах и шубах, птицы по видам, бабочки, карпы. */
 
 import { isoToScreen } from '../core/iso';
 import { clamp01, hash2, lerp } from '../core/rng';
 import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
-import { Bird, Cat, Fish, Flutter } from '../world/life';
+import { Bird, BirdSpecies, Cat, CatCoat, Fish, Flutter } from '../world/life';
 import { World } from '../world/world';
-import { Ctx, glow, softShadow } from './paint';
+import { Ctx, softShadow } from './paint';
 
 function litc(c: RGB, atm: Atmosphere, boost = 0): RGB {
   return shade(mix(c, atm.lightTint, atm.lightAmount), atm.exposure + boost);
@@ -15,15 +15,62 @@ const WHITE: RGB = { r: 255, g: 255, b: 255 };
 
 // ---------------- Кот ----------------
 
+interface CoatColors {
+  fur: RGB;
+  furShade: RGB;
+  /** Пятно: рыжее у светлого, медальон у чёрного, рыжая подпалина у черепахового. */
+  patch: RGB;
+  ink: RGB;
+}
+
+/**
+ * Шубы котов: светлый с рыжим пятном (как прежде), серый, чёрный
+ * с белым медальоном и черепаховый. Гость приходит в любой, кроме
+ * светлой, — второго кота должно быть видно с первого взгляда.
+ */
+function coatColors(coat: CatCoat): CoatColors {
+  switch (coat) {
+    case 'grey':
+      return {
+        fur: { r: 172, g: 170, b: 168 },
+        furShade: { r: 134, g: 132, b: 132 },
+        patch: { r: 98, g: 96, b: 98 },
+        ink: { r: 72, g: 68, b: 66 },
+      };
+    case 'black':
+      return {
+        fur: { r: 66, g: 62, b: 64 },
+        furShade: { r: 46, g: 44, b: 48 },
+        patch: { r: 238, g: 236, b: 230 },
+        ink: { r: 32, g: 30, b: 32 },
+      };
+    case 'tortoise':
+      return {
+        fur: { r: 122, g: 90, b: 62 },
+        furShade: { r: 90, g: 66, b: 48 },
+        patch: { r: 232, g: 168, b: 110 },
+        ink: { r: 62, g: 50, b: 42 },
+      };
+    default:
+      return {
+        fur: { r: 247, g: 240, b: 229 },
+        furShade: { r: 214, g: 198, b: 180 },
+        patch: { r: 184, g: 134, b: 96 },
+        ink: { r: 108, g: 92, b: 82 },
+      };
+  }
+}
+
 /**
  * Кот рисуется из частей, чтобы позы отличались по силуэту:
  * спит калачиком, сидит столбиком, идёт, умывается, потягивается.
  */
 export function drawCat(ctx: Ctx, cat: Cat, x: number, y: number, atm: Atmosphere, time: number): void {
-  const fur = litc({ r: 247, g: 240, b: 229 }, atm);
-  const furShade = litc({ r: 214, g: 198, b: 180 }, atm);
-  const patch = litc({ r: 184, g: 134, b: 96 }, atm);
-  const ink = litc({ r: 108, g: 92, b: 82 }, atm);
+  const coat = coatColors(cat.coat ?? 'cream');
+  const fur = litc(coat.fur, atm);
+  const furShade = litc(coat.furShade, atm);
+  const patch = litc(coat.patch, atm);
+  const ink = litc(coat.ink, atm);
   const pink = litc({ r: 232, g: 172, b: 172 }, atm);
   const f = cat.facing;
 
@@ -396,16 +443,83 @@ function drawCatWalking(
 
 // ---------------- Птицы ----------------
 
+/** Окрас и приметы вида: состав стаи меняется с сезоном. */
+interface SpeciesLook {
+  body: RGB;
+  belly: RGB;
+  /** Шапочка, щёка и полоса на крыле — то, по чему вид узнаётся издали. */
+  cap: RGB | null;
+  cheek: RGB | null;
+  bar: RGB | null;
+  /** Длинный хвост трясогузки качается даже на месте. */
+  longTail: boolean;
+}
+
+const SPECIES: Record<BirdSpecies, SpeciesLook> = {
+  sparrow: {
+    body: { r: 122, g: 106, b: 96 },
+    belly: { r: 238, g: 232, b: 220 },
+    cap: { r: 148, g: 142, b: 132 },
+    cheek: null,
+    bar: null,
+    longTail: false,
+  },
+  tit: {
+    body: { r: 148, g: 156, b: 98 },
+    belly: { r: 236, g: 214, b: 120 },
+    cap: { r: 42, g: 42, b: 48 },
+    cheek: { r: 246, g: 244, b: 238 },
+    bar: { r: 240, g: 240, b: 234 },
+    longTail: false,
+  },
+  finch: {
+    body: { r: 152, g: 128, b: 96 },
+    belly: { r: 240, g: 232, b: 214 },
+    cap: { r: 46, g: 42, b: 40 },
+    cheek: { r: 198, g: 82, b: 70 },
+    bar: { r: 232, g: 204, b: 80 },
+    longTail: false,
+  },
+  wagtail: {
+    body: { r: 176, g: 178, b: 180 },
+    belly: { r: 246, g: 246, b: 242 },
+    cap: { r: 52, g: 52, b: 56 },
+    cheek: { r: 246, g: 246, b: 242 },
+    bar: { r: 246, g: 246, b: 242 },
+    longTail: true,
+  },
+  bullfinch: {
+    body: { r: 150, g: 150, b: 158 },
+    belly: { r: 198, g: 88, b: 84 },
+    cap: { r: 36, g: 34, b: 38 },
+    cheek: null,
+    bar: { r: 236, g: 236, b: 240 },
+    longTail: false,
+  },
+};
+
+/**
+ * Птица: земляной прыгун, гость кормушки или купальщик поилки.
+ * Позы читаются по силуэту: на кормушке сидит столбиком и клюёт в лоток,
+ * у поилки тянется к воде и полощется, на земле скачет и клюёт.
+ */
 export function drawBird(ctx: Ctx, bird: Bird, x: number, y: number, atm: Atmosphere, time: number): void {
+  const sp = SPECIES[bird.species] ?? SPECIES.sparrow;
   const s = bird.scale;
-  const body = litc(hash2(bird.seed, 1, 3) > 0.5 ? { r: 122, g: 106, b: 96 } : { r: 96, g: 106, b: 118 }, atm);
-  const belly = litc({ r: 238, g: 232, b: 220 }, atm);
+  const body = litc(sp.body, atm);
+  const belly = litc(sp.belly, atm);
   const beak = litc({ r: 226, g: 176, b: 96 }, atm);
   const flying = bird.state === 'fly-in' || bird.state === 'fly-out';
+  const perched = bird.state === 'perch' || bird.state === 'feed';
+  const atWater = bird.state === 'drink' || bird.state === 'bathe';
+  const bathing = bird.state === 'bathe';
   const hopBob = bird.state === 'hop' ? Math.abs(Math.sin(bird.hop)) * 4 : 0;
-  const peck = bird.state === 'peck' ? Math.abs(Math.sin(time * 0.012 + bird.seed)) * 0.5 : 0;
+  const dip =
+    bird.state === 'peck' || bird.state === 'feed' || bird.state === 'drink'
+      ? Math.abs(Math.sin(time * 0.012 + bird.seed)) * 0.55
+      : 0;
 
-  // тень — только когда птица у земли
+  // тень — только когда птица у земли или на насесте невысоко
   if (bird.alt < 40) {
     ctx.save();
     ctx.globalCompositeOperation = 'multiply';
@@ -416,29 +530,50 @@ export function drawBird(ctx: Ctx, bird: Bird, x: number, y: number, atm: Atmosp
   ctx.save();
   ctx.translate(x, y - bird.alt - hopBob);
   ctx.scale(bird.facing * s, s);
-  ctx.rotate(peck * 0.5);
+  // на кормушке сидит столбиком, у воды наклоняется
+  ctx.rotate(perched ? -0.22 : atWater ? 0.16 : 0);
+  ctx.rotate(dip * 0.5);
 
-  // хвост
+  // хвост: у трясогузки длинный и качается
+  const wag = sp.longTail && !flying ? Math.sin(time * 0.012 + bird.seed) * 0.22 : 0;
+  ctx.save();
+  ctx.translate(-5, -6);
+  ctx.rotate(wag);
   ctx.fillStyle = css(shade(body, 0.85), 0.95);
   ctx.beginPath();
-  ctx.moveTo(-5, -6);
-  ctx.lineTo(-13, -8 - (flying ? 2 : 0));
-  ctx.lineTo(-12, -4);
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-(sp.longTail ? 17 : 8), -2 - (flying ? 2 : 0));
+  ctx.lineTo(-(sp.longTail ? 16 : 7), 2);
   ctx.closePath();
   ctx.fill();
+  if (sp.longTail) {
+    ctx.strokeStyle = css(litc({ r: 246, g: 246, b: 242 }, atm), 0.8);
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(-4, -1.4);
+    ctx.lineTo(-16, -1.6);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // купание: крылья трепещут и брызги вокруг
+  const flap = flying
+    ? Math.sin(time * 0.03 + bird.seed) * 0.9
+    : bathing
+      ? Math.sin(time * 0.05 + bird.seed) * 0.8
+      : 0.1;
 
   // тело
   ctx.fillStyle = css(body, 0.97);
   ctx.beginPath();
   ctx.ellipse(0, -7, 7.5, 5.4, -0.12, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = css(belly, 0.7);
+  ctx.fillStyle = css(belly, 0.75);
   ctx.beginPath();
   ctx.ellipse(1, -5.4, 5, 3.4, -0.1, 0, Math.PI * 2);
   ctx.fill();
 
-  // крыло
-  const flap = flying ? Math.sin(time * 0.03 + bird.seed) * 0.9 : 0.1;
+  // крыло с полосой у синицы и щегла
   ctx.save();
   ctx.translate(0, -8);
   ctx.rotate(-flap * 0.8);
@@ -446,13 +581,38 @@ export function drawBird(ctx: Ctx, bird: Bird, x: number, y: number, atm: Atmosp
   ctx.beginPath();
   ctx.ellipse(-1, 0, 6.5, 2.8, 0.2, 0, Math.PI * 2);
   ctx.fill();
+  if (sp.bar) {
+    ctx.fillStyle = css(litc(sp.bar, atm), 0.85);
+    ctx.beginPath();
+    ctx.ellipse(-1.4, 0.8, 5.2, 0.9, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.restore();
 
-  // голова
+  // голова с шапочкой и щекой
   ctx.fillStyle = css(body, 0.98);
   ctx.beginPath();
   ctx.arc(6.5, -11, 3.8, 0, Math.PI * 2);
   ctx.fill();
+  if (sp.cheek) {
+    ctx.fillStyle = css(litc(sp.cheek, atm), 0.9);
+    ctx.beginPath();
+    ctx.ellipse(6.8, -10.2, 2.1, 1.7, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (sp.cap) {
+    ctx.fillStyle = css(litc(sp.cap, atm), 0.95);
+    ctx.beginPath();
+    ctx.ellipse(6.4, -12.6, 3.5, 1.9, -0.12, Math.PI, Math.PI * 2);
+    ctx.fill();
+    // нагрудный ремешок синицы
+    if (bird.species === 'tit') {
+      ctx.fillStyle = css(litc(sp.cap, atm), 0.8);
+      ctx.beginPath();
+      ctx.ellipse(2.6, -5.2, 1.1, 2.6, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
   // клюв
   ctx.fillStyle = css(beak, 0.97);
   ctx.beginPath();
@@ -467,23 +627,39 @@ export function drawBird(ctx: Ctx, bird: Bird, x: number, y: number, atm: Atmosp
   ctx.arc(7.6, -12, 0.9, 0, Math.PI * 2);
   ctx.fill();
 
-  // лапки на земле
+  // лапки: на земле и на насесте
   if (!flying) {
     ctx.strokeStyle = css(beak, 0.85);
     ctx.lineWidth = 1;
     for (const ox of [-1, 2]) {
       ctx.beginPath();
       ctx.moveTo(ox, -2.6);
-      ctx.lineTo(ox, 0);
+      ctx.lineTo(ox, perched ? 0.6 : 0);
+      ctx.stroke();
+    }
+  }
+
+  // брызги купания
+  if (bathing) {
+    ctx.strokeStyle = css(litc({ r: 236, g: 244, b: 246 }, atm), 0.5);
+    ctx.lineWidth = 0.8;
+    for (let i = 0; i < 3; i++) {
+      const a = time * 0.02 + i * 2.1 + bird.seed;
+      const dx = Math.cos(a) * 8;
+      const dy = -Math.abs(Math.sin(a)) * 5;
+      ctx.beginPath();
+      ctx.moveTo(dx, -4 + dy);
+      ctx.lineTo(dx + 1, -3 + dy);
       ctx.stroke();
     }
   }
   ctx.restore();
 }
 
-// ---------------- Бабочки и стрекозы ----------------
+// ---------------- Бабочки ----------------
 
-export function drawFlutter(ctx: Ctx, f: Flutter, x: number, y: number, atm: Atmosphere, time: number): void {
+/** Бабочка порхает у цветов; стрекозы теперь живут у пруда (render/residents.ts). */
+export function drawButterfly(ctx: Ctx, f: Flutter, x: number, y: number, atm: Atmosphere, time: number): void {
   const yy = y - f.alt;
   // тень-точка на земле
   ctx.save();
@@ -491,108 +667,74 @@ export function drawFlutter(ctx: Ctx, f: Flutter, x: number, y: number, atm: Atm
   softShadow(ctx, x, y, 4, 1.6, atm.shadowTint, atm.shadowAmount * 0.8);
   ctx.restore();
 
-  if (f.kind === 'butterfly') {
-    const hue = hash2(Math.floor(f.seed), 1, 3);
-    const wing = litc(
-      hue > 0.66 ? { r: 252, g: 236, b: 186 } : hue > 0.33 ? { r: 246, g: 202, b: 216 } : { r: 206, g: 218, b: 246 },
-      atm,
-      0.05,
-    );
-    const wingDeep = litc(
-      shade(
-        hue > 0.66 ? { r: 236, g: 196, b: 120 } : hue > 0.33 ? { r: 226, g: 158, b: 182 } : { r: 160, g: 180, b: 226 },
-        1,
-      ),
-      atm,
-    );
-    const ink = litc({ r: 92, g: 74, b: 68 }, atm);
+  const hue = hash2(Math.floor(f.seed), 1, 3);
+  const wing = litc(
+    hue > 0.66 ? { r: 252, g: 236, b: 186 } : hue > 0.33 ? { r: 246, g: 202, b: 216 } : { r: 206, g: 218, b: 246 },
+    atm,
+    0.05,
+  );
+  const wingDeep = litc(
+    shade(
+      hue > 0.66 ? { r: 236, g: 196, b: 120 } : hue > 0.33 ? { r: 226, g: 158, b: 182 } : { r: 160, g: 180, b: 226 },
+      1,
+    ),
+    atm,
+  );
+  const ink = litc({ r: 92, g: 74, b: 68 }, atm);
 
-    // Взмах: крылья почти смыкаются, потом раскрываются — видно по ширине
-    const flap = f.resting > 0 ? 0.82 : Math.abs(Math.sin(time * 0.016 + f.seed));
-    const open = 0.16 + flap * 0.84;
-    const dir = Math.atan2(f.vy, f.vx);
+  // Взмах: крылья почти смыкаются, потом раскрываются — видно по ширине
+  const flap = f.resting > 0 ? 0.82 : Math.abs(Math.sin(time * 0.016 + f.seed));
+  const open = 0.16 + flap * 0.84;
+  const dir = Math.atan2(f.vy, f.vx);
 
+  ctx.save();
+  ctx.translate(x, yy);
+  ctx.rotate(dir * 0.35);
+
+  for (const side of [-1, 1]) {
     ctx.save();
-    ctx.translate(x, yy);
-    ctx.rotate(dir * 0.35);
-
-    for (const side of [-1, 1]) {
-      ctx.save();
-      ctx.scale(side * open, 1);
-      // верхнее крыло — каплевидное, с уголком
-      ctx.beginPath();
-      ctx.moveTo(0, -0.5);
-      ctx.bezierCurveTo(2.5, -6.5, 8, -7.5, 8.6, -3.4);
-      ctx.bezierCurveTo(9, -0.8, 5, 0.2, 0, 0.6);
-      ctx.closePath();
-      ctx.fillStyle = css(wing, 0.94);
-      ctx.fill();
-      ctx.strokeStyle = css(ink, 0.22);
-      ctx.lineWidth = 0.5;
-      ctx.stroke();
-      // нижнее крыло — меньше и округлее
-      ctx.beginPath();
-      ctx.moveTo(0, 0.4);
-      ctx.bezierCurveTo(4, 1.2, 6.6, 3.4, 4.6, 5.2);
-      ctx.bezierCurveTo(2.6, 6.6, 0.4, 3.6, 0, 1);
-      ctx.closePath();
-      ctx.fillStyle = css(wingDeep, 0.9);
-      ctx.fill();
-      // светлое пятнышко на верхнем крыле
-      ctx.fillStyle = css(mix(wing, WHITE, 0.55), 0.6);
-      ctx.beginPath();
-      ctx.ellipse(5.4, -3.6, 1.5, 1.1, 0.3, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // тельце и усики
-    ctx.fillStyle = css(ink, 0.9);
+    ctx.scale(side * open, 1);
+    // верхнее крыло — каплевидное, с уголком
     ctx.beginPath();
-    ctx.ellipse(0, 0.6, 0.85, 3.4, 0, 0, Math.PI * 2);
+    ctx.moveTo(0, -0.5);
+    ctx.bezierCurveTo(2.5, -6.5, 8, -7.5, 8.6, -3.4);
+    ctx.bezierCurveTo(9, -0.8, 5, 0.2, 0, 0.6);
+    ctx.closePath();
+    ctx.fillStyle = css(wing, 0.94);
     ctx.fill();
-    ctx.strokeStyle = css(ink, 0.6);
-    ctx.lineWidth = 0.45;
-    for (const side of [-1, 1]) {
-      ctx.beginPath();
-      ctx.moveTo(0, -2.6);
-      ctx.quadraticCurveTo(side * 1.6, -4.6, side * 2.6, -5.2);
-      ctx.stroke();
-    }
-    ctx.restore();
-  } else {
-    // стрекоза: длинное тело, прозрачные крылья
-    const body = litc({ r: 108, g: 168, b: 172 }, atm, 0.04);
-    const dir = Math.atan2(f.vy, f.vx);
-    ctx.save();
-    ctx.translate(x, yy);
-    ctx.rotate(dir);
-    const blur = 0.35 + Math.abs(Math.sin(time * 0.06 + f.seed)) * 0.3;
-    ctx.fillStyle = css(litc({ r: 236, g: 246, b: 250 }, atm), blur * 0.55);
-    for (const side of [-1, 1]) {
-      ctx.beginPath();
-      ctx.ellipse(1, side * 2.2, 7, 1.8, side * 0.16, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(-2.5, side * 2, 5.6, 1.5, side * 0.2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.fillStyle = css(body, 0.92);
+    ctx.strokeStyle = css(ink, 0.22);
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+    // нижнее крыло — меньше и округлее
     ctx.beginPath();
-    ctx.ellipse(-3, 0, 7.5, 1.1, 0, 0, Math.PI * 2);
+    ctx.moveTo(0, 0.4);
+    ctx.bezierCurveTo(4, 1.2, 6.6, 3.4, 4.6, 5.2);
+    ctx.bezierCurveTo(2.6, 6.6, 0.4, 3.6, 0, 1);
+    ctx.closePath();
+    ctx.fillStyle = css(wingDeep, 0.9);
     ctx.fill();
+    // светлое пятнышко на верхнем крыле
+    ctx.fillStyle = css(mix(wing, WHITE, 0.55), 0.6);
     ctx.beginPath();
-    ctx.arc(4, 0, 1.8, 0, Math.PI * 2);
+    ctx.ellipse(5.4, -3.6, 1.5, 1.1, 0.3, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
-    // блик на крыльях в солнце
-    if (atm.time.daylight > 0.5) {
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      glow(ctx, x, yy, 9, { r: 220, g: 250, b: 255 }, 0.15);
-      ctx.restore();
-    }
   }
+
+  // тельце и усики
+  ctx.fillStyle = css(ink, 0.9);
+  ctx.beginPath();
+  ctx.ellipse(0, 0.6, 0.85, 3.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = css(ink, 0.6);
+  ctx.lineWidth = 0.45;
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(0, -2.6);
+    ctx.quadraticCurveTo(side * 1.6, -4.6, side * 2.6, -5.2);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 // ---------------- Карпы ----------------

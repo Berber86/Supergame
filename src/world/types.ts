@@ -40,4 +40,6 @@ export interface SaveData {
   /** Сезоны, которые игрок застал: для вехи «Круг года». */
   seasons?: string[];
   seen: string[];
+  /** Летопись: первые встречи и редкие события сада. */
+  chronicle?: { id: string; at: number }[];
 }

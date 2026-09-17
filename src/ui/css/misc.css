@@ -9,6 +9,20 @@
   color: rgba(255, 248, 232, 0.4);
   letter-spacing: 0.06em;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.9s var(--ease) 0.55s;
+}
+
+/* Надпись приходит позже, чем исчезает интерфейс, и не спорит с плашкой */
+.zen-note.on {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .zen-note {
+    bottom: calc(64px + var(--safe-b, 0px));
+    right: 14px;
+  }
 }
 
 .toast {

@@ -121,11 +121,14 @@ async function renderCase(c: FrameCase): Promise<string> {
   const atm = buildAtmosphere(t, ws.state.overcast);
 
   const life = new Life();
+  // Крупные шаги до съёмки: жители успевают прийти, и кадр показывает
+  // сад таким, каким его видит игрок через минуту после открытия крышки.
+  for (let i = 0; i < 60; i++) life.update(world, t, 2000, 1000 + i * 2000, ws.state);
   const warm = c.warm ?? 120;
   for (let i = 0; i < warm; i++) {
-    const ms = 1000 + i * 16;
+    const ms = 130_000 + i * 16;
     simNow = ms;
-    life.update(world, t, 16, ms);
+    life.update(world, t, 16, ms, ws.state);
     ws.update(16, t);
     scene.render(world, atm, ms, 16, life, ws.state);
   }

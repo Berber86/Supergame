@@ -4,6 +4,7 @@ import { CatalogItem, ITEMS, MILESTONES, TABS, TERRAIN_BRUSHES, TerrainBrush } f
 import { SEASON_NAMES, SEASON_POEM, TimeState, partOfDay } from '../core/clock';
 import { Atmosphere } from '../world/palette';
 import { GroundId } from '../world/types';
+import { chronicleText } from '../world/chronicle';
 import { World } from '../world/world';
 import { itemIcon, svgIcon } from './icons';
 
@@ -41,6 +42,8 @@ export interface UIHooks {
   onTimeWorkshop(): void;
   /** Сесть в тишине: практики и школа дзена. */
   onSit(): void;
+  /** Открыть летопись сада. */
+  onChronicle(): void;
 }
 
 export class UI {
@@ -53,6 +56,7 @@ export class UI {
   private activeTab = 'trees';
   private els: Record<string, HTMLElement> = {};
   private milestoneTimer = 0;
+  private chronTimer = 0;
   private toastTimer = 0;
   private iconSeason = '';
   brushSize = 1;
@@ -297,6 +301,7 @@ export class UI {
       <dl>
         <dt>Вехи</dt><dd>Новые вкладки открываются от ваших же дел: выкопали пруд — пришли лотосы</dd>
       </dl>
+      <div class="scroll-chron" role="button" tabindex="0"><span lang="ja">記</span>Летопись сада — первые встречи и редкие события</div>
       <div class="scroll-sit" role="button" tabindex="0"><span lang="ja">坐</span>Сесть в тишине — практики и школа дзена</div>`;
     layer.appendChild(help);
     this.els.help = help;
@@ -313,6 +318,39 @@ export class UI {
         goSit();
       }
     });
+    const chronBtn = help.querySelector<HTMLElement>('.scroll-chron')!;
+    const goChron = (): void => {
+      this.toggleHelp(false);
+      this.hooks.onChronicle();
+    };
+    chronBtn.addEventListener('click', goChron);
+    chronBtn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        goChron();
+      }
+    });
+
+    // --- Мягкая заметка о новой строке летописи ---
+    const cn = this.el('div', 'chron-note paper');
+    cn.innerHTML = `<span class="ch-kanji" lang="ja"></span><span class="ch-text"></span>`;
+    layer.appendChild(cn);
+    this.els.chronNote = cn;
+
+    // --- Тихая строка входа в летопись: приходит в созерцании ---
+    const chron = this.el('div', 'chron-line');
+    chron.innerHTML = `<span class="kanji" lang="ja">記</span>летопись сада`;
+    chron.setAttribute('role', 'button');
+    chron.setAttribute('tabindex', '0');
+    chron.addEventListener('click', () => this.hooks.onChronicle());
+    chron.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        this.hooks.onChronicle();
+      }
+    });
+    layer.appendChild(chron);
+    this.els.chron = chron;
 
     // --- Заметка о созерцании ---
     const note = this.el('div', 'zen-note fade keep');
@@ -598,10 +636,33 @@ export class UI {
 
   setZenNote(text: string): void {
     this.els.note.textContent = text;
+    // Класс включает отложенное проявление: надпись приходит, когда
+    // интерфейс уже почти растворился, а не спорит с ним за место.
+    this.els.note.classList.toggle('on', text !== '');
   }
 
   /** Тихая строка «сесть в тишине» видна только в созерцании. */
   setSitVisible(v: boolean): void {
     this.els.sit.classList.toggle('show', v);
+  }
+
+  /** Тихая строка летописи приходит туда же, где исчез остальной интерфейс. */
+  setChronVisible(v: boolean): void {
+    this.els.chron.classList.toggle('show', v);
+  }
+
+  /**
+   * Новая строка летописи: не веха и не награда, а тихое «сад запомнил».
+   * Держится дольше тоста: такую строку хочется дочитать.
+   */
+  showChronicleNote(id: string): void {
+    const t = chronicleText(id);
+    if (!t) return;
+    const e = this.els.chronNote;
+    e.querySelector('.ch-kanji')!.textContent = t.kanji;
+    e.querySelector('.ch-text')!.textContent = t.text;
+    e.classList.add('show');
+    clearTimeout(this.chronTimer);
+    this.chronTimer = window.setTimeout(() => e.classList.remove('show'), 7000);
   }
 }

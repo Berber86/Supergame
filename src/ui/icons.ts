@@ -160,6 +160,8 @@ export const GLYPHS: Record<string, string> = {
   'roof-off':
     '<path d="M2 13L12 6l10 7"/><path d="M4.5 13c2.5 1.6 4.8 2.4 7.5 2.4s5-0.8 7.5-2.4"/><path d="M4 4l16 16"/>',
   path: '<path d="M7 21c0-4 3-4 3-8s-3-4-3-7"/><path d="M14 21c1.5-3 3-3.5 3-7s-2-4-2-7"/><circle cx="7" cy="3" r="1"/><circle cx="15" cy="4" r="1"/>',
+  bird: '<path d="M4 14c3 3 8 3 11 0l5-4-3-.5 1.5-3-3 1.5c-.6-2-2.4-3-4.5-3C10.5 5 9 7.5 9 10c-2 0-3.5 1.5-5 4z"/><circle cx="14.6" cy="7.6" r=".7"/>',
+  quill: '<path d="M20 4c-6 0-11 4-13 10l-3 6"/><path d="M20 4c1 5-2 10-8 11l-4 1"/><path d="M9 12h5"/>',
 };
 
 export function svgIcon(name: string, size = 22, stroke = 'currentColor'): string {

@@ -1,7 +1,8 @@
 /**
- * Лист поз: рисует кота во всех состояниях, птицу, бабочку и стрекозу крупно.
- * Инструмент разработки — проверить силуэты без запуска игры.
- *   npx tsx tools/creature-sheet.ts
+ * Лист поз: коты во всех состояниях и шубах, птицы по видам и позам,
+ * бабочка, лягушки и стрекозы крупно. Инструмент разработки — проверить
+ * силуэты без запуска игры.
+ *   npx tsx tools/creature-sheet.ts [файл]
  */
 
 import { createCanvas } from '@napi-rs/canvas';
@@ -18,19 +19,258 @@ g.window = { devicePixelRatio: 1, innerWidth: 1200, innerHeight: 700 };
 g.performance = g.performance ?? { now: () => Date.now() };
 
 async function main() {
-  const { drawCat, drawBird, drawFlutter } = await import('../src/render/creatures');
+  const { drawCat, drawBird, drawButterfly } = await import('../src/render/creatures');
+  const { drawFrog, drawDragonfly } = await import('../src/render/residents');
   const { buildAtmosphere } = await import('../src/world/palette');
   const { computeTime } = await import('../src/core/clock');
   const type = await import('../src/world/life');
+  const rtype = await import('../src/world/residents');
 
   const d = new Date();
   d.setHours(13, 0, 0, 0);
   const atm = buildAtmosphere(computeTime(d.getTime()));
 
-  const states: type.CatState[] = ['sleep', 'loaf', 'sit', 'wash', 'stretch', 'walk'];
+  const catStates: type.CatState[] = ['sleep', 'loaf', 'sit', 'wash', 'stretch', 'walk'];
+  const coats: type.CatCoat[] = ['cream', 'grey', 'black', 'tortoise'];
+  const species: type.BirdSpecies[] = ['sparrow', 'tit', 'finch', 'wagtail', 'bullfinch'];
+  const cells: { label: string; draw: (cx: number, cy: number) => void }[] = [];
+
+  // Кот: каждое состояние в обе стороны
+  for (const st of catStates) {
+    for (const facing of [1, -1]) {
+      cells.push({
+        label: `${st} ${facing > 0 ? '→' : '←'}`,
+        draw: (cx, cy) => {
+          const cat: type.Cat = {
+            id: 1,
+            tx: 0,
+            ty: 0,
+            facing,
+            seed: 42,
+            state: st,
+            timer: 1000,
+            target: null,
+            phase: 0.5,
+            speed: 1,
+            home: null,
+            guest: false,
+            coat: 'cream',
+            greet: 0,
+            leaveAt: 0,
+            stayAt: 0,
+          };
+          drawCat(ctx, cat, cx, cy, atm, 2500);
+        },
+      });
+    }
+  }
+  // Шубы: сидят столбиком
+  for (const coat of coats) {
+    cells.push({
+      label: `кот ${coat}`,
+      draw: (cx, cy) => {
+        const cat: type.Cat = {
+          id: 2,
+          tx: 0,
+          ty: 0,
+          facing: 1,
+          seed: 7,
+          state: 'sit',
+          timer: 1000,
+          target: null,
+          phase: 0.5,
+          speed: 0,
+          home: null,
+          guest: coat !== 'cream',
+          coat,
+          greet: 0,
+          leaveAt: 0,
+          stayAt: 0,
+        };
+        drawCat(ctx, cat, cx, cy, atm, 2500);
+      },
+    });
+  }
+  // Птицы: виды на земле, на кормушке и в полёте
+  for (const sp of species) {
+    cells.push({
+      label: `${sp} земля`,
+      draw: (cx, cy) => {
+        const bird: type.Bird = {
+          tx: 0,
+          ty: 0,
+          facing: 1,
+          seed: 7,
+          state: 'hop',
+          timer: 0,
+          target: null,
+          alt: 0,
+          hop: 0.6,
+          scale: 1,
+          species: sp,
+          place: 'ground',
+          slot: 0,
+        };
+        drawBird(ctx, bird, cx, cy, atm, 2500);
+      },
+    });
+    cells.push({
+      label: `${sp} кормушка`,
+      draw: (cx, cy) => {
+        const bird: type.Bird = {
+          tx: 0,
+          ty: 0,
+          facing: 1,
+          seed: 11,
+          state: 'feed',
+          timer: 0,
+          target: null,
+          alt: 26,
+          hop: 0,
+          scale: 1,
+          species: sp,
+          place: 'feeder',
+          slot: 0,
+        };
+        drawBird(ctx, bird, cx, cy, atm, 2500);
+      },
+    });
+  }
+  cells.push({
+    label: 'птица полёт',
+    draw: (cx, cy) => {
+      const bird: type.Bird = {
+        tx: 0,
+        ty: 0,
+        facing: 1,
+        seed: 7,
+        state: 'fly-in',
+        timer: 0,
+        target: null,
+        alt: 26,
+        hop: 0.6,
+        scale: 1,
+        species: 'tit',
+        place: 'ground',
+        slot: 0,
+      };
+      drawBird(ctx, bird, cx, cy, atm, 2500);
+    },
+  });
+  cells.push({
+    label: 'птица купается',
+    draw: (cx, cy) => {
+      const bird: type.Bird = {
+        tx: 0,
+        ty: 0,
+        facing: 1,
+        seed: 5,
+        state: 'bathe',
+        timer: 0,
+        target: null,
+        alt: 7,
+        hop: 0,
+        scale: 1,
+        species: 'sparrow',
+        place: 'bath',
+        slot: 0,
+      };
+      drawBird(ctx, bird, cx, cy, atm, 2500);
+    },
+  });
+
+  // Бабочка
+  cells.push({
+    label: 'бабочка',
+    draw: (cx, cy) => {
+      const f: type.Flutter = {
+        tx: 0,
+        ty: 0,
+        alt: 18,
+        vx: 0.001,
+        vy: 0.0003,
+        valt: 0,
+        target: null,
+        timer: 0,
+        seed: 120,
+        phase: 0,
+        resting: 0,
+      };
+      drawButterfly(ctx, f, cx, cy - 12, atm, 2500);
+    },
+  });
+
+  // Лягушки: сидит, поёт, прыгает; две шубы
+  const frogStates: { st: rtype.FrogState; species: 'green' | 'brown'; label: string }[] = [
+    { st: 'sit', species: 'green', label: 'лягушка сидит' },
+    { st: 'call', species: 'green', label: 'лягушка поёт' },
+    { st: 'hop', species: 'brown', label: 'лягушка прыжок' },
+    { st: 'sit', species: 'brown', label: 'лягушка бурая' },
+  ];
+  for (const fs of frogStates) {
+    cells.push({
+      label: fs.label,
+      draw: (cx, cy) => {
+        const frog: rtype.Frog = {
+          id: 1,
+          tx: 0,
+          ty: 0,
+          facing: 1,
+          seed: 33,
+          state: fs.st,
+          timer: 500,
+          phase: fs.st === 'hop' ? 0.5 : fs.st === 'call' ? 0.35 : 0,
+          from: { x: -1, y: 0 },
+          target: { x: 1, y: 0 },
+          pond: 0,
+          species: fs.species,
+          size: 1.5,
+          throat: fs.st === 'call' ? 0.9 : 0,
+          hidden: 0,
+          gone: false,
+          answer: 0,
+        };
+        drawFrog(ctx, frog, cx, cy, atm, 2500);
+      },
+    });
+  }
+
+  // Стрекозы: коромысло и стрелка в полёте и на насесте
+  const flyCases: { kind: 'hawker' | 'damselfly'; state: rtype.FlyState; label: string }[] = [
+    { kind: 'hawker', state: 'patrol', label: 'коромысло летит' },
+    { kind: 'hawker', state: 'perch', label: 'коромысло сидит' },
+    { kind: 'damselfly', state: 'hover', label: 'стрелка зависла' },
+    { kind: 'damselfly', state: 'perch', label: 'стрелка сидит' },
+  ];
+  for (const fc of flyCases) {
+    cells.push({
+      label: fc.label,
+      draw: (cx, cy) => {
+        const df: rtype.PondDragonfly = {
+          id: 1,
+          kind: fc.kind,
+          tx: 0,
+          ty: 0,
+          alt: fc.state === 'perch' ? 9 : 24,
+          vx: 0.002,
+          vy: 0.0004,
+          facing: 1,
+          seed: 88,
+          state: fc.state,
+          timer: 500,
+          phase: 0,
+          pond: 0,
+          target: null,
+          perch: null,
+        };
+        drawDragonfly(ctx, df, cx, cy - 6, atm, 2500);
+      },
+    });
+  }
+
   const cols = 4;
   const cell = 150;
-  const rows = Math.ceil((states.length * 2 + 6) / cols);
+  const rows = Math.ceil(cells.length / cols);
   const W = cols * cell;
   const H = rows * cell;
   const canvas = createCanvas(W, H);
@@ -52,95 +292,20 @@ async function main() {
     ctx.stroke();
   }
 
-  let idx = 0;
-  const place = () => {
+  cells.forEach((c, idx) => {
     const cx = (idx % cols) * cell + cell / 2;
     const cy = Math.floor(idx / cols) * cell + cell * 0.66;
-    idx++;
-    return { cx, cy };
-  };
-  const label = (text: string, cx: number, cy: number) => {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(1.6, 1.6);
+    c.draw(0, 0);
+    ctx.restore();
     ctx.fillStyle = 'rgba(40,32,24,.75)';
-    ctx.font = '13px sans-serif';
+    ctx.font = '12px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(text, cx, cy + 34);
+    ctx.fillText(c.label, cx, cy + 40);
     ctx.textAlign = 'left';
-  };
-
-  // Кот: каждое состояние в обе стороны
-  for (const st of states) {
-    for (const facing of [1, -1]) {
-      const { cx, cy } = place();
-      const cat: type.Cat = {
-        id: 1,
-        tx: 0,
-        ty: 0,
-        facing,
-        seed: 42,
-        state: st,
-        timer: 1000,
-        target: null,
-        phase: 0.5,
-        speed: 1,
-        home: null,
-      };
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.scale(1.5, 1.5);
-      drawCat(ctx, cat, 0, 0, atm, 2500);
-      ctx.restore();
-      label(`${st} ${facing > 0 ? '→' : '←'}`, cx, cy);
-    }
-  }
-
-  // Птица: на земле и в полёте
-  for (const st of ['hop', 'peck', 'fly-in'] as type.BirdState[]) {
-    const { cx, cy } = place();
-    const bird: type.Bird = {
-      tx: 0,
-      ty: 0,
-      facing: 1,
-      seed: 7,
-      state: st,
-      timer: 0,
-      target: null,
-      alt: st === 'fly-in' ? 26 : 0,
-      hop: 0.6,
-      scale: 1,
-    };
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.scale(2.2, 2.2);
-    drawBird(ctx, bird, 0, 0, atm, 2500);
-    ctx.restore();
-    label(`птица ${st}`, cx, cy);
-  }
-
-  // Бабочка и стрекоза
-  for (const kind of ['butterfly', 'butterfly', 'dragonfly'] as const) {
-    const { cx, cy } = place();
-    const openWings = kind === 'butterfly' && idx % 2 === 0;
-    const f: type.Flutter = {
-      kind,
-      tx: 0,
-      ty: 0,
-      alt: 18,
-      vx: 0.001,
-      vy: 0.0003,
-      valt: 0,
-      target: null,
-      timer: 0,
-      seed: 120,
-      phase: 0,
-      resting: openWings ? 2000 : 0,
-    };
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.scale(3.4, 3.4);
-    drawFlutter(ctx, f, 0, 6, atm, 2500);
-    ctx.restore();
-    label(openWings ? kind + ' раскрыта' : kind, cx, cy);
-  }
+  });
 
   const out = process.argv[2] ?? 'creature-sheet.png';
   writeFileSync(out, (canvas as unknown as { toBuffer(m: string): Buffer }).toBuffer('image/png'));

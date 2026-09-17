@@ -22,7 +22,7 @@ import { ITEM_BY_ID } from './catalog';
 import { GroundId, PlacedObject, SaveData, Tile } from './types';
 
 /** Версия формата, которую пишет текущая игра. */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 /**
  * Земли в порядке их знака в упаковке. Порядок — часть формата:
@@ -195,9 +195,27 @@ function parseStringList(raw: unknown, max: number): string[] | null {
   return out;
 }
 
+/**
+ * Летопись в сохранении — пары [событие, метка времени]. Старые сады
+ * жили без неё: отсутствие поля значит пустую летопись, а не ошибку.
+ */
+function parseChronicle(raw: unknown): { id: string; at: number }[] | null {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw) || raw.length > 200) return null;
+  const out: { id: string; at: number }[] = [];
+  for (const e of raw) {
+    if (!Array.isArray(e) || e.length !== 2) return null;
+    const [id, at] = e;
+    if (typeof id !== 'string' || id.length === 0 || id.length > 40) return null;
+    if (!isInt(at) || at < 0 || at > 4e12) return null;
+    out.push({ id, at });
+  }
+  return out;
+}
+
 // ---- Две стороны формата ----
 
-/** Сериализовать в компактную форму v4. */
+/** Сериализовать в компактную форму v4+. */
 export function serializeSave(d: SaveData): string {
   return JSON.stringify({
     v: SAVE_VERSION,
@@ -207,6 +225,7 @@ export function serializeSave(d: SaveData): string {
     m: d.milestones,
     s: d.seasons ?? [],
     e: d.seen,
+    c: (d.chronicle ?? []).map((e) => [e.id, Math.round(e.at)]),
   });
 }
 
@@ -253,7 +272,8 @@ export function parseSave(raw: unknown): SaveData | null {
   const milestones = parseStringList(d.m ?? d.milestones, 400);
   const seasons = parseStringList(d.s ?? d.seasons, 16);
   const seen = parseStringList(d.e ?? d.seen, 200);
-  if (!milestones || !seasons || !seen) return null;
+  const chronicle = parseChronicle(d.c ?? d.chronicle);
+  if (!milestones || !seasons || !seen || !chronicle) return null;
 
-  return { version: SAVE_VERSION, tiles, objects, nextId, milestones, seasons, seen };
+  return { version: SAVE_VERSION, tiles, objects, nextId, milestones, seasons, seen, chronicle };
 }

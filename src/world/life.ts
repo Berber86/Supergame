@@ -1,16 +1,42 @@
 /**
- * Живность сада: кот, птицы, бабочки, стрекозы, карпы.
+ * Живность сада: коты, птицы, бабочки, карпы — и приглашённые жители воды.
  * Агенты со своими намерениями — сад должен жить сам по себе, без участия игрока.
+ *
+ * Жители открываются постройками: кормушка зовёт птиц, пруд — лягушек
+ * и стрекоз (они живут в residents.ts), а второго кота приводят подушка,
+ * миска и первый кот. Поведение наблюдаемое, но лёгкое: никаких нужд,
+ * голода и наказаний, только места, сезон, погода и друг друг.
  */
 
 import { GRID } from '../core/iso';
-import { clamp, clamp01, hash2, lerp, makeRng } from '../core/rng';
+import { clamp, hash1, hash2, lerp, makeRng } from '../core/rng';
 import { ITEM_BY_ID } from './catalog';
 import { TimeState } from '../core/clock';
+import { Habitat, Invitation, invitations, scanHabitat } from './habitat';
+import { Residents, Threat } from './residents';
+import { WeatherState } from './weatherState';
 import { World } from './world';
 
 export type CatState = 'sleep' | 'sit' | 'walk' | 'wash' | 'stretch' | 'loaf';
-export type BirdState = 'fly-in' | 'hop' | 'peck' | 'fly-out';
+export type BirdState = 'fly-in' | 'hop' | 'peck' | 'perch' | 'feed' | 'drink' | 'bathe' | 'fly-out';
+export type BirdSpecies = 'sparrow' | 'tit' | 'finch' | 'wagtail' | 'bullfinch';
+export type CatCoat = 'cream' | 'grey' | 'black' | 'tortoise';
+
+const CAT_COATS: CatCoat[] = ['cream', 'grey', 'black', 'tortoise'];
+
+/** Окрас кота выводится из сида предмета: сохранённый кот не перекрашивается. */
+export function coatOfSeed(seed: number): CatCoat {
+  return CAT_COATS[Math.floor(hash1(seed, 71) * CAT_COATS.length) % CAT_COATS.length];
+}
+
+/** Сид того же разряда, что даёт нужный окрас: гость, оставшись, сохраняет шубу. */
+export function seedForCoat(coat: CatCoat, roll: () => number): number {
+  for (let i = 0; i < 64; i++) {
+    const s = Math.floor(roll() * 100000);
+    if (coatOfSeed(s) === coat) return s;
+  }
+  return 0;
+}
 
 export interface Vec {
   x: number;
@@ -38,6 +64,14 @@ export interface Cat extends Agent {
   speed: number;
   /** Домашняя подушка, если найдена. */
   home: Vec | null;
+  /** Гость ещё не предмет сада: он может остаться, а может уйти. */
+  guest: boolean;
+  coat: CatCoat;
+  /** Знакомство с другим котом: сидят друг напротив друга. */
+  greet: number;
+  /** Когда гостю пора уходить и когда он готов остаться. */
+  leaveAt: number;
+  stayAt: number;
 }
 
 export interface Bird extends Agent {
@@ -48,11 +82,14 @@ export interface Bird extends Agent {
   alt: number;
   hop: number;
   scale: number;
+  species: BirdSpecies;
+  /** Куда птица пришла: земля, кормушка или поилка. */
+  place: 'ground' | 'feeder' | 'bath';
+  /** Номер места на кормушке, чтобы не сидеть в одной точке. */
+  slot: number;
 }
 
 export interface Flutter {
-  /** Бабочка или стрекоза. */
-  kind: 'butterfly' | 'dragonfly';
   tx: number;
   ty: number;
   alt: number;
@@ -129,16 +166,47 @@ function findObjects(world: World, types: string[]): Vec[] {
   return out;
 }
 
+/** Кто прилетает к столу в этот сезон: состав стаи меняется с годом. */
+function seasonSpecies(season: string, atFeeder: boolean): BirdSpecies {
+  const r = rnd();
+  if (season === 'winter') {
+    // зимой у кормушки синицы и снегири, воробьи держатся своей компанией
+    if (atFeeder) return r < 0.45 ? 'tit' : r < 0.75 ? 'bullfinch' : 'sparrow';
+    return r < 0.6 ? 'sparrow' : r < 0.85 ? 'bullfinch' : 'wagtail';
+  }
+  if (season === 'summer') {
+    if (atFeeder) return r < 0.4 ? 'tit' : r < 0.7 ? 'finch' : 'sparrow';
+    return r < 0.45 ? 'wagtail' : r < 0.75 ? 'sparrow' : 'finch';
+  }
+  if (season === 'spring') {
+    if (atFeeder) return r < 0.4 ? 'finch' : r < 0.7 ? 'tit' : 'sparrow';
+    return r < 0.5 ? 'wagtail' : r < 0.8 ? 'sparrow' : 'finch';
+  }
+  if (atFeeder) return r < 0.4 ? 'tit' : r < 0.7 ? 'sparrow' : 'finch';
+  return r < 0.55 ? 'sparrow' : r < 0.8 ? 'wagtail' : 'finch';
+}
+
 export class Life {
   cats: Cat[] = [];
+  /** Коты-гости: ещё не предметы сада, но уже его жители. */
+  guests: Cat[] = [];
   birds: Bird[] = [];
   flutters: Flutter[] = [];
   fish: Fish[] = [];
   gusts: Gust[] = [];
+  /** Жители воды: лягушки и стрекозы, приглашённые прудом. */
+  residents = new Residents();
+  /** Что сад готов принять в этот час; пересчитывается редко. */
+  habitat: Habitat | null = null;
+  invitation: Invitation = { frogs: 0, dragonflies: 0, feederBirds: 0, guestCat: false, chorus: 0 };
+  /** Заметки в летопись: игровой цикл забирает их каждый кадр. */
+  pendingNotes: string[] = [];
   /** Общая фаза ветра 0..1 — плавный фон поверх порывов. */
   windBase = 0.45;
   private gustTimer = 4000;
   private birdTimer = 6000;
+  private habitatTimer = 0;
+  private guestTimer = 45_000;
   /** Лепестки, сорванные с деревьев: сцена забирает их каждый кадр. */
   emitted: { x: number; y: number; kind: 'petal' | 'leaf'; seed: number }[] = [];
   /** Сид состава кои — чтобы рыбы переселялись за своими предметами. */
@@ -152,12 +220,18 @@ export class Life {
   /** Забыть всю живность — при переходе в другую усадьбу. */
   reset(): void {
     this.cats = [];
+    this.guests = [];
     this.birds = [];
     this.flutters = [];
     this.fish = [];
     this.gusts = [];
     this.emitted = [];
     this.koiKey = '';
+    this.habitat = null;
+    this.habitatTimer = 0;
+    this.guestTimer = 45_000;
+    this.pendingNotes = [];
+    this.residents.reset();
   }
 
   /** Пересобирает агентов под текущий состав сада. */
@@ -173,19 +247,7 @@ export class Life {
       this.cats = catObjs.map((o) => {
         const prev = this.cats.find((c) => c.id === o.id);
         if (prev) return prev;
-        return {
-          id: o.id,
-          tx: o.tx + 0.5,
-          ty: o.ty + 0.5,
-          facing: 1,
-          seed: o.seed,
-          state: 'sleep' as CatState,
-          timer: 4000 + rnd() * 6000,
-          target: null,
-          phase: 0,
-          speed: 0,
-          home: null,
-        };
+        return this.makeCat(o.id, o.tx + 0.5, o.ty + 0.5, o.seed, false);
       });
     }
 
@@ -217,14 +279,66 @@ export class Life {
     }
   }
 
-  update(world: World, t: TimeState, dt: number, now: number): void {
+  private makeCat(id: number, tx: number, ty: number, seed: number, guest: boolean): Cat {
+    return {
+      id,
+      tx,
+      ty,
+      facing: 1,
+      seed,
+      state: 'sleep',
+      timer: 4000 + rnd() * 6000,
+      target: null,
+      phase: 0,
+      speed: 0,
+      home: null,
+      guest,
+      coat: guest ? CAT_COATS[1 + Math.floor(rnd() * (CAT_COATS.length - 1))] : coatOfSeed(seed),
+      greet: 0,
+      leaveAt: 0,
+      stayAt: 0,
+    };
+  }
+
+  update(world: World, t: TimeState, dt: number, now: number, wx?: WeatherState | null): void {
     this.sync(world);
     this.updateWind(dt, t);
+
+    // Среда обитания пересчитывается редко: постройки не двигаются сами,
+    // а обход сада каждый кадр был бы чистой тратой.
+    this.habitatTimer -= dt;
+    if (!this.habitat || this.habitatTimer <= 0) {
+      this.habitatTimer = 2000;
+      this.habitat = scanHabitat(world);
+    }
+    const h = this.habitat;
+    const inv = invitations(h, t, wx ?? null, this.windBase);
+    this.invitation = inv;
+
+    // От кого прятаться лягушкам: коты подходят вплотную, птицы клюют рядом
+    const threats: Threat[] = [];
+    for (const c of this.cats) threats.push({ x: c.tx, y: c.ty, r: 2.1 });
+    for (const c of this.guests) threats.push({ x: c.tx, y: c.ty, r: 2.1 });
+    for (const b of this.birds) if (b.alt < 8) threats.push({ x: b.tx, y: b.ty, r: 1.0 });
+
+    this.residents.update(world, h, inv, wx ?? null, dt, now, threats);
+    for (const note of this.residents.takeNotes()) this.note(world, note);
+
     this.updateCats(world, t, dt);
-    this.updateBirds(world, t, dt);
+    this.updateGuest(world, h, inv, t, dt, now);
+    this.updateBirds(world, t, dt, h, inv, wx ?? null);
     this.updateFlutters(world, t, dt, now);
     this.updateFish(world, dt);
     this.updateFalling(world, t, dt);
+  }
+
+  /**
+   * Заметка в летопись: дублеты гасит сам мир, здесь только передача.
+   * Метка времени — настоящая дата: летопись живёт по календарю, а не
+   * по счётчику кадров.
+   */
+  private note(world: World, id: string): void {
+    world.noteEvent(id, Date.now());
   }
 
   // ---------------- Ветер ----------------
@@ -269,13 +383,15 @@ export class Life {
     return clamp(w, 0, 2.4);
   }
 
-  // ---------------- Кот ----------------
+  // ---------------- Коты ----------------
 
   private updateCats(world: World, t: TimeState, dt: number): void {
     const cushions = findObjects(world, ['cushion']);
-    for (const c of this.cats) {
+    const all = this.cats.concat(this.guests);
+    for (const c of all) {
       c.timer -= dt;
       c.phase += dt * 0.001;
+      if (c.greet > 0) c.greet -= dt;
       if (!c.home && cushions.length) c.home = cushions[Math.floor(hash2(c.seed, 1, 3) * cushions.length)];
 
       if (c.state === 'walk' && c.target) {
@@ -304,14 +420,69 @@ export class Life {
       }
 
       if (c.timer <= 0) this.pickCatState(c, t, world);
+
+      // Кот наблюдает за птицей: это заметно со стороны и ни к чему не обязывает
+      if ((c.state === 'sit' || c.state === 'loaf') && c.greet <= 0) {
+        const bird = this.nearestGroundBird(c, 4.5);
+        if (bird) {
+          c.facing = bird.tx > c.tx ? 1 : -1;
+          c.timer = Math.max(c.timer, 1600);
+        }
+      }
     }
+
+    // Знакомство котов: сошлись близко — сели друг напротив друга
+    for (const g of this.guests) {
+      for (const c of this.cats) {
+        const d = Math.hypot(g.tx - c.tx, g.ty - c.ty);
+        if (d > 2.6 || d < 0.001) continue;
+        if (g.state === 'walk' || c.state === 'walk') continue;
+        g.facing = c.tx > g.tx ? 1 : -1;
+        c.facing = g.tx > c.tx ? 1 : -1;
+        if (g.state !== 'sit') {
+          g.state = 'sit';
+          g.timer = 4000;
+        }
+        if (c.state !== 'sit') {
+          c.state = 'sit';
+          c.timer = 4000;
+        }
+        if (g.greet <= 0) {
+          g.greet = 9000;
+          c.greet = 9000;
+          this.note(world, 'cats_greet');
+        }
+      }
+    }
+  }
+
+  private nearestGroundBird(c: Cat, r: number): Bird | null {
+    let best: Bird | null = null;
+    let bd = r;
+    for (const b of this.birds) {
+      if (b.state === 'fly-in' || b.state === 'fly-out' || b.alt > 8) continue;
+      const d = Math.hypot(b.tx - c.tx, b.ty - c.ty);
+      if (d < bd) {
+        bd = d;
+        best = b;
+      }
+    }
+    return best;
   }
 
   private pickCatState(c: Cat, t: TimeState, world?: World): void {
     const night = t.daylight < 0.3;
     const r = rnd();
-    // ночью и в полдень кот больше спит; утром и вечером — активен
-    const lazy = night ? 0.72 : t.hours >= 12 && t.hours <= 15 ? 0.6 : 0.34;
+    // Расписание своё у каждого: гость гуляет на рассвете и в сумерках,
+    // чёрный кот ночью бодрее светлого, дома все спят в полдень.
+    let lazy: number;
+    if (c.guest) {
+      lazy = night ? 0.4 : t.hours >= 12 && t.hours <= 15 ? 0.66 : 0.28;
+    } else if (c.coat === 'black') {
+      lazy = night ? 0.45 : t.hours >= 12 && t.hours <= 15 ? 0.62 : 0.36;
+    } else {
+      lazy = night ? 0.72 : t.hours >= 12 && t.hours <= 15 ? 0.6 : 0.34;
+    }
 
     if (r < lazy) {
       c.state = r < lazy * 0.55 ? 'sleep' : 'loaf';
@@ -344,34 +515,196 @@ export class Life {
     c.phase = 0;
   }
 
+  // ---------------- Второй кот ----------------
+
+  /**
+   * Гость приходит сам, когда первому коту есть что предложить: подушка,
+   * миска и компания. Весной и осенью шансов больше, зимой почти нет,
+   * летом он выходит в сумерках. Останется ли он навсегда — решит то,
+   * найдётся ли ему свободная подушка.
+   */
+  private updateGuest(world: World, h: Habitat, inv: Invitation, t: TimeState, dt: number, now: number): void {
+    const guest = this.guests[0];
+    if (!guest) {
+      this.guestTimer -= dt;
+      if (this.guestTimer > 0) return;
+      this.guestTimer = 90_000 + rnd() * 150_000;
+      if (!inv.guestCat || this.cats.length === 0) return;
+      const season = t.season;
+      const chance = season === 'winter' ? 0.06 : season === 'summer' ? (t.daylight < 0.35 ? 0.45 : 0.2) : 0.5;
+      if (rnd() < chance) this.spawnGuest(world, h, now);
+      return;
+    }
+
+    // Пора уходить: гость прощается и уходит за край сада
+    if (now > guest.leaveAt && guest.state !== 'walk') {
+      guest.state = 'walk';
+      guest.target = this.exitPoint(guest);
+      guest.timer = 30_000;
+    }
+    if (guest.state === 'walk' && now > guest.leaveAt) {
+      if (guest.tx < 1.2 || guest.tx > GRID - 1.2 || guest.ty < 1.2 || guest.ty > GRID - 1.2) {
+        this.guests = [];
+        return;
+      }
+    }
+
+    // Свободная подушка и долгий визит: гость остаётся навсегда
+    if (now > guest.stayAt && now < guest.leaveAt && h.cushions.length > this.cats.length) {
+      const seed = seedForCoat(guest.coat, rnd);
+      const placed = world.place('cat', Math.round(guest.tx * 2) / 2, Math.round(guest.ty * 2) / 2, 0);
+      if (placed) {
+        placed.seed = seed;
+        world.noteObjectsChanged();
+        this.guests = [];
+        this.note(world, 'guest_stayed');
+        world.checkMilestone('second_cat');
+      }
+    }
+  }
+
+  private spawnGuest(world: World, h: Habitat, now: number): void {
+    // Входим с кромки сада, поближе к дому или веранде
+    const anchor = h.shelters.length ? h.shelters[Math.floor(rnd() * h.shelters.length)] : { x: GRID / 2, y: GRID / 2 };
+    const side = Math.floor(rnd() * 4);
+    const start: Vec =
+      side === 0
+        ? { x: 1, y: clamp(anchor.y, 2, GRID - 2) }
+        : side === 1
+          ? { x: GRID - 1, y: clamp(anchor.y, 2, GRID - 2) }
+          : side === 2
+            ? { x: clamp(anchor.x, 2, GRID - 2), y: 1 }
+            : { x: clamp(anchor.x, 2, GRID - 2), y: GRID - 1 };
+    if (!tileWalkable(world, start.x, start.y)) {
+      const fallback = randomWalkable(world, anchor, 8);
+      if (!fallback) return;
+      start.x = fallback.x;
+      start.y = fallback.y;
+    }
+    const g = this.makeCat(-1, start.x, start.y, Math.floor(rnd() * 100000), true);
+    g.state = 'walk';
+    g.target = h.cushions.length ? h.cushions[Math.floor(rnd() * h.cushions.length)] : anchor;
+    g.timer = 30_000;
+    const stay = 150_000 + rnd() * 180_000;
+    g.stayAt = now + stay * 0.5;
+    g.leaveAt = now + stay;
+    this.guests = [g];
+    this.note(world, 'meet_guest');
+  }
+
+  private exitPoint(c: Cat): Vec {
+    const side = Math.floor(rnd() * 4);
+    return side === 0
+      ? { x: 0.6, y: c.ty }
+      : side === 1
+        ? { x: GRID - 0.6, y: c.ty }
+        : side === 2
+          ? { x: c.tx, y: 0.6 }
+          : { x: c.tx, y: GRID - 0.6 };
+  }
+
   // ---------------- Птицы ----------------
 
-  private updateBirds(world: World, t: TimeState, dt: number): void {
+  private updateBirds(
+    world: World,
+    t: TimeState,
+    dt: number,
+    h: Habitat,
+    inv: Invitation,
+    wx: WeatherState | null,
+  ): void {
     // Птицы прилетают днём, и только если есть где сесть
     const daytime = t.daylight > 0.35;
+    const rain = wx ? wx.rain : 0;
     this.birdTimer -= dt;
-    if (daytime && this.birdTimer <= 0 && this.birds.length < 4) {
+    const feederBirds = this.birds.filter((b) => b.place !== 'ground' && b.state !== 'fly-out').length;
+    const groundBirds = this.birds.filter((b) => b.place === 'ground' && b.state !== 'fly-out').length;
+
+    if (daytime && this.birdTimer <= 0 && this.birds.length < 6) {
       this.birdTimer = 7000 + rnd() * 16000;
-      const spot = randomWalkable(world);
-      if (spot) {
+      // Кормушка зовёт своих: зимой у неё людно, летом — пара завсегдатаев
+      const wantFeeder = h.feeders.length > 0 && feederBirds < inv.feederBirds;
+      const wantBath = h.baths.length > 0 && t.season === 'summer' && rnd() < 0.3 && rain < 0.2;
+      if (wantFeeder || wantBath) {
+        const feeder = wantFeeder ? h.feeders[Math.floor(rnd() * h.feeders.length)] : null;
+        const bath = !feeder && wantBath ? h.baths[Math.floor(rnd() * h.baths.length)] : null;
+        const at = feeder ?? bath!;
         const fromLeft = rnd() > 0.5;
+        // места на лотке и кромке поилки: птицы не сидят в одной точке
+        const slot = Math.floor(rnd() * 4);
+        const off = [
+          [0.34, 0],
+          [-0.34, 0],
+          [0, 0.3],
+          [0, -0.3],
+        ][slot];
         this.birds.push({
           tx: fromLeft ? -2 : GRID + 2,
-          ty: spot.y + (rnd() - 0.5) * 4,
+          ty: clamp(at.y + (rnd() - 0.5) * 3, 1, GRID - 1),
           facing: fromLeft ? 1 : -1,
           seed: Math.floor(rnd() * 10000),
           state: 'fly-in',
           timer: 0,
-          target: spot,
-          alt: 90 + rnd() * 50,
+          target: { x: at.x + off[0], y: at.y + off[1] },
+          alt: 80 + rnd() * 40,
           hop: 0,
-          scale: 0.85 + rnd() * 0.35,
+          scale: 0.85 + rnd() * 0.3,
+          species: seasonSpecies(t.season, !!feeder),
+          place: feeder ? 'feeder' : 'bath',
+          slot,
         });
+      } else if (groundBirds < 4) {
+        const spot = randomWalkable(world);
+        if (spot) {
+          const fromLeft = rnd() > 0.5;
+          this.birds.push({
+            tx: fromLeft ? -2 : GRID + 2,
+            ty: spot.y + (rnd() - 0.5) * 4,
+            facing: fromLeft ? 1 : -1,
+            seed: Math.floor(rnd() * 10000),
+            state: 'fly-in',
+            timer: 0,
+            target: spot,
+            alt: 90 + rnd() * 50,
+            hop: 0,
+            scale: 0.85 + rnd() * 0.35,
+            species: seasonSpecies(t.season, false),
+            place: 'ground',
+            slot: 0,
+          });
+        }
       }
     }
     if (!daytime) {
       // на закате разлетаются
       for (const b of this.birds) if (b.state !== 'fly-out') this.birdLeave(b);
+    }
+
+    // Кот подобрался к птицам — кормушка пустеет на глазах
+    for (const b of this.birds) {
+      if (b.state === 'fly-out') continue;
+      let scared = false;
+      for (const c of this.cats.concat(this.guests)) {
+        if (Math.hypot(c.tx - b.tx, c.ty - b.ty) < 3) {
+          scared = true;
+          break;
+        }
+      }
+      if (scared) {
+        for (const o of this.birds) {
+          if (o.state !== 'fly-out' && Math.hypot(o.tx - b.tx, o.ty - b.ty) < 6) this.birdLeave(o);
+        }
+        this.note(world, 'birds_fled');
+        break;
+      }
+    }
+
+    // Компания у кормушки — событие, которое замечают
+    const atFeeder = this.birds.filter((b) => b.place === 'feeder' && b.state !== 'fly-out').length;
+    if (atFeeder >= 3) this.note(world, 'flock');
+    if (t.season === 'winter' && atFeeder >= 2) {
+      world.checkMilestone('winter_feeder');
+      this.note(world, 'winter_table');
     }
 
     for (let i = this.birds.length - 1; i >= 0; i--) {
@@ -383,15 +716,65 @@ export class Life {
         const dy = b.target.y - b.ty;
         const d = Math.hypot(dx, dy);
         const v = 0.0028 * dt;
-        if (d < 0.2 && b.alt < 3) {
-          b.state = 'hop';
-          b.alt = 0;
-          b.timer = 900 + rnd() * 1600;
+        const perchAlt = b.place === 'feeder' ? 26 : b.place === 'bath' ? 7 : 0;
+        if (d < 0.25 && Math.abs(b.alt - perchAlt) < 3) {
+          b.alt = perchAlt;
+          if (b.place === 'feeder') {
+            b.state = 'perch';
+            b.timer = 1600 + rnd() * 2600;
+            world.checkMilestone('bird_guest');
+            this.note(world, 'meet_feeder');
+          } else if (b.place === 'bath') {
+            b.state = rnd() < 0.5 ? 'drink' : 'bathe';
+            b.timer = 1800 + rnd() * 2600;
+            world.checkMilestone('bird_guest');
+          } else {
+            b.state = 'hop';
+            b.alt = 0;
+            b.timer = 900 + rnd() * 1600;
+            world.checkMilestone('bird_guest');
+          }
         } else {
-          b.tx += (dx / (d || 1)) * v;
-          b.ty += (dy / (d || 1)) * v;
-          b.alt = lerp(b.alt, 0, 0.035);
+          // Шаг не длиннее расстояния: иначе на редких кадрах птица
+          // проскакивает цель и навечно пляшет вокруг кормушки
+          const step = Math.min(v, d);
+          b.tx += (dx / (d || 1)) * step;
+          b.ty += (dy / (d || 1)) * step;
+          // Снижение не зависит от частоты кадров
+          const k = 1 - Math.pow(1 - 0.035, dt / 16);
+          b.alt = lerp(b.alt, perchAlt, k);
           if (Math.abs(dx) > 0.02) b.facing = dx > 0 ? 1 : -1;
+        }
+      } else if (b.state === 'perch') {
+        // на кормушке: клюнуть, оглядеться, уступить место
+        if (b.timer <= 0) {
+          b.state = 'feed';
+          b.timer = 900 + rnd() * 1800;
+        }
+      } else if (b.state === 'feed') {
+        if (b.timer <= 0) {
+          const r = rnd();
+          if (r < 0.22) this.birdLeave(b);
+          else if (r < 0.5) {
+            b.state = 'perch';
+            b.timer = 1200 + rnd() * 2200;
+            b.slot = (b.slot + 1) % 4;
+          } else {
+            b.state = 'feed';
+            b.timer = 800 + rnd() * 1400;
+          }
+        }
+      } else if (b.state === 'drink' || b.state === 'bathe') {
+        if (b.timer <= 0) {
+          if (b.state === 'bathe') {
+            this.note(world, 'bath_splash');
+            this.residents.ripple(b.tx, b.ty, false);
+          }
+          if (rnd() < 0.4) this.birdLeave(b);
+          else {
+            b.state = b.state === 'bathe' ? 'drink' : 'bathe';
+            b.timer = 1400 + rnd() * 2000;
+          }
         }
       } else if (b.state === 'hop') {
         b.hop += dt * 0.006;
@@ -428,22 +811,19 @@ export class Life {
     b.timer = 4000;
   }
 
-  // ---------------- Бабочки и стрекозы ----------------
+  // ---------------- Бабочки ----------------
 
   private updateFlutters(world: World, t: TimeState, dt: number, now: number): void {
     const season = t.season;
     const day = t.daylight;
     const wantButterflies = day > 0.4 && (season === 'spring' || season === 'summer') ? 5 : 0;
-    const wantDragonflies = day > 0.35 && (season === 'summer' || season === 'autumn') ? 3 : 0;
 
     const flowers = findObjects(world, ['lily', 'iris', 'azalea', 'lotus', 'lilypad']);
-    const count = (k: string) => this.flutters.filter((f) => f.kind === k).length;
 
-    while (count('butterfly') < wantButterflies) {
+    while (this.flutters.length < wantButterflies) {
       const spot = flowers.length ? flowers[Math.floor(rnd() * flowers.length)] : randomWalkable(world);
       if (!spot) break;
       this.flutters.push({
-        kind: 'butterfly',
         tx: spot.x + (rnd() - 0.5) * 3,
         ty: spot.y + (rnd() - 0.5) * 3,
         alt: 18 + rnd() * 26,
@@ -457,32 +837,9 @@ export class Life {
         resting: 0,
       });
     }
-    while (count('dragonfly') < wantDragonflies) {
-      const spot = this.findWaterSpot(world) ?? randomWalkable(world);
-      if (!spot) break;
-      this.flutters.push({
-        kind: 'dragonfly',
-        tx: spot.x,
-        ty: spot.y,
-        alt: 22 + rnd() * 20,
-        vx: 0,
-        vy: 0,
-        valt: 0,
-        target: spot,
-        timer: 1200 + rnd() * 1800,
-        seed: rnd() * 1000,
-        phase: rnd() * 10,
-        resting: 0,
-      });
-    }
     // лишних убираем плавно
-    while (count('butterfly') > wantButterflies) {
-      const i = this.flutters.findIndex((f) => f.kind === 'butterfly');
-      this.flutters.splice(i, 1);
-    }
-    while (count('dragonfly') > wantDragonflies) {
-      const i = this.flutters.findIndex((f) => f.kind === 'dragonfly');
-      this.flutters.splice(i, 1);
+    while (this.flutters.length > wantButterflies) {
+      this.flutters.splice(0, 1);
     }
 
     for (const f of this.flutters) {
@@ -497,35 +854,24 @@ export class Life {
 
       if (f.timer <= 0 || !f.target) {
         f.timer = 1600 + rnd() * 3200;
-        if (f.kind === 'butterfly') {
-          const spot =
-            flowers.length && rnd() < 0.7
-              ? flowers[Math.floor(rnd() * flowers.length)]
-              : randomWalkable(world, { x: f.tx, y: f.ty }, 5);
-          f.target = spot;
-          // иногда присаживается на цветок
-          if (spot && rnd() < 0.3) f.resting = 1800 + rnd() * 3000;
-        } else {
-          f.target = this.findWaterSpot(world) ?? randomWalkable(world, { x: f.tx, y: f.ty }, 6);
-        }
+        const spot =
+          flowers.length && rnd() < 0.7
+            ? flowers[Math.floor(rnd() * flowers.length)]
+            : randomWalkable(world, { x: f.tx, y: f.ty }, 5);
+        f.target = spot;
+        // иногда присаживается на цветок
+        if (spot && rnd() < 0.3) f.resting = 1800 + rnd() * 3000;
       }
 
       if (f.target) {
         const dx = f.target.x - f.tx;
         const dy = f.target.y - f.ty;
         const d = Math.hypot(dx, dy) || 1;
-        // бабочка порхает рывками, стрекоза — резкие броски и зависания
-        if (f.kind === 'butterfly') {
-          const flap = Math.sin(now * 0.02 + f.seed) * 0.5 + 0.5;
-          f.vx = lerp(f.vx, (dx / d) * 0.0011 * (0.5 + flap), 0.05);
-          f.vy = lerp(f.vy, (dy / d) * 0.0011 * (0.5 + flap), 0.05);
-          f.valt = lerp(f.valt, Math.sin(now * 0.005 + f.seed) * 0.06, 0.06);
-        } else {
-          const dart = Math.sin(now * 0.0013 + f.seed) > 0.4 ? 1 : 0.06;
-          f.vx = lerp(f.vx, (dx / d) * 0.0026 * dart, 0.12);
-          f.vy = lerp(f.vy, (dy / d) * 0.0026 * dart, 0.12);
-          f.valt = lerp(f.valt, Math.sin(now * 0.002 + f.seed) * 0.04, 0.1);
-        }
+        // бабочка порхает рывками под взмах крыла
+        const flap = Math.sin(now * 0.02 + f.seed) * 0.5 + 0.5;
+        f.vx = lerp(f.vx, (dx / d) * 0.0011 * (0.5 + flap), 0.05);
+        f.vy = lerp(f.vy, (dy / d) * 0.0011 * (0.5 + flap), 0.05);
+        f.valt = lerp(f.valt, Math.sin(now * 0.005 + f.seed) * 0.06, 0.06);
         f.tx += f.vx * dt;
         f.ty += f.vy * dt;
         f.alt = clamp(f.alt + f.valt * dt, 6, 58);
@@ -534,16 +880,6 @@ export class Life {
       f.tx = clamp(f.tx, 0.5, GRID - 0.5);
       f.ty = clamp(f.ty, 0.5, GRID - 0.5);
     }
-  }
-
-  private findWaterSpot(world: World): Vec | null {
-    for (let i = 0; i < 30; i++) {
-      const x = rnd() * GRID;
-      const y = rnd() * GRID;
-      const t = world.at(Math.floor(x), Math.floor(y));
-      if (t?.water) return { x, y };
-    }
-    return null;
   }
 
   // ---------------- Карпы ----------------
@@ -620,5 +956,3 @@ export class Life {
     return out;
   }
 }
-
-export { clamp01 };

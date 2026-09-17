@@ -472,11 +472,13 @@
   z-index: 8;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 1.1s var(--ease);
+  /* уходим быстро: интерфейс возвращается дольше, чем строка тает */
+  transition: opacity 0.35s var(--ease);
 }
 
 .sit-line.show {
   opacity: 1;
+  transition: opacity 1.1s var(--ease);
   pointer-events: auto;
 }
 

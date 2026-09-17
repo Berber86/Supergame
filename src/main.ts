@@ -25,6 +25,7 @@ import { isTouchDevice } from './ui/touch';
 import { pointer, moving, pathStart, setupInput, touchMode } from './app/input';
 import { startLoop } from './app/gameLoop';
 import { PracticePanel } from './ui/practicePanel';
+import { ChroniclePanel } from './ui/chroniclePanel';
 import { StartScreen } from './ui/startScreen';
 
 const app = document.getElementById('app')!;
@@ -211,7 +212,14 @@ const ui = new UI(app, world, {
   onSit() {
     practice.openMenu();
   },
+  onChronicle() {
+    chronicle.toggle();
+    wake();
+  },
 });
+
+// Летопись сада: свиток с первыми встречами. Открывается тихо, без кнопки.
+const chronicle = new ChroniclePanel(app, world);
 
 // Настройки вида применяем до первого кадра, чтобы интерфейс
 // сразу открылся таким, каким игрок его оставил.
@@ -287,11 +295,13 @@ function setZen(on: boolean): void {
     ui.toggleBuild(false);
     ui.toggleHelp(false);
     ui.setZenNote('созерцание · любое движение вернёт интерфейс');
-    // практика предлагает себя ровно тогда, когда исчезло всё остальное
+    // практика и летопись предлагают себя ровно тогда, когда исчезло всё остальное
     ui.setSitVisible(true);
+    ui.setChronVisible(true);
   } else {
     ui.setZenNote('');
     ui.setSitVisible(false);
+    ui.setChronVisible(false);
   }
 }
 
@@ -317,6 +327,7 @@ const input = setupInput({
   gardensPanel,
   settingsPanel,
   devPanel,
+  chronicle,
   selection: () => selection,
   isZenMode: () => zenMode,
   isStartOpen: () => startOpen,
@@ -583,6 +594,20 @@ function flushMilestones(): void {
   saveWorld();
 }
 
+/**
+ * Новые строки летописи: мягкая заметка поверх сада и запись в сохранение.
+ * Вехи, которые подняли эти же события, показываем следом своим чередом.
+ */
+function flushChronicle(): void {
+  let noted = false;
+  while (world.pendingNotes.length) {
+    ui.showChronicleNote(world.pendingNotes.shift()!);
+    noted = true;
+  }
+  if (world.pendingMilestones.length) flushMilestones();
+  else if (noted) saveWorld();
+}
+
 /** Соотношение сторон снимка — переключается там же, на кнопке. */
 const SHOT_RATIOS: ShotRatio[] = ['wide', 'square', 'tall'];
 const SHOT_NAMES: Record<ShotRatio, string> = {
@@ -598,9 +623,9 @@ function cycleShotRatio(): void {
 }
 
 function takeScreenshot(): void {
-  const wasZen = zenMode;
-  setZen(true);
-  // Даём кадру отрисоваться без интерфейса
+  // Интерфейс живёт в DOM, а снимок собирает только холст — прятать
+  // интерфейс не за чем: раньше кнопки мигали на глазах игрока, а тихие
+  // строки созерцания вспыхивали поверх вернувшегося интерфейса.
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       const t = computeTime(Date.now());
@@ -619,7 +644,6 @@ function takeScreenshot(): void {
         a.download = `усадьба-${t.season}-год-${t.year}-${t.label.replace(':', '-')}.png`;
         a.click();
         URL.revokeObjectURL(url);
-        if (!wasZen) setTimeout(() => setZen(false), 200);
         ui.toast('Снимок сохранён');
       }, 'image/png');
     });
@@ -719,6 +743,7 @@ startLoop({
     entryZoom = v;
   },
   flushMilestones,
+  flushChronicle,
 });
 
 // Кровля: восстанавливаем прошлый выбор игрока до первого кадра,
