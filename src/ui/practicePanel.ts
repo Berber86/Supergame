@@ -39,6 +39,15 @@ function minutesPhrase(n: number): string {
   return `${n} минут`;
 }
 
+/** Именительный: «одна минута», «три минуты», «двадцать минут». */
+function minutesNominative(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return n === 1 ? 'одна минута' : `${n} минута`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${n} минуты`;
+  return `${n} минут`;
+}
+
 function timeLeft(ms: number): string {
   const s = Math.max(0, Math.ceil(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -150,7 +159,7 @@ export class PracticePanel {
             <div class="pr-list">${lessonRows}</div>
           </section>
         </div>
-        ${p.minutes > 0 ? `<div class="pr-memory">в вашей тишине — ${minutesPhrase(p.minutes).replace('одну минуту', 'одна минута')}</div>` : ''}
+        ${p.minutes > 0 ? `<div class="pr-memory">в вашей тишине — ${minutesNominative(p.minutes)}</div>` : ''}
         <div class="pr-care">${CARE_NOTE}</div>
       </div>`;
 
