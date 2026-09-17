@@ -24,9 +24,9 @@ import { waterLoudness } from './render/water';
 import { findPath, layPath } from './world/paths';
 import { ShotRatio, composeScroll } from './ui/snapshot';
 import { SettingsPanel, applyView, loadView } from './ui/settings';
-import { Splash } from './ui/splash';
-import { PracticePanel } from './ui/practicePanel';
 import { TouchInput, isTouchDevice } from './ui/touch';
+import { PracticePanel } from './ui/practicePanel';
+import { StartScreen } from './ui/startScreen';
 import { PlacedObject } from './world/types';
 
 const app = document.getElementById('app')!;
@@ -83,9 +83,13 @@ if (isTouchDevice()) {
 }
 
 let selection: Selection = { kind: 'none' };
+/** Свиток стартовой страницы ещё висит: сад за ним живёт, но не слушает клавиш. */
+let startOpen = true;
 let ghostRot = 0;
 let zenMode = false;
 let lastInteraction = performance.now();
+/** Масштаб, к которому камера возвращается после входа: 0 — входа не было. */
+let entryZoom = 0;
 
 const ui = new UI(app, world, {
   onSelect(sel) {
@@ -527,7 +531,9 @@ window.addEventListener('keydown', (e) => {
   // Не перехватываем набор текста (переименование усадьбы)
   const el = e.target as HTMLElement | null;
   if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
-  // под листом практики сад не живёт: клавиши не проходят сквозь него
+  // Пока висит свиток, сад ещё не начался: клавиши ему не принадлежат.
+  if (startOpen) return;
+  // Под листом практики сад не живёт: клавиши не проходят сквозь него.
   if (practice.isOpen) {
     if (e.key === 'Escape') practice.close();
     return;
@@ -976,26 +982,23 @@ const practice = new PracticePanel(app, {
 
 // ---------------- Заставка ----------------
 
-// Лист рисуется по настоящим часам игрока и по настоящей погоде мира: если
-// в саду сумерки и тучи, заставка не обещает ясного полдня (принцип 5).
-const splash = new Splash(
-  document.body,
-  view,
-  () => {
-    const time = timeCtl.compute();
-    return { time, atm: buildAtmosphere(time, weatherSys.state.overcast) };
+// Свиток на стене: свет идёт по тем же часам, что и сад, а вход
+// одновременно разблокирует звук — без касания страницы браузер его не даст.
+const start = new StartScreen({
+  hour: () => timeCtl.compute().dayT * 24,
+  motion: view.motion,
+  onEnter() {
+    startOpen = false;
+    wake();
+    void toggleSound(true);
+    // Шаг через порог: камера подаётся вперёд, а не прыгает на место.
+    entryZoom = scene.camera.zoom;
+    scene.camera.zoom *= 0.86;
+    // Подсказка ждёт входа: за свитком её всё равно не видно.
+    showTip(5000);
   },
-  {
-    onEnter() {
-      wake();
-      // Этот же жест разблокирует звук; чаша звучит, когда лист уже тает —
-      // мастер-громкость нарастает 1.2 с, и к её пику входит игрок, а не удар.
-      void toggleSound(true).then(() => {
-        window.setTimeout(() => audio.bowl(0.9), 900);
-      });
-    },
-  },
-);
+});
+start.mount(document.body);
 
 // ---------------- Игровой цикл ----------------
 
@@ -1003,7 +1006,6 @@ let last = performance.now();
 let eveningChecked = '';
 let audioAccum = 0;
 let observeAccum = 1200;
-let sceneAccum = 0;
 
 /** Что сейчас звучит вокруг: считаем по составу сада рядом с камерой. */
 function gatherAudioContext() {
@@ -1067,17 +1069,21 @@ function frame(now: number): void {
   // Интерфейс растворяется в бездействии
   if (!zenMode && !ui.buildOpen && now - lastInteraction > IDLE_MS) setZen(true);
 
-  // Пока на экране заставка, сад рисуется вполсилы: мир и время тикают как
-  // обычно, а тяжёлый кадр не дублируется вторым холстом. Стоит нажать
-  // «войти» — и рендер идёт полным ходом, поэтому за растворением листа
-  // виден сад, а не пустой холст.
-  sceneAccum -= dt;
-  if (practiceActive) {
-    // под листом практики сад не рисуется вовсе
-  } else if (!splash.isOpen || sceneAccum <= 0) {
-    sceneAccum = 150;
-    scene.render(world, atm, now, dt, life, weatherSys.state);
+  // Плавное возвращение камеры после входа: сколько бы ни шёл шаг,
+  // через порог игрок входит, а не оказывается.
+  if (entryZoom > 0) {
+    const k = 1 - Math.pow(0.004, dt / 1000);
+    scene.camera.zoom += (entryZoom - scene.camera.zoom) * k;
+    if (Math.abs(entryZoom - scene.camera.zoom) < 0.002) {
+      scene.camera.zoom = entryZoom;
+      entryZoom = 0;
+    }
+    scene.clampCamera();
   }
+
+  // Под листом практики сад не рисуется вовсе; свиток старта непрозрачен,
+  // но за ним сад живёт и греет первый кадр ко входу.
+  if (!practiceActive) scene.render(world, atm, now, dt, life, weatherSys.state);
   ui.tick(t, atm);
   devPanel.tick();
 
@@ -1104,13 +1110,18 @@ requestAnimationFrame(frame);
 setInterval(saveWorld, 20000);
 window.addEventListener('beforeunload', saveWorld);
 
-// Тихая подсказка при первом входе. На телефоне клавиш нет — называем
-// то, что там действительно есть: кнопки и жесты.
-setTimeout(() => {
-  if (zenMode) return;
-  ui.setHint(
-    touchMode
-      ? 'Рука — каталог · щипок — приблизить · часы — время года'
-      : 'B — открыть каталог · Z — созерцание · H — свиток',
-  );
-}, 6000);
+// Тихая подсказка при входе. На телефоне клавиш нет — называем то, что там
+// действительно есть: кнопки и жесты. Показывается один раз и не поверх свитка.
+let tipShown = false;
+
+function showTip(delay: number): void {
+  setTimeout(() => {
+    if (zenMode || tipShown) return;
+    tipShown = true;
+    ui.setHint(
+      touchMode
+        ? 'Рука — каталог · щипок — приблизить · часы — время года'
+        : 'B — открыть каталог · Z — созерцание · H — свиток',
+    );
+  }, delay);
+}
