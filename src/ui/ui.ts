@@ -33,6 +33,8 @@ export interface UIHooks {
   onRedo(): void;
   onBrushSize(n: number): void;
   onGardens(): void;
+  /** Показать или убрать кровлю усадьбы. */
+  onRoof(): void;
 }
 
 export class UI {
@@ -95,6 +97,7 @@ export class UI {
     this.els.btnZen = mk('eye', 'Созерцание (Z)');
     this.els.btnShot = mk('camera', 'Снимок (P)');
     this.els.btnSound = mk('sound-off', 'Звук (M)');
+    this.els.btnRoof = mk('roof', 'Крыша (R)');
     this.els.btnGardens = mk('gardens', 'Усадьбы (U)');
     this.els.btnHelp = mk('scroll', 'Свиток (H)');
     layer.appendChild(tools);
@@ -103,6 +106,7 @@ export class UI {
     this.els.btnZen.addEventListener('click', () => this.hooks.onZen());
     this.els.btnShot.addEventListener('click', () => this.hooks.onScreenshot());
     this.els.btnSound.addEventListener('click', () => this.onSound?.());
+    this.els.btnRoof.addEventListener('click', () => this.hooks.onRoof());
     this.els.btnGardens.addEventListener('click', () => this.hooks.onGardens());
     this.els.btnHelp.addEventListener('click', () => this.toggleHelp());
 
@@ -201,6 +205,7 @@ export class UI {
         <dt>L</dt><dd>Тропа: два клика, дорога ляжет сама</dd>
         <dt>1 2 3</dt><dd>Размер кисти земли</dd>
         <dt>Ctrl+Z</dt><dd>Отменить · с Shift — вернуть</dd>
+        <dt>R</dt><dd>Убрать крышу — заглянуть в комнаты</dd>
         <dt>U</dt><dd>Усадьбы: несколько садов, файл на диск</dd>
         <dt>Esc</dt><dd>Отложить инструмент</dd>
       </dl>
@@ -403,6 +408,16 @@ export class UI {
     b.classList.toggle('active', on);
     b.innerHTML = `${svgIcon(on ? 'sound-on' : 'sound-off', 23)}<span class="label">${
       on ? 'Тишина (M)' : 'Звук (M)'
+    }</span>`;
+  }
+
+  /** Кнопка кровли: подписываем действием, а не состоянием. */
+  setRoofState(visible: boolean): void {
+    const b = this.els.btnRoof;
+    if (!b) return;
+    b.classList.toggle('active', !visible);
+    b.innerHTML = `${svgIcon(visible ? 'roof' : 'roof-off', 23)}<span class="label">${
+      visible ? 'Убрать крышу (R)' : 'Вернуть крышу (R)'
     }</span>`;
   }
 

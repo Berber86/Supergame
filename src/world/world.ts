@@ -62,8 +62,16 @@ export class World {
     this.objects = [];
     this.nextId = 1;
     this.milestones = new Set();
+    this.seasonsSeen = new Set();
     this.seenTabs = new Set(['ground', 'water', 'relief', 'trees', 'stones', 'micro']);
     this.seedStarterGarden();
+
+    // Начальный сад сам по себе подходит под несколько вех — но игрок
+    // их не заслужил, и вываливать ему пачку наград на первой секунде
+    // нечестно. Засчитываем молча то, что уже верно на старте: наградой
+    // остаётся только то, что он сделает сам.
+    this.observe(Date.now(), 'spring', false, false);
+    this.pendingMilestones.length = 0;
   }
 
   /** Начальная композиция: небольшая усадьба, чтобы сцена сразу выглядела как картина. */
@@ -726,6 +734,9 @@ export class World {
     return ok;
   }
 
+  /** Сезоны, которые игрок уже застал. */
+  seasonsSeen = new Set<string>();
+
   checkMilestone(id: string): void {
     if (this.milestones.has(id) || !MILESTONES[id]) return;
     this.milestones.add(id);
@@ -749,6 +760,7 @@ export class World {
       objects: this.objects,
       nextId: this.nextId,
       milestones: [...this.milestones],
+      seasons: [...this.seasonsSeen],
       seen: [...this.seenTabs],
     };
   }
@@ -775,6 +787,7 @@ export class World {
     this.nextId = d.nextId ?? 1;
     for (const o of this.objects) this.nextId = Math.max(this.nextId, o.id + 1);
     this.milestones = new Set(d.milestones ?? []);
+    this.seasonsSeen = new Set(d.seasons ?? []);
     this.seenTabs = new Set(d.seen ?? []);
     this.pendingMilestones = [];
     this.lastTouched = null;
@@ -811,6 +824,57 @@ export class World {
   /** Используется для уведомления о вечере. */
   noteEvening(): void {
     this.checkMilestone('first_evening');
+  }
+
+  /**
+   * Вехи, которые сад замечает сам.
+   *
+   * Их нельзя «выполнить» нарочно — они отмечают то, что уже случилось:
+   * игрок застал снег, остался под дождём, дождался взрослого дерева.
+   * Поэтому проверка живёт здесь, а не в местах постройки.
+   */
+  observe(now: number, season: string, night: boolean, raining: boolean): void {
+    // Круг года: сезоны накапливаются между сессиями
+    if (!this.seasonsSeen.has(season)) {
+      this.seasonsSeen.add(season);
+      if (this.seasonsSeen.size >= 4) this.checkMilestone('four_seasons');
+    }
+    if (night) this.checkMilestone('night_visit');
+    if (season === 'winter') this.checkMilestone('first_snow');
+    if (raining) this.checkMilestone('in_the_rain');
+
+    // Сад камней: много гравия и хотя бы пара валунов
+    let gravel = 0;
+    for (const t of this.tiles) if (t.ground === 'gravel') gravel++;
+    if (gravel >= 20) {
+      let rocks = 0;
+      for (const o of this.objects) if (o.type === 'rock_big' || o.type === 'rock_trio' || o.type === 'rock_mid') rocks++;
+      if (rocks >= 3) this.checkMilestone('stone_garden');
+    }
+
+    // Считаем разом всё, что зависит от состава сада
+    let lanterns = 0;
+    let koi = 0;
+    let indoorKinds = 0;
+    const seenIndoor = new Set<string>();
+    let grown = false;
+    for (const o of this.objects) {
+      const item = ITEM_BY_ID.get(o.type);
+      if (item?.kind === 'lantern') lanterns++;
+      if (o.type === 'koi') koi++;
+      const t = this.at(Math.floor(o.tx), Math.floor(o.ty));
+      if (t?.indoor && !seenIndoor.has(o.type)) {
+        seenIndoor.add(o.type);
+        indoorKinds++;
+      }
+      // Взрослое дерево: то, что растили по-настоящему долго
+      if (!grown && item && item.growDays >= 6 && this.growth(o, now) >= 1) grown = true;
+    }
+    if (lanterns >= 5) this.checkMilestone('lantern_path');
+    if (koi >= 3) this.checkMilestone('koi_pond');
+    if (indoorKinds >= 5) this.checkMilestone('full_house');
+    if (grown) this.checkMilestone('old_tree');
+    if (this.objects.length >= 100) this.checkMilestone('hundred');
   }
 
   brushById(id: string): TerrainBrush | undefined {

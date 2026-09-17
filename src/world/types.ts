@@ -55,5 +55,7 @@ export interface SaveData {
   objects: PlacedObject[];
   nextId: number;
   milestones: string[];
+  /** Сезоны, которые игрок застал: для вехи «Круг года». */
+  seasons?: string[];
   seen: string[];
 }

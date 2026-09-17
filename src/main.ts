@@ -22,6 +22,7 @@ import { GardenStore } from './world/gardens';
 import { GardensPanel } from './ui/gardensPanel';
 import { waterLoudness } from './render/water';
 import { findPath, layPath } from './world/paths';
+import { ShotRatio, composeScroll } from './ui/snapshot';
 import { PlacedObject } from './world/types';
 
 const app = document.getElementById('app')!;
@@ -39,6 +40,28 @@ const history = new History(world);
 /** Сохранение теперь всегда идёт в активный слот усадьбы. */
 function saveWorld(): void {
   gardens.save(world);
+}
+
+/**
+ * Видимость кровли — настройка взгляда, а не сада: она одна на все усадьбы
+ * и потому живёт отдельным ключом, а не внутри сохранения.
+ */
+const ROOF_KEY = 'usadba.roof.v1';
+
+function loadRoofPref(): boolean {
+  try {
+    return localStorage.getItem(ROOF_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+function saveRoofPref(visible: boolean): void {
+  try {
+    localStorage.setItem(ROOF_KEY, visible ? 'on' : 'off');
+  } catch {
+    // приватный режим — переживём
+  }
 }
 
 const life = new Life();
@@ -100,6 +123,9 @@ const ui = new UI(app, world, {
   onBrushSize(n) {
     world.brushSize = n;
     updateGhost();
+  },
+  onRoof() {
+    setRoofVisible(!scene.roofVisible);
   },
   onGardens() {
     gardensPanel.toggle();
@@ -364,7 +390,9 @@ window.addEventListener('keydown', (e) => {
   } else if (k === 'z') {
     setZen(!zenMode);
   } else if (k === 'p') {
-    takeScreenshot();
+    // Shift меняет формат кадра, без него — снимаем
+    if (e.shiftKey) cycleShotRatio();
+    else takeScreenshot();
   } else if (k === 'h' || k === '?') {
     ui.toggleHelp();
   } else if (k === 'r') {
@@ -392,6 +420,8 @@ window.addEventListener('keydown', (e) => {
   } else if (k === 'l') {
     ui.toggleBuild(true);
     ui.select(ui.selection.kind === 'path' ? { kind: 'none' } : { kind: 'path' });
+  } else if (k === 'r') {
+    setRoofVisible(!scene.roofVisible);
   } else if (k === 'u') {
     gardensPanel.toggle();
   } else if (k === '1' || k === '2' || k === '3') {
@@ -653,19 +683,40 @@ function flushMilestones(): void {
   saveWorld();
 }
 
+/** Соотношение сторон снимка — переключается там же, на кнопке. */
+const SHOT_RATIOS: ShotRatio[] = ['wide', 'square', 'tall'];
+const SHOT_NAMES: Record<ShotRatio, string> = {
+  wide: 'широкий',
+  square: 'квадрат',
+  tall: 'свиток',
+};
+let shotRatio: ShotRatio = 'wide';
+
+function cycleShotRatio(): void {
+  shotRatio = SHOT_RATIOS[(SHOT_RATIOS.indexOf(shotRatio) + 1) % SHOT_RATIOS.length];
+  ui.toast(`Снимок: ${SHOT_NAMES[shotRatio]}`);
+}
+
 function takeScreenshot(): void {
   const wasZen = zenMode;
   setZen(true);
   // Даём кадру отрисоваться без интерфейса
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      canvas.toBlob((blob) => {
+      const t = computeTime(Date.now());
+      // Кадр обрамляем свитком: поля рисовой бумаги и подпись сезона
+      const scroll = composeScroll(canvas, shotRatio, {
+        season: t.season,
+        year: t.year,
+        time: t.label,
+        garden: gardens.active?.name ?? 'Усадьба',
+      });
+      scroll.toBlob((blob) => {
         if (!blob) return;
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const t = computeTime(Date.now());
         a.href = url;
-        a.download = `усадьба-${t.season}-${t.label.replace(':', '-')}.png`;
+        a.download = `усадьба-${t.season}-год-${t.year}-${t.label.replace(':', '-')}.png`;
         a.click();
         URL.revokeObjectURL(url);
         if (!wasZen) setTimeout(() => setZen(false), 200);
@@ -694,6 +745,14 @@ async function toggleSound(force?: boolean): Promise<void> {
   ui.setSoundState(soundOn);
 }
 
+/** Показать или убрать кровлю — и запомнить выбор. */
+function setRoofVisible(visible: boolean): void {
+  scene.roofVisible = visible;
+  ui.setRoofState(visible);
+  saveRoofPref(visible);
+  ui.toast(visible ? 'Крыша на месте' : 'Крыша убрана — видно комнаты');
+}
+
 ui.onSound = () => void toggleSound();
 
 // ---------------- Заставка ----------------
@@ -719,6 +778,7 @@ splash.querySelector('.enter')!.addEventListener('click', () => {
 let last = performance.now();
 let eveningChecked = '';
 let audioAccum = 0;
+let observeAccum = 1200;
 
 /** Что сейчас звучит вокруг: считаем по составу сада рядом с камерой. */
 function gatherAudioContext() {
@@ -766,6 +826,15 @@ function frame(now: number): void {
     flushMilestones();
   }
 
+  // Вехи, которые сад замечает сам. Раз в пару секунд: они про то,
+  // что уже случилось, спешить некуда.
+  observeAccum -= dt;
+  if (observeAccum <= 0) {
+    observeAccum = 2500;
+    world.observe(now, t.season, atm.lampGlow > 0.55, weatherSys.state.rain > 0.3);
+    flushMilestones();
+  }
+
   // Живность и ветер
   life.update(world, t, dt, now);
   scene.wind = life.windBase;
@@ -786,6 +855,12 @@ function frame(now: number): void {
 
   requestAnimationFrame(frame);
 }
+
+// Кровля: восстанавливаем прошлый выбор игрока до первого кадра,
+// чтобы крыша не мигала на старте.
+scene.roofVisible = loadRoofPref();
+scene.snapRoof();
+ui.setRoofState(scene.roofVisible);
 
 requestAnimationFrame(frame);
 

@@ -214,4 +214,65 @@ export const MILESTONES: Record<string, Milestone> = {
     text: 'Двенадцать деревьев шумят на ветру.',
     unlocks: 'Тишина',
   },
+  // --- Вехи, которые замечают, а не требуют ---
+  four_seasons: {
+    id: 'four_seasons',
+    title: 'Круг года',
+    text: 'Вы видели этот сад во все четыре времени года.',
+    unlocks: 'Круг',
+  },
+  night_visit: {
+    id: 'night_visit',
+    title: 'Ночной сад',
+    text: 'Вы зашли, когда все спят. Фонари горели для вас одного.',
+    unlocks: 'Ночь',
+  },
+  first_snow: {
+    id: 'first_snow',
+    title: 'Первый снег',
+    text: 'Сад укрыло белым. Камелия цветёт даже сейчас.',
+    unlocks: 'Зима',
+  },
+  in_the_rain: {
+    id: 'in_the_rain',
+    title: 'Под дождём',
+    text: 'Вы остались, когда пошёл дождь. Вода стучит по крыше.',
+    unlocks: 'Дождь',
+  },
+  stone_garden: {
+    id: 'stone_garden',
+    title: 'Сад камней',
+    text: 'Гравий, валуны и ничего лишнего. Здесь думается.',
+    unlocks: 'Камни',
+  },
+  lantern_path: {
+    id: 'lantern_path',
+    title: 'Дорога огней',
+    text: 'Пять фонарей вдоль тропы. Вечером сад светится сам.',
+    unlocks: 'Свет',
+  },
+  full_house: {
+    id: 'full_house',
+    title: 'Дом обжит',
+    text: 'В комнатах есть где спать, где греться и на что смотреть.',
+    unlocks: 'Уют',
+  },
+  koi_pond: {
+    id: 'koi_pond',
+    title: 'Карпы',
+    text: 'Пруд ожил. Кои ходят кругами и никуда не спешат.',
+    unlocks: 'Пруд',
+  },
+  old_tree: {
+    id: 'old_tree',
+    title: 'Старое дерево',
+    text: 'Одно из ваших деревьев выросло полностью. Это заняло неделю.',
+    unlocks: 'Время',
+  },
+  hundred: {
+    id: 'hundred',
+    title: 'Сто вещей',
+    text: 'В саду сотня предметов, и каждый поставлен вами.',
+    unlocks: 'Мастерство',
+  },
 };
