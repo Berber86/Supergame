@@ -1326,3 +1326,296 @@ input[type='range'].dev-hour {
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
+
+/* =====================================================================
+   ТЕЛЕФОН, АЛЬБОМНАЯ ОРИЕНТАЦИЯ
+   =====================================================================
+   Основной случай для нашего игрока. Высота здесь — самый дефицитный
+   ресурс: на 360–430 px по вертикали нижняя выдвижная панель каталога
+   съедала бы половину сада. Поэтому в альбомной ориентации каталог
+   уезжает вбок, а всё управление жмётся к краям, оставляя середину
+   экрана саду.
+
+   Рабочая область считается от safe-area: вырез камеры и скруглённые
+   углы иначе срезают кнопки.
+   ===================================================================== */
+
+:root {
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  /* Палец — не курсор: минимальная цель 44 px по рекомендациям Apple и Google */
+  --touch-min: 44px;
+}
+
+/* Убираем всё, что на пальце только мешает */
+body.touch * {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+body.touch #garden {
+  touch-action: none; /* жесты разбираем сами, браузер не должен скроллить */
+}
+
+/* Подписи-«тултипы» появляются по наведению — на пальце наведения нет */
+body.touch .tool-btn .label {
+  display: none;
+}
+
+@media (hover: none) and (orientation: landscape) and (max-height: 560px) {
+  /* ---- Часы: компактная строка в углу ---- */
+  .time-card {
+    top: calc(8px + var(--safe-t));
+    left: calc(10px + var(--safe-l));
+    padding: 6px 11px 5px;
+    min-width: 0;
+  }
+  .time-row {
+    gap: 8px;
+  }
+  .clock {
+    font-size: 17px;
+  }
+  .season-kanji {
+    font-size: 17px;
+  }
+  .time-sub {
+    font-size: 10.5px;
+  }
+  .season-bar {
+    height: 2px;
+    margin-top: 4px;
+  }
+
+  /* ---- Кнопки: сетка 2×4 у правого края ----
+     Восемь кнопок по 44 px столбцом дают 401 px — больше, чем высота
+     альбомного экрана телефона (обычно 390–430 px). Ставим в две колонки:
+     197 px по высоте, и цели остаются крупными. */
+  .tools {
+    right: calc(8px + var(--safe-r));
+    top: 50%;
+    display: grid;
+    grid-template-columns: repeat(2, var(--touch-min));
+    gap: 7px;
+    direction: rtl; /* первая кнопка — ближе к краю экрана */
+  }
+  .tools > * {
+    direction: ltr;
+  }
+  .tool-btn {
+    width: var(--touch-min);
+    height: var(--touch-min);
+  }
+  /* Наведения нет — гасим анимации, они только дёргают картинку */
+  .tool-btn:hover {
+    transform: none;
+  }
+  .tool-btn:active {
+    transform: scale(0.93);
+  }
+
+  /* ---- Каталог: боковая панель, а не нижняя шторка ----
+     Снизу вверх он забирал бы больше половины высоты экрана. */
+  .catalog {
+    top: 0;
+    bottom: 0;
+    left: auto;
+    right: 0;
+    width: min(330px, 62vw);
+    transform: translateX(102%);
+    display: flex;
+    align-items: stretch;
+  }
+  .catalog.open {
+    transform: translateX(0);
+  }
+  .catalog-inner {
+    position: relative; /* точка отсчёта для ручки, съехавшей на бок */
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: none;
+    border-radius: 12px 0 0 12px;
+    border: 1px solid rgba(80, 56, 34, 0.4);
+    border-right: none;
+    box-shadow: -14px 0 46px rgba(40, 28, 18, 0.42);
+    padding-right: var(--safe-r);
+  }
+
+  /* Шнур-ручка переезжает на левый бок панели */
+  .catalog-handle {
+    position: absolute;
+    left: -22px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 22px;
+    height: 74px;
+    border-radius: 8px 0 0 8px;
+    background: rgba(48, 34, 22, 0.82);
+    border: 1px solid rgba(80, 56, 34, 0.4);
+    border-right: none;
+  }
+  .catalog-handle .cord {
+    width: 5px;
+    height: 42px;
+    background: linear-gradient(180deg, var(--silk), var(--silk-light), var(--silk));
+  }
+
+  .tabs {
+    padding: calc(4px + var(--safe-t)) 8px 0;
+    flex: 0 0 auto;
+  }
+  .tab {
+    padding: 9px 12px 8px;
+    font-size: 13px;
+    min-height: var(--touch-min);
+  }
+
+  /* Предметы — сеткой в две колонки: вертикальная прокрутка на телефоне
+     привычнее горизонтальной, и за раз видно больше. */
+  .items {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    padding: 10px 10px calc(12px + var(--safe-b));
+    overflow-x: hidden;
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    align-content: start;
+    -webkit-overflow-scrolling: touch;
+  }
+  .item {
+    width: auto;
+    padding: 7px 4px 8px;
+  }
+  .item:hover {
+    transform: none;
+  }
+  .item .thumb {
+    height: 44px;
+  }
+  .item .name {
+    font-size: 12px;
+  }
+  .item .hint {
+    display: none; /* в двух колонках подсказка не влезает и ломает сетку */
+  }
+
+  /* ---- Панель строителя: горизонтальная лента у нижнего края ---- */
+  .buildbar {
+    left: calc(10px + var(--safe-l));
+    right: auto;
+    bottom: calc(8px + var(--safe-b));
+    transform: none;
+    padding: 5px 7px;
+    gap: 4px;
+  }
+  .bb-btn,
+  .bb-size {
+    width: 38px;
+    height: 38px;
+  }
+
+  /* ---- Подсказка: справа от панели строителя, не поверх неё ----
+     Панель строителя занимает слева около 400 px, кнопки — около 100 px
+     справа. Подсказка живёт в промежутке и обрезается многоточием. */
+  .hint-bar {
+    bottom: calc(10px + var(--safe-b));
+    left: auto;
+    right: calc(108px + var(--safe-r));
+    transform: none;
+    font-size: 11.5px;
+    padding: 6px 12px;
+    max-width: min(300px, 38vw);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Когда каталог открыт, он закрывает правый край — подсказку убираем,
+     иначе она оказывается под панелью и читается наполовину. */
+  body.building .hint-bar {
+    opacity: 0;
+  }
+
+  /* ---- Всплывающие панели: вписываем в невысокий экран ---- */
+  .gardens-panel,
+  .settings-panel,
+  .dev-panel {
+    top: calc(6px + var(--safe-t));
+    right: calc(58px + var(--safe-r));
+    width: min(300px, 64vw);
+    max-height: calc(100dvh - 12px - var(--safe-t) - var(--safe-b));
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .milestone {
+    width: min(320px, 74vw);
+    padding: 16px 20px 15px;
+  }
+  .milestone h3 {
+    font-size: 18px;
+  }
+  .milestone p {
+    font-size: 13px;
+  }
+
+  .scroll-help {
+    max-height: calc(100dvh - 16px - var(--safe-t) - var(--safe-b));
+    overflow-y: auto;
+  }
+
+  .splash h1 {
+    font-size: 26px;
+  }
+  .splash-inner p {
+    font-size: 13px;
+  }
+}
+
+/* ---------------------------------------------------------------------
+   Телефон, книжная ориентация: просим повернуть.
+   Сад — широкая картина, в вертикальный экран он не помещается так,
+   чтобы было на что смотреть. Но это подсказка, а не блокировка:
+   играть можно и стоя.
+   --------------------------------------------------------------------- */
+
+.rotate-note {
+  position: absolute;
+  left: 50%;
+  bottom: calc(18px + var(--safe-b));
+  transform: translateX(-50%);
+  display: none;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 15px;
+  border-radius: 20px;
+  background: rgba(38, 28, 20, 0.82);
+  color: var(--paper);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(7px);
+  z-index: 30;
+  white-space: nowrap;
+}
+
+.rotate-note svg {
+  animation: rotate-hint 2.6s var(--ease) infinite;
+}
+
+@keyframes rotate-hint {
+  0%, 62%, 100% { transform: rotate(0deg); }
+  78%, 92% { transform: rotate(-90deg); }
+}
+
+body.touch.portrait .rotate-note {
+  display: flex;
+}
+
+body.touch.portrait .rotate-note.dismissed {
+  display: none;
+}

@@ -42,7 +42,8 @@ async function main() {
   const scene = new Scene(canvas);
   scene.resize();
   scene.centerOn(GRID / 2, GRID / 2 + 1.5);
-  scene.camera.zoom = Number(process.env.ZOOM ?? 0.85);
+  if (process.env.FIT) scene.fitToView();
+  else scene.camera.zoom = Number(process.env.ZOOM ?? 0.85);
   if (process.env.NOROOF) { scene.roofVisible = false; scene.snapRoof(); }
   if (process.env.NOPARTICLES) scene.particles = false;
   if (process.env.CX) scene.centerOn(Number(process.env.CX), Number(process.env.CY ?? 12));

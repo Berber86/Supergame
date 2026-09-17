@@ -151,6 +151,27 @@ export class Scene {
     this.flow.markDirty();
   }
 
+  /**
+   * Масштаб, при котором сад целиком помещается в экран.
+   *
+   * На телефоне в альбомной ориентации высота около 390 px — прежний
+   * нижний предел 0.45 всё ещё показывал лишь угол сада. Считаем предел
+   * от размеров окна, а не берём числом.
+   */
+  fitZoom(): number {
+    // Сад в экранных координатах: ромб шириной GRID*TILE_W и высотой GRID*TILE_H
+    const w = GRID * TILE_W;
+    const h = GRID * TILE_H + LEVEL_H * 4;
+    // Небольшой запас по краям, чтобы сад не упирался в рамку
+    return Math.min(this.viewW / (w * 1.04), this.viewH / (h * 1.12));
+  }
+
+  /** Показать сад целиком. */
+  fitToView(): void {
+    this.camera.zoom = clamp(this.fitZoom(), 0.12, 2.4);
+    this.centerOn(GRID / 2, GRID / 2);
+  }
+
   centerOn(tx: number, ty: number): void {
     const p = isoToScreen(tx, ty);
     this.camera.x = p.x;
@@ -754,7 +775,10 @@ export class Scene {
     const ry = (GRID * TILE_H) / 2 + 200;
     this.camera.x = clamp(this.camera.x, cx - rx, cx + rx);
     this.camera.y = clamp(this.camera.y, cy - ry, cy + ry);
-    this.camera.zoom = clamp(this.camera.zoom, 0.45, 2.4);
+    // Нижний предел — «сад целиком», но не крупнее 0.45: на большом мониторе
+    // не даём отдалиться в пустоту, а на телефоне позволяем увидеть всё.
+    const minZoom = Math.min(0.45, this.fitZoom() * 0.85);
+    this.camera.zoom = clamp(this.camera.zoom, minZoom, 2.4);
   }
 }
 

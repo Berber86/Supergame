@@ -105,6 +105,15 @@ export class UI {
     this.els.btnHelp = mk('scroll', 'Свиток (H)');
     layer.appendChild(tools);
 
+    // Подсказка повернуть телефон: сад — широкая картина, и в книжной
+    // ориентации от него видно слишком мало. Именно подсказка, а не
+    // заглушка: играть можно и вертикально, просто хуже.
+    const rotate = this.el('div', 'rotate-note');
+    rotate.innerHTML = `${svgIcon('phone', 19)}<span>Поверните телефон — сад шире, чем экран</span>`;
+    rotate.addEventListener('click', () => rotate.classList.add('dismissed'));
+    layer.appendChild(rotate);
+    this.els.rotate = rotate;
+
     this.els.btnBuild.addEventListener('click', () => this.toggleBuild());
     this.els.btnZen.addEventListener('click', () => this.hooks.onZen());
     this.els.btnShot.addEventListener('click', () => this.hooks.onScreenshot());
@@ -167,7 +176,9 @@ export class UI {
 
     // --- Подсказка ---
     const hint = this.el('div', 'hint-bar fade');
-    hint.textContent = 'Перетаскивайте — осматривайте сад. Колесо — приблизить.';
+    hint.textContent = matchMedia('(hover: none)').matches
+      ? 'Проведите пальцем — осмотрите сад. Щипок — приблизить.'
+      : 'Перетаскивайте — осматривайте сад. Колесо — приблизить.';
     layer.appendChild(hint);
     this.els.hint = hint;
 
@@ -184,24 +195,40 @@ export class UI {
 
     // --- Свиток помощи ---
     const help = this.el('div', 'scroll-panel paper');
-    help.innerHTML = `
-      <div class="scroll-close">${svgIcon('close', 18)}</div>
-      <h2>Усадьба Безмятежности</h2>
-      <div class="lead">Здесь некуда спешить. Сад растёт сам, а вы просто выбираете, чему в нём быть.</div>
-      <div class="section">Взгляд</div>
-      <dl>
+    // На телефоне свиток рассказывает про жесты, а не про клавиши:
+    // список сочетаний там бесполезен и только занимает экран.
+    const touch = matchMedia('(hover: none)').matches;
+    const look = touch
+      ? `
+        <dt>Провести</dt><dd>Двигать камеру по усадьбе</dd>
+        <dt>Щипок</dt><dd>Приблизить или отдалить</dd>
+        <dt>Глаз</dt><dd>Созерцание — интерфейс растворяется</dd>
+        <dt>Камера</dt><dd>Снимок сада свитком</dd>
+        <dt>Нота</dt><dd>Звук сада: листва, вода, цикады, дождь</dd>`
+      : `
         <dt>Перетащить</dt><dd>Двигать камеру по усадьбе</dd>
         <dt>Колесо</dt><dd>Приблизить или отдалить</dd>
         <dt>Z</dt><dd>Созерцание — интерфейс растворяется</dd>
         <dt>P</dt><dd>Сохранить снимок сада</dd>
-        <dt>M</dt><dd>Звук сада: листва, вода, цикады, дождь</dd>
-      </dl>
-      <div class="section">Строительство</div>
-      <dl>
+        <dt>M</dt><dd>Звук сада: листва, вода, цикады, дождь</dd>`;
+
+    const build = touch
+      ? `
+        <dt>Рука</dt><dd>Открыть или закрыть каталог</dd>
+        <dt>Касание</dt><dd>Поставить выбранное</dd>
+        <dt>Провести</dt><dd>Рисовать землёй и мелочами</dd>
+        <dt>Держать</dt><dd>Убрать то, что под пальцем</dd>
+        <dt>Пипетка</dt><dd>Подобрать то, что уже стоит</dd>
+        <dt>Перенос</dt><dd>Коснуться предмета, затем места</dd>
+        <dt>Заливка</dt><dd>Залить область материалом</dd>
+        <dt>Тропа</dt><dd>Два касания — дорога ляжет сама</dd>
+        <dt>1 · 3 · 5</dt><dd>Размер кисти земли</dd>
+        <dt>Стрелки</dt><dd>Отменить и вернуть</dd>
+        <dt>Крыша</dt><dd>Убрать кровлю — заглянуть в комнаты</dd>`
+      : `
         <dt>B</dt><dd>Открыть или закрыть каталог</dd>
         <dt>Клик</dt><dd>Поставить выбранное</dd>
         <dt>Зажать</dt><dd>Рисовать землёй и мелочами</dd>
-        <dt>R</dt><dd>Повернуть предмет</dd>
         <dt>X / ПКМ</dt><dd>Убрать предмет</dd>
         <dt>I</dt><dd>Пипетка — подобрать то, что уже стоит</dd>
         <dt>V</dt><dd>Перенести поставленное</dd>
@@ -213,16 +240,30 @@ export class UI {
         <dt>S</dt><dd>Настройки: частицы, контраст, размер</dd>
         <dt>Shift+P</dt><dd>Формат снимка: широкий · квадрат · свиток</dd>
         <dt>U</dt><dd>Усадьбы: несколько садов, файл на диск</dd>
-        <dt>Esc</dt><dd>Отложить инструмент</dd>
-      </dl>
-      <div class="section">Время</div>
-      <dl>
+        <dt>Esc</dt><dd>Отложить инструмент</dd>`;
+
+    const timeRows = touch
+      ? `
+        <dt>Часы</dt><dd>Время в саду равно вашему</dd>
+        <dt>Сезон</dt><dd>Три реальных дня; год — двенадцать</dd>
+        <dt>Рост</dt><dd>Сакура взрослеет за неделю. Ничто не гибнет.</dd>`
+      : `
         <dt>Часы</dt><dd>Время в саду равно вашему</dd>
         <dt>Сезон</dt><dd>Три реальных дня; год — двенадцать</dd>
         <dt>Рост</dt><dd>Сакура взрослеет за неделю. Ничто не гибнет.</dd>
         <dt>T</dt><dd>Мастерская времени: выбрать час, сезон и погоду</dd>
-        <dt>← →</dt><dd>Сдвинуть час; с Shift — сменить сезон</dd>
-      </dl>
+        <dt>← →</dt><dd>Сдвинуть час; с Shift — сменить сезон</dd>`;
+
+    help.innerHTML = `
+      <div class="scroll-close">${svgIcon('close', 18)}</div>
+      <h2>Усадьба Безмятежности</h2>
+      <div class="lead">Здесь некуда спешить. Сад растёт сам, а вы просто выбираете, чему в нём быть.</div>
+      <div class="section">Взгляд</div>
+      <dl>${look}</dl>
+      <div class="section">Строительство</div>
+      <dl>${build}</dl>
+      <div class="section">Время</div>
+      <dl>${timeRows}</dl>
       <div class="section">Мастерство</div>
       <dl>
         <dt>Вехи</dt><dd>Новые вкладки открываются от ваших же дел: выкопали пруд — пришли лотосы</dd>
@@ -381,15 +422,30 @@ export class UI {
     this.renderItems();
     this.syncBuildbar();
     this.hooks.onSelect(sel);
-    if (sel.kind === 'item') this.setHint(`${sel.item.name} — клик, чтобы поставить · R — поворот`);
-    else if (sel.kind === 'brush') {
+    // Подсказки называют то действие, которое у игрока под рукой:
+    // на телефоне «коснитесь», на мыши «кликните».
+    const touch = matchMedia('(hover: none)').matches;
+    const tap = touch ? 'коснитесь' : 'кликните';
+    if (sel.kind === 'item') {
+      this.setHint(
+        touch
+          ? `${sel.item.name} — коснитесь, чтобы поставить`
+          : `${sel.item.name} — клик, чтобы поставить · R — поворот`,
+      );
+    } else if (sel.kind === 'brush') {
       const sz = sel.brush.kind === 'ground' && this.brushSize > 1 ? ` · кисть ${this.brushSize}×${this.brushSize}` : '';
-      this.setHint(`${sel.brush.name} — зажмите и ведите${sz}`);
-    } else if (sel.kind === 'erase') this.setHint('Кликните по предмету, чтобы убрать');
-    else if (sel.kind === 'pick') this.setHint('Пипетка — кликните по тому, что хотите продолжить ставить');
-    else if (sel.kind === 'fill') this.setHint(`Заливка «${sel.name}» — кликните по области`);
-    else if (sel.kind === 'move') this.setHint('Перенос — тяните поставленное на новое место');
-    else if (sel.kind === 'path') this.setHint('Тропа — отметьте начало, потом конец; дорога ляжет сама');
+      this.setHint(touch ? `${sel.brush.name} — ведите пальцем${sz}` : `${sel.brush.name} — зажмите и ведите${sz}`);
+    } else if (sel.kind === 'erase') {
+      this.setHint(`${tap[0].toUpperCase()}${tap.slice(1)} по предмету, чтобы убрать`);
+    } else if (sel.kind === 'pick') {
+      this.setHint(`Пипетка — ${tap} по тому, что хотите продолжить ставить`);
+    } else if (sel.kind === 'fill') {
+      this.setHint(`Заливка «${sel.name}» — ${tap} по области`);
+    } else if (sel.kind === 'move') {
+      this.setHint(touch ? 'Перенос — коснитесь предмета, затем места' : 'Перенос — тяните поставленное на новое место');
+    } else if (sel.kind === 'path') {
+      this.setHint('Тропа — отметьте начало, потом конец; дорога ляжет сама');
+    }
   }
 
   toggleBuild(force?: boolean): void {
@@ -397,6 +453,9 @@ export class UI {
     this.els.catalog.classList.toggle('open', this.buildOpen);
     this.els.buildbar.classList.toggle('show', this.buildOpen);
     this.els.btnBuild.classList.toggle('active', this.buildOpen);
+    // Режим стройки виден и в CSS: на телефоне по нему прячется подсказка,
+    // которую иначе закрывает боковой каталог.
+    document.body.classList.toggle('building', this.buildOpen);
     if (!this.buildOpen) this.select({ kind: 'none' });
     else this.setHint('Выберите, чему появиться в саду');
     this.hooks.onToggleBuild(this.buildOpen);

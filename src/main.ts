@@ -24,6 +24,7 @@ import { waterLoudness } from './render/water';
 import { findPath, layPath } from './world/paths';
 import { ShotRatio, composeScroll } from './ui/snapshot';
 import { SettingsPanel, applyView, loadView } from './ui/settings';
+import { TouchInput, isTouchDevice } from './ui/touch';
 import { PlacedObject } from './world/types';
 
 const app = document.getElementById('app')!;
@@ -70,8 +71,14 @@ const timeCtl = new TimeControl();
 const weatherSys = new WeatherSystem();
 const audio = new GardenAudio();
 const scene = new Scene(canvas);
-scene.centerOn(GRID / 2, GRID / 2 + 1.5);
-scene.camera.zoom = 0.85;
+// Начальный вид: на большом экране — привычный крупный план, на телефоне
+// сад целиком, иначе игрок видит только угол своего сада.
+if (isTouchDevice()) {
+  scene.fitToView();
+} else {
+  scene.centerOn(GRID / 2, GRID / 2 + 1.5);
+  scene.camera.zoom = 0.85;
+}
 
 let selection: Selection = { kind: 'none' };
 let ghostRot = 0;
@@ -235,6 +242,10 @@ let pointerY = 0;
 let hasPointer = false;
 
 canvas.addEventListener('pointerdown', (e) => {
+  // На пальце работает TouchInput; браузер дублирует касания
+  // синтетическими pointer-событиями, и без этой отсечки
+  // каждое касание срабатывало бы дважды.
+  if (e.pointerType === 'touch') return;
   canvas.setPointerCapture(e.pointerId);
   lastX = e.clientX;
   lastY = e.clientY;
@@ -270,6 +281,7 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 
 canvas.addEventListener('pointermove', (e) => {
+  if (e.pointerType === 'touch') return;
   pointerX = e.clientX;
   pointerY = e.clientY;
   hasPointer = true;
@@ -325,8 +337,14 @@ const endPointer = () => {
   canvas.classList.remove('dragging');
   saveWorld();
 };
-canvas.addEventListener('pointerup', endPointer);
-canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('pointerup', (e) => {
+  if (e.pointerType === 'touch') return;
+  endPointer();
+});
+canvas.addEventListener('pointercancel', (e) => {
+  if (e.pointerType === 'touch') return;
+  endPointer();
+});
 canvas.addEventListener('pointerleave', () => {
   hasPointer = false;
   scene.ghost = null;
@@ -340,7 +358,7 @@ canvas.addEventListener(
     wake();
     const before = scene.screenToWorld(e.clientX, e.clientY);
     const k = Math.exp(-e.deltaY * 0.0012);
-    scene.camera.zoom = clamp(scene.camera.zoom * k, 0.45, 2.4);
+    scene.camera.zoom = clamp(scene.camera.zoom * k, 0.12, 2.4);
     const after = scene.screenToWorld(e.clientX, e.clientY);
     scene.camera.x += before.x - after.x;
     scene.camera.y += before.y - after.y;
@@ -350,32 +368,147 @@ canvas.addEventListener(
   { passive: false },
 );
 
-// Пинч-зум на тач
-let pinchDist = 0;
-canvas.addEventListener(
-  'touchstart',
-  (e) => {
-    if (e.touches.length === 2) {
-      pinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      dragging = false;
-      painting = false;
-    }
-  },
-  { passive: true },
-);
-canvas.addEventListener(
-  'touchmove',
-  (e) => {
-    if (e.touches.length === 2 && pinchDist > 0) {
-      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      scene.camera.zoom = clamp(scene.camera.zoom * (d / pinchDist), 0.45, 2.4);
-      pinchDist = d;
-      scene.clampCamera();
+// ---------------- Управление пальцем ----------------
+//
+// На телефоне работает отдельный разбор жестов: у пальца нет правой кнопки,
+// колеса и наведения. Мышиные обработчики при этом остаются — на планшете
+// с трекпадом могут пригодиться оба.
+
+const touchMode = isTouchDevice();
+if (touchMode) document.body.classList.add('touch');
+
+/** Масштаб вокруг точки: картинка не должна уезжать из-под пальцев. */
+function zoomAt(k: number, sx: number, sy: number): void {
+  const before = scene.screenToWorld(sx, sy);
+  scene.camera.zoom = clamp(scene.camera.zoom * k, 0.12, 2.4);
+  const after = scene.screenToWorld(sx, sy);
+  scene.camera.x += before.x - after.x;
+  scene.camera.y += before.y - after.y;
+  scene.clampCamera();
+}
+
+if (touchMode) {
+  new TouchInput(canvas, {
+    isPainting: () => selection.kind !== 'none',
+
+    onTap(x, y) {
       wake();
+      if (selection.kind === 'none') return;
+      pointerX = x;
+      pointerY = y;
+      hasPointer = true;
+      // Перенос пальцем идёт в два касания: взять и поставить.
+      // Тащить объект и одновременно видеть его под пальцем невозможно.
+      if (selection.kind === 'move') {
+        tapMove(x, y);
+        return;
+      }
+      applyAt(x, y, true);
+      if (history.commit()) syncHistoryUI();
+      history.breakMerge();
+      saveWorld();
+    },
+
+    onHold(x, y) {
+      // Долгое нажатие заменяет правую кнопку мыши
+      wake();
+      applyErase(x, y);
+      saveWorld();
+    },
+
+    onDragStart(x, y) {
+      wake();
+      // Кистью и мелочью рисуем, всем остальным — возим камеру.
+      const paintable =
+        selection.kind === 'brush' || (selection.kind === 'item' && selection.item.step < 1);
+      if (paintable) {
+        painting = true;
+        pointerX = x;
+        pointerY = y;
+        hasPointer = true;
+        applyAt(x, y, true);
+      } else {
+        dragging = true;
+      }
+    },
+
+    onDragMove(x, y, dx, dy) {
+      if (painting) {
+        pointerX = x;
+        pointerY = y;
+        applyAt(x, y, false);
+      } else if (dragging) {
+        scene.camera.x -= dx / scene.camera.zoom;
+        scene.camera.y -= dy / scene.camera.zoom;
+        scene.clampCamera();
+      }
+    },
+
+    onDragEnd() {
+      if (painting) {
+        if (history.commit()) syncHistoryUI();
+        history.breakMerge();
+        saveWorld();
+      }
+      painting = false;
+      dragging = false;
+      // Призрак под пальцем больше не нужен — палец убран
+      scene.ghost = null;
+      hasPointer = false;
+    },
+
+    onPinch(k, cx, cy, dx, dy) {
+      wake();
+      zoomAt(k, cx, cy);
+      scene.camera.x -= dx / scene.camera.zoom;
+      scene.camera.y -= dy / scene.camera.zoom;
+      scene.clampCamera();
+    },
+
+    onPinchEnd() {
+      scene.ghost = null;
+      hasPointer = false;
+    },
+  });
+}
+
+/** Перенос в два касания: первое берёт предмет, второе ставит. */
+function tapMove(sx: number, sy: number): void {
+  const p = scene.pickTile(sx, sy, world);
+  if (!moving) {
+    const obj = world.pickObject(p.tx, p.ty);
+    if (!obj) {
+      ui.toast('Здесь нечего переносить');
+      return;
     }
-  },
-  { passive: true },
-);
+    history.begin('перенос', null);
+    moving = { obj, fromX: obj.tx, fromY: obj.ty };
+    scene.movingId = obj.id;
+    audio.place();
+    ui.setHint('Теперь коснитесь места, куда поставить');
+    return;
+  }
+
+  const item = ITEM_BY_ID.get(moving.obj.type);
+  if (item) {
+    const s2 =
+      item.step === 1
+        ? { tx: Math.floor(p.tx - (item.w - 1) / 2), ty: Math.floor(p.ty - (item.h - 1) / 2) }
+        : { tx: floorTo(p.tx, item.step), ty: floorTo(p.ty, item.step) };
+    world.moveObject(moving.obj, s2.tx, s2.ty);
+  }
+  const m = moving;
+  moving = null;
+  scene.movingId = -1;
+  if (m.obj.tx === m.fromX && m.obj.ty === m.fromY) {
+    history.abort();
+  } else if (history.commit()) {
+    ui.toast(`${item?.name ?? 'Предмет'} переставлен`);
+    syncHistoryUI();
+  }
+  ui.setHint('Перенос — коснитесь предмета, затем места');
+  saveWorld();
+}
 
 window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
@@ -456,7 +589,34 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+/** Книжная ориентация — для подсказки «поверните телефон». */
+function syncOrientation(): void {
+  const portrait = window.innerHeight > window.innerWidth;
+  document.body.classList.toggle('portrait', portrait);
+}
+syncOrientation();
+window.addEventListener('orientationchange', () => {
+  // Размеры окна после поворота приходят не сразу — ждём кадр-другой
+  setTimeout(() => {
+    syncOrientation();
+    scene.resize();
+    scene.markTerrainDirty();
+    scene.clampCamera();
+  }, 160);
+});
+
+// В мобильных браузерах адресная строка сворачивается на ходу и меняет
+// высоту окна. visualViewport сообщает об этом точнее, чем resize.
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => {
+    scene.resize();
+    scene.markTerrainDirty();
+    scene.clampCamera();
+  });
+}
+
 window.addEventListener('resize', () => {
+  syncOrientation();
   scene.resize();
   scene.markTerrainDirty();
 });
