@@ -24,6 +24,7 @@ import { waterLoudness } from './render/water';
 import { findPath, layPath } from './world/paths';
 import { ShotRatio, composeScroll } from './ui/snapshot';
 import { SettingsPanel, applyView, loadView } from './ui/settings';
+import { Splash } from './ui/splash';
 import { TouchInput, isTouchDevice } from './ui/touch';
 import { PlacedObject } from './world/types';
 
@@ -940,21 +941,26 @@ ui.onSound = () => void toggleSound();
 
 // ---------------- Заставка ----------------
 
-const splash = document.createElement('div');
-splash.className = 'splash';
-splash.innerHTML = `
-  <div class="splash-inner">
-    <h1>静かな庭</h1>
-    <div class="sub">Усадьба Безмятежности</div>
-    <div class="enter">войти в сад</div>
-  </div>`;
-document.body.appendChild(splash);
-splash.querySelector('.enter')!.addEventListener('click', () => {
-  splash.classList.add('hide');
-  setTimeout(() => splash.remove(), 1400);
-  wake();
-  void toggleSound(true);
-});
+// Лист рисуется по настоящим часам игрока и по настоящей погоде мира: если
+// в саду сумерки и тучи, заставка не обещает ясного полдня (принцип 5).
+const splash = new Splash(
+  document.body,
+  view,
+  () => {
+    const time = timeCtl.compute();
+    return { time, atm: buildAtmosphere(time, weatherSys.state.overcast) };
+  },
+  {
+    onEnter() {
+      wake();
+      // Этот же жест разблокирует звук; чаша звучит, когда лист уже тает —
+      // мастер-громкость нарастает 1.2 с, и к её пику входит игрок, а не удар.
+      void toggleSound(true).then(() => {
+        window.setTimeout(() => audio.bowl(0.9), 900);
+      });
+    },
+  },
+);
 
 // ---------------- Игровой цикл ----------------
 
@@ -962,6 +968,7 @@ let last = performance.now();
 let eveningChecked = '';
 let audioAccum = 0;
 let observeAccum = 1200;
+let sceneAccum = 0;
 
 /** Что сейчас звучит вокруг: считаем по составу сада рядом с камерой. */
 function gatherAudioContext() {
@@ -1025,7 +1032,15 @@ function frame(now: number): void {
   // Интерфейс растворяется в бездействии
   if (!zenMode && !ui.buildOpen && now - lastInteraction > IDLE_MS) setZen(true);
 
-  scene.render(world, atm, now, dt, life, weatherSys.state);
+  // Пока на экране заставка, сад рисуется вполсилы: мир и время тикают как
+  // обычно, а тяжёлый кадр не дублируется вторым холстом. Стоит нажать
+  // «войти» — и рендер идёт полным ходом, поэтому за растворением листа
+  // виден сад, а не пустой холст.
+  sceneAccum -= dt;
+  if (!splash.isOpen || sceneAccum <= 0) {
+    sceneAccum = 150;
+    scene.render(world, atm, now, dt, life, weatherSys.state);
+  }
   ui.tick(t, atm);
   devPanel.tick();
 

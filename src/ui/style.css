@@ -521,61 +521,7 @@ body.zen .fade:not(.keep) {
 
 /* ---------- Заставка ---------- */
 
-.splash {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  display: grid;
-  place-items: center;
-  background: radial-gradient(120% 90% at 50% 40%, #2f3b3c, #1a2224 70%);
-  transition: opacity 1.3s var(--ease);
-}
-
-.splash.hide {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.splash-inner {
-  text-align: center;
-  color: var(--paper);
-}
-
-.splash h1 {
-  font-family: var(--jp);
-  font-weight: 300;
-  font-size: 46px;
-  letter-spacing: 0.22em;
-  margin: 0 0 10px;
-  color: #f4ecd9;
-  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
-}
-
-.splash .sub {
-  font-size: 17px;
-  font-style: italic;
-  letter-spacing: 0.1em;
-  color: rgba(244, 236, 217, 0.66);
-  margin-bottom: 30px;
-}
-
-.splash .enter {
-  display: inline-block;
-  padding: 12px 34px;
-  border-radius: 2px;
-  border: 1px solid rgba(244, 236, 217, 0.45);
-  color: #f4ecd9;
-  font-size: 16.5px;
-  letter-spacing: 0.15em;
-  cursor: pointer;
-  transition: all 0.35s var(--ease);
-  background: rgba(244, 236, 217, 0.05);
-}
-
-.splash .enter:hover {
-  background: rgba(244, 236, 217, 0.15);
-  letter-spacing: 0.2em;
-}
+/* Живёт отдельным файлом: src/ui/splash.css (подключается из src/ui/splash.ts). */
 
 /* ---------- Свиток помощи ---------- */
 
@@ -733,9 +679,6 @@ body.zen .fade:not(.keep) {
     font-size: 12.5px;
     bottom: 16px;
     padding: 7px 14px;
-  }
-  .splash h1 {
-    font-size: 30px;
   }
 }
 
@@ -1578,13 +1521,6 @@ body.touch .tool-btn .label {
   .scroll-help {
     max-height: calc(100dvh - 16px - var(--safe-t) - var(--safe-b));
     overflow-y: auto;
-  }
-
-  .splash h1 {
-    font-size: 26px;
-  }
-  .splash-inner p {
-    font-size: 13px;
   }
 }
 

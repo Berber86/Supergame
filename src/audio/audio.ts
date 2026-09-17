@@ -307,6 +307,52 @@ export class GardenAudio {
     }
   }
 
+  /**
+   * Поющая чаша (ринсэки): мягкое касание колотушки и долгий звон.
+   *
+   * Обертоны чаши не кратны основному тону — отсюда тот самый «плывущий»
+   * звук, который не надоедает. Два осциллятора в нескольких центах дают
+   * биение: чаша звучит живо, а не как органная труба.
+   */
+  bowl(amount = 1): void {
+    if (!this.ctx || !this.enabled) return;
+    const ctx = this.ctx;
+    const base = 312 + rnd() * 26;
+
+    // касание войлока — короткий шумовой всплеск
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf!;
+    src.loop = true;
+    const nf = ctx.createBiquadFilter();
+    nf.type = 'bandpass';
+    nf.frequency.value = base * 3.1;
+    nf.Q.value = 3;
+    src.connect(nf);
+    const ng = this.env(nf, 0.05 * amount, 0.004, 0.07);
+    src.start();
+    src.stop(ctx.currentTime + 0.2);
+    setTimeout(() => ng.disconnect(), 420);
+
+    for (const [mult, amp, decay] of [
+      [1, 1, 9.5],
+      [2.71, 0.4, 6.4],
+      [4.16, 0.2, 4.4],
+      [5.43, 0.11, 3.2],
+    ] as [number, number, number][]) {
+      for (const detune of [-4, 4]) {
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = base * mult;
+        osc.detune.value = detune;
+        const life = decay * (1 - mult * 0.05);
+        const g = this.env(osc, 0.05 * amp * amount, 0.014, life);
+        osc.start();
+        osc.stop(ctx.currentTime + life + 1);
+        setTimeout(() => g.disconnect(), (life + 1.4) * 1000);
+      }
+    }
+  }
+
   /** Сиси-одоси: глухой деревянный стук о камень. */
   knock(): void {
     if (!this.ctx || !this.enabled) return;
