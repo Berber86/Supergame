@@ -100,6 +100,14 @@ function drawBranches(d: DrawCtx, tx: number, ty: number, n: number, len: number
 }
 
 /** Голая зимняя крона: рекурсивное ветвление — читается как настоящее дерево. */
+/**
+ * Голая крона зимой.
+ *
+ * Раньше все породы ветвились одинаково, и зимой сакура, клён, ива и гинкго
+ * становились неотличимы — в каталоге стояли четыре одинаковые картинки.
+ * Теперь силуэт берётся из тех же пропорций кроны, что и летом: широкая
+ * и низкая у ивы, узкая и высокая у гинкго.
+ */
 function drawBareCrown(
   d: DrawCtx,
   tx: number,
@@ -109,28 +117,35 @@ function drawBareCrown(
   ch: number,
   col: RGB,
   sway: number,
+  droop = 0,
 ): void {
   const { ctx, obj } = d;
+  // Во что вытянута крона: >1 — вширь (ива), <1 — вверх (гинкго)
+  const spreadK = cw / Math.max(1, ch);
   const branch = (x: number, y: number, ang: number, len: number, w: number, depth: number, seed: number) => {
     if (depth > 3 || len < 4) return;
+    // Поникающие ветви ивы клонятся вниз тем сильнее, чем дальше от ствола
+    const sag = droop > 0 ? (droop / 100) * depth * 0.5 : 0;
     const ex = x + Math.sin(ang) * len + sway * 0.15 * depth;
-    const ey = y - Math.cos(ang) * len;
+    const ey = y - Math.cos(ang) * len + sag * len * 0.35;
     taperStroke(ctx, x, y, ex, ey, w, w * 0.55, col, 0.88, Math.sin(ang) * len * 0.1);
     const n = depth < 2 ? 3 : 2;
     for (let i = 0; i < n; i++) {
       const r = hash2(seed * 7 + i, obj.seed + depth, 53);
-      const spread = (0.34 + r * 0.46) * (i % 2 === 0 ? 1 : -1);
+      const spread = (0.34 + r * 0.46) * (i % 2 === 0 ? 1 : -1) * spreadK;
       branch(ex, ey, ang + spread, len * (0.58 + r * 0.22), w * 0.6, depth + 1, seed * 3 + i + 1);
     }
   };
-  const main = 4;
+  // Широкая крона — больше скелетных ветвей и шире их веер
+  const main = spreadK > 1.5 ? 5 : spreadK < 1.1 ? 3 : 4;
+  const fan = 0.5 + spreadK * 0.55;
   for (let i = 0; i < main; i++) {
     const r = hash2(i, obj.seed, 71);
-    const ang = -0.62 + (i / (main - 1)) * 1.24 + (r - 0.5) * 0.28;
-    branch(tx, ty + 4, ang, h * 0.34 * (0.8 + r * 0.4), 3.4, 0, i + 1);
+    const ang = -fan + (i / Math.max(1, main - 1)) * fan * 2 + (r - 0.5) * 0.28;
+    // Длина ветвей — от высоты кроны: у гинкго они тянутся вверх сильнее
+    const reach = h * 0.34 * (0.8 + r * 0.4) * (0.75 + (ch / Math.max(1, cw)) * 0.5);
+    branch(tx, ty + 4, ang, reach, 3.4, 0, i + 1);
   }
-  void cw;
-  void ch;
 }
 
 function makeTree(style: TreeStyle): Drawer {
@@ -152,7 +167,7 @@ function makeTree(style: TreeStyle): Drawer {
 
     if (bare) {
       // зимний силуэт: ветвистая крона + шапки снега
-      drawBareCrown(d, tx, ty, h, cw, ch, branchCol, sway);
+      drawBareCrown(d, tx, ty, h, cw, ch, branchCol, sway, style.droop ?? 0);
       const snow = litc({ r: 247, g: 249, b: 252 }, atm);
       for (let i = 0; i < 7; i++) {
         const r = hash2(i, obj.seed, 9);

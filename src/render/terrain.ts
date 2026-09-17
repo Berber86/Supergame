@@ -500,6 +500,10 @@ function drawSnowCover(ctx: Ctx, world: World, atm: Atmosphere, b: Bounds): void
   // сад превращается в лист бумаги. Держим основу чуть голубее,
   // а на ярком свету дополнительно придерживаем.
   const bright = clamp01((atm.exposure - 1) * 1.2);
+  // Ночью лепка сугробов должна слабеть вместе со светом. Без этого
+  // тёмные пятна остаются во всю силу поверх потемневшего снега,
+  // и ровное поле выглядит грязной крапинкой, а не сугробами.
+  const modelling = 0.35 + clamp01(atm.exposure) * 0.65;
   const snowBase = mix({ r: 242, g: 245, b: 250 }, { r: 214, g: 226, b: 240 }, bright * 0.55);
   const snow = shade(mix(snowBase, atm.lightTint, atm.lightAmount * 0.8), Math.min(atm.exposure, 1.04));
   const shadowSnow = shade(mix({ r: 196, g: 212, b: 234 }, atm.lightTint, atm.lightAmount), Math.min(atm.exposure, 1.04));
@@ -534,12 +538,12 @@ function drawSnowCover(ctx: Ctx, world: World, atm: Atmosphere, b: Bounds): void
       const n = fbm(gx * 0.33, gy * 0.33, 4, 311);
       const p = isoToScreen(gx + 0.5, gy + 0.5, lvl);
       if (n < 0.47) {
-        ctx.fillStyle = css(shadowSnow, (0.47 - n) * 0.85);
+        ctx.fillStyle = css(shadowSnow, (0.47 - n) * 0.85 * modelling);
         blobPath(ctx, p.x, p.y, TILE_W * (0.5 + n), TILE_H * (0.5 + n), Math.round(gx * 19 + gy * 7), 0.36, 10);
         ctx.fill();
       } else if (n > 0.6) {
         // блик на гребне сугроба — но не в полную силу на ярком свету
-        ctx.fillStyle = css({ r: 255, g: 255, b: 255 }, (n - 0.6) * 0.7 * (1 - bright * 0.45));
+        ctx.fillStyle = css({ r: 255, g: 255, b: 255 }, (n - 0.6) * 0.7 * (1 - bright * 0.45) * modelling);
         blobPath(ctx, p.x, p.y, TILE_W * (0.4 + n * 0.6), TILE_H * (0.4 + n * 0.6), Math.round(gx * 41 + gy * 13), 0.34, 10);
         ctx.fill();
       }

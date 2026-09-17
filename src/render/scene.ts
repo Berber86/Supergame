@@ -598,9 +598,14 @@ export class Scene {
         ctx.lineTo(c.x, c.y);
         ctx.lineTo(d.x, d.y);
         ctx.closePath();
-        ctx.fillStyle = css(col, 0.18 * pulse);
+        ctx.fillStyle = css(col, 0.2 * pulse);
         ctx.fill();
-        ctx.strokeStyle = css(col, 0.55 * pulse);
+        // Тёмная подложка под светлым контуром: ночью и на снегу одна
+        // светлая линия сливается с фоном и метку под пальцем не видно.
+        ctx.strokeStyle = css({ r: 30, g: 24, b: 18 }, 0.34 * pulse);
+        ctx.lineWidth = 3.2 / this.camera.zoom;
+        ctx.stroke();
+        ctx.strokeStyle = css(col, 0.85 * pulse);
         ctx.lineWidth = 1.6 / this.camera.zoom;
         ctx.stroke();
       }

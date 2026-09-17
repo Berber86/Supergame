@@ -3,7 +3,6 @@
 import { Atmosphere } from '../world/palette';
 import { drawObject, hasDrawer } from '../render/sprites';
 import { PlacedObject } from '../world/types';
-import { ITEM_BY_ID } from '../world/catalog';
 
 const cache = new Map<string, string>();
 
@@ -20,13 +19,6 @@ export function itemIcon(itemId: string, atm: Atmosphere, size = 56): string {
   ctx.scale(dpr, dpr);
 
   if (hasDrawer(itemId)) {
-    const item = ITEM_BY_ID.get(itemId);
-    const tall = item && (item.kind === 'tree' || itemId === 'pavilion');
-    const scale = tall ? size / 150 : size / 70;
-    ctx.save();
-    ctx.translate(size / 2, tall ? size * 0.94 : size * 0.68);
-    ctx.scale(scale, scale);
-    const fake: PlacedObject = { id: -1, type: itemId, tx: 0, ty: 0, planted: Date.now() - 864e5 * 30, rot: 0, seed: 424242 };
     // Иконка рисуется при «дневном» свете — независимо от времени суток в саду
     const iconAtm: Atmosphere = {
       ...atm,
@@ -36,6 +28,31 @@ export function itemIcon(itemId: string, atm: Atmosphere, size = 56): string {
       lampGlow: 0.35,
       fireflies: 0,
     };
+    const fake: PlacedObject = {
+      id: -1,
+      type: itemId,
+      tx: 0,
+      ty: 0,
+      planted: Date.now() - 864e5 * 30,
+      rot: 0,
+      seed: 424242,
+    };
+
+    // Вписываем предмет по его настоящим границам.
+    //
+    // Раньше масштаб брался по двум разрядам «высокий / не высокий»:
+    // сакура упиралась в рамку и теряла верхушку кроны, а подушка мха
+    // занимала четверть поля и висела у нижнего края. Теперь рисуем
+    // пробный кадр, замеряем занятый прямоугольник и подгоняем под него.
+    const box = measure(itemId, iconAtm, fake);
+    const pad = size * 0.06;
+    const avail = size - pad * 2;
+    const scale = Math.min(avail / box.w, avail / box.h);
+
+    ctx.save();
+    // Середина занятого прямоугольника должна оказаться в середине иконки
+    ctx.translate(size / 2 - box.cx * scale, size / 2 - box.cy * scale);
+    ctx.scale(scale, scale);
     drawObject({ ctx, x: 0, y: 0, atm: iconAtm, g: 1, obj: fake, time: 1200, wind: 0, alpha: 1 });
     ctx.restore();
   }
@@ -45,8 +62,61 @@ export function itemIcon(itemId: string, atm: Atmosphere, size = 56): string {
   return url;
 }
 
+/** Границы предмета в его собственных координатах — для вписывания в иконку. */
+const boxCache = new Map<string, { w: number; h: number; cx: number; cy: number }>();
+
+function measure(
+  itemId: string,
+  atm: Atmosphere,
+  obj: PlacedObject,
+): { w: number; h: number; cx: number; cy: number } {
+  const key = `${itemId}|${atm.season}`;
+  const hit = boxCache.get(key);
+  if (hit) return hit;
+
+  // Пробный холст с запасом: предметы рисуются вверх от точки опоры
+  const S = 260;
+  const probe = document.createElement('canvas');
+  probe.width = S;
+  probe.height = S;
+  const pc = probe.getContext('2d')!;
+  pc.translate(S / 2, S * 0.78);
+  drawObject({ ctx: pc, x: 0, y: 0, atm, g: 1, obj, time: 1200, wind: 0, alpha: 1 });
+
+  const px = pc.getImageData(0, 0, S, S).data;
+  let top = S;
+  let bottom = -1;
+  let left = S;
+  let right = -1;
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      if (px[(y * S + x) * 4 + 3] > 12) {
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+        if (x < left) left = x;
+        if (x > right) right = x;
+      }
+    }
+  }
+
+  // Ничего не нарисовалось — отдаём безопасный размер, чтобы не делить на ноль
+  const box =
+    bottom < 0
+      ? { w: 70, h: 70, cx: 0, cy: -35 }
+      : {
+          w: right - left + 1,
+          h: bottom - top + 1,
+          // назад в координаты предмета: начало было в (S/2, S*0.78)
+          cx: (left + right) / 2 - S / 2,
+          cy: (top + bottom) / 2 - S * 0.78,
+        };
+  boxCache.set(key, box);
+  return box;
+}
+
 export function clearIconCache(): void {
   cache.clear();
+  boxCache.clear();
 }
 
 /** SVG-иконки для вкладок и кнопок — тонкая «тушь». */
