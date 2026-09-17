@@ -25,6 +25,7 @@ import { findPath, layPath } from './world/paths';
 import { ShotRatio, composeScroll } from './ui/snapshot';
 import { SettingsPanel, applyView, loadView } from './ui/settings';
 import { TouchInput, isTouchDevice } from './ui/touch';
+import { PracticePanel } from './ui/practicePanel';
 import { StartScreen } from './ui/startScreen';
 import { PlacedObject } from './world/types';
 
@@ -150,6 +151,9 @@ const ui = new UI(app, world, {
   onGardens() {
     gardensPanel.toggle();
   },
+  onSit() {
+    practice.openMenu();
+  },
 });
 
 // Настройки вида применяем до первого кадра, чтобы интерфейс
@@ -223,8 +227,11 @@ function setZen(on: boolean): void {
     ui.toggleBuild(false);
     ui.toggleHelp(false);
     ui.setZenNote('созерцание · любое движение вернёт интерфейс');
+    // практика предлагает себя ровно тогда, когда исчезло всё остальное
+    ui.setSitVisible(true);
   } else {
     ui.setZenNote('');
+    ui.setSitVisible(false);
   }
 }
 
@@ -526,6 +533,11 @@ window.addEventListener('keydown', (e) => {
   if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
   // Пока висит свиток, сад ещё не начался: клавиши ему не принадлежат.
   if (startOpen) return;
+  // Под листом практики сад не живёт: клавиши не проходят сквозь него.
+  if (practice.isOpen) {
+    if (e.key === 'Escape') practice.close();
+    return;
+  }
   wake();
 
   // Отмена и повтор — до остальных клавиш
@@ -945,6 +957,29 @@ function setRoofVisible(visible: boolean): void {
 
 ui.onSound = () => void toggleSound();
 
+// ---------------- Школа тишины ----------------
+
+/** Пока открыт лист практики, сцена не рисуется вовсе: за непрозрачной
+ *  бумагой картинка не нужна, а батарея телефона — нужна. */
+let practiceActive = false;
+
+const practice = new PracticePanel(app, {
+  onActive(active) {
+    practiceActive = active;
+    if (active) {
+      ui.toggleBuild(false);
+      ui.setSitVisible(false);
+    } else {
+      wake();
+    }
+  },
+  duck: (v) => audio.setDuck(v),
+  bowl: (a) => audio.bowl(a),
+  han: (a) => audio.han(a),
+  breath: (phase, seconds) => audio.breath(phase, seconds),
+  toast: (text) => ui.toast(text),
+});
+
 // ---------------- Заставка ----------------
 
 // Свиток на стене: свет идёт по тем же часам, что и сад, а вход
@@ -1046,7 +1081,9 @@ function frame(now: number): void {
     scene.clampCamera();
   }
 
-  scene.render(world, atm, now, dt, life, weatherSys.state);
+  // Под листом практики сад не рисуется вовсе; свиток старта непрозрачен,
+  // но за ним сад живёт и греет первый кадр ко входу.
+  if (!practiceActive) scene.render(world, atm, now, dt, life, weatherSys.state);
   ui.tick(t, atm);
   devPanel.tick();
 

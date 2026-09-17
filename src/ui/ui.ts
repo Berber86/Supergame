@@ -39,6 +39,8 @@ export interface UIHooks {
   onSettings(): void;
   /** Мастерская времени: час, сезон, погода. */
   onTimeWorkshop(): void;
+  /** Сесть в тишине: практики и школа дзена. */
+  onSit(): void;
 }
 
 export class UI {
@@ -294,16 +296,47 @@ export class UI {
       <div class="section">Мастерство</div>
       <dl>
         <dt>Вехи</dt><dd>Новые вкладки открываются от ваших же дел: выкопали пруд — пришли лотосы</dd>
-      </dl>`;
+      </dl>
+      <div class="scroll-sit" role="button" tabindex="0"><span lang="ja">坐</span>Сесть в тишине — практики и школа дзена</div>`;
     layer.appendChild(help);
     this.els.help = help;
     help.querySelector('.scroll-close')!.addEventListener('click', () => this.toggleHelp(false));
+    const sitBtn = help.querySelector<HTMLElement>('.scroll-sit')!;
+    const goSit = (): void => {
+      this.toggleHelp(false);
+      this.hooks.onSit();
+    };
+    sitBtn.addEventListener('click', goSit);
+    sitBtn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        goSit();
+      }
+    });
 
     // --- Заметка о созерцании ---
     const note = this.el('div', 'zen-note fade keep');
     note.textContent = '';
     layer.appendChild(note);
     this.els.note = note;
+
+    // --- Тихая строка входа в практику ---
+    // Приходит только в созерцании, когда интерфейс уже растворился:
+    // практика предлагает себя ровно тогда, когда исчезло всё остальное.
+    // Девятой кнопки в столбце не будет (её лишней назвала ещё сессия 6).
+    const sit = this.el('div', 'sit-line');
+    sit.innerHTML = `<span class="kanji" lang="ja">坐</span>сесть в тишине`;
+    sit.setAttribute('role', 'button');
+    sit.setAttribute('tabindex', '0');
+    sit.addEventListener('click', () => this.hooks.onSit());
+    sit.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        this.hooks.onSit();
+      }
+    });
+    layer.appendChild(sit);
+    this.els.sit = sit;
 
     this.root.appendChild(layer);
     this.renderTabs();
@@ -554,5 +587,10 @@ export class UI {
 
   setZenNote(text: string): void {
     this.els.note.textContent = text;
+  }
+
+  /** Тихая строка «сесть в тишине» видна только в созерцании. */
+  setSitVisible(v: boolean): void {
+    this.els.sit.classList.toggle('show', v);
   }
 }
