@@ -485,12 +485,23 @@ async function main(): Promise<void> {
     }
     check('сетка выдаёт те же ответы, что и перебор (3000 точек)', mismatch === 0, `расхождений ${mismatch}`);
 
-    const t0 = performance.now();
-    for (const [tx, ty] of pts.slice(0, 2000)) pickRef(tx, ty);
-    const linearMs = performance.now() - t0;
-    const t1 = performance.now();
-    for (const [tx, ty] of pts.slice(0, 2000)) w.pickObject(tx, ty);
-    const gridMs = performance.now() - t1;
+    // Прогрев и лучшая из трёх попыток: на загруженной машине разовый
+    // замер ловит чужой шум, а не скорость сетки
+    const sample = pts.slice(0, 2000);
+    for (const [tx, ty] of sample) {
+      pickRef(tx, ty);
+      w.pickObject(tx, ty);
+    }
+    let linearMs = Infinity;
+    let gridMs = Infinity;
+    for (let round = 0; round < 3; round++) {
+      const t0 = performance.now();
+      for (const [tx, ty] of sample) pickRef(tx, ty);
+      linearMs = Math.min(linearMs, performance.now() - t0);
+      const t1 = performance.now();
+      for (const [tx, ty] of sample) w.pickObject(tx, ty);
+      gridMs = Math.min(gridMs, performance.now() - t1);
+    }
     console.log(
       `  pickObject ×2000 по 554 объектам: перебор ${linearMs.toFixed(1)} мс → сетка ${gridMs.toFixed(1)} мс`,
     );

@@ -932,4 +932,22 @@ export const MILESTONES: Record<string, Milestone> = {
     text: 'Зимой у кормушки особенно людно: сад кормит своих.',
     unlocks: 'Забота',
   },
+  night_lights: {
+    id: 'night_lights',
+    title: 'Ночные огни',
+    text: 'Над травой зажглись светлячки: тёплой ночью сад светится сам.',
+    unlocks: 'Тёплые ночи',
+  },
+  heron_guest: {
+    id: 'heron_guest',
+    title: 'Терпеливая гостья',
+    text: 'К пруду приходит цапля: большая птица выбирает тихую воду.',
+    unlocks: 'Тишина',
+  },
+  deer_guest: {
+    id: 'deer_guest',
+    title: 'Олень у рощи',
+    text: 'На рассвете к деревьям вышел олень. Сад стал почти лесом.',
+    unlocks: 'Лес',
+  },
 };

@@ -48,6 +48,10 @@ export interface Habitat {
   shelters: Vec[];
   cushions: Vec[];
   bowls: Vec[];
+  /** Деревья: роща зовёт оленя, а летом под ней темнее для светлячков. */
+  trees: Vec[];
+  /** Тихие травяные поляны у деревьев — туда выходит олень. */
+  glades: Vec[];
   /** Сколько в саду кошек-резидентов (предметов «кот»). */
   cats: number;
   /** Клеток веранды — второе место для кошачьего знакомства. */
@@ -72,6 +76,8 @@ export function scanHabitat(world: World): Habitat {
     baths: [],
     perches: [],
     frogSpots: [],
+    trees: [],
+    glades: [],
     shelters: [],
     cushions: [],
     bowls: [],
@@ -154,6 +160,7 @@ export function scanHabitat(world: World): Habitat {
         break;
     }
     if (PERCH_TYPES.includes(o.type)) h.perches.push(c);
+    if (item.kind === 'tree') h.trees.push(c);
   }
 
   // --- Берега, где лягушке хорошо: суша у воды с растительностью или тенью ---
@@ -182,7 +189,21 @@ export function scanHabitat(world: World): Habitat {
     h.perches.push({ x: b.x - 0.5, y: b.y + 0.3 });
   }
 
-  // --- Веранда: место кошачьих встреч и птичьих укоров ---
+  // --- Поляны: тихая трава недалеко от деревьев, куда выйдет олень ---
+  // Шаг 2: сплошной обход нам не нужен, полян и так хватит с запасом.
+  for (let y = 1; y < GRID - 1 && h.glades.length < 48; y += 2) {
+    for (let x = 1; x < GRID - 1 && h.glades.length < 48; x += 2) {
+      const t = world.tiles[y * GRID + x];
+      if (t.water || t.indoor || t.veranda) continue;
+      if (t.ground !== 'moss' && t.ground !== 'grass') continue;
+      if (world.objects.some((o) => Math.abs(o.tx - x) < 1 && Math.abs(o.ty - y) < 1)) continue;
+      const nearTree = h.trees.some((tr) => Math.hypot(tr.x - x, tr.y - y) < 5);
+      if (!nearTree) continue;
+      h.glades.push({ x: x + 0.5, y: y + 0.5 });
+    }
+  }
+
+  // --- Веранда: место кошачьих встреч и птижьих укоров ---
   for (const t of world.tiles) if (t.veranda) h.veranda++;
   if (h.veranda > 0) {
     // центр веранды берём усреднением по кромке дома
@@ -211,6 +232,12 @@ export interface Invitation {
   guestCat: boolean;
   /** Сколько лягушек готово петь: хор слышно в дождь и под вечер. */
   chorus: number;
+  /** Светлячки: тёплая тихая ночь над травой и водой. */
+  fireflies: number;
+  /** Есть ли повод прийти цапле: большая вода и не гроза. */
+  heron: boolean;
+  /** Сколько оленей может выйти к роще: один-два, по размеру рощи. */
+  deer: number;
 }
 
 /**
@@ -267,9 +294,27 @@ export function invitations(h: Habitat, t: TimeState, wx: WeatherState | null, w
   // ---- Второй кот: первому нужны компания, подушка и миска ----
   const guestCat = h.cats >= 1 && h.cushions.length >= 1 && h.bowls.length >= 1;
 
+  // ---- Светлячки: гаснут днём, в дождь и зимой; любят воду и тень рощи ----
+  let fireflies = 0;
+  if (season === 'summer' && t.daylight < 0.18 && rain < 0.15 && !stormy) {
+    fireflies = 3 + Math.min(6, Math.floor(h.trees.length / 3));
+    if (h.water > 0) fireflies += 3;
+    fireflies = Math.max(0, Math.min(12, fireflies));
+  }
+
+  // ---- Цапля: большая птица приходит к большой воде, днём и на заре ----
+  const heron = h.water >= 10 && t.daylight > 0.15 && !stormy;
+
+  // ---- Олень: роща и тихий час, рассвет или сумерки ----
+  let deer = 0;
+  const deerHours = (t.hours >= 5 && t.hours <= 9) || (t.hours >= 17 && t.hours <= 21);
+  if (h.trees.length >= 8 && h.glades.length > 0 && deerHours && rain < 0.3 && !stormy) {
+    deer = h.trees.length >= 16 ? 2 : 1;
+  }
+
   // ---- Хор: поют вместе, когда сыро и не полдень ----
   const choral = rain > 0.2 || wet > 0.4 || t.hours >= 18 || t.hours < 6;
   const chorus = frogs >= 2 && choral && season !== 'winter' ? frogs : 0;
 
-  return { frogs, dragonflies, feederBirds, guestCat, chorus };
+  return { frogs, dragonflies, feederBirds, guestCat, chorus, fireflies, heron, deer };
 }

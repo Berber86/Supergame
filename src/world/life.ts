@@ -14,6 +14,7 @@ import { ITEM_BY_ID } from './catalog';
 import { TimeState } from '../core/clock';
 import { Habitat, Invitation, invitations, scanHabitat } from './habitat';
 import { Residents, Threat } from './residents';
+import { Wildlife } from './wildlife';
 import { WeatherState } from './weatherState';
 import { World } from './world';
 
@@ -116,6 +117,10 @@ export interface Fish {
   homeY: number;
   /** Плавный поворот. */
   turn: number;
+  /** Паника после удара цапли: миллисекунды бегства от точки. */
+  panic: number;
+  px: number;
+  py: number;
 }
 
 /** Порыв ветра — волна, проходящая через сад. */
@@ -196,9 +201,20 @@ export class Life {
   gusts: Gust[] = [];
   /** Жители воды: лягушки и стрекозы, приглашённые прудом. */
   residents = new Residents();
+  /** Дикие соседи: светлячки, цапля и олень приходят по своим причинам. */
+  wildlife = new Wildlife();
   /** Что сад готов принять в этот час; пересчитывается редко. */
   habitat: Habitat | null = null;
-  invitation: Invitation = { frogs: 0, dragonflies: 0, feederBirds: 0, guestCat: false, chorus: 0 };
+  invitation: Invitation = {
+    frogs: 0,
+    dragonflies: 0,
+    feederBirds: 0,
+    guestCat: false,
+    chorus: 0,
+    fireflies: 0,
+    heron: false,
+    deer: 0,
+  };
   /** Заметки в летопись: игровой цикл забирает их каждый кадр. */
   pendingNotes: string[] = [];
   /** Общая фаза ветра 0..1 — плавный фон поверх порывов. */
@@ -232,6 +248,7 @@ export class Life {
     this.guestTimer = 45_000;
     this.pendingNotes = [];
     this.residents.reset();
+    this.wildlife.reset();
   }
 
   /** Пересобирает агентов под текущий состав сада. */
@@ -273,6 +290,9 @@ export class Life {
             homeX: o.tx + 0.5,
             homeY: o.ty + 0.5,
             turn: 0,
+            panic: 0,
+            px: 0,
+            py: 0,
           });
         }
       }
@@ -323,6 +343,14 @@ export class Life {
 
     this.residents.update(world, h, inv, wx ?? null, dt, now, threats);
     for (const note of this.residents.takeNotes()) this.note(world, note);
+
+    // Удар цапли по воде: круги и разлетающиеся карпы видны со стороны
+    this.wildlife.onStrike = (x, y) => {
+      this.residents.ripple(x, y, true);
+      this.scareFish(x, y);
+    };
+    this.wildlife.update(h, inv, t, wx ?? null, dt, now, threats);
+    for (const note of this.wildlife.takeNotes()) this.note(world, note);
 
     this.updateCats(world, t, dt);
     this.updateGuest(world, h, inv, t, dt, now);
@@ -884,11 +912,34 @@ export class Life {
 
   // ---------------- Карпы ----------------
 
+  /** Цапля ударила по воде: карпы на миг разлетаются веером. */
+  private scareFish(x: number, y: number): void {
+    for (const f of this.fish) {
+      if (Math.hypot(f.tx - x, f.ty - y) < 5) {
+        f.panic = 2600;
+        f.px = x;
+        f.py = y;
+      }
+    }
+  }
+
   private updateFish(world: World, dt: number): void {
     for (const f of this.fish) {
       // Плавный поворот + лёгкое виляние
       const wander = (hash2(Math.floor(performance.now() * 0.0007), f.seed, 3) - 0.5) * 0.9;
       f.turn = lerp(f.turn, wander, 0.02);
+
+      // Паника: прочь от удара, побыстрее, пока не отойдут
+      let panicK = 1;
+      if (f.panic > 0) {
+        f.panic -= dt;
+        panicK = 3.2;
+        const away = Math.atan2(f.ty - f.py, f.tx - f.px);
+        let diff = away - f.dir;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        f.dir += clamp(diff, -0.3, 0.3) * (dt * 0.05);
+      }
 
       // Если впереди не вода — разворачиваемся к центру пруда
       const aheadX = f.tx + Math.cos(f.dir) * 0.7;
@@ -905,7 +956,7 @@ export class Life {
         f.dir += f.turn * dt * 0.0012;
       }
 
-      const v = f.speed * dt;
+      const v = f.speed * dt * panicK;
       const nx = f.tx + Math.cos(f.dir) * v;
       const ny = f.ty + Math.sin(f.dir) * v;
       const nt = world.at(Math.floor(nx), Math.floor(ny));

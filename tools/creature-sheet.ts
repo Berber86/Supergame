@@ -21,6 +21,8 @@ g.performance = g.performance ?? { now: () => Date.now() };
 async function main() {
   const { drawCat, drawBird, drawButterfly } = await import('../src/render/creatures');
   const { drawFrog, drawDragonfly } = await import('../src/render/residents');
+  const { drawDeer, drawFirefly, drawHeron } = await import('../src/render/wildlife');
+  const wtype = await import('../src/world/wildlife');
   const { buildAtmosphere } = await import('../src/world/palette');
   const { computeTime } = await import('../src/core/clock');
   const type = await import('../src/world/life');
@@ -267,6 +269,133 @@ async function main() {
       },
     });
   }
+
+  // Цапля: основные позы
+  const heronCases: { st: wtype.HeronState; label: string; timer?: number; fish?: number }[] = [
+    { st: 'stand', label: 'цапля стоит' },
+    { st: 'stalk', label: 'цапля крадётся' },
+    { st: 'strike', timer: 480, label: 'цапля бьёт' },
+    { st: 'preen', label: 'цапля чистится' },
+    { st: 'fly-in', label: 'цапля летит', fish: 0 },
+  ];
+  for (const hc of heronCases) {
+    cells.push({
+      label: hc.label,
+      draw: (cx, cy) => {
+        const hr: wtype.Heron = {
+          tx: 0,
+          ty: 0,
+          from: { x: -4, y: 0 },
+          target: { x: 2, y: 0 },
+          state: hc.st,
+          timer: hc.timer ?? 5000,
+          facing: 1,
+          phase: hc.st === 'fly-in' ? 0.5 : 0.6,
+          fish: hc.fish ?? 0,
+          struck: false,
+          born: 0,
+          stay: 1e9,
+        };
+        drawHeron(ctx, hr, cx, cy + 26, atm, 2500);
+      },
+    });
+  }
+  // Цапля с рыбой в клюве
+  cells.push({
+    label: 'цапля с рыбой',
+    draw: (cx, cy) => {
+      const hr: wtype.Heron = {
+        tx: 0,
+        ty: 0,
+        from: null,
+        target: null,
+        state: 'stand',
+        timer: 5000,
+        facing: 1,
+        phase: 1,
+        fish: 2,
+        struck: false,
+        born: 0,
+        stay: 1e9,
+      };
+      drawHeron(ctx, hr, cx, cy + 26, atm, 2500);
+    },
+  });
+
+  // Олень: сезоны шкуры и позы
+  const deerCases: { coat: wtype.DeerCoat; st: wtype.DeerState; label: string }[] = [
+    { coat: { spots: false, antlers: true, winter: false }, st: 'look', label: 'олень осенью' },
+    { coat: { spots: true, antlers: true, winter: false }, st: 'graze', label: 'олень летом щиплет' },
+    { coat: { spots: true, antlers: false, winter: false }, st: 'walk', label: 'олень весной идёт' },
+    { coat: { spots: false, antlers: false, winter: true }, st: 'look', label: 'олень зимой' },
+  ];
+  for (const dc of deerCases) {
+    cells.push({
+      label: dc.label,
+      draw: (cx, cy) => {
+        const d: wtype.Deer = {
+          tx: 0,
+          ty: 0,
+          from: { x: -3, y: 0 },
+          target: { x: 3, y: 0 },
+          state: dc.st,
+          timer: 5000,
+          facing: 1,
+          phase: dc.st === 'walk' ? 0.5 : 0,
+          seed: 12,
+          coat: dc.coat,
+          born: 0,
+          stay: 1e9,
+        };
+        drawDeer(ctx, d, cx, cy + 30, atm, 2500);
+      },
+    });
+  }
+
+  // Светлячок: вспышка и покой
+  cells.push({
+    label: 'светлячок вспышка',
+    draw: (cx, cy) => {
+      const f: wtype.Firefly = {
+        tx: 0,
+        ty: 0,
+        ax: 0,
+        ay: 0,
+        dir: 0,
+        seed: 5,
+        period: 2000,
+        phase: 0,
+        state: 'fly',
+        timer: 5000,
+        alpha: 1,
+      };
+      // тёмный фон: огонёк виден только на ночной подложке
+      ctx.fillStyle = 'rgba(24,30,26,0.9)';
+      ctx.fillRect(cx - 70, cy - 60, 140, 110);
+      drawFirefly(ctx, f, cx, cy, atm, 420);
+    },
+  });
+  cells.push({
+    label: 'светлячок паута',
+    draw: (cx, cy) => {
+      const f: wtype.Firefly = {
+        tx: 0,
+        ty: 0,
+        ax: 0,
+        ay: 0,
+        dir: 0,
+        seed: 6,
+        period: 2000,
+        phase: 0.7,
+        state: 'rest',
+        timer: 5000,
+        alpha: 1,
+      };
+      ctx.fillStyle = 'rgba(24,30,26,0.9)';
+      ctx.fillRect(cx - 70, cy - 60, 140, 110);
+      drawFirefly(ctx, f, cx, cy, atm, 420);
+    },
+  });
 
   const cols = 4;
   const cell = 150;

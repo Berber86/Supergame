@@ -17,6 +17,7 @@ import { drawCost, drawObject, drawObjectShadow } from './sprites';
 import { cacheable, cachedGrowth, drawCached } from './spriteCache';
 import { drawBird, drawButterfly, drawCat } from './creatures';
 import { drawDragonfly, drawFrog } from './residents';
+import { drawDeer, drawFirefly, drawHeron } from './wildlife';
 import type { GhostPreview } from './scene';
 
 /** Наборка состояния сцены, нужная одному кадру сортированных объектов. */
@@ -476,6 +477,29 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
       const lvl = tile ? tile.level : 0;
       const p = isoToScreen(c.tx, c.ty, lvl);
       list.push({ depth: (c.tx + c.ty) * 100 + lvl * 20 + 4, draw: () => drawCat(ctx, c, p.x, p.y, atm, time) });
+    }
+    // Дикие соседи: цапля и олень крупные — видны и с общего плана
+    const hr = opts.life.wildlife.heron;
+    if (hr) {
+      const tile = world.at(Math.floor(hr.tx), Math.floor(hr.ty));
+      const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
+      const p = isoToScreen(hr.tx, hr.ty, lvl);
+      list.push({ depth: (hr.tx + hr.ty) * 100 + lvl * 20 + 6, draw: () => drawHeron(ctx, hr, p.x, p.y, atm, time) });
+    }
+    for (const d of opts.life.wildlife.deer) {
+      const tile = world.at(Math.floor(d.tx), Math.floor(d.ty));
+      const lvl = tile ? tile.level : 0;
+      const p = isoToScreen(d.tx, d.ty, lvl);
+      list.push({ depth: (d.tx + d.ty) * 100 + lvl * 20 + 5, draw: () => drawDeer(ctx, d, p.x, p.y, atm, time) });
+    }
+    // Светлячки — ночная мелочь: на дальнем плане бережём кадр
+    if (opts.zoom >= 0.42 && opts.particles) {
+      for (const f of opts.life.wildlife.fireflies) {
+        const tile = world.at(Math.floor(f.tx), Math.floor(f.ty));
+        const lvl = tile ? tile.level : 0;
+        const p = isoToScreen(f.tx, f.ty, lvl);
+        list.push({ depth: (f.tx + f.ty) * 100 + lvl * 20 + 10, draw: () => drawFirefly(ctx, f, p.x, p.y, atm, time) });
+      }
     }
   }
 

@@ -875,6 +875,9 @@ export class World {
     if (id === 'guest_stayed') this.checkMilestone('second_cat');
     if (id === 'chorus') this.checkMilestone('frog_chorus');
     if (id === 'winter_table') this.checkMilestone('winter_feeder');
+    if (id === 'meet_firefly') this.checkMilestone('night_lights');
+    if (id === 'meet_heron') this.checkMilestone('heron_guest');
+    if (id === 'meet_deer') this.checkMilestone('deer_guest');
     return true;
   }
 
