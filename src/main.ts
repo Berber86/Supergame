@@ -41,10 +41,69 @@ if (!gardens.load(world)) gardens.save(world);
 
 const history = new History(world);
 
+/**
+ * Плашка про хранилище. Тихие сбои сохранения недопустимы: если хранилище
+ * заполнено, игрок должен узнать об этом сразу и успеть выгрузить сад
+ * файлом, пока он есть в памяти.
+ */
+let storageWarn: HTMLElement | null = null;
+let storageWarnKind: 'quota' | 'error' | 'broken' | null = null;
+
+function showStorageWarn(kind: 'quota' | 'error' | 'broken'): void {
+  if (storageWarnKind === kind) return;
+  hideStorageWarn();
+  storageWarnKind = kind;
+  const el = document.createElement('div');
+  el.className = 'storage-warn paper';
+  const text =
+    kind === 'broken'
+      ? 'Прежнее сохранение оказалось повреждено и не открылось даже из копии — открыта чистая земля. Старые данные не удалены: они отложены отдельной копией.'
+      : kind === 'quota'
+        ? 'Хранилище браузера заполнено — сад перестал сохраняться. Выгрузите усадьбу файлом, пока она жива в памяти.'
+        : 'Браузер не смог записать сад. Выгрузите усадьбу файлом на всякий случай.';
+  const textEl = document.createElement('div');
+  textEl.className = 'sw-text';
+  textEl.textContent = text;
+  const row = document.createElement('div');
+  row.className = 'sw-row';
+  if (kind !== 'broken') {
+    const exp = document.createElement('span');
+    exp.className = 'sw-btn';
+    exp.textContent = 'Выгрузить сад';
+    exp.addEventListener('click', () => {
+      gardens.exportFile(world);
+      hideStorageWarn();
+    });
+    row.appendChild(exp);
+  }
+  const ok = document.createElement('span');
+  ok.className = 'sw-btn';
+  ok.textContent = kind === 'broken' ? 'Понятно' : 'Скрыть';
+  ok.addEventListener('click', hideStorageWarn);
+  row.appendChild(ok);
+  el.appendChild(textEl);
+  el.appendChild(row);
+  app.appendChild(el);
+  storageWarn = el;
+}
+
+function hideStorageWarn(): void {
+  storageWarn?.remove();
+  storageWarn = null;
+  storageWarnKind = null;
+}
+
 /** Сохранение теперь всегда идёт в активный слот усадьбы. */
 function saveWorld(): void {
-  gardens.save(world);
+  const res = gardens.save(world);
+  // Запись снова пошла — плашку убираем сами, без лишних слов.
+  if (res.ok) hideStorageWarn();
+  else showStorageWarn(res.reason);
 }
+
+// Слот был, но не прочитался даже из копии — честно скажем об этом:
+// данные уже отложены карантином, перед игроком чистая земля.
+if (gardens.lastLoadFailed) showStorageWarn('broken');
 
 /**
  * Видимость кровли — настройка взгляда, а не сада: она одна на все усадьбы

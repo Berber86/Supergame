@@ -4,6 +4,7 @@ import { GRID, inBounds } from '../core/iso';
 import { clamp, fbm, hash2 } from '../core/rng';
 import { BRUSH_BY_ID, ITEM_BY_ID, MILESTONES, TerrainBrush } from './catalog';
 import { DAY_MS } from '../core/clock';
+import { SAVE_VERSION, parseSave, serializeSave } from './saveFormat';
 import { GroundId, PlacedObject, SaveData, Tile } from './types';
 
 const SAVE_KEY = 'usadba.save.v3';
@@ -755,7 +756,7 @@ export class World {
 
   toJSON(): SaveData {
     return {
-      version: 3,
+      version: SAVE_VERSION,
       tiles: this.tiles,
       objects: this.objects,
       nextId: this.nextId,
@@ -767,30 +768,44 @@ export class World {
 
   save(): void {
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(this.toJSON()));
+      localStorage.setItem(SAVE_KEY, serializeSave(this.toJSON()));
     } catch {
       /* тишина */
     }
   }
 
-  /** Принять разобранное сохранение. Используется и файлом, и слотами. */
-  fromJSON(d: SaveData): boolean {
-    if (!d || !Array.isArray(d.tiles) || d.tiles.length !== GRID * GRID) return false;
-    this.tiles = d.tiles.map((t) => ({
+  /**
+   * Применить уже проверенное сохранение. Отдельно от разбора, чтобы
+   * хранилище могло само выбрать живую копию (основная, резервная,
+   * временная), а мир получал только чистые данные.
+   */
+  applySave(p: SaveData): void {
+    this.tiles = p.tiles.map((t) => ({
       ground: t.ground,
-      level: t.level ?? 0,
-      water: !!t.water,
-      indoor: !!t.indoor,
-      veranda: !!t.veranda,
+      level: t.level,
+      water: t.water,
+      indoor: t.indoor,
+      veranda: t.veranda,
     }));
-    this.objects = (d.objects ?? []).filter((o) => ITEM_BY_ID.has(o.type));
-    this.nextId = d.nextId ?? 1;
+    this.objects = p.objects.map((o) => ({ ...o }));
+    this.nextId = p.nextId;
     for (const o of this.objects) this.nextId = Math.max(this.nextId, o.id + 1);
-    this.milestones = new Set(d.milestones ?? []);
-    this.seasonsSeen = new Set(d.seasons ?? []);
-    this.seenTabs = new Set(d.seen ?? []);
+    this.milestones = new Set(p.milestones);
+    this.seasonsSeen = new Set(p.seasons);
+    this.seenTabs = new Set(p.seen);
     this.pendingMilestones = [];
     this.lastTouched = null;
+  }
+
+  /**
+   * Принять разобранное сохранение любой прошлой версии. Данные проверяются
+   * целиком до того, как мир будет тронут: битый файл возвращает false
+   * и оставляет текущий сад нетронутым.
+   */
+  fromJSON(d: unknown): boolean {
+    const parsed = parseSave(d);
+    if (!parsed) return false;
+    this.applySave(parsed);
     return true;
   }
 

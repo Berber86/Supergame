@@ -1,0 +1,238 @@
+/**
+ * Формат сохранения усадьбы.
+ *
+ * Раньше сад писался «как есть»: каждый тайл — объект с пятью полями,
+ * каждый предмет — объект с семью. Пустой сад занимал ~62 КБ. Четвёртая
+ * версия пишет то же самое компактно: тайлы — строкой по три знака на
+ * клетку (земля · уровень · флаги), предметы — рядами чисел под коротким
+ * ключом. Экономия около восьми раз.
+ *
+ * Два железных правила этого файла:
+ *
+ * 1. Всё, что было сохранено раньше, обязано открываться. `parseSave`
+ *    принимает и v3 (объекты с именованными полями), и v4 (упаковку),
+ *    и возвращает одну и ту же нормальную форму.
+ * 2. Мусор не проходит. Каждое поле проверяется по типу и диапазону;
+ *    файл правильной длины, но с ерундой внутри, отвергается целиком,
+ *    чтобы игрок получил прошлую копию, а не тихо испорченный сад.
+ */
+
+import { GRID } from '../core/iso';
+import { ITEM_BY_ID } from './catalog';
+import { GroundId, PlacedObject, SaveData, Tile } from './types';
+
+/** Версия формата, которую пишет текущая игра. */
+export const SAVE_VERSION = 4;
+
+/**
+ * Земли в порядке их знака в упаковке. Порядок — часть формата:
+ * новые земли дописываются в конец, переставлять нельзя.
+ */
+export const GROUND_IDS: readonly GroundId[] = [
+  'moss',
+  'grass',
+  'gravel',
+  'sand',
+  'stone',
+  'soil',
+  'water',
+  'tatami',
+  'deck',
+];
+
+const G_CHARS = '012345678';
+const L_CHARS = '01234567';
+const F_CHARS = '01234567';
+/** Допустимые уровни рельефа — с запасом против текущего -1..2. */
+const LEVEL_MIN = -3;
+const LEVEL_MAX = 4;
+/** Позиции предметов: сад плюс небольшая кромка для привязок. */
+const POS_MIN = -8;
+const POS_MAX = GRID + 8;
+
+function isInt(n: unknown): n is number {
+  return typeof n === 'number' && Number.isFinite(n) && Math.floor(n) === n;
+}
+
+// ---- Тайл в число и обратно (тем же приёмом пользуется история) ----
+
+/** Упаковать тайл: 4 бита земля, 3 бита уровень со сдвигом, 3 бита флаги. */
+export function packTile(t: Tile): number {
+  const g = Math.max(0, GROUND_IDS.indexOf(t.ground));
+  const l = Math.min(Math.max(Math.round(t.level), LEVEL_MIN), LEVEL_MAX) - LEVEL_MIN;
+  const f = (t.water ? 1 : 0) | (t.indoor ? 2 : 0) | (t.veranda ? 4 : 0);
+  return g | (l << 4) | (f << 7);
+}
+
+export function unpackTile(n: number): Tile {
+  const f = (n >> 7) & 7;
+  return {
+    ground: GROUND_IDS[n & 15] ?? 'moss',
+    level: ((n >> 4) & 7) + LEVEL_MIN,
+    water: !!(f & 1),
+    indoor: !!(f & 2),
+    veranda: !!(f & 4),
+  };
+}
+
+// ---- Поле целиком: строка по три знака на клетку, 2028 знаков всего ----
+
+export function packTiles(tiles: Tile[]): string {
+  let out = '';
+  for (const t of tiles) {
+    const n = packTile(t);
+    out += G_CHARS[n & 15] + L_CHARS[(n >> 4) & 7] + F_CHARS[(n >> 7) & 7];
+  }
+  return out;
+}
+
+function unpackTiles(s: string): Tile[] | null {
+  if (s.length !== GRID * GRID * 3) return null;
+  const tiles: Tile[] = new Array(GRID * GRID);
+  let i = 0;
+  for (let k = 0; k < tiles.length; k++) {
+    const g = G_CHARS.indexOf(s[i]);
+    const l = L_CHARS.indexOf(s[i + 1]);
+    const f = F_CHARS.indexOf(s[i + 2]);
+    if (g < 0 || l < 0 || f < 0) return null;
+    tiles[k] = {
+      ground: GROUND_IDS[g],
+      level: l + LEVEL_MIN,
+      water: !!(f & 1),
+      indoor: !!(f & 2),
+      veranda: !!(f & 4),
+    };
+    i += 3;
+  }
+  return tiles;
+}
+
+function parseLegacyTiles(arr: unknown[]): Tile[] | null {
+  if (arr.length !== GRID * GRID) return null;
+  const tiles: Tile[] = new Array(arr.length);
+  for (let i = 0; i < arr.length; i++) {
+    const t = arr[i];
+    if (!t || typeof t !== 'object' || Array.isArray(t)) return null;
+    const r = t as Record<string, unknown>;
+    if (typeof r.ground !== 'string' || !GROUND_IDS.includes(r.ground as GroundId)) return null;
+    if (!isInt(r.level) || r.level < LEVEL_MIN || r.level > LEVEL_MAX) return null;
+    if (typeof r.water !== 'boolean' || typeof r.indoor !== 'boolean' || typeof r.veranda !== 'boolean') {
+      return null;
+    }
+    tiles[i] = { ground: r.ground as GroundId, level: r.level, water: r.water, indoor: r.indoor, veranda: r.veranda };
+  }
+  return tiles;
+}
+
+// ---- Предметы ----
+
+/** Упакованный предмет: [id, тип, tx, ty, посажен мс, поворот, сид]. */
+type PackedObject = [number, string, number, number, number, number, number];
+
+function packObject(o: PlacedObject): PackedObject {
+  return [o.id, o.type, o.tx, o.ty, Math.round(o.planted), o.rot & 3, o.seed >>> 0];
+}
+
+function validSpot(n: unknown): n is number {
+  return typeof n === 'number' && Number.isFinite(n) && n >= POS_MIN && n <= POS_MAX;
+}
+
+/** Общие проверки полей — чтобы упакованный и старый вид судить одинаково. */
+function checkFields(
+  id: unknown, type: unknown, tx: unknown, ty: unknown,
+  planted: unknown, rot: unknown, seed: unknown,
+): id is number {
+  if (!isInt(id) || id < 1) return false;
+  if (typeof type !== 'string' || !ITEM_BY_ID.has(type)) return false;
+  if (!validSpot(tx) || !validSpot(ty)) return false;
+  if (typeof planted !== 'number' || !Number.isFinite(planted) || planted < 0) return false;
+  if (!isInt(rot) || rot < 0 || rot > 3) return false;
+  if (!isInt(seed) || seed < 0 || seed > 0xffffffff) return false;
+  return true;
+}
+
+function unpackObject(raw: unknown[]): PlacedObject | null {
+  const [id, type, tx, ty, planted, rot, seed] = raw;
+  if (raw.length !== 7 || !checkFields(id, type, tx, ty, planted, rot, seed)) return null;
+  return { id, type: type as string, tx: tx as number, ty: ty as number, planted: planted as number, rot: rot as number, seed: seed as number };
+}
+
+function parseLegacyObject(raw: Record<string, unknown>): PlacedObject | null {
+  const { id, type, tx, ty, planted, rot, seed } = raw;
+  if (!checkFields(id, type, tx, ty, planted, rot, seed)) return null;
+  return { id, type: type as string, tx: tx as number, ty: ty as number, planted: planted as number, rot: rot as number, seed: seed as number };
+}
+
+function parseStringList(raw: unknown, max: number): string[] | null {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw) || raw.length > max) return null;
+  const out: string[] = [];
+  for (const s of raw) {
+    if (typeof s !== 'string' || s.length > 80) return null;
+    out.push(s);
+  }
+  return out;
+}
+
+// ---- Две стороны формата ----
+
+/** Сериализовать в компактную форму v4. */
+export function serializeSave(d: SaveData): string {
+  return JSON.stringify({
+    v: SAVE_VERSION,
+    t: packTiles(d.tiles),
+    o: d.objects.map(packObject),
+    n: d.nextId,
+    m: d.milestones,
+    s: d.seasons ?? [],
+    e: d.seen,
+  });
+}
+
+/**
+ * Принять разобранное сохранение любой прошлой версии и вернуть
+ * нормальную форму — или null, если данные битые. Форму определяет
+ * само содержимое: строка тайлов — v4, массив объектов — v3.
+ * Номер версии служит только защитой от будущего.
+ */
+export function parseSave(raw: unknown): SaveData | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const d = raw as Record<string, unknown>;
+
+  const version = d.v ?? d.version;
+  if (version !== undefined && (!isInt(version) || version < 1 || version > SAVE_VERSION)) return null;
+
+  let tiles: Tile[] | null = null;
+  const rt = d.t ?? d.tiles;
+  if (typeof rt === 'string') tiles = unpackTiles(rt);
+  else if (Array.isArray(rt)) tiles = parseLegacyTiles(rt);
+  if (!tiles) return null;
+
+  const ro = d.o ?? d.objects ?? [];
+  if (!Array.isArray(ro)) return null;
+  const objects: PlacedObject[] = [];
+  const ids = new Set<number>();
+  for (const e of ro) {
+    let o: PlacedObject | null = null;
+    if (Array.isArray(e)) o = unpackObject(e);
+    else if (e && typeof e === 'object') o = parseLegacyObject(e as Record<string, unknown>);
+    if (!o || ids.has(o.id)) return null;
+    ids.add(o.id);
+    objects.push(o);
+  }
+
+  let nextId = 1;
+  for (const o of objects) nextId = Math.max(nextId, o.id + 1);
+  const nextIdRaw = d.n ?? d.nextId;
+  if (nextIdRaw !== undefined) {
+    if (!isInt(nextIdRaw) || nextIdRaw < 1) return null;
+    nextId = Math.max(nextId, nextIdRaw);
+  }
+
+  const milestones = parseStringList(d.m ?? d.milestones, 400);
+  const seasons = parseStringList(d.s ?? d.seasons, 16);
+  const seen = parseStringList(d.e ?? d.seen, 200);
+  if (!milestones || !seasons || !seen) return null;
+
+  return { version: SAVE_VERSION, tiles, objects, nextId, milestones, seasons, seen };
+}

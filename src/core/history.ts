@@ -6,16 +6,17 @@
  * Это дороже команд по уму, но сравнение 676 тайлов занимает доли
  * миллисекунды и случается раз на действие игрока, зато World остаётся
  * чистым: ни один метод не обязан знать про историю.
+ *
+ * Про память. Правки тайлов хранятся упакованными — по три числа на
+ * клетку (индекс, было, стало) вместо пары полных объектов, а общий
+ * объём ограничен сверху: когда правок слишком много, самые старые
+ * шаги уступают место новым. Сто двадцать шагов кистью живут вечно,
+ * заливки всего сада — столько, сколько поместится в потолок.
  */
 
+import { packTile, unpackTile } from '../world/saveFormat';
 import { PlacedObject, Tile } from '../world/types';
 import { World } from '../world/world';
-
-interface TileDelta {
-  i: number;
-  before: Tile;
-  after: Tile;
-}
 
 /** Перенос: объект тот же, изменилось только где он стоит. */
 interface MoveDelta {
@@ -26,7 +27,8 @@ interface MoveDelta {
 
 export interface Edit {
   label: string;
-  tiles: TileDelta[];
+  /** Упакованные правки тайлов, по три числа: индекс, было, стало. */
+  tiles: number[];
   added: PlacedObject[];
   removed: PlacedObject[];
   moved: MoveDelta[];
@@ -47,7 +49,13 @@ interface Snapshot {
   milestones: Set<string>;
 }
 
-const MAX_STEPS = 120;
+export const MAX_STEPS = 120;
+/**
+ * Потолок хранимых правок тайлов. В худшем случае это километры сплошных
+ * заливок: 65536 клеток × ~25 байт — измеримо меньше двух мегабайт против
+ * прежних ~5.7 МБ. Обычная игра до потолка не доходит никогда.
+ */
+export const TILE_BUDGET = 65536;
 
 function copyTile(t: Tile): Tile {
   return { ground: t.ground, level: t.level, water: t.water, indoor: t.indoor, veranda: t.veranda };
@@ -68,6 +76,8 @@ export class History {
   private pendingMerge: string | null = null;
   /** Пока идёт применение отмены, новые записи не пишутся. */
   private applying = false;
+  /** Сколько правок тайлов хранится всего — для потолка. */
+  private tilesCount = 0;
 
   constructor(world: World) {
     this.world = world;
@@ -94,6 +104,7 @@ export class History {
     this.past = [];
     this.future = [];
     this.snap = null;
+    this.tilesCount = 0;
   }
 
   /**
@@ -120,10 +131,11 @@ export class History {
     this.snap = null;
     if (!snap || this.applying) return false;
 
-    const tiles: TileDelta[] = [];
+    const tiles: number[] = [];
     for (let i = 0; i < this.world.tiles.length; i++) {
       const now = this.world.tiles[i];
-      if (!sameTile(snap.tiles[i], now)) tiles.push({ i, before: snap.tiles[i], after: copyTile(now) });
+      const was = snap.tiles[i];
+      if (!sameTile(was, now)) tiles.push(i, packTile(was), packTile(now));
     }
 
     const added: PlacedObject[] = [];
@@ -166,10 +178,20 @@ export class History {
       this.mergeInto(prev, edit);
     } else {
       this.past.push(edit);
-      if (this.past.length > MAX_STEPS) this.past.shift();
+      this.tilesCount += edit.tiles.length / 3;
     }
+    this.trim();
     this.future = [];
     return true;
+  }
+
+  /** Вытеснить самые старые шаги, когда память или глубина за потолком. */
+  private trim(): void {
+    while (this.tilesCount > TILE_BUDGET || this.past.length > MAX_STEPS) {
+      const e = this.past.shift();
+      if (!e) break;
+      this.tilesCount -= e.tiles.length / 3;
+    }
   }
 
   /** Отбросить начатое действие, ничего не записывая. */
@@ -184,14 +206,19 @@ export class History {
   }
 
   private mergeInto(prev: Edit, next: Edit): void {
-    const byIndex = new Map(prev.tiles.map((d) => [d.i, d]));
-    for (const d of next.tiles) {
-      const old = byIndex.get(d.i);
-      // «Было» берём самое раннее, «стало» — самое позднее
-      if (old) old.after = d.after;
-      else {
-        prev.tiles.push(d);
-        byIndex.set(d.i, d);
+    if (next.tiles.length) {
+      const pos = new Map<number, number>();
+      for (let k = 0; k < prev.tiles.length; k += 3) pos.set(prev.tiles[k], k);
+      for (let k = 0; k < next.tiles.length; k += 3) {
+        const i = next.tiles[k];
+        const at = pos.get(i);
+        // «Было» берём самое раннее, «стало» — самое позднее
+        if (at !== undefined) prev.tiles[at + 2] = next.tiles[k + 2];
+        else {
+          pos.set(i, prev.tiles.length);
+          prev.tiles.push(i, next.tiles[k + 1], next.tiles[k + 2]);
+          this.tilesCount++;
+        }
       }
     }
     for (const o of next.added) {
@@ -217,8 +244,10 @@ export class History {
     const edit = this.past.pop();
     if (!edit) return null;
     this.applying = true;
+    this.tilesCount -= edit.tiles.length / 3;
 
-    for (const d of edit.tiles) this.world.tiles[d.i] = copyTile(d.before);
+    const t = edit.tiles;
+    for (let k = 0; k < t.length; k += 3) this.world.tiles[t[k]] = unpackTile(t[k + 1]);
     if (edit.added.length) {
       const drop = new Set(edit.added.map((o) => o.id));
       this.world.objects = this.world.objects.filter((o) => !drop.has(o.id));
@@ -244,7 +273,8 @@ export class History {
     if (!edit) return null;
     this.applying = true;
 
-    for (const d of edit.tiles) this.world.tiles[d.i] = copyTile(d.after);
+    const t = edit.tiles;
+    for (let k = 0; k < t.length; k += 3) this.world.tiles[t[k]] = unpackTile(t[k + 2]);
     if (edit.removed.length) {
       const drop = new Set(edit.removed.map((o) => o.id));
       this.world.objects = this.world.objects.filter((o) => !drop.has(o.id));
@@ -260,6 +290,7 @@ export class History {
 
     this.applying = false;
     this.past.push(edit);
+    this.tilesCount += edit.tiles.length / 3;
     return edit.label;
   }
 
