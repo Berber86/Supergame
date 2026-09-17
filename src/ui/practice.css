@@ -1,0 +1,510 @@
+/* =====================================================================
+   ШКОЛА ТИШИНЫ
+   Полноэкранный лист поверх сада: выбор практики, текст урока, сеанс.
+   Материал тот же, что у свитков и панелей, — рисовая бумага и тушь;
+   ночью лист темнеет вместе с садом. Ничего не давит: ни полос прогресса,
+   ни очков, только тонкая дуга оставшегося времени на холсте сеанса.
+   Все цели касания — не меньше 44 px.
+   ===================================================================== */
+
+.practice {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.55s var(--ease);
+}
+
+.practice.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.practice.night {
+  background: linear-gradient(170deg, #26304a 0%, #1a2130 55%, #141a26 100%);
+  color: var(--paper);
+}
+
+.pr-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: calc(12px + var(--safe-t, 0px)) calc(14px + var(--safe-r, 0px)) 8px calc(18px + var(--safe-l, 0px));
+}
+
+.pr-kanji {
+  font-family: var(--jp);
+  font-size: 26px;
+  color: var(--silk);
+}
+
+.practice.night .pr-kanji {
+  color: #d8b48c;
+}
+
+.pr-title {
+  flex: 1;
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.practice.night .pr-title {
+  color: rgba(244, 236, 217, 0.62);
+}
+
+.pr-close {
+  width: var(--touch-min, 44px);
+  height: var(--touch-min, 44px);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+
+.practice.night .pr-close {
+  color: rgba(244, 236, 217, 0.7);
+}
+
+.pr-close:hover {
+  background: rgba(59, 48, 40, 0.08);
+}
+
+.practice.night .pr-close:hover {
+  background: rgba(244, 236, 217, 0.1);
+}
+
+.pr-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px calc(20px + var(--safe-r, 0px)) calc(24px + var(--safe-b, 0px)) calc(20px + var(--safe-l, 0px));
+  font-size: calc(1em * var(--ui-scale, 1));
+}
+
+/* ---------------- Выбор ---------------- */
+
+.pr-lead {
+  font-style: italic;
+  color: var(--ink-soft);
+  margin: 2px 0 18px;
+  max-width: 640px;
+}
+
+.practice.night .pr-lead {
+  color: rgba(244, 236, 217, 0.66);
+}
+
+.pr-cols {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 30px;
+  align-items: start;
+}
+
+@media (max-width: 760px), (orientation: portrait) {
+  .pr-cols {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+.pr-sec {
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--silk);
+  margin-bottom: 10px;
+}
+
+.practice.night .pr-sec {
+  color: #d8b48c;
+}
+
+.pr-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  padding: 8px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.pr-row:hover {
+  background: rgba(59, 48, 40, 0.06);
+}
+
+.practice.night .pr-row:hover {
+  background: rgba(244, 236, 217, 0.08);
+}
+
+.pr-row-kanji {
+  font-family: var(--jp);
+  font-size: 20px;
+  color: var(--ink-soft);
+  width: 34px;
+  text-align: center;
+  flex: none;
+}
+
+.practice.night .pr-row-kanji {
+  color: rgba(244, 236, 217, 0.72);
+}
+
+.pr-row-n {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(59, 48, 40, 0.4);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.practice.night .pr-row-n {
+  border-color: rgba(244, 236, 217, 0.4);
+  color: rgba(244, 236, 217, 0.72);
+}
+
+.pr-row.done .pr-row-n {
+  background: var(--moss);
+  border-color: transparent;
+  color: #fdfaf0;
+}
+
+.pr-row-info {
+  min-width: 0;
+}
+
+.pr-row-name {
+  font-size: 16.5px;
+}
+
+.pr-row-hint {
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+.practice.night .pr-row-hint {
+  color: rgba(244, 236, 217, 0.55);
+}
+
+.pr-chips {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  flex: none;
+}
+
+.pr-chip {
+  min-width: var(--touch-min, 44px);
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid rgba(59, 48, 40, 0.35);
+  border-radius: 17px;
+  font-size: 12.5px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.practice.night .pr-chip {
+  border-color: rgba(244, 236, 217, 0.35);
+}
+
+.pr-chip:hover,
+.pr-chip.on {
+  background: rgba(176, 83, 63, 0.12);
+  border-color: rgba(176, 83, 63, 0.5);
+}
+
+.practice.night .pr-chip:hover,
+.practice.night .pr-chip.on {
+  background: rgba(216, 180, 140, 0.16);
+  border-color: rgba(216, 180, 140, 0.55);
+}
+
+.pr-memory {
+  margin-top: 16px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--silk);
+}
+
+.practice.night .pr-memory {
+  color: #d8b48c;
+}
+
+.pr-care {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(59, 48, 40, 0.3);
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--ink-soft);
+  max-width: 640px;
+}
+
+.practice.night .pr-care {
+  border-top-color: rgba(244, 236, 217, 0.25);
+  color: rgba(244, 236, 217, 0.55);
+}
+
+/* ---------------- Урок ---------------- */
+
+.pr-l-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.pr-l-kanji {
+  font-family: var(--jp);
+  font-size: 42px;
+  color: var(--silk);
+}
+
+.practice.night .pr-l-kanji {
+  color: #d8b48c;
+}
+
+.pr-l-n {
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.practice.night .pr-l-n {
+  color: rgba(244, 236, 217, 0.6);
+}
+
+.pr-l-head h3 {
+  margin: 2px 0 0;
+  font-size: 26px;
+  font-weight: 600;
+}
+
+.pr-l-text p {
+  margin: 0 0 12px;
+  max-width: 640px;
+  font-size: 16.5px;
+  line-height: 1.65;
+}
+
+.pr-l-notice {
+  margin: 18px 0;
+  padding: 10px 16px;
+  border-left: 2px solid var(--silk);
+  max-width: 600px;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+.practice.night .pr-l-notice {
+  color: rgba(244, 236, 217, 0.7);
+}
+
+.pr-l-notice em {
+  display: block;
+  font-style: normal;
+  font-size: 11.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--silk);
+  margin-bottom: 4px;
+}
+
+.practice.night .pr-l-notice em {
+  color: #d8b48c;
+}
+
+.pr-l-actions,
+.pr-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+
+.pr-btn {
+  min-height: var(--touch-min, 44px);
+  padding: 10px 26px;
+  border: 1px solid rgba(59, 48, 40, 0.5);
+  border-radius: 2px;
+  cursor: pointer;
+  letter-spacing: 0.08em;
+  background: rgba(255, 252, 240, 0.4);
+}
+
+.practice.night .pr-btn {
+  border-color: rgba(244, 236, 217, 0.5);
+  color: #f4ecd9;
+  background: rgba(244, 236, 217, 0.08);
+}
+
+.pr-btn:hover {
+  background: rgba(59, 48, 40, 0.1);
+}
+
+.practice.night .pr-btn:hover {
+  background: rgba(244, 236, 217, 0.16);
+}
+
+.pr-btn.ghost {
+  border-color: transparent;
+  background: none;
+  color: var(--ink-soft);
+}
+
+.practice.night .pr-btn.ghost {
+  color: rgba(244, 236, 217, 0.62);
+}
+
+/* ---------------- Сеанс ---------------- */
+
+.pr-session {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.pr-canvas {
+  width: min(60vmin, 520px);
+  height: min(60vmin, 520px);
+}
+
+.pr-line {
+  min-height: 26px;
+  padding: 0 16px;
+  text-align: center;
+  font-size: 17px;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+.practice.night .pr-line {
+  color: rgba(244, 236, 217, 0.75);
+}
+
+.pr-meta {
+  font-size: 11.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  opacity: 0.7;
+}
+
+.practice.night .pr-meta {
+  color: rgba(244, 236, 217, 0.5);
+}
+
+/* ---------------- Итог ---------------- */
+
+.pr-end {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.pr-end-kanji {
+  font-family: var(--jp);
+  font-size: 54px;
+  color: var(--silk);
+}
+
+.practice.night .pr-end-kanji {
+  color: #d8b48c;
+}
+
+.pr-end-line {
+  font-size: 22px;
+}
+
+.pr-end-sub {
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+.practice.night .pr-end-sub {
+  color: rgba(244, 236, 217, 0.6);
+}
+
+.pr-end .pr-actions {
+  justify-content: center;
+}
+
+/* Тихая строка входа в созерцании: практика приходит, когда всё ушло */
+.sit-line {
+  position: absolute;
+  left: 50%;
+  bottom: calc(16px + var(--safe-b, 0px));
+  transform: translateX(-50%);
+  min-height: var(--touch-min, 44px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-radius: 22px;
+  background: rgba(38, 28, 20, 0.55);
+  color: rgba(244, 236, 217, 0.85);
+  font-size: 13.5px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  z-index: 8;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1.1s var(--ease);
+}
+
+.sit-line.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sit-line .kanji {
+  font-family: var(--jp);
+  font-size: 16px;
+}
+
+/* Строка-дверь внутри свитка помощи */
+.scroll-sit {
+  margin-top: 18px;
+  padding: 12px 16px;
+  min-height: var(--touch-min, 44px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(176, 83, 63, 0.4);
+  border-radius: 3px;
+  color: var(--silk);
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.scroll-sit:hover {
+  background: rgba(176, 83, 63, 0.08);
+}
+
+.scroll-sit span {
+  font-family: var(--jp);
+  font-size: 18px;
+}

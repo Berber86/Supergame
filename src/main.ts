@@ -25,6 +25,7 @@ import { findPath, layPath } from './world/paths';
 import { ShotRatio, composeScroll } from './ui/snapshot';
 import { SettingsPanel, applyView, loadView } from './ui/settings';
 import { Splash } from './ui/splash';
+import { PracticePanel } from './ui/practicePanel';
 import { TouchInput, isTouchDevice } from './ui/touch';
 import { PlacedObject } from './world/types';
 
@@ -146,6 +147,9 @@ const ui = new UI(app, world, {
   onGardens() {
     gardensPanel.toggle();
   },
+  onSit() {
+    practice.openMenu();
+  },
 });
 
 // Настройки вида применяем до первого кадра, чтобы интерфейс
@@ -219,8 +223,11 @@ function setZen(on: boolean): void {
     ui.toggleBuild(false);
     ui.toggleHelp(false);
     ui.setZenNote('созерцание · любое движение вернёт интерфейс');
+    // практика предлагает себя ровно тогда, когда исчезло всё остальное
+    ui.setSitVisible(true);
   } else {
     ui.setZenNote('');
+    ui.setSitVisible(false);
   }
 }
 
@@ -520,6 +527,11 @@ window.addEventListener('keydown', (e) => {
   // Не перехватываем набор текста (переименование усадьбы)
   const el = e.target as HTMLElement | null;
   if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
+  // под листом практики сад не живёт: клавиши не проходят сквозь него
+  if (practice.isOpen) {
+    if (e.key === 'Escape') practice.close();
+    return;
+  }
   wake();
 
   // Отмена и повтор — до остальных клавиш
@@ -939,6 +951,29 @@ function setRoofVisible(visible: boolean): void {
 
 ui.onSound = () => void toggleSound();
 
+// ---------------- Школа тишины ----------------
+
+/** Пока открыт лист практики, сцена не рисуется вовсе: за непрозрачной
+ *  бумагой картинка не нужна, а батарея телефона — нужна. */
+let practiceActive = false;
+
+const practice = new PracticePanel(app, {
+  onActive(active) {
+    practiceActive = active;
+    if (active) {
+      ui.toggleBuild(false);
+      ui.setSitVisible(false);
+    } else {
+      wake();
+    }
+  },
+  duck: (v) => audio.setDuck(v),
+  bowl: (a) => audio.bowl(a),
+  han: (a) => audio.han(a),
+  breath: (phase, seconds) => audio.breath(phase, seconds),
+  toast: (text) => ui.toast(text),
+});
+
 // ---------------- Заставка ----------------
 
 // Лист рисуется по настоящим часам игрока и по настоящей погоде мира: если
@@ -1037,7 +1072,9 @@ function frame(now: number): void {
   // «войти» — и рендер идёт полным ходом, поэтому за растворением листа
   // виден сад, а не пустой холст.
   sceneAccum -= dt;
-  if (!splash.isOpen || sceneAccum <= 0) {
+  if (practiceActive) {
+    // под листом практики сад не рисуется вовсе
+  } else if (!splash.isOpen || sceneAccum <= 0) {
     sceneAccum = 150;
     scene.render(world, atm, now, dt, life, weatherSys.state);
   }
