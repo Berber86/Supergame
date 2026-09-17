@@ -4,6 +4,7 @@ import { LEVEL_H, TILE_H, TILE_W } from '../core/iso';
 import { clamp01, hash2, lerp, makeRng } from '../core/rng';
 import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
 import { PlacedObject } from '../world/types';
+import { ITEM_BY_ID } from '../world/catalog';
 import { Ctx, blobPath, glow, granulate, softShadow, taperStroke, washBlob } from './paint';
 
 export interface DrawCtx {
@@ -30,7 +31,31 @@ function litc(c: RGB, atm: Atmosphere, boost = 0): RGB {
   return shade(mix(c, atm.lightTint, atm.lightAmount), atm.exposure + boost);
 }
 
+/**
+ * Когда включён кэш спрайтов, тень рисуется отдельно прямо на сцене.
+ *
+ * Тень кладётся режимом multiply — она умножается на землю под собой.
+ * На прозрачном холсте кэша умножать не на что, и тень выходит иной,
+ * чем при обычной отрисовке. Поэтому кэшируется только сам объект,
+ * а тень остаётся на сцене, где под ней есть земля.
+ */
+let skipShadows = false;
+/** Куда записать параметры тени вместо рисования — для режима «только тень». */
+let shadowProbe: { rx: number; ry: number; strength: number } | null = null;
+
+export function setSkipShadows(v: boolean): void {
+  skipShadows = v;
+}
+
 function shadowUnder(d: DrawCtx, rx: number, ry: number, strength = 1): void {
+  // В режиме замера просто запоминаем размеры: их назначает сам
+  // рисовальщик, и угадывать их таблицей снаружи — значит рисовать
+  // другую тень, чем была.
+  if (shadowProbe) {
+    shadowProbe = { rx, ry, strength };
+    return;
+  }
+  if (skipShadows) return;
   const { ctx, atm } = d;
   ctx.save();
   ctx.globalCompositeOperation = 'multiply';
@@ -2230,6 +2255,44 @@ const DRAWERS: Record<string, Drawer> = {
   cat: drawCat,
 };
 
+/**
+ * Тень объекта — для случая, когда сам объект берётся из кэша.
+ *
+ * Размеры тени спрашиваем у самого рисовальщика: у каждого они свои
+ * (у дерева от ширины кроны, у камня от его масштаба). Пробный прогон
+ * идёт в пустой холст и только запоминает числа.
+ */
+const shadowSpec = new Map<string, { rx: number; ry: number; strength: number } | null>();
+
+export function drawObjectShadow(d: DrawCtx): void {
+  const key = `${d.obj.type}|${Math.round(d.g * 12)}|${d.obj.rot}`;
+  let spec = shadowSpec.get(key);
+  if (spec === undefined) {
+    const probe = document.createElement('canvas');
+    probe.width = 8;
+    probe.height = 8;
+    const pc = probe.getContext('2d');
+    if (!pc) {
+      shadowSpec.set(key, null);
+      return;
+    }
+    shadowProbe = { rx: 0, ry: 0, strength: 0 };
+    const fn = DRAWERS[d.obj.type];
+    if (fn) {
+      try {
+        fn({ ...d, ctx: pc as unknown as Ctx, x: 0, y: 0, time: 0, wind: 0, alpha: 1 });
+      } catch {
+        // рисовальщику мог не понравиться крошечный холст — тень пропустим
+      }
+    }
+    spec = shadowProbe.rx > 0 ? shadowProbe : null;
+    shadowProbe = null;
+    shadowSpec.set(key, spec);
+  }
+  if (!spec) return;
+  shadowUnder(d, spec.rx, spec.ry, spec.strength);
+}
+
 export function drawObject(d: DrawCtx): void {
   const fn = DRAWERS[d.obj.type];
   if (!fn) return;
@@ -2238,6 +2301,35 @@ export function drawObject(d: DrawCtx): void {
   ctx.globalAlpha = d.alpha;
   fn(d);
   ctx.globalAlpha = prev;
+}
+
+/**
+ * Во сколько примерно обходится отрисовка типа, в микросекундах.
+ *
+ * Числа сняты замером на стартовом саде (см. историю сессии 7): деревья
+ * около 640 мкс, камни 220, кусты 150, мелочь 60–90. Точность тут не нужна —
+ * значение служит порогом «стоит ли класть в кэш»: копирование холста
+ * тоже не бесплатно, и дешёвую мелочь выгоднее рисовать заново.
+ */
+export function drawCost(type: string): number {
+  const item = ITEM_BY_ID.get(type);
+  if (!item) return 0;
+  switch (item.kind) {
+    case 'tree':
+      return 640;
+    case 'rock':
+      return 220;
+    case 'shrub':
+      return 150;
+    case 'pavilion':
+      return 120;
+    case 'bridge':
+      return 116;
+    case 'flower':
+      return 91;
+    default:
+      return 60;
+  }
 }
 
 export function hasDrawer(type: string): boolean {

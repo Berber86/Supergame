@@ -8,10 +8,11 @@ import { PlacedObject } from '../world/types';
 import { World } from '../world/world';
 import { Ctx, getPaperTile, glow, vignette } from './paint';
 import { TerrainLayer, TileRect, drawWaterAnimation, renderTerrain } from './terrain';
-import { drawObject } from './sprites';
+import { drawCost, drawObject, drawObjectShadow } from './sprites';
 import { drawHouseRoof, drawHouseWalls } from './building';
 import { Life } from '../world/life';
 import { drawBird, drawCat, drawFish, drawFlutter } from './creatures';
+import { cacheable, cachedGrowth, drawCached, spriteFrame } from './spriteCache';
 import { Weather, drawMist, drawSunShafts } from './weather';
 import { RainRenderer, drawFog, drawLightning, drawWetSheen } from './rain';
 import { WeatherState } from '../world/weatherState';
@@ -77,6 +78,8 @@ export class Scene {
 
   /** Показывать ли частицы: лепестки, светлячков, бабочек, дождь. */
   particles = true;
+  /** Кэш спрайтов — можно выключить для сравнения «до и после». */
+  useSpriteCache = true;
   /** Начало прокладываемой тропы. */
   pathFrom: { x: number; y: number } | null = null;
   /** Предпросмотр тропы — клетки, по которым она ляжет. */
@@ -251,6 +254,7 @@ export class Scene {
     }
 
     // анимированная вода: сначала общие блики, потом течение и водопады
+    spriteFrame();
     this.flow.ensure(world);
     drawWaterAnimation(ctx, world, atm, time);
     drawCurrent(ctx, world, this.flow, atm, time);
@@ -653,6 +657,12 @@ export class Scene {
       const p = isoToScreen(cx, cy, lvl);
       const s = this.worldToScreen(p.x, p.y);
       if (s.x < -240 || s.x > this.viewW + 240 || s.y < -280 || s.y > this.viewH + 240) continue;
+
+      // На общем плане мелочь не читается: подушка мха размером в три
+      // пикселя стоит столько же, сколько вблизи, но её попросту не видно.
+      // На телефоне сад по умолчанию показан целиком, так что это
+      // основной режим просмотра, а не редкий случай.
+      if (this.camera.zoom < 0.42 && (item.kind === 'micro' || item.kind === 'flower')) continue;
       const g = world.growth(o, now);
       // ветер берём в точке дерева — порыв проходит волной
       const wind = this.life ? this.life.windAt(cx, cy) : this.wind;
@@ -664,6 +674,48 @@ export class Scene {
         depth: (cx + cy) * 100 + lvl * 20,
         draw: () => {
           if (isMoving || isHot) this.drawObjectMarker(ctx, cx, cy, lvl, isMoving, time);
+
+          // Дорогие неподвижные объекты идём через кэш спрайтов: дерево
+          // стоит 638 мкс, и перерисовывать его каждый кадр незачем —
+          // меняется только покачивание, а его даёт сдвиг при копировании.
+          const cost = drawCost(o.type);
+          if (this.useSpriteCache && cacheable(o.type, cost)) {
+            // Ветер даём сдвигом готового спрайта. Формула повторяет ту,
+            // что внутри makeTree: та же фаза, та же амплитуда с учётом
+            // стадии роста. Ствол там качается втрое слабее кроны, поэтому
+            // берём среднее — сдвиг всего спрайта мягче, чем у одной кроны.
+            // Тот же огрублённый размер, что у спрайта в кэше: иначе тень
+            // будет от дерева другой стадии роста, и края разойдутся.
+            const gq = cachedGrowth(g);
+            const scale = 0.18 + 0.82 * Math.pow(gq, 0.72);
+            const sway = Math.sin(time * 0.0004 + o.seed) * 3 * wind * scale * 0.7;
+            // Тень рисуем прямо здесь: она идёт режимом multiply по земле,
+            // и в прозрачном холсте кэша ей не на что умножаться.
+            drawObjectShadow({
+              ctx,
+              x: p.x,
+              y: p.y,
+              atm,
+              g: gq,
+              obj: o,
+              time,
+              wind,
+              alpha: isMoving ? 0.72 : 1,
+            });
+            const drawn = drawCached({
+              ctx,
+              x: p.x + sway,
+              y: p.y - lift,
+              atm,
+              g,
+              obj: o,
+              time,
+              wind,
+              alpha: isMoving ? 0.72 : 1,
+            });
+            if (drawn) return;
+          }
+
           drawObject({
             ctx,
             x: p.x,

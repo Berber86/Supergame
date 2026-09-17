@@ -1705,3 +1705,58 @@ body.touch.portrait .rotate-note.dismissed {
     bottom: calc(44vh + 8px);
   }
 }
+
+/* ---------- Мастерская времени на пальце ----------
+   Панель делалась под мышь: чипы сезонов около 22 px высотой, ползунок
+   часа тонкий. Пальцем в такое не попасть, а на телефоне это единственный
+   способ посмотреть сад в другом сезоне. */
+
+body.touch .time-card.clickable {
+  cursor: pointer;
+}
+
+body.touch .dev-chip {
+  font-size: 13.5px;
+  padding: 9px 13px;
+  min-height: var(--touch-min);
+  display: inline-flex;
+  align-items: center;
+}
+
+body.touch input[type='range'].dev-hour {
+  height: var(--touch-min);
+}
+
+body.touch input[type='range'].dev-hour::-webkit-slider-thumb {
+  width: 26px;
+  height: 26px;
+}
+
+body.touch .dev-close {
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+  display: grid;
+  place-items: center;
+}
+
+body.touch .dev-toggle {
+  min-height: var(--touch-min);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+body.touch .dev-toggle input[type='checkbox'] {
+  width: 21px;
+  height: 21px;
+}
+
+/* Плашка часов кликабельна — покажем это лёгким откликом */
+.time-card.clickable {
+  cursor: pointer;
+  transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+
+.time-card.clickable:active {
+  transform: scale(0.98);
+}

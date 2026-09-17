@@ -37,6 +37,8 @@ export interface UIHooks {
   onRoof(): void;
   /** Панель настроек вида. */
   onSettings(): void;
+  /** Мастерская времени: час, сезон, погода. */
+  onTimeWorkshop(): void;
 }
 
 export class UI {
@@ -81,7 +83,14 @@ export class UI {
       </div>
       <div class="time-sub">весна · утро</div>
       <div class="season-bar"><i style="width:0%"></i></div>`;
+    // Плашка часов — она же вход в мастерскую времени. На телефоне нет
+    // клавиатуры, и клавиша T была недостижима; отдельная девятая кнопка
+    // в столбце лишняя, а нажать на часы, чтобы поменять время, — понятно.
+    time.classList.add('clickable');
+    time.title = 'Мастерская времени (T)';
+    time.addEventListener('click', () => this.hooks.onTimeWorkshop());
     layer.appendChild(time);
+    this.els.timeCard = time;
     this.els.clock = time.querySelector('.clock')!;
     this.els.kanji = time.querySelector('.season-kanji')!;
     this.els.sub = time.querySelector('.time-sub')!;

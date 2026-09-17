@@ -138,6 +138,10 @@ const ui = new UI(app, world, {
   onSettings() {
     settingsPanel.toggle();
   },
+  onTimeWorkshop() {
+    devPanel.toggle();
+    devPanel.refresh();
+  },
   onGardens() {
     gardensPanel.toggle();
   },
