@@ -599,11 +599,10 @@ function flushMilestones(): void {
  * Вехи, которые подняли эти же события, показываем следом своим чередом.
  */
 function flushChronicle(): void {
-  let noted = false;
-  while (world.pendingNotes.length) {
-    ui.showChronicleNote(world.pendingNotes.shift()!);
-    noted = true;
-  }
+  // Летопись пишется тихо: строки ложатся в книгу без бумажных полосок
+  // поверх сада — игрок найдёт их сам, когда захочет перечитать.
+  const noted = world.pendingNotes.length > 0;
+  if (noted) world.pendingNotes.length = 0;
   if (world.pendingMilestones.length) flushMilestones();
   else if (noted) saveWorld();
 }

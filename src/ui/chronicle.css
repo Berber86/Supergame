@@ -1,45 +1,5 @@
 /* ---------- Летопись сада ---------- */
 
-/* Мягкая заметка поверх сада: новая строка летописи. Не веха — без печати
-   и без «открыто»: сад просто сообщает, что запомнил. */
-.chron-note {
-  position: absolute;
-  left: 50%;
-  bottom: calc(172px + var(--safe-b, 0px));
-  transform: translate(-50%, 8px);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  max-width: min(430px, 86vw);
-  padding: 8px 18px 8px 12px;
-  border-radius: 3px;
-  box-shadow: var(--shadow);
-  color: var(--ink);
-  opacity: 0;
-  pointer-events: none;
-  transition: all 0.9s var(--ease);
-  z-index: 8;
-}
-
-.chron-note.show {
-  opacity: 0.96;
-  transform: translate(-50%, 0);
-}
-
-.chron-note .ch-kanji {
-  font-family: var(--jp);
-  font-size: 20px;
-  color: var(--silk);
-  line-height: 1;
-}
-
-.chron-note .ch-text {
-  font-size: 13.5px;
-  font-style: italic;
-  letter-spacing: 0.03em;
-  line-height: 1.45;
-}
-
 /* Тихая строка входа в летопись: приходит в созерцании, как «сесть в тишине» */
 .chron-line {
   position: absolute;

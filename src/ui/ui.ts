@@ -4,7 +4,6 @@ import { CatalogItem, ITEMS, MILESTONES, TABS, TERRAIN_BRUSHES, TerrainBrush } f
 import { SEASON_NAMES, SEASON_POEM, TimeState, partOfDay } from '../core/clock';
 import { Atmosphere } from '../world/palette';
 import { GroundId } from '../world/types';
-import { chronicleText } from '../world/chronicle';
 import { World } from '../world/world';
 import { itemIcon, svgIcon } from './icons';
 
@@ -56,7 +55,6 @@ export class UI {
   private activeTab = 'trees';
   private els: Record<string, HTMLElement> = {};
   private milestoneTimer = 0;
-  private chronTimer = 0;
   private toastTimer = 0;
   private iconSeason = '';
   brushSize = 1;
@@ -330,12 +328,6 @@ export class UI {
         goChron();
       }
     });
-
-    // --- Мягкая заметка о новой строке летописи ---
-    const cn = this.el('div', 'chron-note paper');
-    cn.innerHTML = `<span class="ch-kanji" lang="ja"></span><span class="ch-text"></span>`;
-    layer.appendChild(cn);
-    this.els.chronNote = cn;
 
     // --- Тихая строка входа в летопись: приходит в созерцании ---
     const chron = this.el('div', 'chron-line');
@@ -649,20 +641,5 @@ export class UI {
   /** Тихая строка летописи приходит туда же, где исчез остальной интерфейс. */
   setChronVisible(v: boolean): void {
     this.els.chron.classList.toggle('show', v);
-  }
-
-  /**
-   * Новая строка летописи: не веха и не награда, а тихое «сад запомнил».
-   * Держится дольше тоста: такую строку хочется дочитать.
-   */
-  showChronicleNote(id: string): void {
-    const t = chronicleText(id);
-    if (!t) return;
-    const e = this.els.chronNote;
-    e.querySelector('.ch-kanji')!.textContent = t.kanji;
-    e.querySelector('.ch-text')!.textContent = t.text;
-    e.classList.add('show');
-    clearTimeout(this.chronTimer);
-    this.chronTimer = window.setTimeout(() => e.classList.remove('show'), 7000);
   }
 }
