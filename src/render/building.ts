@@ -373,6 +373,7 @@ export function drawHouseRoof(ctx: Ctx, world: World, atm: Atmosphere, time: num
     glow(ctx, lx + swing, ly + 25, 70, warm, atm.lampGlow * 0.7);
     ctx.restore();
   }
+  ctx.restore();
 }
 
 function drawPosts(ctx: Ctx, world: World, h: HouseBox, T: ReturnType<typeof woodTones>, atm: Atmosphere): void {
@@ -413,7 +414,6 @@ function drawPosts(ctx: Ctx, world: World, h: HouseBox, T: ReturnType<typeof woo
     ctx.fillRect(p.x - w * 0.9, p.y + postTop, w * 1.8, 4);
     void hash2;
   }
-  ctx.restore();
 }
 
 export { LEVEL_H, TILE_H, TILE_W };

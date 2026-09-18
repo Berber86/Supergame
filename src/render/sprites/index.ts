@@ -25,7 +25,18 @@ import { makeRock, drawStepStone, drawMossClump, drawPebbles, drawGrassTuft, mak
 import { drawLilypad, drawLotus, drawKoi, drawReed, drawHorsetail, drawWaterStone } from './water';
 import { drawBridge, drawPlankBridge } from './bridges';
 import { drawStoneLantern, drawPaperLantern, drawPathLight, drawBrazier } from './light';
-import { drawPavilion, drawTorii, drawShoji, drawFusuma, drawTokonoma, drawFeeder, drawBirdbath } from './buildings';
+import {
+  drawPavilion,
+  drawTorii,
+  drawShoji,
+  drawFusuma,
+  drawTokonoma,
+  drawFeeder,
+  drawBirdbath,
+  drawBeehive,
+  drawSquirrelFeeder,
+  drawTurtleLog,
+} from './buildings';
 import {
   drawTable,
   drawCushion,
@@ -92,6 +103,9 @@ const DRAWERS: Record<string, Drawer> = {
   bonsai: drawBonsai,
   feeder: drawFeeder,
   birdbath: drawBirdbath,
+  beehive: drawBeehive,
+  squirrel_feeder: drawSquirrelFeeder,
+  turtle_log: drawTurtleLog,
   cushion: drawCushion,
   bowl: drawBowl,
   cat: drawCat,

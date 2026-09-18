@@ -17,7 +17,17 @@ import { drawCost, drawObject, drawObjectShadow } from './sprites';
 import { cacheable, cachedGrowth, drawCached } from './spriteCache';
 import { drawBird, drawButterfly, drawCat } from './creatures';
 import { drawDragonfly, drawFrog } from './residents';
-import { drawDeer, drawFirefly, drawHeron } from './wildlife';
+import {
+  drawBee,
+  drawDeer,
+  drawFirefly,
+  drawHedgehog,
+  drawHeron,
+  drawMouse,
+  drawOwl,
+  drawSquirrel,
+  drawTurtle,
+} from './wildlife';
 import type { GhostPreview } from './scene';
 
 /** Наборка состояния сцены, нужная одному кадру сортированных объектов. */
@@ -403,7 +413,7 @@ export function drawGhost(
         x: p.x,
         y: p.y,
         atm,
-        g: item.growDays > 0 ? 0.55 : 1,
+        g: 1,
         obj: fake,
         time,
         wind: wind,
@@ -572,13 +582,52 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
       const p = isoToScreen(d.tx, d.ty, lvl);
       list.push({ depth: (d.tx + d.ty) * 100 + lvl * 20 + 5, draw: () => drawDeer(ctx, d, p.x, p.y, atm, time) });
     }
-    // Светлячки — ночная мелочь: на дальнем плане бережём кадр
+    // Ёжик и мышка — видны при приближении (0.5+), но и на общем плане как точки
+    if (opts.zoom >= 0.42) {
+      for (const e of opts.life.wildlife.hedgehogs) {
+        const tile = world.at(Math.floor(e.tx), Math.floor(e.ty));
+        const lvl = tile ? tile.level : 0;
+        const p = isoToScreen(e.tx, e.ty, lvl);
+        list.push({ depth: (e.tx + e.ty) * 100 + lvl * 20 + 5, draw: () => drawHedgehog(ctx, e, p.x, p.y, atm, time) });
+      }
+      for (const m of opts.life.wildlife.mice) {
+        const tile = world.at(Math.floor(m.tx), Math.floor(m.ty));
+        const lvl = tile ? tile.level : 0;
+        const p = isoToScreen(m.tx, m.ty, lvl);
+        list.push({ depth: (m.tx + m.ty) * 100 + lvl * 20 + 5, draw: () => drawMouse(ctx, m, p.x, p.y, atm, time) });
+      }
+      for (const o of opts.life.wildlife.owls) {
+        const tile = world.at(Math.floor(o.tx), Math.floor(o.ty));
+        const lvl = tile ? tile.level : 0;
+        const p = isoToScreen(o.tx, o.ty, lvl);
+        list.push({ depth: (o.tx + o.ty) * 100 + lvl * 20 + 7, draw: () => drawOwl(ctx, o, p.x, p.y, atm, time) });
+      }
+      for (const sq of opts.life.wildlife.squirrels) {
+        const tile = world.at(Math.floor(sq.tx), Math.floor(sq.ty));
+        const lvl = tile ? tile.level : 0;
+        const p = isoToScreen(sq.tx, sq.ty, lvl);
+        list.push({ depth: (sq.tx + sq.ty) * 100 + lvl * 20 + 5, draw: () => drawSquirrel(ctx, sq, p.x, p.y, atm, time) });
+      }
+      for (const tu of opts.life.wildlife.turtles) {
+        const tile = world.at(Math.floor(tu.tx), Math.floor(tu.ty));
+        const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
+        const p = isoToScreen(tu.tx, tu.ty, lvl);
+        list.push({ depth: (tu.tx + tu.ty) * 100 + lvl * 20 + 4, draw: () => drawTurtle(ctx, tu, p.x, p.y, atm, time) });
+      }
+    }
+    // Светлячки и пчёлы — ночная и дневная мелочь: на дальнем плане бережём кадр
     if (opts.zoom >= 0.42 && opts.particles) {
       for (const f of opts.life.wildlife.fireflies) {
         const tile = world.at(Math.floor(f.tx), Math.floor(f.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(f.tx, f.ty, lvl);
         list.push({ depth: (f.tx + f.ty) * 100 + lvl * 20 + 10, draw: () => drawFirefly(ctx, f, p.x, p.y, atm, time) });
+      }
+      for (const b of opts.life.wildlife.bees) {
+        const tile = world.at(Math.floor(b.tx), Math.floor(b.ty));
+        const lvl = tile ? tile.level : 0;
+        const p = isoToScreen(b.tx, b.ty, lvl);
+        list.push({ depth: (b.tx + b.ty) * 100 + lvl * 20 + 11, draw: () => drawBee(ctx, b, p.x, p.y, atm, time) });
       }
     }
   }
@@ -650,14 +699,14 @@ export function drawSunGlow(ctx: Ctx, W: number, H: number, atm: Atmosphere): vo
   const t = atm.time;
   if (t.daylight < 0.05) return;
   const sun = sunScreenPos(W, H, t.dayT);
-  // Дозировка скромная: «lighter» складывает краску, и чуть перебрав,
-  // получаем молочную пелену вместо закатного тепла.
-  const s = (0.07 * t.daylight + 0.17 * atm.golden) * (1 - atm.overcast * 0.7);
-  if (s < 0.02) return;
+  // Было слишком ярко: 0.07*daylight давало молочную пелену даже в полдень,
+  // а золотой час выжигал. Уменьшили в ~2.5 раза и перевели в soft-light.
+  const s = (0.025 * t.daylight + 0.07 * atm.golden) * (1 - atm.overcast * 0.75);
+  if (s < 0.015) return;
   const warm = mix({ r: 255, g: 226, b: 168 }, { r: 255, g: 158, b: 84 }, atm.golden);
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  glow(ctx, sun.x, sun.y, Math.max(W, H) * (0.42 + atm.golden * 0.28), warm, s);
+  ctx.globalCompositeOperation = 'soft-light';
+  glow(ctx, sun.x, sun.y, Math.max(W, H) * (0.32 + atm.golden * 0.18), warm, s);
   ctx.restore();
 }
 
@@ -682,10 +731,10 @@ export function drawColorGrade(ctx: Ctx, W: number, H: number, atm: Atmosphere):
   }
 
   // Свет направленный: тёплое плечо со стороны солнца, прохладное — со
-  // стороны тени. Днём это еле заметное моделирование, в золотой час —
-  // главная драматургия кадра. Тучи съедают направленность, как и положено.
-  const dirA = (0.035 + t.daylight * 0.035 + atm.golden * 0.14) * (1 - atm.overcast * 0.65);
-  if (dirA > 0.012 && t.daylight > 0.12) {
+  // стороны тени. Было слишком ярко (0.035+...), теперь еле заметное
+  // моделирование днём и мягкая драматургия в золотой час.
+  const dirA = (0.012 + t.daylight * 0.014 + atm.golden * 0.06) * (1 - atm.overcast * 0.7);
+  if (dirA > 0.008 && t.daylight > 0.12) {
     const sunSide = atm.sunDir.x >= 0 ? 1 : -1;
     const warmCol = mix({ r: 255, g: 206, b: 138 }, { r: 255, g: 166, b: 92 }, atm.golden);
     const coolCol = mix({ r: 106, g: 126, b: 172 }, { r: 150, g: 128, b: 158 }, atm.golden * 0.5);
@@ -693,8 +742,8 @@ export function drawColorGrade(ctx: Ctx, W: number, H: number, atm: Atmosphere):
     const x1 = sunSide > 0 ? W : 0;
     const g = ctx.createLinearGradient(x0, 0, x1, H * 0.85);
     g.addColorStop(0, css(warmCol, dirA));
-    g.addColorStop(0.55, css(mix(warmCol, coolCol, 0.5), 0));
-    g.addColorStop(1, css(coolCol, dirA * 0.85));
+    g.addColorStop(0.6, css(mix(warmCol, coolCol, 0.5), 0));
+    g.addColorStop(1, css(coolCol, dirA * 0.7));
     ctx.globalCompositeOperation = 'soft-light';
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
