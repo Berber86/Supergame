@@ -364,11 +364,9 @@ body.touch.portrait .rotate-note.dismissed {
   }
   /* Подсказку поднимаем, только пока внизу и правда есть подсказка
      о повороте: иначе она висит посреди экрана без причины. */
+  /* Подсказка живёт над рядом кнопок инструментов и не кроет его */
   body.touch.portrait .hint-bar {
-    bottom: calc(58px + var(--safe-b));
-  }
-  body.touch.portrait:has(.rotate-note.dismissed) .hint-bar {
-    bottom: calc(14px + var(--safe-b));
+    bottom: calc(66px + var(--safe-b));
   }
 
   /* Каталог снизу — в книжной ориентации это уместно */

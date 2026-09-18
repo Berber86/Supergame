@@ -505,7 +505,8 @@ const SPECIES: Record<BirdSpecies, SpeciesLook> = {
  */
 export function drawBird(ctx: Ctx, bird: Bird, x: number, y: number, atm: Atmosphere, time: number): void {
   const sp = SPECIES[bird.species] ?? SPECIES.sparrow;
-  const s = bird.scale;
+  // Птица — мелочь рядом с вещами сада: футон больше воробья во много раз
+  const s = bird.scale * 0.62;
   const body = litc(sp.body, atm);
   const belly = litc(sp.belly, atm);
   const beak = litc({ r: 226, g: 176, b: 96 }, atm);

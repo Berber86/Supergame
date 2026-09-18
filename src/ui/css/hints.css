@@ -1,5 +1,10 @@
 /* ---------- Подсказка внизу ---------- */
 
+/* Пустая подсказка не оставляет пилюлю на экране */
+.hint-bar:empty {
+  display: none;
+}
+
 .hint-bar {
   position: absolute;
   bottom: 26px;

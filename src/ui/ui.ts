@@ -239,10 +239,8 @@ export class UI {
     cat.querySelector('.catalog-handle')!.addEventListener('click', () => this.toggleBuild());
 
     // --- Подсказка ---
+    // Подсказка рождается пустой: сад не объясняют, в нём живут
     const hint = this.el('div', 'hint-bar fade');
-    hint.textContent = matchMedia('(hover: none)').matches
-      ? 'Проведите пальцем — осмотрите сад. Щипок — приблизить.'
-      : 'Перетаскивайте — осматривайте сад. Колесо — приблизить.';
     layer.appendChild(hint);
     this.els.hint = hint;
 
