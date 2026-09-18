@@ -35,6 +35,24 @@ export interface ObjectsOpts {
   particles: boolean;
 }
 
+/**
+ * Положение солнца на экране.
+ *
+ * Дуга держится в полосе неба, которое реально видно в типичном кадре:
+ * остров-ромб закрывает середины высот, дом — верхнюю середину, а открыты
+ * левый и правый верхние углы. Поэтому светило поднимается лишь до
+ * ~0.08H в полдень и опускается к ~0.34H у горизонта — утром оно слева,
+ * вечером справа, и его правда видно, а не прячется за садом, как было
+ * с прежней дугой (0.62H − sin·0.52H: диск всегда оказывался за островом
+ * или крышей, и закат в кадре не существовал).
+ * elev — высота солнца 0..1, та же, что в worlds/palette (тени по ней).
+ */
+export function sunScreenPos(W: number, H: number, dayT: number): { x: number; y: number; elev: number } {
+  const sunT = clamp01((dayT - 0.22) / 0.58);
+  const elev = Math.sin(sunT * Math.PI);
+  return { x: W * (0.06 + sunT * 0.88), y: H * (0.34 - elev * 0.26), elev };
+}
+
 export function drawSky(ctx: Ctx, W: number, H: number, atm: Atmosphere, time: number): void {
   const g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, css(atm.skyTop, 1));
@@ -50,35 +68,36 @@ export function drawSky(ctx: Ctx, W: number, H: number, atm: Atmosphere, time: n
   // должен читаться закат. Теперь «горизонт» проходит по видимой полосе
   // неба над дальним краем острова, и рассвет с закатом видно целиком.
   const t = atm.time;
-  const sunT = clamp01((t.dayT - 0.22) / 0.58);
   const isDay = t.dayT > 0.2 && t.dayT < 0.84;
-  const bodyX = W * (0.12 + sunT * 0.76);
-  const bodyY = H * (0.38 - Math.sin(sunT * Math.PI) * 0.3);
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   if (isDay) {
-    const warm = mix({ r: 255, g: 246, b: 214 }, { r: 255, g: 186, b: 122 }, atm.golden);
-    glow(ctx, bodyX, bodyY, 190, warm, 0.5 + atm.golden * 0.45);
-    // Диск рисуется поверх неба обычной кистью и насыщенным цветом:
-    // «lighter» на светлом небе вырождается в белое пятно, и закатное
-    // солнце не читалось — оно должно быть янтарным, как лампа.
+    const sun = sunScreenPos(W, H, t.dayT);
+    const sunT = clamp01((t.dayT - 0.22) / 0.58);
+    // У горизонта солнце крупнее и гуще — закатное ярмо, а не солнечный зайчик.
+    // Ореол скромный, а диск кладём обычной кистью поверх неба и ореола
+    // насыщенным цветом: «lighter» на светлом небе вырождается в белое
+    // пятно, а закатное солнце должно быть янтарным, как лампа.
+    const warm = mix({ r: 255, g: 240, b: 198 }, { r: 255, g: 152, b: 78 }, atm.golden);
+    const rr = 22 + atm.golden * 18;
+    glow(ctx, sun.x, sun.y, 150 + atm.golden * 110, warm, 0.32 + atm.golden * 0.22);
     const disc = mix(warm, { r: 255, g: 150, b: 74 }, atm.golden * 0.85);
     ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = css(disc, 0.95);
-    const r = 26 + atm.golden * 5;
+    ctx.fillStyle = css(mix(disc, { r: 255, g: 252, b: 236 }, 0.22 * (1 - atm.golden)), 0.95);
     // у самого горизонта диск сплющивается — солнце «садится за горизонт»
     const edge = Math.min(1, Math.min(sunT, 1 - sunT) / 0.09);
     ctx.save();
-    ctx.translate(bodyX, bodyY);
+    ctx.translate(sun.x, sun.y);
     ctx.scale(1, 0.6 + 0.4 * edge);
     ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.arc(0, 0, rr, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   } else {
     const nightT = t.dayT < 0.2 ? (t.dayT + 0.16) / 0.36 : (t.dayT - 0.84 + 0.16) / 0.36;
-    const mx = W * (0.15 + clamp01(nightT) * 0.7);
-    const my = H * (0.36 - Math.sin(clamp01(nightT) * Math.PI) * 0.26);
+    // Луна держится той же видимой полосы неба, что и солнце днём
+    const mx = W * (0.08 + clamp01(nightT) * 0.84);
+    const my = H * (0.32 - Math.sin(clamp01(nightT) * Math.PI) * 0.22);
     const moon: RGB = { r: 238, g: 242, b: 226 };
     glow(ctx, mx, my, 130, moon, 0.35);
     ctx.fillStyle = css(moon, 0.8);
@@ -618,6 +637,30 @@ export function drawPaperGrain(
   return paperPattern;
 }
 
+/**
+ * Солнце «в объективе»: тёплый свет, заливающийся в кадр со стороны
+ * светила, поверх уже нарисованного мира (экранные координаты).
+ *
+ * Сам диск на небе часто закрыт усадьбой и деревьями — кадр смотрит
+ * на сад сверху, и неба в нём мало. Но присутствие солнца должно
+ * ощущаться: днём — мягким теплом с его стороны, в золотой час —
+ * закатным пламенем, протянувшимся поперёк сцены. Тучи гасят заливку.
+ */
+export function drawSunGlow(ctx: Ctx, W: number, H: number, atm: Atmosphere): void {
+  const t = atm.time;
+  if (t.daylight < 0.05) return;
+  const sun = sunScreenPos(W, H, t.dayT);
+  // Дозировка скромная: «lighter» складывает краску, и чуть перебрав,
+  // получаем молочную пелену вместо закатного тепла.
+  const s = (0.07 * t.daylight + 0.17 * atm.golden) * (1 - atm.overcast * 0.7);
+  if (s < 0.02) return;
+  const warm = mix({ r: 255, g: 226, b: 168 }, { r: 255, g: 158, b: 84 }, atm.golden);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  glow(ctx, sun.x, sun.y, Math.max(W, H) * (0.42 + atm.golden * 0.28), warm, s);
+  ctx.restore();
+}
+
 export function drawColorGrade(ctx: Ctx, W: number, H: number, atm: Atmosphere): void {
   // Общий тёплый/холодный «фильтр» по времени суток
   const t = atm.time;
@@ -641,7 +684,7 @@ export function drawColorGrade(ctx: Ctx, W: number, H: number, atm: Atmosphere):
   // Свет направленный: тёплое плечо со стороны солнца, прохладное — со
   // стороны тени. Днём это еле заметное моделирование, в золотой час —
   // главная драматургия кадра. Тучи съедают направленность, как и положено.
-  const dirA = (0.035 + t.daylight * 0.035 + atm.golden * 0.1) * (1 - atm.overcast * 0.65);
+  const dirA = (0.035 + t.daylight * 0.035 + atm.golden * 0.14) * (1 - atm.overcast * 0.65);
   if (dirA > 0.012 && t.daylight > 0.12) {
     const sunSide = atm.sunDir.x >= 0 ? 1 : -1;
     const warmCol = mix({ r: 255, g: 206, b: 138 }, { r: 255, g: 166, b: 92 }, atm.golden);

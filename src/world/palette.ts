@@ -191,19 +191,25 @@ export function buildAtmosphere(t: TimeState, overcast = 0): Atmosphere {
   let exposure = lerp(0.42, 1.0, clamp01(d * 1.05)) + g * 0.05;
   exposure *= lerp(1, 0.62, overcast);
 
-  const shadowTint = mix(rgb(52, 62, 104), rgb(108, 116, 150), d);
+  // Тень чуть глубже и холоднее днём: светлый синеватый тон давал
+  // «дыхание», а не тень — на залитой светом траве её не было видно.
+  const shadowTint = mix(rgb(52, 62, 104), rgb(90, 98, 136), d);
   // Плотность тени растёт к полудню: низкое солнце рассеивается по небу
   // и тени светлее (но длиннее — длина считается в shadowUnder), а в
   // полдень короткая тень лежит плотным пятном — это «вес» объектов.
-  const sunT0 = clamp01((t.dayT - 0.22) / 0.58);
-  const densK = lerp(0.85, 1.18, Math.sin(sunT0 * Math.PI));
-  const shadowAmount = (lerp(0.15, 0.34, d) + g * 0.06) * lerp(1, 0.38, overcast) * densK;
-
-  // Солнце ходит по небу: тени поворачиваются в течение дня.
-  const ang = Math.PI * (0.15 + t.dayT * 1.0);
-  const sunDir = { x: Math.cos(ang), y: 0.42 + 0.22 * Math.sin(ang * 0.7) };
-  // Высота солнца: та же дуга, что у диска на небе (scene-steps.drawSky).
+  // Диапазон поднят: прежний максимум (≈0.32) на залитой светом траве
+  // читался лёгким серым дыханием, а не тенью — объекты «летали».
   const sunT = clamp01((t.dayT - 0.22) / 0.58);
+  const densK = lerp(0.78, 1.3, Math.sin(sunT * Math.PI));
+  const shadowAmount = (lerp(0.15, 0.42, d) + g * 0.07) * lerp(1, 0.36, overcast) * densK;
+
+  // Солнце ходит по небу: диск на экране движется слева направо
+  // (scene-steps.sunScreenPos), а тени бегут в противоположную сторону —
+  // утром вправо, к полудню собираются под объект, к закату влево.
+  // Раньше азимут шёл по косинусу от dayT, и утром тень едва отклонялась,
+  // а в полдень заметно кренилась влево, против собственного солнца.
+  const sunDir = { x: 1 - 2 * sunT, y: 0.3 + (1 - Math.sin(sunT * Math.PI)) * 0.25 };
+  // Высота солнца: та же дуга, что у диска на небе (scene-steps.drawSky).
   const sunElev = Math.sin(sunT * Math.PI);
 
   return {

@@ -27,6 +27,7 @@ import {
   drawPaperGrain,
   drawColorGrade,
   drawAerialPerspective,
+  drawSunGlow,
 } from './scene-steps';
 
 export interface Camera {
@@ -408,6 +409,10 @@ export class Scene {
       drawFog(ctx, W, H, atm, ws, time);
       drawLightning(ctx, W, H, ws);
     }
+
+    // Солнце «в объективе»: тёплая заливка со стороны светила поверх мира —
+    // сам диск часто закрыт домом, но закат должен читаться и без неба
+    drawSunGlow(ctx, W, H, atm);
 
     // --- Пост-обработка ---
     this.paperPattern = drawPaperGrain(ctx, W, H, this.paperPattern);
