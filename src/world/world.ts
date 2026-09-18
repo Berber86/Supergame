@@ -2,7 +2,19 @@
 
 import { GRID, inBounds } from '../core/iso';
 import { clamp, fbm, hash2 } from '../core/rng';
-import { BRUSH_BY_ID, ITEM_BY_ID, MILESTONES, TerrainBrush, footprintCells } from './catalog';
+import {
+  BRUSH_BY_ID,
+  CatalogItem,
+  ITEMS,
+  ITEM_BY_ID,
+  MILESTONES,
+  TAB_BY_ID,
+  TERRAIN_BRUSHES,
+  TerrainBrush,
+  footprintCells,
+} from './catalog';
+import { ChronicleEntry, noteChronicle } from './chronicle';
+import { GrowRect, GrowState, growOfferReady, growTick, growZones, inGrowRect } from './grow';
 import { DAY_MS } from '../core/clock';
 import { SAVE_VERSION, parseSave, serializeSave } from './saveFormat';
 import { GroundId, PlacedObject, SaveData, Tile } from './types';
@@ -17,8 +29,16 @@ export class World {
   nextId = 1;
   milestones = new Set<string>();
   seenTabs = new Set<string>();
+  /** Каталог открытий: предметы, доступные игроку. Копятся через строительство. */
+  unlocked = new Set<string>();
+  /** Свежие открытия: золотая точка горит до первой постройки предмета. */
+  fresh = new Set<string>();
+  /** Летопись сада: первые встречи и редкие события, по одной строке. */
+  chronicle: ChronicleEntry[] = [];
   /** Очередь уведомлений о новых вехах. */
   pendingMilestones: string[] = [];
+  /** Очередь новых строк летописи — мягкие заметки поверх сада. */
+  pendingNotes: string[] = [];
   /** Границы последней правки земли — для частичной перерисовки. */
   lastTouched: { x0: number; y0: number; x1: number; y1: number } | null = null;
 
@@ -52,6 +72,7 @@ export class World {
   }
 
   reset(): void {
+    this.born = Date.now();
     this.tiles = [];
     for (let y = 0; y < GRID; y++) {
       for (let x = 0; x < GRID; x++) {
@@ -62,8 +83,14 @@ export class World {
     }
     this.objects = [];
     this.nextId = 1;
+    // Вольный сад: режима роста нет
+    this.grow = null;
+    this.growRefused = false;
     this.milestones = new Set();
     this.seasonsSeen = new Set();
+    // Летопись нового сада пуста: встречи ещё впереди
+    this.chronicle = [];
+    this.pendingNotes = [];
     this.seenTabs = new Set(['ground', 'water', 'relief', 'trees', 'stones', 'micro']);
     this.seedStarterGarden();
 
@@ -73,6 +100,60 @@ export class World {
     // остаётся только то, что он сделает сам.
     this.observe(Date.now(), 'spring', false, false);
     this.pendingMilestones.length = 0;
+    this.initUnlocks(true);
+  }
+
+  /**
+   * Открытия каталога. Строгий старт (растущий сад): ровно одно случайное
+   * открытие, всё остальное впереди. Мягкий (вольный сад-витрина): доступно
+   * то, что уже стоит, и земные кисти, плюс одно открытие впереди.
+   */
+  initUnlocks(lenient: boolean): void {
+    this.unlocked = new Set();
+    this.fresh = new Set();
+    if (lenient) {
+      for (const o of this.objects) if (ITEM_BY_ID.has(o.type)) this.unlocked.add(o.type);
+      for (const b of TERRAIN_BRUSHES) this.unlocked.add(b.id);
+    }
+    this.unlockRandomItem();
+  }
+
+  /** Запись каталога технически доступна: веха вкладки открыта, размер влезает. */
+  itemAvailable(item: CatalogItem | TerrainBrush): boolean {
+    const tab = TAB_BY_ID.get(item.tab);
+    if (!tab) return false;
+    if (tab.requires && !this.milestones.has(tab.requires)) return false;
+    if (this.grow) {
+      const r = this.grow.rect;
+      const straight = item.w <= r.w && item.h <= r.h;
+      const turned = 'rotatable' in item && !!item.rotatable && item.h <= r.w && item.w <= r.h;
+      if (!straight && !turned) return false;
+    }
+    return true;
+  }
+
+  /** Открыть одну случайную доступную запись: предмет или кисть. */
+  unlockRandomItem(): string | null {
+    const pool: (CatalogItem | TerrainBrush)[] = [...ITEMS, ...TERRAIN_BRUSHES];
+    const closed = pool.filter((e) => !this.unlocked.has(e.id) && this.itemAvailable(e));
+    if (!closed.length) return null;
+    const pick = closed[Math.floor(Math.random() * closed.length)];
+    this.unlocked.add(pick.id);
+    this.fresh.add(pick.id);
+    return pick.id;
+  }
+
+  /** Кисть или заливка впервые тронули сад: точка открытия гаснет. */
+  useEntry(id: string): boolean {
+    if (!this.fresh.has(id)) return false;
+    this.fresh.delete(id);
+    return true;
+  }
+
+  /** Строительство случилось: точка предмета гаснет, открывается что-то новое. */
+  onBuiltItem(itemId: string): void {
+    this.fresh.delete(itemId);
+    this.unlockRandomItem();
   }
 
   /** Начальная композиция: небольшая усадьба, чтобы сцена сразу выглядела как картина. */
@@ -223,6 +304,8 @@ export class World {
     this.place('cushion', 5.5, 6.5, 0, old);
     this.place('cushion', 7.5, 6.5, 0, old);
     this.place('cat', 8.5, 7.5, 0, old);
+    // Миска у кота: второму коту будет зачем остаться
+    this.place('bowl', 9.5, 7.5, 0, old);
     this.place('wind_chime', 9.5, 8.5, 0, old);
     this.place('tsukubai', 11.5, 8.25, 0, old);
     this.place('shishi', 12.5, 12.5, 0, old);
@@ -420,12 +503,23 @@ export class World {
    */
   brushSize = 1;
 
+  /** Режим растущего сада: null у вольных усадеб. */
+  grow: GrowState | null = null;
+  /** Когда сад родился: годы летописи считаем отсюда. */
+  born = Date.now();
+  /** Действие кончилось: последний отказ, чтобы интерфейс тихо пояснил. */
+  growRefused = false;
+  private strokeCharged = false;
+
   /** Заливка области одним материалом вместо мазков по клетке. */
   floodFill(tx: number, ty: number, g: GroundId): boolean {
     const sx = Math.floor(tx);
     const sy = Math.floor(ty);
     const start = this.at(sx, sy);
     if (!start) return false;
+    // В растущем саду заливать можно лишь открытую землю
+    if (this.grow && !inGrowRect(this.grow.rect, sx, sy)) return false;
+    if (!this.growPay()) return false;
     // Что считаем «той же областью»: материал и наличие воды
     const srcGround = start.ground;
     const srcWater = start.water;
@@ -444,6 +538,7 @@ export class World {
       const y = (i / GRID) | 0;
       const t = this.tiles[i];
       if (t.indoor || t.veranda) continue;
+      if (this.grow && !inGrowRect(this.grow.rect, x, y)) continue;
       if (t.ground !== srcGround || t.water !== srcWater) continue;
       t.ground = g;
       t.water = false;
@@ -465,6 +560,13 @@ export class World {
     const x0 = Math.floor(tx - (bw - 1) / 2);
     const y0 = Math.floor(ty - (bh - 1) / 2);
     const rad = (bw - 1) / 2;
+    // За туманом растущего сада кисть не работает: сперва открой землю
+    if (
+      this.grow &&
+      !(inGrowRect(this.grow.rect, x0, y0) && inGrowRect(this.grow.rect, x0 + bw - 1, y0 + bh - 1))
+    )
+      return false;
+    if (!this.growPayStroke()) return false;
     switch (brush.kind) {
       case 'ground':
         for (let y = y0; y < y0 + bh; y++)
@@ -703,6 +805,10 @@ export class World {
   place(type: string, tx: number, ty: number, rot = 0, planted = Date.now()): PlacedObject | null {
     const item = ITEM_BY_ID.get(type);
     if (!item) return null;
+    // В растущем саду каждое посаженное стоит действия,
+    // а за туманом сажать нечего: сперва открой землю
+    if (this.grow && !inGrowRect(this.grow.rect, tx, ty)) return null;
+    if (!this.growPay()) return null;
     const obj: PlacedObject = {
       id: this.nextId++,
       type,
@@ -823,6 +929,9 @@ export class World {
     const item = ITEM_BY_ID.get(obj.type);
     if (!item) return false;
     if (!this.objects.includes(obj)) return false;
+    // Перенести за туман нельзя: там земля ещё не открыта
+    if (this.grow && !inGrowRect(this.grow.rect, Math.floor(tx), Math.floor(ty))) return false;
+    if (!this.growPay()) return false;
     const oldX = obj.tx;
     const oldY = obj.ty;
     const oldRot = obj.rot;
@@ -853,6 +962,28 @@ export class World {
     this.pendingMilestones.push(id);
   }
 
+  /**
+   * Строка летописи. Первые встречи не повторяются: сад помнит, кого
+   * уже видел. Некоторые строки заодно поднимают веху — но только те,
+   * что нельзя «выполнить» нарочно.
+   */
+  noteEvent(id: string, now: number): boolean {
+    if (!noteChronicle(this.chronicle, id, now)) return false;
+    this.pendingNotes.push(id);
+    if (id === 'meet_frog') this.checkMilestone('first_frog');
+    if (id === 'guest_stayed') this.checkMilestone('second_cat');
+    if (id === 'chorus') this.checkMilestone('frog_chorus');
+    if (id === 'winter_table') this.checkMilestone('winter_feeder');
+    if (id === 'meet_firefly') this.checkMilestone('night_lights');
+    if (id === 'meet_heron') this.checkMilestone('heron_guest');
+    if (id === 'meet_deer') this.checkMilestone('deer_guest');
+    return true;
+  }
+
+  hasEvent(id: string): boolean {
+    return this.chronicle.some((e) => e.id === id);
+  }
+
   /** Стадия роста 0..1 для объекта. */
   growth(o: PlacedObject, now: number): number {
     const item = ITEM_BY_ID.get(o.type);
@@ -863,6 +994,65 @@ export class World {
 
   // ---- Сохранение ----
 
+  // ---------------- Растущий сад ----------------
+
+  /** Начислить действия за прошедшее настоящее время (тихо, без UI). */
+  growTickNow(): void {
+    if (this.grow) growTick(this.grow, Date.now());
+  }
+
+  /**
+   * Списать одно действие. У вольного сада счета нет вовсе — возвращаем
+   * true, чтобы прежняя игра не заметила новой бухгалтерии.
+   */
+  growPay(): boolean {
+    if (!this.grow) return true;
+    growTick(this.grow, Date.now());
+    if (this.grow.bank <= 0) {
+      this.growRefused = true;
+      return false;
+    }
+    this.grow.bank -= 1;
+    this.grow.progress += 1;
+    return true;
+  }
+
+  /** Мазок кисти земли стоит как одно действие, каким бы длинным ни был. */
+  growPayStroke(): boolean {
+    if (!this.grow) return true;
+    if (this.strokeCharged) return true;
+    const ok = this.growPay();
+    if (ok) this.strokeCharged = true;
+    return ok;
+  }
+
+  /** Новая кисть — новый мазок: счётчик мазка сбрасывается. */
+  beginStroke(): void {
+    this.strokeCharged = false;
+  }
+
+  /** Зоны-кандидаты расширения, когда порог действий достигнут. */
+  growZonesNow(): GrowRect[] {
+    if (!this.grow || !growOfferReady(this.grow)) return [];
+    return growZones(this.grow.rect);
+  }
+
+  /** Выбранная зона открыта: сад вырос, счёт до следующего порога. */
+  growExpand(zone: GrowRect): void {
+    const g = this.grow;
+    if (!g) return;
+    const r = g.rect;
+    const x = Math.min(r.x, zone.x);
+    const y = Math.min(r.y, zone.y);
+    const x1 = Math.max(r.x + r.w, zone.x + zone.w);
+    const y1 = Math.max(r.y + r.h, zone.y + zone.h);
+    g.rect = { x, y, w: x1 - x, h: y1 - y };
+    g.progress = 0;
+    g.stage += 1;
+    g.choosing = false;
+    this.noteObjectsChanged();
+  }
+
   toJSON(): SaveData {
     return {
       version: SAVE_VERSION,
@@ -872,6 +1062,11 @@ export class World {
       milestones: [...this.milestones],
       seasons: [...this.seasonsSeen],
       seen: [...this.seenTabs],
+      chronicle: this.chronicle.map((e) => ({ id: e.id, at: e.at })),
+      grow: this.grow ? { ...this.grow, rect: { ...this.grow.rect } } : null,
+      born: this.born,
+      unlocked: [...this.unlocked],
+      fresh: [...this.fresh],
     };
   }
 
@@ -902,8 +1097,39 @@ export class World {
     this.milestones = new Set(p.milestones);
     this.seasonsSeen = new Set(p.seasons);
     this.seenTabs = new Set(p.seen);
+    this.chronicle = (p.chronicle ?? []).map((e) => ({ id: e.id, at: e.at }));
+    this.grow = p.grow ?? null;
+    this.born = p.born ?? this.born;
+    // Лягушки из тумана: если в открытом саду нет воды, случайные строки
+    // прежних ошибок не остаются в книге
+    if (this.grow) {
+      const r = this.grow.rect;
+      let water = false;
+      for (let y = r.y; y < r.y + r.h && !water; y++)
+        for (let x = r.x; x < r.x + r.w; x++)
+          if (this.tiles[y * GRID + x].water) {
+            water = true;
+            break;
+          }
+      if (!water) {
+        this.chronicle = this.chronicle.filter((e) => e.id !== 'meet_frog' && e.id !== 'frog_chorus');
+        this.milestones.delete('first_frog');
+        this.milestones.delete('frog_chorus');
+      }
+    }
+    this.growRefused = false;
+    this.strokeCharged = false;
     this.pendingMilestones = [];
+    this.pendingNotes = [];
     this.lastTouched = null;
+    if (p.unlocked) {
+      this.unlocked = new Set(p.unlocked);
+      this.fresh = new Set(p.fresh ?? []);
+    } else {
+      // Старое сохранение: растущий сад начинает путь заново с одного открытия,
+      // вольный оставляет себе то, что уже прожито
+      this.initUnlocks(!p.grow);
+    }
     this.noteObjectsChanged();
   }
 

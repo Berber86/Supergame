@@ -5,9 +5,10 @@
 
 import './ui/style.css';
 import { GRID, floorTo, inBounds } from './core/iso';
-import { computeTime } from './core/clock';
 import { Scene } from './render/scene';
 import { World } from './world/world';
+import { GROW_BANK_CAP, growOfferReady, newGrowState, seedGrowWorld, GROW_ACTION_MS } from './world/grow';
+import { moving, pathStart, pointer, setupInput } from './app/input';
 import { UI, Selection } from './ui/ui';
 import { ITEM_BY_ID, TERRAIN_BRUSHES, footprintCells } from './world/catalog';
 import { Life } from './world/life';
@@ -19,12 +20,11 @@ import { History } from './core/history';
 import { GardenStore } from './world/gardens';
 import { GardensPanel } from './ui/gardensPanel';
 import { findPath, layPath } from './world/paths';
-import { ShotRatio, composeScroll } from './ui/snapshot';
 import { SettingsPanel, applyView, loadView } from './ui/settings';
 import { isTouchDevice } from './ui/touch';
-import { pointer, moving, pathStart, setupInput, touchMode } from './app/input';
 import { startLoop } from './app/gameLoop';
 import { PracticePanel } from './ui/practicePanel';
+import { ChroniclePanel } from './ui/chroniclePanel';
 import { StartScreen } from './ui/startScreen';
 
 const app = document.getElementById('app')!;
@@ -91,8 +91,17 @@ function hideStorageWarn(): void {
   storageWarnKind = null;
 }
 
+/** Каталог видит только то, что влезает в текущий растущий сад. */
+function syncGrowRect(): void {
+  const r = world.grow?.rect;
+  growRectKey = r ? `${r.x},${r.y},${r.w},${r.h}` : '';
+  ui.setGrowRect(r ? { w: r.w, h: r.h } : null);
+}
+
 /** Сохранение теперь всегда идёт в активный слот усадьбы. */
 function saveWorld(): void {
+  syncRoofButton();
+  syncGrowRect();
   const res = gardens.save(world);
   // Запись снова пошла — плашку убираем сами, без лишних слов.
   if (res.ok) hideStorageWarn();
@@ -140,6 +149,17 @@ if (isTouchDevice()) {
 }
 
 let selection: Selection = { kind: 'none' };
+
+// Как ставит инструмент: одиночное касание или мазок движением.
+// Выбор игрока переживает перезагрузку — привычка руки не должна теряться.
+function loadPaintPref(): 'tap' | 'stroke' {
+  try {
+    return localStorage.getItem('usadba.paintMode') === 'tap' ? 'tap' : 'stroke';
+  } catch {
+    return 'stroke';
+  }
+}
+let paintMode: 'tap' | 'stroke' = loadPaintPref();
 /** Свиток стартовой страницы ещё висит: сад за ним живёт, но не слушает клавиш. */
 let startOpen = true;
 let ghostRot = 0;
@@ -150,6 +170,8 @@ let entryZoom = 0;
 
 const ui = new UI(app, world, {
   onSelect(sel) {
+    // Смена инструмента убирает ждущий призрак бесплатно
+    if (pendingPlace && (sel.kind !== 'item' || sel.item.id !== pendingPlace.itemId)) cancelPlace();
     selection = sel;
     ghostRot = 0;
     // Сетка нужна, когда кладут землю или предметы; пипетке и переносу — нет
@@ -170,16 +192,17 @@ const ui = new UI(app, world, {
   onToggleBuild(open) {
     scene.showGrid = open && selection.kind !== 'none';
     if (!open) {
+      clearPending();
       scene.ghost = null;
       canvas.classList.remove('building');
     }
     wake();
   },
-  onZen() {
-    setZen(!zenMode);
+  onConfirmPlace() {
+    confirmPlace();
   },
-  onScreenshot() {
-    takeScreenshot();
+  onCancelPlace() {
+    cancelPlace();
   },
   onReset() {
     world.clearSave();
@@ -211,16 +234,54 @@ const ui = new UI(app, world, {
   onSit() {
     practice.openMenu();
   },
+  onGrowLine() {
+    const g = world.grow;
+    if (!g || !growOfferReady(g)) return;
+    g.choosing = true;
+    saveWorld();
+  },
+  onRotate() {
+    rotateGhost();
+  },
+  onPaintMode(m) {
+    paintMode = m;
+    ui.setPaintMode(m);
+    try {
+      localStorage.setItem('usadba.paintMode', m);
+    } catch {
+      /* приватный режим — переживём */
+    }
+    ui.setHint(m === 'stroke' ? 'Мазок: зажмите и ведите — кисть и мелочь сыплются движением' : 'Касание: клик ставит один предмет, движение ведёт камеру');
+  },
+  onChronicle() {
+    chronicle.toggle();
+    wake();
+  },
 });
+
+// Летопись сада: свиток с первыми встречами. Открывается тихо, без кнопки.
+const chronicle = new ChroniclePanel(app, world);
 
 // Настройки вида применяем до первого кадра, чтобы интерфейс
 // сразу открылся таким, каким игрок его оставил.
 const view = loadView();
 applyView(view);
 
-const settingsPanel = new SettingsPanel(app, view, (v) => {
-  scene.particles = v.particles;
-});
+// Звук: состояние живёт выше панели настроек — её строка «Звук сада»
+// спрашивает его уже в момент постройки.
+let soundOn = false;
+
+const settingsPanel = new SettingsPanel(
+  app,
+  view,
+  (v) => {
+    scene.particles = v.particles;
+  },
+  {
+    get: () => soundOn,
+    toggle: () => void toggleSound(),
+  },
+);
 
 const gardensPanel = new GardensPanel(app, world, gardens, {
   onSwitch() {
@@ -235,6 +296,8 @@ const gardensPanel = new GardensPanel(app, world, gardens, {
     ui.renderTabs();
     ui.renderItems();
     syncHistoryUI();
+    syncRoofButton();
+    syncGrowRect();
     wake();
   },
   toast: (t) => ui.toast(t),
@@ -271,27 +334,28 @@ function afterHistory(label: string | null, verb: string): void {
 }
 
 function doUndo(): void {
+  cancelPlace();
   afterHistory(history.undo(), 'отмена');
 }
 
 function doRedo(): void {
+  cancelPlace();
   afterHistory(history.redo(), 'повтор');
 }
 
 // ---------------- Режим созерцания ----------------
 
+/** Интерфейс растворяется без движения: без режима, просто тишина экрана. */
 function setZen(on: boolean): void {
   zenMode = on;
   document.body.classList.toggle('zen', on);
   if (on) {
     ui.toggleBuild(false);
     ui.toggleHelp(false);
-    ui.setZenNote('созерцание · любое движение вернёт интерфейс');
-    // практика предлагает себя ровно тогда, когда исчезло всё остальное
-    ui.setSitVisible(true);
+    settingsPanel.setOpen(false);
+    gardensPanel.setOpen(false);
   } else {
-    ui.setZenNote('');
-    ui.setSitVisible(false);
+    ui.setGrowVisible(growLineShown);
   }
 }
 
@@ -301,7 +365,7 @@ function wake(): void {
   if (zenMode) setZen(false);
 }
 
-const IDLE_MS = 14000;
+const IDLE_MS = 20000;
 
 // ---------------- Ввод ----------------
 // Жесты, клавиши и их состояние — в app/input.ts; здесь только связка.
@@ -317,33 +381,41 @@ const input = setupInput({
   gardensPanel,
   settingsPanel,
   devPanel,
+  chronicle,
   selection: () => selection,
-  isZenMode: () => zenMode,
   isStartOpen: () => startOpen,
   isPracticeOpen: () => practice.isOpen,
   closePractice: () => practice.close(),
+  paintMode: () => paintMode,
   actions: {
     applyAt,
     applyErase,
+    growPick,
     updateGhost,
     wake,
     saveWorld,
     syncHistoryUI,
     doUndo,
     doRedo,
-    setZen,
-    takeScreenshot,
-    cycleShotRatio,
     setRoofVisible,
     toggleSound,
-    rotateGhost: () => {
-      ghostRot = (ghostRot + 1) % 4;
-      updateGhost();
-    },
+    rotateGhost,
+    cancelPlace,
   },
 });
 
 // ---------------- Действия ----------------
+
+/** Поворот на 90°: ждущий призрак крутится на месте, обычный — до постановки. */
+function rotateGhost(): void {
+  if (pendingPlace) {
+    pendingPlace.rot = (pendingPlace.rot + 1) % 4;
+    syncPendingGhost();
+    return;
+  }
+  ghostRot = (ghostRot + 1) % 4;
+  updateGhost();
+}
 
 function snapForSelection(tx: number, ty: number): { tx: number; ty: number } {
   if (selection.kind === 'item') {
@@ -357,7 +429,73 @@ function snapForSelection(tx: number, ty: number): { tx: number; ty: number } {
   return { tx: Math.floor(tx), ty: Math.floor(ty) };
 }
 
+/**
+ * Призрак, ждущий подтверждения: только в растущем саду.
+ * Ставится тапом, объект появляется лишь на ✓; любое другое действие
+ * (кроме движения и масштаба камеры) убирает призрак бесплатно.
+ */
+let pendingPlace: { itemId: string; tx: number; ty: number; rot: number } | null = null;
+
+function clearPending(): void {
+  pendingPlace = null;
+  ui.showConfirm(false);
+}
+
+/** Отменить призрак бесплатно: действие роста не тратится. */
+function cancelPlace(): boolean {
+  if (!pendingPlace) return false;
+  clearPending();
+  updateGhost();
+  return true;
+}
+
+/** ✓: призрак становится объектом (в растущем саду тратит действие). */
+function confirmPlace(): void {
+  const p = pendingPlace;
+  if (!p) return;
+  const item = ITEM_BY_ID.get(p.itemId);
+  clearPending();
+  if (!item) return;
+  history.begin(item.name.toLowerCase(), null);
+  const placed = world.place(p.itemId, p.tx, p.ty, p.rot);
+  if (placed) {
+    if (history.commit()) syncHistoryUI();
+    if (item.needsWater || item.onWater) audio.splash();
+    else audio.place();
+    flushMilestones();
+    builtItem(p.itemId);
+    saveWorld();
+  } else {
+    history.abort();
+  }
+  updateGhost();
+}
+
+/** Пока призрак ждёт подтверждения, он закреплён на месте: указатель его не двигает. */
+function syncPendingGhost(): void {
+  const p = pendingPlace;
+  if (!p) return;
+  const item = ITEM_BY_ID.get(p.itemId);
+  if (!item) return;
+  scene.ghost = {
+    kind: 'item',
+    itemId: p.itemId,
+    tx: p.tx,
+    ty: p.ty,
+    rot: p.rot,
+    valid: world.canPlace(p.itemId, p.tx, p.ty, p.rot),
+    w: item.w,
+    h: item.h,
+    hl: footprintCells(item, p.tx, p.ty, p.rot),
+  };
+}
+
 function updateGhost(): void {
+  if (pendingPlace) {
+    scene.highlightId = -1;
+    syncPendingGhost();
+    return;
+  }
   if (!pointer.has || selection.kind === 'none') {
     scene.ghost = null;
     scene.highlightId = -1;
@@ -427,6 +565,9 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
   const p = scene.pickTile(sx, sy, world);
   if (!inBounds(Math.floor(p.tx), Math.floor(p.ty))) return;
 
+  // Любое действие мимо подтверждения снимает призрак бесплатно
+  if (pendingPlace && selection.kind !== 'item') cancelPlace();
+
   // Пипетка: подобрать то, что уже стоит, и продолжить тем же
   if (selection.kind === 'pick') {
     pickAt(p.tx, p.ty);
@@ -440,11 +581,17 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
   }
 
   if (selection.kind === 'fill') {
+    const ground = selection.ground;
     history.begin(`заливка «${selection.name}»`, null);
     world.clearTouched();
     if (world.floodFill(p.tx, p.ty, selection.ground)) {
       repaintTouched();
       if (history.commit()) syncHistoryUI();
+      const gb = TERRAIN_BRUSHES.find((b) => b.ground === ground);
+      if (gb && world.useEntry(gb.id)) {
+        ui.renderTabs();
+        ui.renderItems();
+      }
       audio.place();
       flushMilestones();
     } else {
@@ -461,7 +608,13 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
     world.clearTouched();
     world.applyBrush(b, p.tx, p.ty);
     repaintTouched();
-    if (history.commit()) syncHistoryUI();
+    if (history.commit()) {
+      syncHistoryUI();
+      if (world.useEntry(b.id)) {
+        ui.renderTabs();
+        ui.renderItems();
+      }
+    }
     flushMilestones();
     return;
   }
@@ -473,6 +626,14 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
       if (isClick) ui.toast(item.needsWater ? 'Это растёт только в воде' : 'Здесь вода — нужно другое место');
       return;
     }
+    // Растущий сад: тап ставит призрак; объект появится только на ✓
+    if (world.grow) {
+      if (!isClick) return; // рассыпание движением несовместимо с подтверждением
+      pendingPlace = { itemId: item.id, tx: s.tx, ty: s.ty, rot: ghostRot };
+      syncPendingGhost();
+      ui.showConfirm(true);
+      return;
+    }
     // при «рассыпании» не ставим слишком плотно
     if (!isClick) {
       const tooClose = world.objects.some(
@@ -481,11 +642,12 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
       if (tooClose) return;
     }
     history.begin(item.name.toLowerCase(), isClick ? null : `scatter:${item.id}`);
-    world.place(item.id, s.tx, s.ty, ghostRot);
+    const placed = world.place(item.id, s.tx, s.ty, ghostRot);
     if (history.commit()) syncHistoryUI();
     if (item.needsWater || item.onWater) audio.splash();
     else audio.place();
     flushMilestones();
+    if (placed) builtItem(item.id);
     return;
   }
 
@@ -575,60 +737,44 @@ function applyErase(sx: number, sy: number): void {
   saveWorld();
 }
 
+/** Предмет построен: его точка гаснет, каталог открывается на шаг дальше. */
+function builtItem(itemId: string): void {
+  world.onBuiltItem(itemId);
+  ui.renderTabs();
+  ui.renderItems();
+}
+
 function flushMilestones(): void {
+  let any = false;
   while (world.pendingMilestones.length) {
+    any = true;
     const id = world.pendingMilestones.shift()!;
     ui.showMilestone(id);
+  }
+  if (any) {
+    // Новая веха могла открыть вкладку или расширить пул открытий
+    ui.renderTabs();
+    ui.renderItems();
   }
   saveWorld();
 }
 
+/**
+ * Новые строки летописи: мягкая заметка поверх сада и запись в сохранение.
+ * Вехи, которые подняли эти же события, показываем следом своим чередом.
+ */
+function flushChronicle(): void {
+  // Летопись пишется тихо: строки ложатся в книгу без бумажных полосок
+  // поверх сада — игрок найдёт их сам, когда захочет перечитать.
+  const noted = world.pendingNotes.length > 0;
+  if (noted) world.pendingNotes.length = 0;
+  if (world.pendingMilestones.length) flushMilestones();
+  else if (noted) saveWorld();
+}
+
 /** Соотношение сторон снимка — переключается там же, на кнопке. */
-const SHOT_RATIOS: ShotRatio[] = ['wide', 'square', 'tall'];
-const SHOT_NAMES: Record<ShotRatio, string> = {
-  wide: 'широкий',
-  square: 'квадрат',
-  tall: 'свиток',
-};
-let shotRatio: ShotRatio = 'wide';
-
-function cycleShotRatio(): void {
-  shotRatio = SHOT_RATIOS[(SHOT_RATIOS.indexOf(shotRatio) + 1) % SHOT_RATIOS.length];
-  ui.toast(`Снимок: ${SHOT_NAMES[shotRatio]}`);
-}
-
-function takeScreenshot(): void {
-  const wasZen = zenMode;
-  setZen(true);
-  // Даём кадру отрисоваться без интерфейса
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      const t = computeTime(Date.now());
-      // Кадр обрамляем свитком: поля рисовой бумаги и подпись сезона
-      const scroll = composeScroll(canvas, shotRatio, {
-        season: t.season,
-        year: t.year,
-        time: t.label,
-        garden: gardens.active?.name ?? 'Усадьба',
-      });
-      scroll.toBlob((blob) => {
-        if (!blob) return;
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `усадьба-${t.season}-год-${t.year}-${t.label.replace(':', '-')}.png`;
-        a.click();
-        URL.revokeObjectURL(url);
-        if (!wasZen) setTimeout(() => setZen(false), 200);
-        ui.toast('Снимок сохранён');
-      }, 'image/png');
-    });
-  });
-}
-
 // ---------------- Звук ----------------
 
-let soundOn = false;
 
 async function toggleSound(force?: boolean): Promise<void> {
   const want = force ?? !soundOn;
@@ -642,7 +788,7 @@ async function toggleSound(force?: boolean): Promise<void> {
     soundOn = false;
     ui.toast('Тишина');
   }
-  ui.setSoundState(soundOn);
+  settingsPanel.sync();
 }
 
 /** Показать или убрать кровлю — и запомнить выбор. */
@@ -652,8 +798,6 @@ function setRoofVisible(visible: boolean): void {
   saveRoofPref(visible);
   ui.toast(visible ? 'Крыша на месте' : 'Крыша убрана — видно комнаты');
 }
-
-ui.onSound = () => void toggleSound();
 
 // ---------------- Школа тишины ----------------
 
@@ -666,7 +810,6 @@ const practice = new PracticePanel(app, {
     practiceActive = active;
     if (active) {
       ui.toggleBuild(false);
-      ui.setSitVisible(false);
     } else {
       wake();
     }
@@ -677,6 +820,129 @@ const practice = new PracticePanel(app, {
   breath: (phase, seconds) => audio.breath(phase, seconds),
   toast: (text) => ui.toast(text),
 });
+
+// ---------------- Растущий сад ----------------
+
+const GROW_NAME = 'Растущий сад';
+let growAccum = 0;
+let growLineShown = false;
+/** Ключ текущего прямоугольника роста — чтобы не дёргать каталог каждый кадр. */
+let growRectKey = '';
+
+/** Тик растущего сада: приход действий, строка выбора, отказ-подсказка. */
+/** Кнопка кровли живая, только когда есть дом: иначе её не за что хватать. */
+function syncRoofButton(): void {
+  ui.setRoofAvailable(world.objects.some((o) => o.type === 'house'));
+}
+
+let growBankShown = false;
+
+function growFrame(dt: number): void {
+  if (startOpen) return;
+  if (!world.grow) {
+    if (growRectKey !== '') {
+      growRectKey = '';
+      ui.setGrowRect(null);
+    }
+    if (growBankShown) {
+      growBankShown = false;
+      ui.setGrowBankVisible(false);
+    }
+    return;
+  }
+  growAccum += dt;
+  if (growAccum < 250) return;
+  growAccum = 0;
+  world.growTickNow();
+  if (world.growRefused) {
+    world.growRefused = false;
+    const mins = Math.max(1, Math.ceil((GROW_ACTION_MS - (Date.now() - world.grow.tick)) / 60000));
+    ui.setHint(`Действий нет — новое придёт через ${mins} мин`);
+  }
+  const show = !zenMode && !world.grow.choosing && growOfferReady(world.grow);
+  if (show !== growLineShown) {
+    growLineShown = show;
+    ui.setGrowVisible(show);
+  }
+  // Запас действий: печати и минуты до нового действия
+  // Сад мог вырасти — каталог пересобирается под новый размер
+  const r = world.grow.rect;
+  const key = `${r.x},${r.y},${r.w},${r.h}`;
+  if (key !== growRectKey) syncGrowRect();
+  const bank = world.grow.bank;
+  const mins =
+    bank < GROW_BANK_CAP
+      ? Math.max(1, Math.ceil((world.grow.tick + GROW_ACTION_MS - Date.now()) / 60000))
+      : null;
+  ui.setGrowBank(bank, GROW_BANK_CAP, mins);
+  if (!growBankShown) {
+    growBankShown = true;
+    ui.setGrowBankVisible(true);
+  }
+}
+
+/** Тап по подсвеченной зоне: сад вырастает в выбранную сторону. */
+function growPick(tx: number, ty: number): boolean {
+  const zones = world.growZonesNow();
+  if (!zones.length) return false;
+  for (const z of zones) {
+    if (tx >= z.x && tx < z.x + z.w && ty >= z.y && ty < z.y + z.h) {
+      world.growExpand(z);
+      saveWorld();
+      scene.markTerrainDirty();
+      ui.setHint('Сад вырос — туман отступил');
+      wake();
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Вторая дверь заставки: войти в растущий сад (создать или открыть свой). */
+function enterGrow(): void {
+  const meta = gardens.list.find((m) => m.name === GROW_NAME);
+  if (meta) {
+    if (meta.id === gardens.activeId) {
+      // уже в нём
+    } else if (!gardens.switchTo(world, meta.id)) {
+      return;
+    }
+  } else {
+    gardens.create(world, GROW_NAME);
+    const seed = Math.floor(Math.random() * 1_000_000_000);
+    world.reset();
+    seedGrowWorld(world, seed);
+    world.grow = newGrowState(seed, Date.now());
+    // Стартовая усадьба стёрта: путь роста начинается с одного открытия
+    world.initUnlocks(false);
+    saveWorld();
+  }
+  history.clear();
+  input.cancelOngoingAction();
+  scene.markTerrainDirty();
+  life.reset();
+  ui.select({ kind: 'none' });
+  ui.renderTabs();
+  ui.renderItems();
+  syncHistoryUI();
+  // Камера — на открытый клочок земли
+  const r = world.grow?.rect;
+  if (r) {
+    scene.camera.zoom = 1.15;
+    scene.centerOn(r.x + r.w / 2, r.y + r.h / 2);
+  }
+  growLineShown = false;
+  ui.setGrowVisible(false);
+  growBankShown = false;
+  ui.setGrowBankVisible(false);
+  syncRoofButton();
+  syncGrowRect();
+  // Те же пороги, что и у обычного входа
+  startOpen = false;
+  wake();
+  void toggleSound(true);
+  entryZoom = scene.camera.zoom;
+}
 
 // ---------------- Заставка ----------------
 
@@ -693,7 +959,9 @@ const start = new StartScreen({
     entryZoom = scene.camera.zoom;
     scene.camera.zoom *= 0.86;
     // Подсказка ждёт входа: за свитком её всё равно не видно.
-    showTip(5000);
+  },
+  onGrow() {
+    enterGrow();
   },
 });
 start.mount(document.body);
@@ -719,6 +987,8 @@ startLoop({
     entryZoom = v;
   },
   flushMilestones,
+  flushChronicle,
+  growFrame,
 });
 
 // Кровля: восстанавливаем прошлый выбор игрока до первого кадра,
@@ -727,6 +997,9 @@ scene.roofVisible = loadRoofPref();
 scene.snapRoof();
 ui.setRoofState(scene.roofVisible);
 scene.particles = view.particles;
+ui.setPaintMode(paintMode);
+syncRoofButton();
+syncGrowRect();
 
 // Периодическое автосохранение — сад не должен теряться
 setInterval(saveWorld, 20000);
@@ -734,16 +1007,4 @@ window.addEventListener('beforeunload', saveWorld);
 
 // Тихая подсказка при входе. На телефоне клавиш нет — называем то, что там
 // действительно есть: кнопки и жесты. Показывается один раз и не поверх свитка.
-let tipShown = false;
 
-function showTip(delay: number): void {
-  setTimeout(() => {
-    if (zenMode || tipShown) return;
-    tipShown = true;
-    ui.setHint(
-      touchMode
-        ? 'Рука — каталог · щипок — приблизить · часы — время года'
-        : 'B — открыть каталог · Z — созерцание · H — свиток',
-    );
-  }, delay);
-}

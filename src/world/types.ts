@@ -40,4 +40,22 @@ export interface SaveData {
   /** Сезоны, которые игрок застал: для вехи «Круг года». */
   seasons?: string[];
   seen: string[];
+  /** Летопись: первые встречи и редкие события сада. */
+  chronicle?: { id: string; at: number }[];
+  /** Когда сад родился: отсюда считаем годы летописи. */
+  born?: number;
+  /** Открытия каталога: предметы, доступные игроку. Отсутствие — старое сохранение. */
+  unlocked?: string[];
+  /** Свежие открытия: золотая точка горит до первой постройки предмета. */
+  fresh?: string[];
+  /** Режим растущего сада: null или отсутствие — вольный сад. */
+  grow?: {
+    rect: { x: number; y: number; w: number; h: number };
+    seed: number;
+    bank: number;
+    tick: number;
+    progress: number;
+    stage: number;
+    choosing: boolean;
+  } | null;
 }

@@ -21,6 +21,7 @@ import type { TimeControl } from '../core/timeControl';
 import type { GardensPanel } from '../ui/gardensPanel';
 import type { SettingsPanel } from '../ui/settings';
 import type { DevPanel } from '../ui/devPanel';
+import type { ChroniclePanel } from '../ui/chroniclePanel';
 
 /** Положение указателя для призрака — на пальце его нет. */
 export const pointer = { x: 0, y: 0, has: false };
@@ -39,17 +40,20 @@ export const touchMode = isTouchDevice();
 export interface InputActions {
   applyAt(sx: number, sy: number, isClick: boolean): void;
   applyErase(sx: number, sy: number): void;
+  /** Растущий сад: тап по зоне-кандидату. true — зона выбрана. */
+  growPick(tx: number, ty: number): boolean;
   updateGhost(): void;
   wake(): void;
   saveWorld(): void;
   syncHistoryUI(): void;
   doUndo(): void;
   doRedo(): void;
-  setZen(on: boolean): void;
-  takeScreenshot(): void;
-  cycleShotRatio(): void;
+
+
   setRoofVisible(visible: boolean): void;
   toggleSound(): void;
+  /** Снять ждущий призрак бесплатно. true — призрак был. */
+  cancelPlace(): boolean;
   /** Поворот призрака на 90° — состояние ghostRot живёт в main. */
   rotateGhost(): void;
 }
@@ -65,22 +69,26 @@ export interface InputDeps {
   gardensPanel: GardensPanel;
   settingsPanel: SettingsPanel;
   devPanel: DevPanel;
+  chronicle: ChroniclePanel;
   selection(): Selection;
-  isZenMode(): boolean;
   isStartOpen(): boolean;
   isPracticeOpen(): boolean;
   closePractice(): void;
+  /** Как ставит инструмент: одиночное касание или мазок движением. */
+  paintMode(): 'tap' | 'stroke';
   actions: InputActions;
 }
 
 export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
-  const { canvas, scene, world, history, ui, audio, timeCtl, gardensPanel, settingsPanel, devPanel } = deps;
-  const { selection, isZenMode, isStartOpen, isPracticeOpen, closePractice, actions } = deps;
+  const { canvas, scene, world, history, ui, audio, timeCtl, gardensPanel, settingsPanel, devPanel, chronicle } = deps;
+  const { selection, isStartOpen, isPracticeOpen, closePractice, paintMode, actions } = deps;
 
   // ---------------- Ввод ----------------
 
   let dragging = false;
   let painting = false;
+  /** Одиночное касание: клик ставит предмет, движение ведёт камеру. */
+  let tapPlace: { x: number; y: number; moved: boolean } | null = null;
   let lastX = 0;
   let lastY = 0;
 
@@ -94,6 +102,7 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
     scene.movingId = -1;
     dragging = false;
     painting = false;
+    tapPlace = null;
     pathStart.current = null;
     scene.pathFrom = null;
     scene.pathPreview = null;
@@ -116,6 +125,14 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       actions.applyErase(e.clientX, e.clientY);
       return;
     }
+    // Растущий сад выбирает, куда расти: тап по подсвеченной зоне
+    if (world.grow?.choosing) {
+      const p = scene.pickTile(e.clientX, e.clientY, world);
+      if (actions.growPick(p.tx, p.ty)) return;
+      dragging = true;
+      canvas.classList.add('dragging');
+      return;
+    }
     if (selection().kind === 'move' && e.button === 0) {
       const p = scene.pickTile(e.clientX, e.clientY, world);
       const obj = world.pickObject(p.tx, p.ty);
@@ -132,8 +149,16 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       return;
     }
     if (selection().kind !== 'none' && e.button === 0) {
-      painting = true;
-      actions.applyAt(e.clientX, e.clientY, true);
+      if (paintMode() === 'stroke') {
+        painting = true;
+        world.beginStroke();
+        actions.applyAt(e.clientX, e.clientY, true);
+      } else {
+        // Касание: предмет встанет на отпускании, если палец не повёл камеру
+        tapPlace = { x: e.clientX, y: e.clientY, moved: false };
+        dragging = true;
+        canvas.classList.add('dragging');
+      }
     } else {
       dragging = true;
       canvas.classList.add('dragging');
@@ -151,6 +176,7 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       actions.wake();
     }
     if (dragging) {
+      if (tapPlace && (Math.abs(dx) > 2 || Math.abs(dy) > 2)) tapPlace.moved = true;
       scene.camera.x -= dx / scene.camera.zoom;
       scene.camera.y -= dy / scene.camera.zoom;
       scene.clampCamera();
@@ -191,9 +217,18 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       // мазок кистью закончен — следующий станет отдельным шагом отмены
       if (history.commit()) actions.syncHistoryUI();
       history.breakMerge();
+    } else if (tapPlace) {
+      // одиночное касание: клик без движения камеры ставит предмет
+      const tp = tapPlace;
+      if (!tp.moved && selection().kind !== 'none') {
+        actions.applyAt(tp.x, tp.y, true);
+        if (history.commit()) actions.syncHistoryUI();
+        history.breakMerge();
+      }
     }
     dragging = false;
     painting = false;
+    tapPlace = null;
     canvas.classList.remove('dragging');
     actions.saveWorld();
   };
@@ -254,6 +289,11 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
 
       onTap(x, y) {
         actions.wake();
+        // Растущий сад выбирает сторону: касание зоны важнее пустого выбора
+        if (world.grow?.choosing) {
+          const p = scene.pickTile(x, y, world);
+          if (actions.growPick(p.tx, p.ty)) return;
+        }
         if (selection().kind === 'none') return;
         pointer.x = x;
         pointer.y = y;
@@ -279,11 +319,19 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
 
       onDragStart(x, y) {
         actions.wake();
+        // Пока сад выбирает, куда расти, палец возит камеру, а не кисть
+        if (world.grow?.choosing) {
+          dragging = true;
+          return;
+        }
         // Кистью и мелочью рисуем, всем остальным — возим камеру.
+        // В режиме касания движение всегда ведёт камеру: предмет ставит тап.
         const sel2 = selection();
-        const paintable = sel2.kind === 'brush' || (sel2.kind === 'item' && sel2.item.step < 1);
+        const paintable =
+          paintMode() === 'stroke' && (sel2.kind === 'brush' || (sel2.kind === 'item' && sel2.item.step < 1));
         if (paintable) {
           painting = true;
+          world.beginStroke();
           pointer.x = x;
           pointer.y = y;
           pointer.has = true;
@@ -401,12 +449,6 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
 
     if (k === 'b') {
       ui.toggleBuild();
-    } else if (k === 'z') {
-      actions.setZen(!isZenMode());
-    } else if (k === 'p') {
-      // Shift меняет формат кадра, без него — снимаем
-      if (e.shiftKey) actions.cycleShotRatio();
-      else actions.takeScreenshot();
     } else if (k === 'h' || k === '?') {
       ui.toggleHelp();
     } else if (k === 'r') {
@@ -415,7 +457,15 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       ui.select({ kind: 'erase' });
       ui.toggleBuild(true);
     } else if (k === 'escape') {
+      // Ждущий призрак убирается первым: Esc — тоже «другое действие»
+      if (actions.cancelPlace()) return;
+      // Выбор «куда расти» откладывается: туман снова укроет зоны
+      if (world.grow?.choosing) {
+        world.grow.choosing = false;
+        return;
+      }
       if (gardensPanel.isOpen) gardensPanel.setOpen(false);
+      else if (chronicle.isOpen) chronicle.setOpen(false);
       else if (ui.selection.kind !== 'none') ui.select({ kind: 'none' });
       else ui.toggleBuild(false);
       ui.toggleHelp(false);

@@ -39,6 +39,20 @@ async function main() {
   (canvas as unknown as Record<string, unknown>).clientHeight = H;
 
   const world = new World();
+
+  // Растущий сад: туман над неоткрытой землёй; GROWCHOOSE=1 — зоны выбора
+  if (process.env.GROW) {
+    const { seedGrowWorld, newGrowState } = await import('../src/world/grow');
+    world.reset();
+    const seed = Number(process.env.GROWSEED ?? 4242);
+    seedGrowWorld(world, seed);
+    world.grow = newGrowState(seed, Date.now());
+    if (process.env.GROWCHOOSE) {
+      world.grow.progress = 2;
+      world.grow.choosing = true;
+    }
+  }
+
   const scene = new Scene(canvas);
   scene.resize();
   scene.centerOn(GRID / 2, GRID / 2 + 1.5);
@@ -85,6 +99,14 @@ async function main() {
       ['plank_bridge', 15, 15],
     ];
     for (const [id, x, y] of spots) world.place(id, x, y, 0, Date.now() - 864e5 * 30);
+  }
+
+  // Кормушка и поилка у пруда: проверить, что жители пришли к постройкам
+  if (process.env.GUESTS) {
+    world.place('feeder', 15.5, 10.5, 0, Date.now() - 864e5 * 30);
+    world.place('birdbath', 18.5, 16.5, 0, Date.now() - 864e5 * 30);
+    world.place('reed', 13.25, 16.25, 0, Date.now() - 864e5 * 30);
+    world.place('reed', 19.75, 12.25, 0, Date.now() - 864e5 * 30);
   }
 
   if (process.env.PATHS) {
@@ -135,14 +157,26 @@ async function main() {
 
   // Прогреваем частицы и живность
   const life = new Life();
+  // WILD=1 — позвать диких соседей сразу: светлячков, цаплю и оленя
+  if (process.env.WILD) {
+    const { scanHabitat } = await import('../src/world/habitat');
+    const h = scanHabitat(world);
+    life.wildlife.force('fireflies', h, t);
+    life.wildlife.force('heron', h, t);
+    life.wildlife.force('deer', h, t);
+  }
   const WARM = Number(process.env.WARM ?? 260);
   for (let i = 0; i < WARM; i++) {
-    life.update(world, t, 16, 1000 + i * 16);
+    life.update(world, t, 16, 1000 + i * 16, ws.state);
     ws.update(16, t);
     scene.render(world, atm, 1000 + i * 16, 16, life, ws.state);
   }
+  const frogs = life.residents.frogs.filter((f) => f.hidden <= 0 && !f.gone);
   console.log(
-    `погода=${wkind} дождь=${ws.state.rain.toFixed(2)} туман=${ws.state.fog.toFixed(2)} тучи=${ws.state.overcast.toFixed(2)} | кот@${life.cats[0] ? life.cats[0].tx.toFixed(1) + ',' + life.cats[0].ty.toFixed(1) + ' ' + life.cats[0].state : '-'} коты=${life.cats.length} птицы=${life.birds.length} порхают=${life.flutters.length} карпы=${life.fish.length} ветер=${life.windBase.toFixed(2)}`,
+    `погода=${wkind} дождь=${ws.state.rain.toFixed(2)} туман=${ws.state.fog.toFixed(2)} тучи=${ws.state.overcast.toFixed(2)} | кот@${life.cats[0] ? life.cats[0].tx.toFixed(1) + ',' + life.cats[0].ty.toFixed(1) + ' ' + life.cats[0].state : '-'} коты=${life.cats.length}+гость=${life.guests.length} птицы=${life.birds.length}(${life.birds.filter((b) => b.place === 'feeder').length} у кормушки) бабочки=${life.flutters.length} стрекозы=${life.residents.dragonflies.length} лягушки=${frogs.length} карпы=${life.fish.length} светлячки=${life.wildlife.fireflies.length} цапля=${life.wildlife.heron ? life.wildlife.heron.state + '@' + life.wildlife.heron.tx.toFixed(1) + ',' + life.wildlife.heron.ty.toFixed(1) : '-'} олени=${life.wildlife.deer.map((d) => d.state + '@' + d.tx.toFixed(1) + ',' + d.ty.toFixed(1)).join(';') || '-'} ветер=${life.windBase.toFixed(2)}`,
+  );
+  console.log(
+    `летопись: ${world.chronicle.map((e) => e.id).join(', ') || 'пуста'} | вехи: ${[...world.milestones].filter((m) => ['bird_guest', 'first_frog', 'second_cat', 'frog_chorus', 'winter_feeder', 'night_lights', 'heron_guest', 'deer_guest'].includes(m)).join(', ') || '-'}`,
   );
 
   const buf = (canvas as unknown as { toBuffer(mime: string): Buffer }).toBuffer('image/png');

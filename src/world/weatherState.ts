@@ -45,7 +45,7 @@ export class WeatherSystem {
   /** Текущая реальная погода. */
   current: ActiveWeather = 'clear';
   private target: ActiveWeather = 'clear';
-  private timer = 60_000;
+  private timer = 240_000;
   private flashTimer = 0;
   private thunderPending = 0;
 
@@ -76,27 +76,28 @@ export class WeatherSystem {
 
   /** Какая погода уместна в этом сезоне. */
   private roll(season: SeasonId): ActiveWeather {
+    // Непогода — редкий гость: чем реже, тем ценнее
     const r = rnd();
     if (season === 'winter') {
-      if (r < 0.46) return 'clear';
-      if (r < 0.78) return 'snow';
+      if (r < 0.8) return 'clear';
+      if (r < 0.94) return 'snow';
       return 'fog';
     }
     if (season === 'summer') {
-      if (r < 0.58) return 'clear';
-      if (r < 0.8) return 'rain';
-      if (r < 0.92) return 'storm';
+      if (r < 0.82) return 'clear';
+      if (r < 0.93) return 'rain';
+      if (r < 0.97) return 'storm';
       return 'fog';
     }
     if (season === 'autumn') {
-      if (r < 0.44) return 'clear';
-      if (r < 0.7) return 'rain';
-      if (r < 0.9) return 'fog';
+      if (r < 0.8) return 'clear';
+      if (r < 0.92) return 'rain';
+      if (r < 0.98) return 'fog';
       return 'storm';
     }
     // весна
-    if (r < 0.56) return 'clear';
-    if (r < 0.82) return 'rain';
+    if (r < 0.82) return 'clear';
+    if (r < 0.94) return 'rain';
     return 'fog';
   }
 
@@ -107,7 +108,8 @@ export class WeatherSystem {
       if (this.timer <= 0) {
         // Ясная погода держится дольше — сад по умолчанию спокоен
         this.target = this.roll(t.season);
-        this.timer = this.target === 'clear' ? 90_000 + rnd() * 180_000 : 45_000 + rnd() * 90_000;
+        // Ясень держится подолгу, непогода приходит ненадолго и памятью
+        this.timer = this.target === 'clear' ? 480_000 + rnd() * 480_000 : 40_000 + rnd() * 50_000;
       }
     }
 

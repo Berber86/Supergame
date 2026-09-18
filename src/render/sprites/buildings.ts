@@ -4,7 +4,7 @@ import { Drawer, WHITE, litc, shadowUnder } from './common';
 import { TILE_H, TILE_W } from '../../core/iso';
 import { lerp } from '../../core/rng';
 import { css, mix, shade } from '../../world/palette';
-import { Ctx, granulate, softShadow } from '../paint';
+import { Ctx, granulate, softShadow, washBlob } from '../paint';
 
 export const drawPavilion: Drawer = (d) => {
   const { ctx, atm, obj } = d;
@@ -313,3 +313,159 @@ export const drawTokonoma: Drawer = (d) => {
 };
 
 /** Ирори: очаг в полу, живой огонь и котелок. */
+
+// ---------------- Гости: кормушка и поилка ----------------
+
+/**
+ * Кормушка: столбик, лоток с зёрнами и четырёхскатная крыша-черепица.
+ * Зимой крыша держит шапку снега — стол работает в любую погоду.
+ */
+export const drawFeeder: Drawer = (d) => {
+  const { ctx, atm, obj } = d;
+  shadowUnder(d, 12, 5, 1);
+  const wood = litc({ r: 146, g: 104, b: 72 }, atm);
+  const woodDark = litc({ r: 104, g: 70, b: 50 }, atm);
+  const roof = litc({ r: 96, g: 88, b: 92 }, atm);
+
+  // столбик
+  ctx.strokeStyle = css(woodDark, 0.95);
+  ctx.lineWidth = 3.4;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(d.x, d.y);
+  ctx.lineTo(d.x, d.y - 22);
+  ctx.stroke();
+
+  // лоток — ромб в перспективе сада
+  ctx.fillStyle = css(wood, 0.96);
+  ctx.beginPath();
+  ctx.moveTo(d.x, d.y - 26);
+  ctx.lineTo(d.x + 13, d.y - 22.5);
+  ctx.lineTo(d.x, d.y - 19);
+  ctx.lineTo(d.x - 13, d.y - 22.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = css(woodDark, 0.5);
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // бортик
+  ctx.strokeStyle = css(woodDark, 0.8);
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(d.x - 13, d.y - 22.5);
+  ctx.lineTo(d.x, d.y - 19);
+  ctx.lineTo(d.x + 13, d.y - 22.5);
+  ctx.stroke();
+
+  // зёрна в лотке
+  ctx.fillStyle = css(litc({ r: 226, g: 196, b: 138 }, atm), 0.9);
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2 + obj.seed;
+    ctx.beginPath();
+    ctx.ellipse(d.x + Math.cos(a) * 6, d.y - 22.6 + Math.sin(a) * 2.2, 1.1, 0.7, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // угловые стойки
+  ctx.strokeStyle = css(woodDark, 0.9);
+  ctx.lineWidth = 1.6;
+  for (const [ox, oy] of [
+    [-11, -22.6],
+    [11, -22.6],
+    [0, -19.6],
+  ]) {
+    ctx.beginPath();
+    ctx.moveTo(d.x + ox, d.y + oy);
+    ctx.lineTo(d.x + ox * 0.72, d.y - 34);
+    ctx.stroke();
+  }
+
+  // крыша: два ската с мягким прогибом
+  ctx.fillStyle = css(roof, 0.96);
+  ctx.beginPath();
+  ctx.moveTo(d.x - 15, d.y - 33);
+  ctx.quadraticCurveTo(d.x, d.y - 42, d.x + 15, d.y - 33);
+  ctx.lineTo(d.x + 9, d.y - 31.4);
+  ctx.quadraticCurveTo(d.x, d.y - 37.5, d.x - 9, d.y - 31.4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = css(shade(roof, 0.75), 0.5);
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(d.x - 12, d.y - 32.6);
+  ctx.quadraticCurveTo(d.x, d.y - 39.4, d.x + 12, d.y - 32.6);
+  ctx.stroke();
+
+  // снежная шапка
+  if (atm.season === 'winter') {
+    ctx.fillStyle = css(litc({ r: 246, g: 248, b: 252 }, atm), 0.9);
+    ctx.beginPath();
+    ctx.moveTo(d.x - 13.5, d.y - 33.4);
+    ctx.quadraticCurveTo(d.x, d.y - 41.4, d.x + 13.5, d.y - 33.4);
+    ctx.quadraticCurveTo(d.x, d.y - 37.6, d.x - 13.5, d.y - 33.4);
+    ctx.closePath();
+    ctx.fill();
+  }
+};
+
+/**
+ * Поилка: низкая широкая чаша на каменном пеньке. Вода в ней живая —
+ * круги держатся и без птиц, а летом чаша блестит на солнце.
+ */
+export const drawBirdbath: Drawer = (d) => {
+  const { ctx, atm, obj } = d;
+  shadowUnder(d, 13, 6, 1);
+  const stone = litc(mix(atm.palette.stone, { r: 156, g: 152, b: 146 }, 0.45), atm);
+  const stoneDark = litc(shade({ r: 128, g: 124, b: 118 }, 1), atm);
+
+  // пенёк
+  washBlob(ctx, d.x, d.y - 5, 8.5, 6, stone, obj.seed, { layers: 2, alpha: 0.7, edge: 0.3, wobble: 0.18 });
+  ctx.fillStyle = css(stoneDark, 0.5);
+  ctx.beginPath();
+  ctx.ellipse(d.x, d.y - 2, 7.4, 2.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // чаша
+  ctx.fillStyle = css(stone, 0.97);
+  ctx.beginPath();
+  ctx.ellipse(d.x, d.y - 10, 13, 5.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = css(stoneDark, 0.55);
+  ctx.lineWidth = 1.1;
+  ctx.stroke();
+
+  // вода
+  const w = litc(atm.palette.water, atm, 0.06);
+  ctx.fillStyle = css(w, 0.92);
+  ctx.beginPath();
+  ctx.ellipse(d.x, d.y - 10.6, 10.6, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // круги и блик
+  ctx.strokeStyle = css(mix(w, WHITE, 0.6), 0.45);
+  ctx.lineWidth = 0.8;
+  const rip = (Math.sin(d.time * 0.0016 + obj.seed) * 0.5 + 0.5) * 7;
+  ctx.beginPath();
+  ctx.ellipse(d.x, d.y - 10.6, 2 + rip, 0.8 + rip * 0.36, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  if (atm.time.daylight > 0.4) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = css({ r: 240, g: 250, b: 250 }, 0.16);
+    ctx.beginPath();
+    ctx.ellipse(d.x - 3.4, d.y - 11.4, 3.4, 1.1, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // камешки у основания
+  ctx.fillStyle = css(stoneDark, 0.6);
+  for (const [ox, oy, r] of [
+    [-10, -1, 2.2],
+    [9, 0, 1.8],
+    [4, 1.4, 1.4],
+  ]) {
+    ctx.beginPath();
+    ctx.ellipse(d.x + ox, d.y + oy, r, r * 0.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+};

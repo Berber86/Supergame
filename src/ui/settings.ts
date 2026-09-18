@@ -64,6 +64,7 @@ export class SettingsPanel {
     parent: HTMLElement,
     private view: ViewSettings,
     private onChange: (v: ViewSettings) => void,
+    private sound?: { get(): boolean; toggle(): void },
   ) {
     this.root = document.createElement('div');
     this.root.className = 'settings-panel wood';
@@ -84,6 +85,11 @@ export class SettingsPanel {
 
   toggle(): void {
     this.setOpen(!this.open);
+  }
+
+  /** Перерисовать, пока панель открыта: звук переключили извне. */
+  sync(): void {
+    if (this.open) this.render();
   }
 
   private set<K extends keyof ViewSettings>(key: K, value: ViewSettings[K]): void {
@@ -111,6 +117,14 @@ export class SettingsPanel {
         <div class="sp-label">Чёткий интерфейс<em>плотнее фон под надписями</em></div>
         <div class="sp-switch ${v.contrast ? 'on' : ''}"><i></i></div>
       </div>
+      ${
+        this.sound
+          ? `<div class="sp-row" data-act="sound">
+        <div class="sp-label">Звук сада<em>вода, птицы, ветер, колокольцы</em></div>
+        <div class="sp-switch ${this.sound.get() ? 'on' : ''}"><i></i></div>
+      </div>`
+          : ''
+      }
       <div class="sp-row" data-act="scale">
         <div class="sp-label">Размер интерфейса<em>${SCALE_NAMES[si]}</em></div>
         <div class="sp-steps">${SCALES.map(
@@ -127,6 +141,10 @@ export class SettingsPanel {
         if (act === 'particles') this.set('particles', !v.particles);
         else if (act === 'motion') this.set('motion', !v.motion);
         else if (act === 'contrast') this.set('contrast', !v.contrast);
+        else if (act === 'sound') {
+          this.sound?.toggle();
+          this.render();
+        }
       });
     });
     this.root.querySelectorAll<HTMLElement>('.sp-step').forEach((step) => {

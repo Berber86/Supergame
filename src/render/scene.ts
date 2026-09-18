@@ -5,10 +5,12 @@ import { clamp, clamp01, lerp } from '../core/rng';
 import { Atmosphere, mix } from '../world/palette';
 import { World } from '../world/world';
 import { Ctx, vignette } from './paint';
+import { drawGrowFog } from './growFog';
 import { TerrainLayer, TileRect, drawWaterAnimation, renderTerrain } from './terrain';
 import { drawHouseRoof, drawHouseWalls } from './building';
 import { Life } from '../world/life';
 import { drawFish } from './creatures';
+import { drawRipple } from './residents';
 import { spriteFrame } from './spriteCache';
 import { Weather, drawMist, drawSunShafts } from './weather';
 import { RainRenderer, drawFog, drawLightning, drawWetSheen } from './rain';
@@ -289,6 +291,13 @@ export class Scene {
     // карпы — в толще воды, до наземных объектов
     if (this.life) {
       for (const f of this.life.fish) drawFish(ctx, f, world, atm, time);
+      // круги на воде: лягушка нырнула, птица выкупалась
+      for (const r of this.life.residents.ripples) {
+        const tile = world.at(Math.floor(r.x), Math.floor(r.y));
+        const lvl = (tile ? tile.level : 0) - 0.26;
+        const p = isoToScreen(r.x, r.y, lvl);
+        drawRipple(ctx, r, p.x, p.y, atm);
+      }
     }
 
     // дальние стены дома — за объектами интерьера
@@ -361,6 +370,9 @@ export class Scene {
       drawWetSheen(ctx, world, atm, ws, time);
       if (this.particles) this.rain.drawWorldLayer(ctx, world, atm, ws);
     }
+
+    // Туман неоткрытой земли: поверх всего мира, под атмосферными слоями
+    if (world.grow) drawGrowFog(ctx, world, time, this.camera.zoom);
 
     ctx.restore();
 

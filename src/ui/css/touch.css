@@ -200,6 +200,14 @@ body.touch .tool-btn .label {
     width: 38px;
     height: 38px;
   }
+  .bb-btn.cap {
+    width: auto;
+    height: 44px;
+    padding: 0 9px;
+  }
+  .bb-cap {
+    font-size: 9.5px;
+  }
 
   /* ---- Подсказка: справа от панели строителя, не поверх неё ----
      Панель строителя занимает слева около 400 px, кнопки — около 100 px
@@ -315,12 +323,21 @@ body.touch.portrait .rotate-note.dismissed {
    ===================================================================== */
 
 @media (hover: none) and (orientation: portrait) {
+  /* Четыре кнопки — строкой внизу справа: под большим пальцем и не
+     перекрывают ни сад, ни каталог. С открытым каталогом ряд садится
+     над панелью инструментов. */
   .tools {
     right: calc(8px + var(--safe-r));
-    top: 50%;
-    display: grid;
-    grid-template-columns: repeat(2, var(--touch-min));
-    gap: 7px;
+    top: auto;
+    bottom: calc(10px + var(--safe-b));
+    transform: none;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+  }
+
+  body.building .tools {
+    bottom: calc(44vh + 70px);
   }
   .tools > *,
   .tool-btn {
@@ -347,11 +364,9 @@ body.touch.portrait .rotate-note.dismissed {
   }
   /* Подсказку поднимаем, только пока внизу и правда есть подсказка
      о повороте: иначе она висит посреди экрана без причины. */
+  /* Подсказка живёт над рядом кнопок инструментов и не кроет его */
   body.touch.portrait .hint-bar {
-    bottom: calc(58px + var(--safe-b));
-  }
-  body.touch.portrait:has(.rotate-note.dismissed) .hint-bar {
-    bottom: calc(14px + var(--safe-b));
+    bottom: calc(66px + var(--safe-b));
   }
 
   /* Каталог снизу — в книжной ориентации это уместно */
@@ -433,4 +448,17 @@ body.touch .dev-toggle input[type='checkbox'] {
 
 .time-card.clickable:active {
   transform: scale(0.98);
+}
+
+/* Пара ✓/✕ на пальце: над панелью инструментов, вне каталога */
+@media (hover: none) and (orientation: landscape) and (max-height: 560px) {
+  .confirm-pair {
+    bottom: calc(74px + var(--safe-b));
+  }
+}
+
+@media (hover: none) and (orientation: portrait) {
+  .confirm-pair {
+    bottom: calc(44vh + 70px);
+  }
 }

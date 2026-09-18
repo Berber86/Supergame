@@ -137,6 +137,7 @@ export const GLYPHS: Record<string, string> = {
   rotate: '<path d="M4 12a8 8 0 1 1 2.6 5.9"/><path d="M3 18.5l1.2-4.4 4.4 1.2"/>',
   scroll: '<path d="M6 4h12v16H6z"/><path d="M9 8h6M9 12h6M9 16h4"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  check: '<path d="M5.5 12.5l4.3 4.6L19 7.5"/>',
   'sound-on':
     '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M16 9.2a4 4 0 010 5.6"/><path d="M18.6 6.6a7.6 7.6 0 010 10.8"/>',
   'sound-off': '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M16.5 10l4 4M20.5 10l-4 4"/>',
@@ -144,6 +145,10 @@ export const GLYPHS: Record<string, string> = {
   minus: '<path d="M5 12h14"/>',
   grid: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5" opacity=".5"/>',
   undo: '<path d="M9 7L4 12l5 5"/><path d="M4 12h9.5a5.5 5.5 0 010 11H10"/>',
+  // Одиночное касание: точка и круги-рябь вокруг
+  tap: '<circle cx="12" cy="12" r="2.1"/><circle cx="12" cy="12" r="6.2" opacity=".45"/><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2" opacity=".5"/>',
+  // Мазок: волнистая лента кисти
+  stroke: '<path d="M4 17c3.4 0 4.2-8.4 7.4-8.4 3 0 2.6 6.4 8.6 6.4"/><path d="M4 20.4h16" opacity=".4"/>',
   redo: '<path d="M15 7l5 5-5 5"/><path d="M20 12h-9.5a5.5 5.5 0 000 11H14"/>',
   dropper:
     '<path d="M14.5 4.8a2.6 2.6 0 013.7 3.7l-1.3 1.3 1 1-1.6 1.6-1-1L9 18.7l-3.6.9.9-3.6 6.3-6.3-1-1L13.2 7l1 1z"/>',
@@ -160,6 +165,8 @@ export const GLYPHS: Record<string, string> = {
   'roof-off':
     '<path d="M2 13L12 6l10 7"/><path d="M4.5 13c2.5 1.6 4.8 2.4 7.5 2.4s5-0.8 7.5-2.4"/><path d="M4 4l16 16"/>',
   path: '<path d="M7 21c0-4 3-4 3-8s-3-4-3-7"/><path d="M14 21c1.5-3 3-3.5 3-7s-2-4-2-7"/><circle cx="7" cy="3" r="1"/><circle cx="15" cy="4" r="1"/>',
+  bird: '<path d="M4 14c3 3 8 3 11 0l5-4-3-.5 1.5-3-3 1.5c-.6-2-2.4-3-4.5-3C10.5 5 9 7.5 9 10c-2 0-3.5 1.5-5 4z"/><circle cx="14.6" cy="7.6" r=".7"/>',
+  quill: '<path d="M20 4c-6 0-11 4-13 10l-3 6"/><path d="M20 4c1 5-2 10-8 11l-4 1"/><path d="M9 12h5"/>',
 };
 
 export function svgIcon(name: string, size = 22, stroke = 'currentColor'): string {

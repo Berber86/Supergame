@@ -76,6 +76,7 @@ export class GardenAudio {
   private chimeTimer = 2000;
   private shishiTimer = 9000;
   private birdTimer = 5000;
+  private frogTimer = 6000;
 
   enabled = false;
   volume = 0.75;
@@ -172,6 +173,8 @@ export class GardenAudio {
       hasShishi: boolean;
       catNear: boolean;
       trees: number;
+      /** Сколько лягушек сейчас у воды: хор слышно без глаз. */
+      frogs?: number;
       /** Течение: 0 — стоячая вода, 1 — быстрый ручей. */
       current?: number;
       /** Водопады: 0 — нет, 1 — шумный каскад. */
@@ -250,6 +253,17 @@ export class GardenAudio {
       if (this.birdTimer <= 0) {
         this.birdTimer = 4000 + rnd() * 13000;
         this.birdCall();
+      }
+    }
+
+    // --- Лягушки: хор у воды, громче в сырость и под вечер ---
+    const frogs = ctxInfo.frogs ?? 0;
+    if (frogs > 0 && season !== 'winter') {
+      this.frogTimer -= dt;
+      if (this.frogTimer <= 0) {
+        this.frogTimer = 1600 + rnd() * 5200;
+        const mood = night || weather.rain > 0.2 || weather.wetness > 0.4 ? 1 : 0.55;
+        this.ribbit(frogs, mood);
       }
     }
   }
@@ -460,6 +474,39 @@ export class GardenAudio {
     osc.start();
     osc.stop(ctx.currentTime + 0.6);
     setTimeout(() => g2.disconnect(), 800);
+  }
+
+  /** Лягушачье «ква»: низкий пульс горлом, в сырость голоса чаще. */
+  private ribbit(amount: number, mood: number): void {
+    const ctx = this.ctx!;
+    const vol = 0.03 * Math.min(1, 0.35 + amount * 0.22) * mood;
+    const pulses = 2 + Math.floor(rnd() * 2);
+    const base = 210 + rnd() * 130;
+    for (let i = 0; i < pulses; i++) {
+      const t0 = ctx.currentTime + i * (0.11 + rnd() * 0.05);
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(base * (1 + rnd() * 0.1), t0);
+      osc.frequency.exponentialRampToValueAtTime(base * 0.7, t0 + 0.09);
+      const f = ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.setValueAtTime(950, t0);
+      f.frequency.exponentialRampToValueAtTime(360, t0 + 0.1);
+      f.Q.value = 6;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), t0 + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.11);
+      osc.connect(f);
+      f.connect(g);
+      g.connect(this.master!);
+      osc.start(t0);
+      osc.stop(t0 + 0.16);
+      setTimeout(() => {
+        g.disconnect();
+        f.disconnect();
+      }, 900);
+    }
   }
 
   /** Короткая птичья трель. */

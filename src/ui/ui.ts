@@ -6,6 +6,7 @@ import { Atmosphere } from '../world/palette';
 import { GroundId } from '../world/types';
 import { World } from '../world/world';
 import { itemIcon, svgIcon } from './icons';
+import './grow.css';
 
 const SEASON_KANJI: Record<string, string> = { spring: '春', summer: '夏', autumn: '秋', winter: '冬' };
 
@@ -26,8 +27,10 @@ export type Selection =
 export interface UIHooks {
   onSelect(sel: Selection): void;
   onToggleBuild(open: boolean): void;
-  onZen(): void;
-  onScreenshot(): void;
+  /** Поставить призрак как объект (тратит действие роста). */
+  onConfirmPlace(): void;
+  /** Убрать призрак бесплатно. */
+  onCancelPlace(): void;
   onReset(): void;
   onUndo(): void;
   onRedo(): void;
@@ -41,6 +44,14 @@ export interface UIHooks {
   onTimeWorkshop(): void;
   /** Сесть в тишине: практики и школа дзена. */
   onSit(): void;
+  /** Открыть летопись сада. */
+  onChronicle(): void;
+  /** Растущий сад: открыть выбор, куда расти. */
+  onGrowLine(): void;
+  /** Повернуть призрак предмета (R). */
+  onRotate(): void;
+  /** Одиночное касание или мазок кистью. */
+  onPaintMode(mode: 'tap' | 'stroke'): void;
 }
 
 export class UI {
@@ -52,12 +63,10 @@ export class UI {
   buildOpen = false;
   private activeTab = 'trees';
   private els: Record<string, HTMLElement> = {};
-  private milestoneTimer = 0;
   private toastTimer = 0;
   private iconSeason = '';
   brushSize = 1;
   /** Назначается извне: переключение звука. */
-  onSound: (() => void) | null = null;
 
   constructor(root: HTMLElement, world: World, hooks: UIHooks) {
     this.root = root;
@@ -93,6 +102,13 @@ export class UI {
     time.addEventListener('click', () => this.hooks.onTimeWorkshop());
     layer.appendChild(time);
     this.els.timeCard = time;
+
+    // --- Запас действий растущего сада: печати вместо чисел ---
+    const gb = this.el('div', 'grow-bank fade keep');
+    gb.innerHTML = `<span class="kanji" lang="ja">行</span><span class="gb-dots"></span>`;
+    gb.style.display = 'none';
+    layer.appendChild(gb);
+    this.els.growBank = gb;
     this.els.clock = time.querySelector('.clock')!;
     this.els.kanji = time.querySelector('.season-kanji')!;
     this.els.sub = time.querySelector('.time-sub')!;
@@ -107,10 +123,9 @@ export class UI {
       return b;
     };
     this.els.btnBuild = mk('hand', 'Строить (B)');
-    this.els.btnZen = mk('eye', 'Созерцание (Z)');
-    this.els.btnShot = mk('camera', 'Снимок (P)');
-    this.els.btnSound = mk('sound-off', 'Звук (M)');
-    this.els.btnRoof = mk('roof', 'Крыша (R)');
+    // Крыша появляется только с домом: пока крыть нечего, кнопка спит
+    this.els.btnRoof = mk('roof', 'Крыша');
+    this.els.btnRoof.style.display = 'none';
     this.els.btnGardens = mk('gardens', 'Усадьбы (U)');
     this.els.btnSettings = mk('settings', 'Настройки (S)');
     this.els.btnHelp = mk('scroll', 'Свиток (H)');
@@ -144,9 +159,6 @@ export class UI {
     this.els.rotate = rotate;
 
     this.els.btnBuild.addEventListener('click', () => this.toggleBuild());
-    this.els.btnZen.addEventListener('click', () => this.hooks.onZen());
-    this.els.btnShot.addEventListener('click', () => this.hooks.onScreenshot());
-    this.els.btnSound.addEventListener('click', () => this.onSound?.());
     this.els.btnRoof.addEventListener('click', () => this.hooks.onRoof());
     this.els.btnSettings.addEventListener('click', () => this.hooks.onSettings());
     this.els.btnGardens.addEventListener('click', () => this.hooks.onGardens());
@@ -156,8 +168,13 @@ export class UI {
     const bb = this.el('div', 'buildbar wood');
     bb.innerHTML = `
       <div class="bb-group">
-        <div class="bb-btn" data-act="undo" title="Отменить (Ctrl+Z)">${svgIcon('undo', 19)}</div>
-        <div class="bb-btn" data-act="redo" title="Повторить (Ctrl+Shift+Z)">${svgIcon('redo', 19)}</div>
+        <div class="bb-btn cap" data-act="undo" title="Отменить (Ctrl+Z)">${svgIcon('undo', 18)}<span class="bb-cap">отменить</span></div>
+        <div class="bb-btn cap" data-act="redo" title="Повторить (Ctrl+Shift+Z)">${svgIcon('redo', 18)}<span class="bb-cap">повтор</span></div>
+      </div>
+      <div class="bb-sep"></div>
+      <div class="bb-group">
+        <div class="bb-btn cap off" data-act="rotate" title="Повернуть (R)">${svgIcon('rotate', 18)}<span class="bb-cap">поворот</span></div>
+        <div class="bb-btn cap" data-act="mode" title="Как ставит инструмент: одно касание или мазок">${svgIcon('stroke', 18)}<span class="bb-cap">мазок</span></div>
       </div>
       <div class="bb-sep"></div>
       <div class="bb-group">
@@ -174,11 +191,27 @@ export class UI {
       </div>`;
     layer.appendChild(bb);
     this.els.buildbar = bb;
+
+    // Пара подтверждения призрака: ✓ поставить / ✕ убрать
+    const cf = this.el('div', 'confirm-pair');
+    cf.innerHTML = `
+      <div class="cf-btn cf-ok" role="button" tabindex="0" title="Поставить">${svgIcon('check', 22)}</div>
+      <div class="cf-btn cf-no" role="button" tabindex="0" title="Убрать">${svgIcon('close', 20)}</div>`;
+    layer.appendChild(cf);
+    this.els.confirm = cf;
+    cf.querySelector('.cf-ok')!.addEventListener('click', () => this.hooks.onConfirmPlace());
+    cf.querySelector('.cf-no')!.addEventListener('click', () => this.hooks.onCancelPlace());
     bb.querySelectorAll<HTMLElement>('.bb-btn').forEach((b) => {
       b.addEventListener('click', () => {
         const act = b.dataset.act!;
         if (act === 'undo') this.hooks.onUndo();
         else if (act === 'redo') this.hooks.onRedo();
+        else if (act === 'rotate') {
+          if (b.classList.contains('off')) return;
+          this.hooks.onRotate();
+        } else if (act === 'mode') {
+          this.hooks.onPaintMode(this.paintMode === 'stroke' ? 'tap' : 'stroke');
+        }
         else if (act === 'pick') this.select(this.selection.kind === 'pick' ? { kind: 'none' } : { kind: 'pick' });
         else if (act === 'move') this.select(this.selection.kind === 'move' ? { kind: 'none' } : { kind: 'move' });
         else if (act === 'fill') this.startFill();
@@ -194,28 +227,22 @@ export class UI {
     cat.innerHTML = `
       <div class="catalog-inner wood">
         <div class="catalog-handle"><div class="cord"></div></div>
+        <div class="catalog-close" role="button" tabindex="0" title="Закрыть">${svgIcon('close', 18)}</div>
         <div class="tabs"></div>
         <div class="items paper"></div>
       </div>`;
     layer.appendChild(cat);
     this.els.catalog = cat;
+    cat.querySelector('.catalog-close')!.addEventListener('click', () => this.toggleBuild(false));
     this.els.tabs = cat.querySelector('.tabs')!;
     this.els.items = cat.querySelector('.items')!;
     cat.querySelector('.catalog-handle')!.addEventListener('click', () => this.toggleBuild());
 
     // --- Подсказка ---
+    // Подсказка рождается пустой: сад не объясняют, в нём живут
     const hint = this.el('div', 'hint-bar fade');
-    hint.textContent = matchMedia('(hover: none)').matches
-      ? 'Проведите пальцем — осмотрите сад. Щипок — приблизить.'
-      : 'Перетаскивайте — осматривайте сад. Колесо — приблизить.';
     layer.appendChild(hint);
     this.els.hint = hint;
-
-    // --- Веха ---
-    const ms = this.el('div', 'milestone paper');
-    ms.innerHTML = `<div class="seal">道</div><h3></h3><p></p><div class="unlock"></div>`;
-    layer.appendChild(ms);
-    this.els.milestone = ms;
 
     // --- Тост ---
     const toast = this.el('div', 'toast paper');
@@ -297,6 +324,7 @@ export class UI {
       <dl>
         <dt>Вехи</dt><dd>Новые вкладки открываются от ваших же дел: выкопали пруд — пришли лотосы</dd>
       </dl>
+      <div class="scroll-chron" role="button" tabindex="0"><span lang="ja">記</span>Летопись сада — первые встречи и редкие события</div>
       <div class="scroll-sit" role="button" tabindex="0"><span lang="ja">坐</span>Сесть в тишине — практики и школа дзена</div>`;
     layer.appendChild(help);
     this.els.help = help;
@@ -313,30 +341,33 @@ export class UI {
         goSit();
       }
     });
-
-    // --- Заметка о созерцании ---
-    const note = this.el('div', 'zen-note fade keep');
-    note.textContent = '';
-    layer.appendChild(note);
-    this.els.note = note;
-
-    // --- Тихая строка входа в практику ---
-    // Приходит только в созерцании, когда интерфейс уже растворился:
-    // практика предлагает себя ровно тогда, когда исчезло всё остальное.
-    // Девятой кнопки в столбце не будет (её лишней назвала ещё сессия 6).
-    const sit = this.el('div', 'sit-line');
-    sit.innerHTML = `<span class="kanji" lang="ja">坐</span>сесть в тишине`;
-    sit.setAttribute('role', 'button');
-    sit.setAttribute('tabindex', '0');
-    sit.addEventListener('click', () => this.hooks.onSit());
-    sit.addEventListener('keydown', (e) => {
+    const chronBtn = help.querySelector<HTMLElement>('.scroll-chron')!;
+    const goChron = (): void => {
+      this.toggleHelp(false);
+      this.hooks.onChronicle();
+    };
+    chronBtn.addEventListener('click', goChron);
+    chronBtn.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        this.hooks.onSit();
+        goChron();
       }
     });
-    layer.appendChild(sit);
-    this.els.sit = sit;
+
+    // --- Тихая строка растущего сада: «куда расти?» ---
+    const grow = this.el('div', 'grow-line');
+    grow.innerHTML = `<span class="kanji" lang="ja">拡</span>куда расти?`;
+    grow.setAttribute('role', 'button');
+    grow.setAttribute('tabindex', '0');
+    grow.addEventListener('click', () => this.hooks.onGrowLine());
+    grow.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        this.hooks.onGrowLine();
+      }
+    });
+    layer.appendChild(grow);
+    this.els.grow = grow;
 
     this.root.appendChild(layer);
     this.renderTabs();
@@ -351,24 +382,79 @@ export class UI {
     return !tab.requires || this.world.milestones.has(tab.requires);
   }
 
+  /** Размер текущего сада роста: каталог показывает только то, что влезет */
+  private growRect: { w: number; h: number } | null = null;
+
+  setGrowRect(r: { w: number; h: number } | null): void {
+    const key = r ? `${r.w}x${r.h}` : '';
+    const prev = this.growRect ? `${this.growRect.w}x${this.growRect.h}` : '';
+    this.growRect = r;
+    if (key === prev) return;
+    // Текущий размер кисти мог перестать влезать — вернуть к наибольшему подходящему
+    if (!this.fitsGrow(this.brushSize, this.brushSize)) {
+      const fit = [5, 3, 1].find((n) => this.fitsGrow(n, n)) ?? 1;
+      this.setBrushSize(fit);
+    }
+    this.renderTabs();
+    this.renderItems();
+    this.syncSizes();
+  }
+
+  private fitsGrow(w: number, h: number): boolean {
+    const r = this.growRect;
+    if (!r) return true;
+    return w <= r.w && h <= r.h;
+  }
+
+  private tabHasContent(id: string): boolean {
+    return (
+      ITEMS.some(
+        (i) =>
+          i.tab === id &&
+          this.world.unlocked.has(i.id) &&
+          (this.fitsGrow(i.w, i.h) || this.fitsGrow(i.h, i.w)),
+      ) ||
+      TERRAIN_BRUSHES.some(
+        (b) => b.tab === id && this.world.unlocked.has(b.id) && this.fitsGrow(b.w, b.h),
+      )
+    );
+  }
+
+  private tabHasFresh(id: string): boolean {
+    return ITEMS.some((i) => i.tab === id && this.world.fresh.has(i.id));
+  }
+
+  /** Скрыть размеры кисти, которые крупнее текущего сада. */
+  private syncSizes(): void {
+    const bb = this.els.buildbar;
+    if (!bb) return;
+    bb.querySelectorAll<HTMLElement>('.bb-size').forEach((b) => {
+      const n = Number(b.dataset.size);
+      b.classList.toggle('hide', this.growRect !== null && !this.fitsGrow(n, n));
+    });
+  }
+
   renderTabs(): void {
+    // Недоступное не показываем вовсе: ни замков, ни пустых вкладок
+    const visible = TABS.filter((t) => this.tabUnlocked(t.id) && this.tabHasContent(t.id));
+    if (visible.length && !visible.some((t) => t.id === this.activeTab)) {
+      this.activeTab = visible[0].id;
+    }
     this.els.tabs.innerHTML = '';
-    for (const tab of TABS) {
-      const unlocked = this.tabUnlocked(tab.id);
-      const isNew = unlocked && !this.world.seenTabs.has(tab.id);
+    for (const tab of visible) {
+      // Никаких миганий на открытие вех: вкладка просто есть или её нет
+      const fresh = this.tabHasFresh(tab.id);
       const e = this.el(
         'div',
-        `tab ${this.activeTab === tab.id ? 'active' : ''} ${unlocked ? '' : 'locked'} ${isNew ? 'new' : ''}`,
+        `tab ${this.activeTab === tab.id ? 'active' : ''} ${fresh ? 'fresh' : ''}`,
       );
-      e.innerHTML = `${svgIcon(tab.icon, 17)}<span>${unlocked ? tab.name : '＊'}</span>`;
-      if (unlocked) {
-        e.addEventListener('click', () => {
-          this.activeTab = tab.id;
-          this.world.seenTabs.add(tab.id);
-          this.renderTabs();
-          this.renderItems();
-        });
-      }
+      e.innerHTML = `${svgIcon(tab.icon, 17)}<span>${tab.name}</span>`;
+      e.addEventListener('click', () => {
+        this.activeTab = tab.id;
+        this.world.seenTabs.add(tab.id);
+        this.renderTabs();
+        this.renderItems();
+      });
       this.els.tabs.appendChild(e);
     }
   }
@@ -377,13 +463,25 @@ export class UI {
     const box = this.els.items;
     box.innerHTML = '';
 
-    const brushes = TERRAIN_BRUSHES.filter((b) => b.tab === this.activeTab);
-    const items = ITEMS.filter((i) => i.tab === this.activeTab);
+    const brushes = TERRAIN_BRUSHES.filter(
+      (b) =>
+        b.tab === this.activeTab && this.world.unlocked.has(b.id) && this.fitsGrow(b.w, b.h),
+    );
+    const items = ITEMS.filter(
+      (i) =>
+        i.tab === this.activeTab &&
+        this.world.unlocked.has(i.id) &&
+        (this.fitsGrow(i.w, i.h) || this.fitsGrow(i.h, i.w)),
+    );
+    if (!brushes.length && !items.length) {
+      box.innerHTML = `<div class="cat-empty">Здесь ничего не поместится, пока сад не подрастёт</div>`;
+    }
 
     for (const b of brushes) {
       const e = this.el('div', 'item paper');
       const sel = this.selection.kind === 'brush' && this.selection.brush.id === b.id;
       if (sel) e.classList.add('selected');
+      if (this.world.fresh.has(b.id)) e.classList.add('fresh');
       const icon =
         b.kind === 'water'
           ? 'water'
@@ -404,6 +502,8 @@ export class UI {
       const e = this.el('div', 'item paper');
       const sel = this.selection.kind === 'item' && this.selection.item.id === it.id;
       if (sel) e.classList.add('selected');
+      // Золотая точка: открытие ещё не построено впервые
+      if (this.world.fresh.has(it.id)) e.classList.add('fresh');
       const src = this.atm ? itemIcon(it.id, this.atm, 56) : '';
       const size = it.w > 1 || it.h > 1 ? ` ${it.w}×${it.h}` : '';
       e.innerHTML = `<div class="thumb">${src ? `<img src="${src}" alt="">` : svgIcon('micro', 30)}</div>
@@ -474,6 +574,28 @@ export class UI {
     bb.querySelector('[data-act="path"]')!.classList.toggle('active', k === 'path');
   }
 
+  /** Кнопка поворота: живая только у поворачиваемых предметов. */
+  setRotateEnabled(v: boolean): void {
+    const b = this.els.buildbar.querySelector<HTMLElement>('[data-act="rotate"]');
+    b?.classList.toggle('off', !v);
+  }
+
+  /** Как ставит инструмент: одиночное касание или мазок движением. */
+  paintMode: 'tap' | 'stroke' = 'stroke';
+  setPaintMode(m: 'tap' | 'stroke'): void {
+    this.paintMode = m;
+    const b = this.els.buildbar.querySelector<HTMLElement>('[data-act="mode"]');
+    if (!b) return;
+    b.innerHTML =
+      m === 'stroke'
+        ? `${svgIcon('stroke', 18)}<span class="bb-cap">мазок</span>`
+        : `${svgIcon('tap', 18)}<span class="bb-cap">касание</span>`;
+    b.title =
+      m === 'stroke'
+        ? 'Мазок: зажмите и ведите — кисть и мелочь сыплются движением'
+        : 'Одиночное касание: каждый клик ставит один предмет, движение ведёт камеру';
+  }
+
   setHistoryState(canUndo: boolean, canRedo: boolean, undoLabel: string, redoLabel: string): void {
     const bb = this.els.buildbar;
     if (!bb) return;
@@ -489,6 +611,8 @@ export class UI {
     this.selection = sel;
     this.renderItems();
     this.syncBuildbar();
+    // Поворот есть не у каждого предмета: кнопка гаснет, когда нечего вертеть
+    this.setRotateEnabled(sel.kind === 'item' && !!sel.item.rotatable);
     this.hooks.onSelect(sel);
     // Подсказки называют то действие, которое у игрока под рукой:
     // на телефоне «коснитесь», на мыши «кликните».
@@ -519,6 +643,11 @@ export class UI {
     }
   }
 
+  /** Показать/убрать пару ✓/✕ под призраком. */
+  showConfirm(v: boolean): void {
+    this.els.confirm?.classList.toggle('show', v);
+  }
+
   toggleBuild(force?: boolean): void {
     this.buildOpen = force ?? !this.buildOpen;
     this.els.catalog.classList.toggle('open', this.buildOpen);
@@ -538,14 +667,7 @@ export class UI {
     this.els.btnHelp.classList.toggle('active', open);
   }
 
-  setSoundState(on: boolean): void {
-    const b = this.els.btnSound;
-    if (!b) return;
-    b.classList.toggle('active', on);
-    b.innerHTML = `${svgIcon(on ? 'sound-on' : 'sound-off', 23)}<span class="label">${
-      on ? 'Тишина (M)' : 'Звук (M)'
-    }</span>`;
-  }
+
 
   /** Кнопка кровли: подписываем действием, а не состоянием. */
   setRoofState(visible: boolean): void {
@@ -568,16 +690,10 @@ export class UI {
     this.toastTimer = window.setTimeout(() => this.els.toast.classList.remove('show'), 2600);
   }
 
+  /** Веха свершилась: каталог обновляем, а поверх сада не всплываем —
+      список вех тихо живёт в книге летописи. */
   showMilestone(id: string): void {
-    const m = MILESTONES[id];
-    if (!m) return;
-    const e = this.els.milestone;
-    e.querySelector('h3')!.textContent = m.title;
-    e.querySelector('p')!.textContent = m.text;
-    e.querySelector('.unlock')!.textContent = `открыто: ${m.unlocks}`;
-    e.classList.add('show');
-    clearTimeout(this.milestoneTimer);
-    this.milestoneTimer = window.setTimeout(() => e.classList.remove('show'), 5200);
+    if (!MILESTONES[id]) return;
     this.renderTabs();
   }
 
@@ -596,12 +712,39 @@ export class UI {
     }
   }
 
-  setZenNote(text: string): void {
-    this.els.note.textContent = text;
+  /** Запас действий растущего сада: печати вместо чисел. */
+  setGrowBank(bank: number, cap: number, minsNext: number | null): void {
+    const e = this.els.growBank;
+    if (!e) return;
+    const dots = Array.from({ length: cap }, (_, i) => (i < bank ? '●' : '○')).join('');
+    e.querySelector('.gb-dots')!.textContent = dots;
+    e.title =
+      minsNext === null
+        ? `Действий в запасе: ${bank} из ${cap}`
+        : `Действий в запасе: ${bank} из ${cap}; новое через ${minsNext} мин`;
   }
 
-  /** Тихая строка «сесть в тишине» видна только в созерцании. */
-  setSitVisible(v: boolean): void {
-    this.els.sit.classList.toggle('show', v);
+  setGrowBankVisible(v: boolean): void {
+    const e = this.els.growBank;
+    if (e) e.style.display = v ? '' : 'none';
   }
+
+  /** Кнопка кровли: живая только когда есть дом с крышей. */
+  setRoofAvailable(v: boolean): void {
+    const b = this.els.btnRoof;
+    if (b) b.style.display = v ? '' : 'none';
+  }
+
+
+
+  /** Тихая строка «сесть в тишине» видна только в созерцании. */
+
+
+  /** Тихая строка летописи приходит туда же, где исчез остальной интерфейс. */
+  /** Строка «куда расти?»: видна, когда сад готов вырасти. */
+  setGrowVisible(v: boolean): void {
+    this.els.grow?.classList.toggle('show', v);
+  }
+
+
 }

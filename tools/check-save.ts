@@ -87,6 +87,7 @@ async function main(): Promise<void> {
       m: [...d.milestones].sort(),
       s: [...(d.seasons ?? [])].sort(),
       e: [...d.seen].sort(),
+      c: (d.chronicle ?? []).map((e) => [e.id, e.at]),
     });
   }
 

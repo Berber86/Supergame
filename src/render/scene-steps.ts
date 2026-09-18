@@ -15,7 +15,9 @@ import { World } from '../world/world';
 import { Ctx, getPaperTile, glow } from './paint';
 import { drawCost, drawObject, drawObjectShadow } from './sprites';
 import { cacheable, cachedGrowth, drawCached } from './spriteCache';
-import { drawBird, drawCat, drawFlutter } from './creatures';
+import { drawBird, drawButterfly, drawCat } from './creatures';
+import { drawDragonfly, drawFrog } from './residents';
+import { drawDeer, drawFirefly, drawHeron } from './wildlife';
 import type { GhostPreview } from './scene';
 
 /** Наборка состояния сцены, нужная одному кадру сортированных объектов. */
@@ -442,12 +444,62 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
       const p = isoToScreen(b.tx, b.ty, lvl);
       list.push({ depth: (b.tx + b.ty) * 100 + lvl * 20 + 6, draw: () => drawBird(ctx, b, p.x, p.y, atm, time) });
     }
-    // бабочки, стрекозы и светлячки — тоже частицы
+    // бабочки — тоже частицы
     for (const f of opts.particles ? opts.life.flutters : []) {
       const tile = world.at(Math.floor(f.tx), Math.floor(f.ty));
       const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
       const p = isoToScreen(f.tx, f.ty, lvl);
-      list.push({ depth: (f.tx + f.ty) * 100 + lvl * 20 + 8, draw: () => drawFlutter(ctx, f, p.x, p.y, atm, time) });
+      list.push({ depth: (f.tx + f.ty) * 100 + lvl * 20 + 8, draw: () => drawButterfly(ctx, f, p.x, p.y, atm, time) });
+    }
+    // Жители воды: на общем плане их не разглядеть, а рисовать всё равно
+    // пришлось бы — поэтому на дальнем виде бережём кадр.
+    if (opts.zoom >= 0.42) {
+      for (const fr of opts.life.residents.frogs) {
+        if (fr.hidden > 0) continue;
+        const tile = world.at(Math.floor(fr.tx), Math.floor(fr.ty));
+        const lvl = tile ? tile.level : 0;
+        const p = isoToScreen(fr.tx, fr.ty, lvl);
+        list.push({ depth: (fr.tx + fr.ty) * 100 + lvl * 20 + 5, draw: () => drawFrog(ctx, fr, p.x, p.y, atm, time) });
+      }
+      for (const d of opts.particles ? opts.life.residents.dragonflies : []) {
+        const tile = world.at(Math.floor(d.tx), Math.floor(d.ty));
+        const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
+        const p = isoToScreen(d.tx, d.ty, lvl);
+        list.push({
+          depth: (d.tx + d.ty) * 100 + lvl * 20 + 9,
+          draw: () => drawDragonfly(ctx, d, p.x, p.y, atm, time),
+        });
+      }
+    }
+    // Коты-гости: те же позы, что у домашних, но своя шуба
+    for (const c of opts.life.guests) {
+      const tile = world.at(Math.floor(c.tx), Math.floor(c.ty));
+      const lvl = tile ? tile.level : 0;
+      const p = isoToScreen(c.tx, c.ty, lvl);
+      list.push({ depth: (c.tx + c.ty) * 100 + lvl * 20 + 4, draw: () => drawCat(ctx, c, p.x, p.y, atm, time) });
+    }
+    // Дикие соседи: цапля и олень крупные — видны и с общего плана
+    const hr = opts.life.wildlife.heron;
+    if (hr) {
+      const tile = world.at(Math.floor(hr.tx), Math.floor(hr.ty));
+      const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
+      const p = isoToScreen(hr.tx, hr.ty, lvl);
+      list.push({ depth: (hr.tx + hr.ty) * 100 + lvl * 20 + 6, draw: () => drawHeron(ctx, hr, p.x, p.y, atm, time) });
+    }
+    for (const d of opts.life.wildlife.deer) {
+      const tile = world.at(Math.floor(d.tx), Math.floor(d.ty));
+      const lvl = tile ? tile.level : 0;
+      const p = isoToScreen(d.tx, d.ty, lvl);
+      list.push({ depth: (d.tx + d.ty) * 100 + lvl * 20 + 5, draw: () => drawDeer(ctx, d, p.x, p.y, atm, time) });
+    }
+    // Светлячки — ночная мелочь: на дальнем плане бережём кадр
+    if (opts.zoom >= 0.42 && opts.particles) {
+      for (const f of opts.life.wildlife.fireflies) {
+        const tile = world.at(Math.floor(f.tx), Math.floor(f.ty));
+        const lvl = tile ? tile.level : 0;
+        const p = isoToScreen(f.tx, f.ty, lvl);
+        list.push({ depth: (f.tx + f.ty) * 100 + lvl * 20 + 10, draw: () => drawFirefly(ctx, f, p.x, p.y, atm, time) });
+      }
     }
   }
 

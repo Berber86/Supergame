@@ -22,7 +22,7 @@ import { ITEM_BY_ID } from './catalog';
 import { GroundId, PlacedObject, SaveData, Tile } from './types';
 
 /** Версия формата, которую пишет текущая игра. */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 7;
 
 /**
  * Земли в порядке их знака в упаковке. Порядок — часть формата:
@@ -195,9 +195,27 @@ function parseStringList(raw: unknown, max: number): string[] | null {
   return out;
 }
 
+/**
+ * Летопись в сохранении — пары [событие, метка времени]. Старые сады
+ * жили без неё: отсутствие поля значит пустую летопись, а не ошибку.
+ */
+function parseChronicle(raw: unknown): { id: string; at: number }[] | null {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw) || raw.length > 200) return null;
+  const out: { id: string; at: number }[] = [];
+  for (const e of raw) {
+    if (!Array.isArray(e) || e.length !== 2) return null;
+    const [id, at] = e;
+    if (typeof id !== 'string' || id.length === 0 || id.length > 40) return null;
+    if (!isInt(at) || at < 0 || at > 4e12) return null;
+    out.push({ id, at });
+  }
+  return out;
+}
+
 // ---- Две стороны формата ----
 
-/** Сериализовать в компактную форму v4. */
+/** Сериализовать в компактную форму v4+. */
 export function serializeSave(d: SaveData): string {
   return JSON.stringify({
     v: SAVE_VERSION,
@@ -207,6 +225,11 @@ export function serializeSave(d: SaveData): string {
     m: d.milestones,
     s: d.seasons ?? [],
     e: d.seen,
+    g: d.grow ?? null,
+    b: d.born,
+    c: (d.chronicle ?? []).map((e) => [e.id, Math.round(e.at)]),
+    u: d.unlocked ?? null,
+    f: d.fresh ?? null,
   });
 }
 
@@ -216,6 +239,27 @@ export function serializeSave(d: SaveData): string {
  * само содержимое: строка тайлов — v4, массив объектов — v3.
  * Номер версии служит только защитой от будущего.
  */
+/** Режим роста из упаковки: целиком пригодный или null. */
+function parseGrow(raw: unknown): SaveData['grow'] {
+  if (raw === undefined || raw === null) return null;
+  if (!raw || typeof raw !== 'object') return null;
+  const g = raw as Record<string, unknown>;
+  const r = g.rect as Record<string, unknown> | undefined;
+  const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+  if (!r || !num(r.x) || !num(r.y) || !num(r.w) || !num(r.h)) return null;
+  if (r.w < 1 || r.h < 1 || r.x < 0 || r.y < 0 || r.x + r.w > 64 || r.y + r.h > 64) return null;
+  if (!num(g.seed) || !num(g.bank) || !num(g.tick) || !num(g.progress) || !num(g.stage)) return null;
+  return {
+    rect: { x: Math.floor(r.x), y: Math.floor(r.y), w: Math.floor(r.w), h: Math.floor(r.h) },
+    seed: Math.floor(g.seed),
+    bank: Math.max(0, Math.floor(g.bank)),
+    tick: g.tick,
+    progress: Math.max(0, Math.floor(g.progress)),
+    stage: Math.max(0, Math.floor(g.stage)),
+    choosing: Boolean(g.choosing),
+  };
+}
+
 export function parseSave(raw: unknown): SaveData | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const d = raw as Record<string, unknown>;
@@ -253,7 +297,20 @@ export function parseSave(raw: unknown): SaveData | null {
   const milestones = parseStringList(d.m ?? d.milestones, 400);
   const seasons = parseStringList(d.s ?? d.seasons, 16);
   const seen = parseStringList(d.e ?? d.seen, 200);
-  if (!milestones || !seasons || !seen) return null;
+  const chronicle = parseChronicle(d.c ?? d.chronicle);
+  if (!milestones || !seasons || !seen || !chronicle) return null;
 
-  return { version: SAVE_VERSION, tiles, objects, nextId, milestones, seasons, seen };
+  const grow = parseGrow(d.g);
+  if (d.g !== undefined && d.g !== null && !grow) return null;
+
+  // Открытия каталога: отсутствие списка — старое сохранение (мигрирует мир)
+  const hasUnlocks = d.u !== undefined || d.unlocked !== undefined;
+  const unlocked = parseStringList(d.u ?? d.unlocked, 400);
+  const fresh = parseStringList(d.f ?? d.fresh, 400);
+  if (!unlocked || !fresh) return null;
+
+  return { version: SAVE_VERSION, tiles, objects, nextId, milestones, seasons, seen, chronicle, grow,
+    unlocked: hasUnlocks ? unlocked : undefined,
+    fresh: hasUnlocks ? fresh : undefined,
+    born: typeof d.b === 'number' ? d.b : undefined };
 }
