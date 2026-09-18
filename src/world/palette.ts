@@ -141,6 +141,10 @@ export interface Atmosphere {
   fireflies: number;
   /** Направление и мягкость теней. */
   sunDir: { x: number; y: number };
+  /** Высота солнца над горизонтом 0..1: 0 на рассвете/закате, 1 в полдень.
+   *  От неё зависят длина и плотность теней — низкое солнце тянет длинные
+   *  мягкие, полуденное даёт короткие и плотные. */
+  sunElev: number;
   season: SeasonId;
   /** Затянутость неба 0..1. */
   overcast: number;
@@ -183,11 +187,19 @@ export function buildAtmosphere(t: TimeState, overcast = 0): Atmosphere {
   exposure *= lerp(1, 0.62, overcast);
 
   const shadowTint = mix(rgb(52, 62, 104), rgb(108, 116, 150), d);
-  const shadowAmount = (lerp(0.1, 0.3, d) + g * 0.06) * lerp(1, 0.38, overcast);
+  // Плотность тени растёт к полудню: низкое солнце рассеивается по небу
+  // и тени светлее (но длиннее — длина считается в shadowUnder), а в
+  // полдень короткая тень лежит плотным пятном — это «вес» объектов.
+  const sunT0 = clamp01((t.dayT - 0.22) / 0.58);
+  const densK = lerp(0.85, 1.18, Math.sin(sunT0 * Math.PI));
+  const shadowAmount = (lerp(0.11, 0.27, d) + g * 0.05) * lerp(1, 0.38, overcast) * densK;
 
   // Солнце ходит по небу: тени поворачиваются в течение дня.
   const ang = Math.PI * (0.15 + t.dayT * 1.0);
   const sunDir = { x: Math.cos(ang), y: 0.42 + 0.22 * Math.sin(ang * 0.7) };
+  // Высота солнца: та же дуга, что у диска на небе (scene-steps.drawSky).
+  const sunT = clamp01((t.dayT - 0.22) / 0.58);
+  const sunElev = Math.sin(sunT * Math.PI);
 
   return {
     palette,
@@ -201,6 +213,7 @@ export function buildAtmosphere(t: TimeState, overcast = 0): Atmosphere {
     lampGlow: clamp01(Math.max(1 - d * 1.35, overcast * 0.55 * (1 - d * 0.5))),
     fireflies: clamp01(1 - d * 1.5) * (blend.from === 'summer' || blend.from === 'spring' ? 1 : 0.25),
     sunDir,
+    sunElev,
     season: blend.from,
     overcast,
     golden: g,

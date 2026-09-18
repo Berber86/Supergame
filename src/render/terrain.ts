@@ -398,8 +398,94 @@ function tilePath(ctx: Ctx, x: number, y: number, level: number, grow = 0.02): v
   ctx.closePath();
 }
 
-function tileColor(world: World, x: number, y: number, t: Tile, atm: Atmosphere): RGB {
-  let col = groundColor(t.ground, atm);
+/** Дорожные покрытия: сливаются в тропинки, а не лежат плитой. */
+function isRoad(g: GroundId): boolean {
+  return g === 'gravel' || g === 'sand' || g === 'stone';
+}
+
+function sameGround(world: World, x: number, y: number, g: GroundId): boolean {
+  const n = world.at(x, y);
+  return !!n && !n.water && !n.indoor && !n.veranda && n.ground === g;
+}
+
+const ROAD_CARD: [number, number][] = [
+  [1, 0],
+  [0, 1],
+  [-1, 0],
+  [0, -1],
+];
+
+const ROAD_DIAG: [number, number][] = [
+  [1, 1],
+  [1, -1],
+  [-1, 1],
+  [-1, -1],
+];
+
+/** Число соседей-дорог в радиусе одной клетки (все 8 направлений). */
+function roadDeg(world: World, x: number, y: number, g: GroundId): number {
+  let n = 0;
+  for (const [dx, dy] of [...ROAD_CARD, ...ROAD_DIAG]) if (sameGround(world, x + dx, y + dy, g)) n++;
+  return n;
+}
+
+/** Тонкая тропинка: до двух дорожных соседей. Больше — уже двор-площадка. */
+function roadThin(world: World, x: number, y: number, g: GroundId): boolean {
+  return roadDeg(world, x, y, g) <= 2;
+}
+
+/** Что под тропинкой: грунт ближайшего недорожного соседа, иначе трава. */
+function roadUnder(world: World, x: number, y: number): GroundId {
+  const seen = new Set<GroundId>();
+  for (const [dx, dy] of ROAD_CARD) {
+    const n = world.at(x + dx, y + dy);
+    if (!n || n.water || n.indoor || n.veranda || isRoad(n.ground)) continue;
+    seen.add(n.ground);
+  }
+  // предпочитаем самый частый по кругу порядок: трава > мох > почва > прочее
+  for (const pref of ['grass', 'moss', 'soil', 'sand', 'gravel'] as GroundId[]) {
+    if (seen.has(pref)) return pref;
+  }
+  return 'grass';
+}
+
+/** Скелет тропинки: центр + отростки к соседям того же покрытия. */
+interface RoadSkeleton {
+  c: { x: number; y: number };
+  /** отросток: m — точка на границе тайла, corner — диагональная связь (лёгкий поворот). */
+  arms: { m: { x: number; y: number }; corner: boolean }[];
+  cardDeg: number;
+}
+
+function roadSkeleton(world: World, x: number, y: number, t: Tile): RoadSkeleton | null {
+  if (!isRoad(t.ground) || !roadThin(world, x, y, t.ground)) return null;
+  const lv = t.level;
+  const c = isoToScreen(x + 0.5, y + 0.5, lv);
+  const arms: RoadSkeleton['arms'] = [];
+  let card = 0;
+  const cardSide = (dx: number, dy: number) => sameGround(world, x + dx, y + dy, t.ground);
+  for (const [dx, dy] of ROAD_CARD) {
+    if (!cardSide(dx, dy)) continue;
+    card++;
+    arms.push({ m: isoToScreen(x + 0.5 + dx * 0.5, y + 0.5 + dy * 0.5, lv), corner: false });
+  }
+  for (const [dx, dy] of ROAD_DIAG) {
+    if (!sameGround(world, x + dx, y + dy, t.ground)) continue;
+    // диагональ «просится» только если между ними нет своих же кардинальных
+    if (cardSide(dx, 0) || cardSide(0, dy)) continue;
+    arms.push({
+      m: isoToScreen(x + 0.5 + dx * 0.5, y + 0.5 + dy * 0.5, lv),
+      corner: true,
+    });
+  }
+  return { c, arms, cardDeg: card };
+}
+
+// склон свечения: та же вариация тона, что у тайла, — но отсчёт от дороги,
+// чтобы тропинка не «проваливалась» в узор травы.
+function tileColor(world: World, x: number, y: number, t: Tile, atm: Atmosphere, g?: GroundId): RGB {
+  const ground = g ?? (isRoad(t.ground) && roadThin(world, x, y, t.ground) ? roadUnder(world, x, y) : t.ground);
+  let col = groundColor(ground, atm);
   const v = (fbm(x * 0.28, y * 0.28, 3, 5) - 0.5) * 0.14 + (hash2(x, y, 31) - 0.5) * 0.035;
   col = shade(col, 1 + v);
   const nbN = world.at(x, y - 1)?.level ?? t.level;
@@ -416,6 +502,50 @@ function drawTileFill(ctx: Ctx, world: World, x: number, y: number, t: Tile, atm
   }
   tilePath(ctx, x, y, t.level, 0.025);
   ctx.fillStyle = css(tileColor(world, x, y, t, atm), 1);
+  ctx.fill();
+  // Дорожка поверх подстилающего грунта: лента к соседям, а не квадрат.
+  drawRoadRibbon(ctx, world, x, y, t, atm);
+}
+
+/** Конусная лента от c до m в цвет покрытия. */
+function ribbonQuad(ctx: Ctx, c: { x: number; y: number }, m: { x: number; y: number }, w0: number, w1: number): void {
+  const dx = m.x - c.x;
+  const dy = m.y - c.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const px = -dy / len;
+  const py = dx / len;
+  ctx.beginPath();
+  ctx.moveTo(c.x + px * w0, c.y + py * w0);
+  ctx.lineTo(c.x - px * w0, c.y - py * w0);
+  ctx.lineTo(m.x - px * w1, m.y - py * w1);
+  ctx.lineTo(m.x + px * w1, m.y + py * w1);
+  ctx.closePath();
+  ctx.fill();
+}
+
+/** Тропинка: узкая лента, обвивающая соседей; перекрёстки шире. */
+function drawRoadRibbon(ctx: Ctx, world: World, x: number, y: number, t: Tile, atm: Atmosphere): void {
+  if (!isRoad(t.ground) || t.water || t.indoor || t.veranda) return;
+  const sk = roadSkeleton(world, x, y, t);
+  if (!sk) return; // широкий участок — остаётся сплошной плитой
+  const col = tileColor(world, x, y, t, atm, t.ground);
+  const junc = sk.cardDeg >= 2 || sk.arms.length >= 3;
+  const w = TILE_W * 0.15 * (junc ? 1.35 : 1);
+  // Сплошная лента-раствор по всей оси пути; у камня она чуть приглушена —
+  // поверх неё в detail-проходе лягут бутовые плиты дорожки.
+  const stone = t.ground === 'stone';
+  ctx.fillStyle = css(stone ? shade(col, 0.94) : col, stone ? 0.55 : 0.96);
+  for (const arm of sk.arms) {
+    ribbonQuad(ctx, sk.c, arm.m, w, w * (arm.corner ? 0.8 : 1));
+    if (arm.corner) {
+      // диагональный сосед: лента загибается к общему углу — поворот
+      // читается лёгкой дугой, а не рваной ступенькой «уголок к уголку».
+      blobPath(ctx, arm.m.x, arm.m.y, w * 1.15, w * 1.05, x * 67 + y * 13 + 5, 0.3, 9);
+      ctx.fill();
+    }
+  }
+  const seed = x * 41 + y * 97;
+  blobPath(ctx, sk.c.x, sk.c.y, w * (sk.arms.length ? 1.5 : 1.7), w * 1.35, seed, 0.34, 11);
   ctx.fill();
 }
 
@@ -644,14 +774,17 @@ function drawMaterialEdges(ctx: Ctx, world: World, x: number, y: number, atm: At
 
 function drawTileDetail(ctx: Ctx, world: World, x: number, y: number, t: Tile, atm: Atmosphere): void {
   if (t.water) return;
-  const col = tileColor(world, x, y, t, atm);
+  const sk = isRoad(t.ground) ? roadSkeleton(world, x, y, t) : null;
+  const col = tileColor(world, x, y, t, atm, sk ? t.ground : undefined);
   const c = isoToScreen(x + 0.5, y + 0.5, t.level);
   switch (t.ground) {
     case 'gravel':
-      drawGravel(ctx, c.x, c.y, col, x * 17 + y * 31);
+      if (sk) drawRibbonGrain(ctx, sk, col, x * 17 + y * 31, 0.11);
+      else drawGravel(ctx, c.x, c.y, col, x * 17 + y * 31);
       break;
     case 'stone':
-      drawStoneSlab(ctx, x, y, t.level, col);
+      if (sk) drawRibbonFlags(ctx, sk, col, x * 29 + y);
+      else drawStoneSlab(ctx, world, x, y, t.level, col);
       break;
     case 'tatami':
       drawTatami(ctx, x, y, t.level, atm);
@@ -660,7 +793,8 @@ function drawTileDetail(ctx: Ctx, world: World, x: number, y: number, t: Tile, a
       drawDeck(ctx, x, y, t.level, atm);
       break;
     case 'sand':
-      granulate(ctx, c.x, c.y, TILE_W * 0.4, TILE_H * 0.4, shade(col, 0.88), x * 13 + y * 7, 14, 0.09);
+      if (sk) drawRibbonGrain(ctx, sk, col, x * 13 + y * 7, 0.09);
+      else granulate(ctx, c.x, c.y, TILE_W * 0.4, TILE_H * 0.4, shade(col, 0.88), x * 13 + y * 7, 14, 0.09);
       break;
     case 'moss':
     case 'grass':
@@ -700,6 +834,37 @@ function drawMossSpeckle(ctx: Ctx, x: number, y: number, level: number, col: RGB
   }
 }
 
+/** Крошка/песок вдоль ленты тропинки: зерно по осям отростков. */
+function drawRibbonGrain(ctx: Ctx, sk: RoadSkeleton, col: RGB, seed: number, alpha: number): void {
+  granulate(ctx, sk.c.x, sk.c.y, TILE_W * 0.16, TILE_H * 0.16, shade(col, 0.86), seed, 10, alpha * 1.2);
+  for (let i = 0; i < sk.arms.length; i++) {
+    const a = sk.arms[i];
+    const mx = lerp(sk.c.x, a.m.x, 0.55);
+    const my = lerp(sk.c.y, a.m.y, 0.55);
+    granulate(ctx, mx, my, TILE_W * 0.11, TILE_H * 0.1, shade(col, 0.86), seed + i * 7, 8, alpha);
+  }
+}
+
+/** Каменная тропка: бутовые плиты вдоль ленты — узор, а не сплошною плита. */
+function drawRibbonFlags(ctx: Ctx, sk: RoadSkeleton, col: RGB, seed: number): void {
+  const slab = (cx: number, cy: number, r: number, s: number, rot: number) => {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rot);
+    ctx.fillStyle = css(shade(col, 1.09), 0.85);
+    blobPath(ctx, 0, 0, r, r * 0.62, s, 0.32, 7);
+    ctx.fill();
+    ctx.restore();
+  };
+  const r0 = TILE_W * 0.17;
+  const axis = Math.atan2(sk.arms.length ? sk.arms[0].m.y - sk.c.y : 0, sk.arms.length ? sk.arms[0].m.x - sk.c.x : 1);
+  slab(sk.c.x, sk.c.y, r0, seed, axis * 0.3);
+  for (let i = 0; i < sk.arms.length; i++) {
+    const a = sk.arms[i];
+    slab(lerp(sk.c.x, a.m.x, 0.62), lerp(sk.c.y, a.m.y, 0.62), r0 * 0.68, seed + i * 13, axis * 0.3 + i * 0.5);
+  }
+}
+
 function drawGravel(ctx: Ctx, cx: number, cy: number, col: RGB, seed: number): void {
   granulate(ctx, cx, cy, TILE_W * 0.42, TILE_H * 0.42, shade(col, 0.86), seed, 20, 0.11);
   ctx.strokeStyle = css(shade(col, 0.8), 0.26);
@@ -712,7 +877,7 @@ function drawGravel(ctx: Ctx, cx: number, cy: number, col: RGB, seed: number): v
   }
 }
 
-function drawStoneSlab(ctx: Ctx, x: number, y: number, level: number, col: RGB): void {
+function drawStoneSlab(ctx: Ctx, world: World, x: number, y: number, level: number, col: RGB): void {
   const c = isoToScreen(x + 0.5, y + 0.5, level);
   ctx.fillStyle = css(shade(col, 1.07), 0.9);
   const s = 0.3;
@@ -730,6 +895,14 @@ function drawStoneSlab(ctx: Ctx, x: number, y: number, level: number, col: RGB):
   ctx.strokeStyle = css(shade(col, 0.68), 0.3);
   ctx.lineWidth = 1.1;
   ctx.stroke();
+  // Плиты сшиваются с такими же соседями в общее полотно: перемычки
+  // кромки кромкой, шов уходит под зерно — дорожка выглядит выложенной
+  // за один проход, а не отдельными квадратиками.
+  for (const [dx, dy] of ROAD_CARD) {
+    const n = world.at(x + dx, y + dy);
+    if (!n || n.water || n.ground !== 'stone' || n.level !== level || n.indoor || n.veranda) continue;
+    ribbonQuad(ctx, c, isoToScreen(x + 0.5 + dx * 0.62, y + 0.5 + dy * 0.62, level), TILE_W * 0.17, TILE_W * 0.17);
+  }
   granulate(ctx, c.x, c.y, TILE_W * 0.22, TILE_H * 0.22, shade(col, 0.74), x * 29 + y, 8, 0.09);
 }
 
@@ -790,7 +963,9 @@ function drawTileSides(ctx: Ctx, world: World, x: number, y: number, t: Tile, at
     const hpx = drop * LEVEL_H;
     const p0 = dir === 'south' ? isoToScreen(x - 0.02, y + 1, t.level) : isoToScreen(x + 1, y - 0.02, t.level);
     const p1 = dir === 'south' ? isoToScreen(x + 1.02, y + 1, t.level) : isoToScreen(x + 1, y + 1.02, t.level);
-    const shadeK = dir === 'south' ? 0.74 : 0.62;
+    // Грань, обращённая к солнцу, светлее противоположной, а не одинаково
+    // тёмная весь день: утром свет слева, к вечеру — справа.
+    const shadeK = dir === 'south' ? 0.74 - atm.sunDir.x * 0.1 : 0.62 + atm.sunDir.x * 0.08;
     const col = shade(mix(baseCol, atm.palette.soil, 0.5), atm.exposure * shadeK);
 
     ctx.beginPath();
@@ -946,7 +1121,13 @@ function drawWaterEdge(ctx: Ctx, world: World, x: number, y: number, atm: Atmosp
 
 /** Анимированные блики — рисуются каждый кадр поверх кэшированного слоя. */
 export function drawWaterAnimation(ctx: Ctx, world: World, atm: Atmosphere, time: number): void {
-  const hi = shade(mix(atm.palette.water, { r: 255, g: 255, b: 250 }, 0.7), atm.exposure);
+  // Блики отвечают настоящему свету: днём ярче, в золотой час вода
+  // ловит низкое солнце и теплеет, ночью остаётся еле заметный лунный отсвет.
+  const hi = shade(
+    mix(mix(atm.palette.water, { r: 255, g: 255, b: 250 }, 0.7), { r: 255, g: 212, b: 148 }, atm.golden * 0.55),
+    atm.exposure,
+  );
+  const glintK = 0.75 + atm.time.daylight * 0.45 + atm.golden * 0.55;
   for (let y = 0; y < GRID; y++) {
     for (let x = 0; x < GRID; x++) {
       const t = world.at(x, y)!;
@@ -955,7 +1136,7 @@ export function drawWaterAnimation(ctx: Ctx, world: World, atm: Atmosphere, time
       const ph = hash2(x, y, 7) * Math.PI * 2;
       for (let i = 0; i < 2; i++) {
         const s = Math.sin(time * 0.0009 + ph + i * 2.1);
-        const a = 0.05 + 0.07 * (s * 0.5 + 0.5);
+        const a = (0.05 + 0.07 * (s * 0.5 + 0.5)) * glintK;
         const ox = Math.sin(time * 0.0006 + ph + i) * 11;
         const oy = Math.cos(time * 0.0005 + ph * 1.3) * 3;
         ctx.strokeStyle = css(hi, a);
@@ -966,7 +1147,7 @@ export function drawWaterAnimation(ctx: Ctx, world: World, atm: Atmosphere, time
         ctx.stroke();
       }
       const rp = clamp01(Math.sin(time * 0.0012 + ph) * 0.5 + 0.5);
-      ctx.fillStyle = css(hi, 0.04 * rp);
+      ctx.fillStyle = css(hi, 0.04 * rp * glintK);
       ctx.beginPath();
       ctx.ellipse(c.x, c.y, TILE_W * 0.3, TILE_H * 0.28, 0, 0, Math.PI * 2);
       ctx.fill();

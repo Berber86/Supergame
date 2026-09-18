@@ -7,7 +7,7 @@ import { GRID, LEVEL_H, TILE_H, TILE_W, isoToScreen } from '../core/iso';
 import { hash2, lerp } from '../core/rng';
 import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
 import { World } from '../world/world';
-import { Ctx, glow, granulate } from './paint';
+import { Ctx, glow, granulate, washBlob } from './paint';
 
 export interface HouseBox {
   x0: number;
@@ -162,6 +162,9 @@ function drawWall(
 }
 
 /** Столбы и кровля — рисуются ПОСЛЕ объектов, чтобы смыкать картинку. */
+/** Светлая нота кровли у конька — бумага проступает сквозь черепицу. */
+const WHITE_ROOF: RGB = { r: 250, g: 246, b: 236 };
+
 export function drawHouseRoof(ctx: Ctx, world: World, atm: Atmosphere, time: number): void {
   const h = findHouse(world);
   if (!h) return;
@@ -226,15 +229,65 @@ export function drawHouseRoof(ctx: Ctx, world: World, atm: Atmosphere, time: num
     col: RGB,
     curve: number,
   ) => {
-    ctx.beginPath();
-    ctx.moveTo(p0.x, p0.y);
-    // вогнутая японская кровля: край слегка задран
-    ctx.quadraticCurveTo((p0.x + p1.x) / 2, (p0.y + p1.y) / 2 + curve, p1.x, p1.y);
-    ctx.lineTo(r1.x, r1.y);
-    ctx.quadraticCurveTo((r0.x + r1.x) / 2, (r0.y + r1.y) / 2 - 3, r0.x, r0.y);
-    ctx.closePath();
+    // Контур ската собираем функцией: акварельные размывы внутри строят
+    // свои blobPath, поэтому перед обводкой контур собирается заново —
+    // иначе stroke обведёт последний блоб, а не скат.
+    const tracePath = () => {
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.y);
+      // вогнутая японская кровля: край слегка задран
+      ctx.quadraticCurveTo((p0.x + p1.x) / 2, (p0.y + p1.y) / 2 + curve, p1.x, p1.y);
+      ctx.lineTo(r1.x, r1.y);
+      ctx.quadraticCurveTo((r0.x + r1.x) / 2, (r0.y + r1.y) / 2 - 3, r0.x, r0.y);
+      ctx.closePath();
+    };
+    tracePath();
     ctx.fillStyle = css(col, 0.98);
     ctx.fill();
+
+    // Скат — не пластиковая плашка: внутри контура лежат акварельные
+    // размывы — светлее к коньку, сырее и темнее у свеса, плюс живая
+    // крапинка пигмента, как у земли под домом.
+    ctx.save();
+    ctx.clip();
+    const midX = (p0.x + p1.x) / 2;
+    const ridgeX = (r0.x + r1.x) / 2;
+    const topY = Math.min(r0.y, r1.y);
+    const botY = Math.max(p0.y, p1.y);
+    const g = ctx.createLinearGradient(0, topY, 0, botY + curve * 0.5);
+    g.addColorStop(0, css(mix(col, WHITE_ROOF, 0.5), 0.1));
+    g.addColorStop(0.55, css(col, 0.02));
+    g.addColorStop(1, css(T.roofDark, 0.14));
+    ctx.fillStyle = g;
+    ctx.fillRect(
+      Math.min(p0.x, p1.x, r0.x, r1.x) - 4,
+      topY - 4,
+      Math.max(p0.x, p1.x, r0.x, r1.x) - Math.min(p0.x, p1.x, r0.x, r1.x) + 8,
+      botY - topY + curve + 12,
+    );
+    washBlob(
+      ctx,
+      lerp(midX, ridgeX, 0.4),
+      topY + (botY - topY) * 0.3,
+      Math.abs(p1.x - p0.x) * 0.3,
+      (botY - topY) * 0.5,
+      mix(col, WHITE_ROOF, 0.28),
+      491,
+      { layers: 2, alpha: 0.12, edge: 0, wobble: 0.3 },
+    );
+    washBlob(
+      ctx,
+      midX,
+      botY - (botY - topY) * 0.16,
+      Math.abs(p1.x - p0.x) * 0.42,
+      (botY - topY) * 0.34,
+      T.roofDark,
+      503,
+      { layers: 2, alpha: 0.1, edge: 0, wobble: 0.3 },
+    );
+    ctx.restore();
+
+    tracePath();
     ctx.strokeStyle = css(T.roofDark, 0.35);
     ctx.lineWidth = 1.4;
     ctx.stroke();

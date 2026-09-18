@@ -26,6 +26,7 @@ import {
   drawObjects,
   drawPaperGrain,
   drawColorGrade,
+  drawAerialPerspective,
 } from './scene-steps';
 
 export interface Camera {
@@ -239,7 +240,7 @@ export class Scene {
     // Перерисовываем ландшафт при заметном изменении освещения
     return `${atm.season}|${Math.round(atm.exposure * 22)}|${Math.round(atm.lightAmount * 22)}|${Math.round(
       atm.lightTint.r / 9,
-    )}|${Math.round(atm.lightTint.b / 9)}`;
+    )}|${Math.round(atm.lightTint.b / 9)}|${Math.round(atm.sunDir.x / 0.34)}`;
   }
 
   render(world: World, atm: Atmosphere, time: number, dt: number, life?: Life, weatherState?: WeatherState): void {
@@ -371,6 +372,9 @@ export class Scene {
       if (this.particles) this.rain.drawWorldLayer(ctx, world, atm, ws);
     }
 
+    // Воздушная перспектива: даль уходит в пелену поверх земли и объектов
+    drawAerialPerspective(ctx, atm);
+
     // Туман неоткрытой земли: поверх всего мира, под атмосферными слоями
     if (world.grow) drawGrowFog(ctx, world, time, this.camera.zoom);
 
@@ -408,7 +412,7 @@ export class Scene {
     // --- Пост-обработка ---
     this.paperPattern = drawPaperGrain(ctx, W, H, this.paperPattern);
     drawColorGrade(ctx, W, H, atm);
-    vignette(ctx, W, H, mix(atm.shadowTint, { r: 60, g: 50, b: 40 }, 0.4), atm.time.isNight ? 0.5 : 0.3);
+    vignette(ctx, W, H, mix(atm.shadowTint, { r: 60, g: 50, b: 40 }, 0.4), atm.time.isNight ? 0.5 : 0.35);
 
     ctx.restore();
   }

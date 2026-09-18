@@ -49,19 +49,17 @@ async function main(): Promise<void> {
     const th = [0, 1, 2, 3, 4, 5].map(growThreshold);
     check('пороги удваиваются: 2,4,8,16,32,64', th.join(',') === '2,4,8,16,32,64', th.join(','));
     const st = newGrowState(7, 1000);
-    check('старт: клочок 2×2 в центре листа', st.rect.w === 2 && st.rect.h === 2 && st.rect.x === Math.floor((GRID - 2) / 2));
+    check(
+      'старт: клочок 2×2 в центре листа',
+      st.rect.w === 2 && st.rect.h === 2 && st.rect.x === Math.floor((GRID - 2) / 2),
+    );
     check('старт: три действия в подарок', st.bank === 3 && st.tick === 1000);
     const zs = growZones(st.rect);
     check('четыре зоны-кандидата', zs.length === 4);
     check(
       'зоны примыкают к сторонам и удваивают площадь',
       zs.every(
-        (z) =>
-          z.w * z.h === st.rect.w * st.rect.h &&
-          z.x >= 0 &&
-          z.y >= 0 &&
-          z.x + z.w <= GRID &&
-          z.y + z.h <= GRID,
+        (z) => z.w * z.h === st.rect.w * st.rect.h && z.x >= 0 && z.y >= 0 && z.x + z.w <= GRID && z.y + z.h <= GRID,
       ),
     );
     const touching = zs.every(
@@ -113,7 +111,10 @@ async function main(): Promise<void> {
     check('остаток копится: ещё девять минут не считаются', growTick(st, GROW_ACTION_MS * 2 - 1) === 0);
     st.bank = 0;
     st.tick = 0;
-    check('двадцать пять минут — два действия, остаток сохранён', growTick(st, GROW_ACTION_MS * 2.5) === 2 && st.bank === 2);
+    check(
+      'двадцать пять минут — два действия, остаток сохранён',
+      growTick(st, GROW_ACTION_MS * 2.5) === 2 && st.bank === 2,
+    );
     check('тик сдвинулся ровно на два интервала', st.tick === GROW_ACTION_MS * 2);
     st.tick = 0;
     st.bank = GROW_BANK_CAP - 1;
@@ -189,7 +190,10 @@ async function main(): Promise<void> {
     check('предмет для переноса посажен', !!placed);
     if (placed) {
       const bankBefore = w.grow.bank;
-      check('перенос за туман отклонён', w.moveObject(placed, r.x - 4, r.y - 4) === false && w.grow.bank === bankBefore);
+      check(
+        'перенос за туман отклонён',
+        w.moveObject(placed, r.x - 4, r.y - 4) === false && w.grow.bank === bankBefore,
+      );
     }
   }
 
@@ -226,7 +230,10 @@ async function main(): Promise<void> {
     // Мусор в поле роста не проходит
     const bad = JSON.parse(packed) as Record<string, unknown>;
     bad.g = { rect: { x: -5, y: 0, w: 2, h: 2 }, seed: 1, bank: 0, tick: 0, progress: 0, stage: 0, choosing: false };
-    check('прямоугольник вне листа отклоняется', parseSave(bad)?.grow === undefined || parseSave(bad) === null || parseSave(bad)!.grow === null);
+    check(
+      'прямоугольник вне листа отклоняется',
+      parseSave(bad)?.grow === undefined || parseSave(bad) === null || parseSave(bad)!.grow === null,
+    );
   }
 
   console.log('дикая земля');
@@ -246,12 +253,19 @@ async function main(): Promise<void> {
       w.objects.map((o) => `${o.type}:${o.tx}:${o.ty}`).join(',');
     check('один сид — одна земля', sig(w1) === sig(w2));
     check('разные сиды — разная земля', sig(w1) !== sig(w3));
-    check('в дикой земле нет построек', w1.objects.every((o) => !['building', 'path'].includes(o.type)));
+    check(
+      'в дикой земле нет построек',
+      w1.objects.every((o) => !['building', 'path'].includes(o.type)),
+    );
     let stone = 0;
     for (const t of w1.tiles) if (t.ground === 'stone') stone++;
     check('в дикой земле нет камня троп', stone === 0);
     const kinds = new Set(w1.objects.map((o) => o.type));
-    check('рождены деревья и травы', w1.objects.length > 20, `${w1.objects.length} предметов: ${[...kinds].slice(0, 5).join(',')}`);
+    check(
+      'рождены деревья и травы',
+      w1.objects.length > 20,
+      `${w1.objects.length} предметов: ${[...kinds].slice(0, 5).join(',')}`,
+    );
     let water = 0;
     for (const t of w1.tiles) if (t.water) water++;
     check('где-то есть вода', water > 0, `${water} клеток`);

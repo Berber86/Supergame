@@ -1,5 +1,6 @@
 /** Общая утварь рисовальщиков: контекст, освещение, тени. */
 
+import { clamp01, lerp } from '../../core/rng';
 import { Atmosphere, RGB, mix, shade } from '../../world/palette';
 import { PlacedObject } from '../../world/types';
 import { Ctx, softShadow } from '../paint';
@@ -58,11 +59,34 @@ export function shadowUnder(d: DrawCtx, rx: number, ry: number, strength = 1): v
   const { ctx, atm } = d;
   ctx.save();
   ctx.globalCompositeOperation = 'multiply';
-  // длинная тень по солнцу
-  const off = atm.sunDir.x * rx * 0.55;
-  softShadow(ctx, d.x + off, d.y + ry * 0.2, rx * 1.15, ry * 0.95, atm.shadowTint, atm.shadowAmount * 1.4 * strength);
+  // Отбрасываемая тень: длина зависит от высоты солнца. На рассвете и
+  // закате она тянется далеко в сторону от света, к полудню собирается
+  // в короткое плотное пятно под объектом. Длинная тень рисуется не
+  // одним расплывчатым эллипсом, а цепочкой пятен вдоль луча: так краска
+  // не размазывается в дым и направление читается.
+  const elev = clamp01(atm.sunElev);
+  const lenK = 0.55 + (1 - elev) * 1.75;
+  const dirX = atm.sunDir.x;
+  const base = atm.shadowAmount * strength;
+  if (elev < 0.6 && Math.abs(dirX) > 0.12) {
+    const len = rx * lenK * 1.5;
+    for (let i = 0; i < 3; i++) {
+      const t = (i + 1) / 3;
+      softShadow(
+        ctx,
+        d.x + dirX * len * t,
+        d.y + ry * 0.2 + (1 - elev) * ry * 0.5 * t,
+        rx * (0.85 - t * 0.35) * 1.35,
+        ry * (0.95 - t * 0.3),
+        atm.shadowTint,
+        base * lerp(2, 1.35, elev) * (1 - t * 0.55),
+      );
+    }
+  } else {
+    softShadow(ctx, d.x + dirX * rx * lenK * 0.5, d.y + ry * 0.2, rx * 1.2, ry * 0.95, atm.shadowTint, base * 1.5);
+  }
   // плотное контактное пятно — объект «врастает» в землю
-  softShadow(ctx, d.x, d.y, rx * 0.5, ry * 0.42, atm.shadowTint, atm.shadowAmount * 2.1 * strength);
+  softShadow(ctx, d.x, d.y, rx * 0.5, ry * 0.42, atm.shadowTint, atm.shadowAmount * 2.15 * strength);
   ctx.restore();
 }
 

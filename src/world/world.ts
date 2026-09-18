@@ -561,10 +561,7 @@ export class World {
     const y0 = Math.floor(ty - (bh - 1) / 2);
     const rad = (bw - 1) / 2;
     // За туманом растущего сада кисть не работает: сперва открой землю
-    if (
-      this.grow &&
-      !(inGrowRect(this.grow.rect, x0, y0) && inGrowRect(this.grow.rect, x0 + bw - 1, y0 + bh - 1))
-    )
+    if (this.grow && !(inGrowRect(this.grow.rect, x0, y0) && inGrowRect(this.grow.rect, x0 + bw - 1, y0 + bh - 1)))
       return false;
     if (!this.growPayStroke()) return false;
     switch (brush.kind) {

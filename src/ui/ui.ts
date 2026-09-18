@@ -211,8 +211,7 @@ export class UI {
           this.hooks.onRotate();
         } else if (act === 'mode') {
           this.hooks.onPaintMode(this.paintMode === 'stroke' ? 'tap' : 'stroke');
-        }
-        else if (act === 'pick') this.select(this.selection.kind === 'pick' ? { kind: 'none' } : { kind: 'pick' });
+        } else if (act === 'pick') this.select(this.selection.kind === 'pick' ? { kind: 'none' } : { kind: 'pick' });
         else if (act === 'move') this.select(this.selection.kind === 'move' ? { kind: 'none' } : { kind: 'move' });
         else if (act === 'fill') this.startFill();
         else if (act === 'path') this.select(this.selection.kind === 'path' ? { kind: 'none' } : { kind: 'path' });
@@ -409,14 +408,8 @@ export class UI {
   private tabHasContent(id: string): boolean {
     return (
       ITEMS.some(
-        (i) =>
-          i.tab === id &&
-          this.world.unlocked.has(i.id) &&
-          (this.fitsGrow(i.w, i.h) || this.fitsGrow(i.h, i.w)),
-      ) ||
-      TERRAIN_BRUSHES.some(
-        (b) => b.tab === id && this.world.unlocked.has(b.id) && this.fitsGrow(b.w, b.h),
-      )
+        (i) => i.tab === id && this.world.unlocked.has(i.id) && (this.fitsGrow(i.w, i.h) || this.fitsGrow(i.h, i.w)),
+      ) || TERRAIN_BRUSHES.some((b) => b.tab === id && this.world.unlocked.has(b.id) && this.fitsGrow(b.w, b.h))
     );
   }
 
@@ -444,10 +437,7 @@ export class UI {
     for (const tab of visible) {
       // Никаких миганий на открытие вех: вкладка просто есть или её нет
       const fresh = this.tabHasFresh(tab.id);
-      const e = this.el(
-        'div',
-        `tab ${this.activeTab === tab.id ? 'active' : ''} ${fresh ? 'fresh' : ''}`,
-      );
+      const e = this.el('div', `tab ${this.activeTab === tab.id ? 'active' : ''} ${fresh ? 'fresh' : ''}`);
       e.innerHTML = `${svgIcon(tab.icon, 17)}<span>${tab.name}</span>`;
       e.addEventListener('click', () => {
         this.activeTab = tab.id;
@@ -464,8 +454,7 @@ export class UI {
     box.innerHTML = '';
 
     const brushes = TERRAIN_BRUSHES.filter(
-      (b) =>
-        b.tab === this.activeTab && this.world.unlocked.has(b.id) && this.fitsGrow(b.w, b.h),
+      (b) => b.tab === this.activeTab && this.world.unlocked.has(b.id) && this.fitsGrow(b.w, b.h),
     );
     const items = ITEMS.filter(
       (i) =>
@@ -667,8 +656,6 @@ export class UI {
     this.els.btnHelp.classList.toggle('active', open);
   }
 
-
-
   /** Кнопка кровли: подписываем действием, а не состоянием. */
   setRoofState(visible: boolean): void {
     const b = this.els.btnRoof;
@@ -735,16 +722,11 @@ export class UI {
     if (b) b.style.display = v ? '' : 'none';
   }
 
-
-
   /** Тихая строка «сесть в тишине» видна только в созерцании. */
-
 
   /** Тихая строка летописи приходит туда же, где исчез остальной интерфейс. */
   /** Строка «куда расти?»: видна, когда сад готов вырасти. */
   setGrowVisible(v: boolean): void {
     this.els.grow?.classList.toggle('show', v);
   }
-
-
 }

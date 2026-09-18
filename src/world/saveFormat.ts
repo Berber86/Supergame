@@ -309,8 +309,18 @@ export function parseSave(raw: unknown): SaveData | null {
   const fresh = parseStringList(d.f ?? d.fresh, 400);
   if (!unlocked || !fresh) return null;
 
-  return { version: SAVE_VERSION, tiles, objects, nextId, milestones, seasons, seen, chronicle, grow,
+  return {
+    version: SAVE_VERSION,
+    tiles,
+    objects,
+    nextId,
+    milestones,
+    seasons,
+    seen,
+    chronicle,
+    grow,
     unlocked: hasUnlocks ? unlocked : undefined,
     fresh: hasUnlocks ? fresh : undefined,
-    born: typeof d.b === 'number' ? d.b : undefined };
+    born: typeof d.b === 'number' ? d.b : undefined,
+  };
 }

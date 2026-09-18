@@ -122,8 +122,13 @@ function makeTree(style: TreeStyle): Drawer {
     const { ctx, atm, g, obj } = d;
     const scale = lerp(0.18, 1, Math.pow(g, 0.72));
     const h = style.height * scale;
-    const cw = style.crownW * scale;
-    const ch = style.crownH * scale;
+    // Деревья одной породы не близнецы: пропорции кроны и её посадка
+    // дрожат по сиду. Кэш ключуется сидом, так что дрожь стабильна.
+    const shapeJ = hash2(obj.seed, 5, 7);
+    const shapeJ2 = hash2(obj.seed, 6, 9);
+    const cw = style.crownW * scale * (0.92 + shapeJ * 0.16);
+    const ch = style.crownH * scale * (0.92 + shapeJ2 * 0.16);
+    const crownDx = (shapeJ - 0.5) * cw * 0.12;
     const sway = Math.sin(d.time * 0.0004 + obj.seed) * 3 * d.wind * scale;
 
     shadowUnder(d, cw * 0.62, cw * 0.26, 0.9);
@@ -138,15 +143,19 @@ function makeTree(style: TreeStyle): Drawer {
       // зимний силуэт: ветвистая крона + шапки снега
       drawBareCrown(d, tx, ty, h, cw, ch, branchCol, sway, style.droop ?? 0);
       const snow = litc({ r: 247, g: 249, b: 252 }, atm);
+      // Снег лежит по куполу кроны: выше — купол уже, шапки мельче и
+      // площе. Горизонтальной полосой они читались как прилепленные диски.
       for (let i = 0; i < 7; i++) {
         const r = hash2(i, obj.seed, 9);
         const r2 = hash2(i, obj.seed, 4);
+        const up = 0.18 + r2 * 0.62; // 0 — низ кроны, 0.8 — верх
+        const domeK = 1.05 - up * 0.75;
         washBlob(
           ctx,
-          tx + (r - 0.5) * cw * 1.05 + sway,
-          ty - ch * 0.28 + (r2 - 0.5) * ch * 0.55,
-          cw * (0.1 + r * 0.14),
-          ch * (0.04 + r2 * 0.05),
+          tx + (r - 0.5) * cw * domeK + sway,
+          ty - ch * up,
+          cw * (0.09 + r * 0.13) * (1 - up * 0.35),
+          ch * (0.035 + r2 * 0.04),
           snow,
           obj.seed + i,
           { layers: 2, alpha: 0.6, edge: 0.08, wobble: 0.3 },
@@ -157,9 +166,11 @@ function makeTree(style: TreeStyle): Drawer {
 
     drawBranches(d, tx, ty, 5, h * 0.35, branchCol, 1);
 
+    const cxx = tx + crownDx;
     const crownMain = litc(main, atm);
     const crownDeep = litc(shade(mix(main, atm.palette.foliageDeep, 0.55), 0.92), atm);
-    const crownLight = litc(mix(main, WHITE, 0.22), atm, 0.04);
+    const crownLight = litc(mix(main, WHITE, 0.3), atm, 0.05);
+    const crownShade = litc(shade(mix(main, atm.palette.foliageDeep, 0.6), 0.8), atm);
 
     // Крона — стопка акварельных клякс
     const layers = style.layers;
@@ -167,7 +178,7 @@ function makeTree(style: TreeStyle): Drawer {
       const r1 = hash2(i, obj.seed, 11);
       const r2 = hash2(i, obj.seed, 19);
       const spread = 1 - i / (layers + 1);
-      const lx = tx + (r1 - 0.5) * cw * 1.05 + sway * (1 + i * 0.15);
+      const lx = cxx + (r1 - 0.5) * cw * 1.05 + sway * (1 + i * 0.15);
       const ly = ty - ch * 0.15 + (r2 - 0.5) * ch * 0.75 - i * ch * 0.06;
       const rx = cw * (0.42 + r1 * 0.3) * (0.7 + spread * 0.5);
       const ry = ch * (0.3 + r2 * 0.22);
@@ -175,26 +186,97 @@ function makeTree(style: TreeStyle): Drawer {
       washBlob(ctx, lx, ly + ry * 0.3, rx, ry, crownDeep, obj.seed + i * 7, {
         layers: 2,
         alpha: 0.4,
-        edge: 0.14,
-        wobble: 0.26,
+        edge: 0.16,
+        wobble: 0.28,
       });
       // основной тон
       washBlob(ctx, lx, ly, rx * 0.96, ry * 0.94, crownMain, obj.seed + i * 13, {
         layers: 3,
         alpha: 0.4,
-        edge: 0.16,
-        wobble: 0.24,
+        edge: 0.19,
+        wobble: 0.28,
       });
     }
+
+    // Сторона, отвернувшаяся от солнца: собирает глубокий тон. Ночью
+    // почти не читается — и не нужна, туда её и прячем.
+    const shadeA = 0.34 * (0.35 + 0.65 * atm.time.daylight);
+    if (shadeA > 0.05) {
+      washBlob(
+        ctx,
+        cxx + atm.sunDir.x * cw * 0.3 + sway,
+        ty - ch * 0.02,
+        cw * 0.42,
+        ch * 0.32,
+        crownShade,
+        obj.seed + 47,
+        { layers: 2, alpha: shadeA, edge: 0.1, wobble: 0.3 },
+      );
+    }
+
     // Солнечный верх
-    const sunX = tx - atm.sunDir.x * cw * 0.25 + sway;
+    const sunX = cxx - atm.sunDir.x * cw * 0.32 + sway;
     washBlob(ctx, sunX, ty - ch * 0.42, cw * 0.44, ch * 0.24, crownLight, obj.seed + 91, {
       layers: 2,
-      alpha: 0.3,
+      alpha: 0.4,
       edge: 0,
       wobble: 0.28,
     });
-    granulate(ctx, tx + sway, ty - ch * 0.15, cw * 0.5, ch * 0.4, crownDeep, obj.seed, Math.round(16 * scale) + 4, 0.1);
+
+    // Золотой час: тёплый кант по световой кромке кроны
+    if (atm.golden > 0.08) {
+      const rim = litc(mix({ r: 255, g: 190, b: 110 }, WHITE, 0.25), atm, 0.06);
+      washBlob(ctx, sunX - atm.sunDir.x * cw * 0.1, ty - ch * 0.46, cw * 0.4, ch * 0.1, rim, obj.seed + 97, {
+        layers: 2,
+        alpha: 0.5 * atm.golden,
+        edge: 0,
+        wobble: 0.5,
+      });
+    }
+
+    // Кромка кроны — не гладкий овал, а лопасти: кольцо мелких клякс
+    // по периметру ломает силуэт, и дерево перестаёт быть «наклейкой».
+    const rimN = Math.round(7 * scale) + 3;
+    for (let i = 0; i < rimN; i++) {
+      const a = (i / rimN) * Math.PI * 2 + hash2(i, obj.seed, 51) * 0.8;
+      const rw = 0.88 + hash2(i, obj.seed, 57) * 0.3;
+      const ex = cxx + Math.cos(a) * cw * 0.56 * rw + sway;
+      const ey = ty - ch * 0.12 + Math.sin(a) * ch * 0.42 * rw;
+      const top = Math.sin(a) < -0.35;
+      const col = top ? mix(crownMain, crownLight, 0.45) : mix(crownMain, crownDeep, 0.4);
+      washBlob(ctx, ex, ey, cw * 0.15, ch * 0.1, col, obj.seed + 61 + i * 3, {
+        layers: 2,
+        alpha: 0.42,
+        edge: 0.16,
+        wobble: 0.34,
+      });
+    }
+
+    granulate(
+      ctx,
+      cxx + sway,
+      ty - ch * 0.15,
+      cw * 0.5,
+      ch * 0.4,
+      crownDeep,
+      obj.seed,
+      Math.round(16 * scale) + 4,
+      0.14,
+    );
+
+    // Ветви проступают сквозь листву: крона — не облако на палке,
+    // а листва на скелете дерева.
+    if (scale > 0.45) {
+      const nb = 3;
+      for (let i = 0; i < nb; i++) {
+        const r = hash2(i, obj.seed, 67);
+        const r2 = hash2(i, obj.seed, 71);
+        const bx = tx + (r - 0.5) * cw * 0.3 + sway * 0.5;
+        const ex = cxx + (r2 - 0.5) * cw * 0.85 + sway * 0.8;
+        const ey = ty - ch * (0.28 + r * 0.3);
+        taperStroke(ctx, bx, ty + 6, ex, ey, 1.8 * scale, 0.7 * scale, branchCol, 0.3, (r - 0.5) * cw * 0.2);
+      }
+    }
 
     // Цветение (сакура, азалия)
     if (style.blossom && (atm.season === 'spring' || (atm.season === 'summer' && style.blossom))) {
@@ -204,7 +286,7 @@ function makeTree(style: TreeStyle): Drawer {
       for (let i = 0; i < n; i++) {
         const r1 = hash2(i, obj.seed, 23);
         const r2 = hash2(i, obj.seed, 29);
-        const px = tx + (r1 - 0.5) * cw * 1.15 + sway;
+        const px = cxx + (r1 - 0.5) * cw * 1.15 + sway;
         const py = ty - ch * 0.2 + (r2 - 0.5) * ch * 0.95;
         ctx.fillStyle = css(bl, 0.55 + r1 * 0.3);
         blobPath(ctx, px, py, cw * 0.1 * (0.6 + r2 * 0.7), ch * 0.07 * (0.6 + r1 * 0.7), obj.seed + i, 0.35, 7);
@@ -217,7 +299,7 @@ function makeTree(style: TreeStyle): Drawer {
       const dropCol = litc(shade(main, 0.95), atm);
       for (let i = 0; i < Math.round(9 * scale) + 3; i++) {
         const r = hash2(i, obj.seed, 37);
-        const sx = tx + (r - 0.5) * cw * 1.1 + sway;
+        const sx = cxx + (r - 0.5) * cw * 1.1 + sway;
         const sy = ty - ch * 0.1 + (hash2(i, obj.seed, 41) - 0.5) * ch * 0.4;
         const len = style.droop * scale * (0.6 + r * 0.8);
         const wob = Math.sin(d.time * 0.0007 + i) * 5 * d.wind;

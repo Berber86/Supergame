@@ -49,7 +49,6 @@ export interface InputActions {
   doUndo(): void;
   doRedo(): void;
 
-
   setRoofVisible(visible: boolean): void;
   toggleSound(): void;
   /** Снять ждущий призрак бесплатно. true — призрак был. */
