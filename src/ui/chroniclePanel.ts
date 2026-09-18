@@ -12,6 +12,31 @@ import { World } from '../world/world';
 import { svgIcon } from './icons';
 import { MILESTONES } from '../world/catalog';
 
+const CHRONICLE_IMAGES: Record<string, string> = {
+  meet_frog: './images/chronicle/meet_frog.webp',
+  meet_firefly: './images/chronicle/meet_firefly.webp',
+  firefly_dance: './images/chronicle/firefly_dance.webp',
+  meet_moth: './images/chronicle/meet_moth.webp',
+  meet_heron: './images/chronicle/meet_heron.webp',
+  heron_strike: './images/chronicle/koi_smart.webp',
+  meet_dragonfly: './images/chronicle/koi_smart.webp',
+  chorus: './images/chronicle/north_moss.webp',
+  flock: './images/chronicle/bird_nest.webp',
+  deer_pair: './images/chronicle/bird_nest.webp',
+  meet_deer: './images/chronicle/meet_deer.webp',
+  meet_hedgehog: './images/chronicle/meet_hedgehog.webp',
+  meet_owl: './images/chronicle/meet_owl.webp',
+  meet_squirrel: './images/chronicle/meet_squirrel.webp',
+  meet_turtle: './images/chronicle/meet_turtle.webp',
+  turtle_bask: './images/chronicle/meet_turtle.webp',
+  meet_bee: './images/chronicle/meet_bee.webp',
+  bee_swarm: './images/chronicle/meet_bee.webp',
+  owl_hoot: './images/chronicle/meet_owl.webp',
+  koi_smart: './images/chronicle/koi_smart.webp',
+  north_moss: './images/chronicle/north_moss.webp',
+  bird_nest: './images/chronicle/bird_nest.webp',
+};
+
 export class ChroniclePanel {
   private root: HTMLElement;
   private list: HTMLElement;
@@ -100,6 +125,15 @@ export class ChroniclePanel {
       text.textContent = t.text;
       body.appendChild(date);
       body.appendChild(text);
+      const imgSrc = CHRONICLE_IMAGES[e.id];
+      if (imgSrc) {
+        const img = document.createElement('img');
+        img.className = 'ch-img';
+        img.src = imgSrc;
+        img.alt = '';
+        img.loading = 'lazy';
+        body.appendChild(img);
+      }
       row.appendChild(kanji);
       row.appendChild(body);
       this.list.appendChild(row);
