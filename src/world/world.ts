@@ -107,6 +107,9 @@ export class World {
    * Открытия каталога. Строгий старт (растущий сад): ровно одно случайное
    * открытие, всё остальное впереди. Мягкий (вольный сад-витрина): доступно
    * то, что уже стоит, и земные кисти, плюс одно открытие впереди.
+   * Дикие постройки (улей, бельчатник, бревно черепахи, кормушка, поилка)
+   * должны быть видны сразу — иначе вкладка Гости не появляется вовсе,
+   * т.к. tabHasContent требует unlocked.
    */
   initUnlocks(lenient: boolean): void {
     this.unlocked = new Set();
@@ -114,6 +117,10 @@ export class World {
     if (lenient) {
       for (const o of this.objects) if (ITEM_BY_ID.has(o.type)) this.unlocked.add(o.type);
       for (const b of TERRAIN_BRUSHES) this.unlocked.add(b.id);
+      // Всегда открыты базовые приглашения дикой жизни
+      for (const id of ['feeder', 'birdbath', 'beehive', 'squirrel_feeder', 'turtle_log']) {
+        this.unlocked.add(id);
+      }
     }
     this.unlockRandomItem();
   }
@@ -1125,6 +1132,11 @@ export class World {
     if (p.unlocked) {
       this.unlocked = new Set(p.unlocked);
       this.fresh = new Set(p.fresh ?? []);
+      // Миграция: старые сохранения не имели улья/бельчатника/бревна в unlocked,
+      // из-за чего вкладка Гости не появлялась. Добавляем их принудительно.
+      for (const id of ['feeder', 'birdbath', 'beehive', 'squirrel_feeder', 'turtle_log']) {
+        if (ITEM_BY_ID.has(id)) this.unlocked.add(id);
+      }
     } else {
       // Старое сохранение: растущий сад начинает путь заново с одного открытия,
       // вольный оставляет себе то, что уже прожито
