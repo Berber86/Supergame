@@ -197,6 +197,22 @@ export function drawCached(d: DrawCtx): boolean {
  */
 const boxes = new Map<string, { w: number; h: number; ax: number; ay: number } | null>();
 
+let _probe: HTMLCanvasElement | null = null;
+function getProbe(S: number): CanvasRenderingContext2D | null {
+  if (!_probe) {
+    _probe = document.createElement('canvas');
+  }
+  if (_probe.width !== S || _probe.height !== S) {
+    _probe.width = S;
+    _probe.height = S;
+  }
+  const pc = _probe.getContext('2d', { willReadFrequently: true } as any) as CanvasRenderingContext2D | null;
+  if (!pc) return null;
+  pc.setTransform(1, 0, 0, 1, 0, 0);
+  pc.clearRect(0, 0, S, S);
+  return pc;
+}
+
 function measureBox(
   obj: { type: string; seed: number; rot: number; tx: number; ty: number; planted: number; id: number },
   atm: Parameters<typeof drawObject>[0]['atm'],
@@ -206,11 +222,10 @@ function measureBox(
   const hit = boxes.get(key);
   if (hit !== undefined) return hit;
 
-  const S = 520;
-  const probe = document.createElement('canvas');
-  probe.width = S;
-  probe.height = S;
-  const pc = probe.getContext('2d');
+  // Уменьшили холст с 520 до 380 — быстрее и меньше памяти,
+  // а для самых больших деревьев всё ещё хватает.
+  const S = 380;
+  const pc = getProbe(S);
   if (!pc) {
     boxes.set(key, null);
     return null;
@@ -222,45 +237,102 @@ function measureBox(
   const oy = Math.round(S * 0.72);
   pc.translate(ox, oy);
   setSkipShadows(true);
-  drawObject({
-    ctx: pc as unknown as Ctx,
-    x: 0,
-    y: 0,
-    atm,
-    g: gq <= 0 ? 0.02 : gq,
-    obj: obj as never,
-    time: 0,
-    wind: 0,
-    alpha: 1,
-  });
+  try {
+    drawObject({
+      ctx: pc as unknown as Ctx,
+      x: 0,
+      y: 0,
+      atm,
+      g: gq <= 0 ? 0.02 : gq,
+      obj: obj as never,
+      time: 0,
+      wind: 0,
+      alpha: 1,
+    });
+  } catch (e) {
+    console.warn('[spriteCache] measure draw failed', obj.type, e);
+    setSkipShadows(false);
+    boxes.set(key, null);
+    return null;
+  }
   setSkipShadows(false);
 
-  const px = pc.getImageData(0, 0, S, S).data;
+  let img: ImageData;
+  try {
+    img = (pc as any).getImageData(0, 0, S, S) as ImageData;
+  } catch (e) {
+    console.warn('[spriteCache] getImageData failed', e);
+    boxes.set(key, null);
+    return null;
+  }
+  const px = img.data;
   let top = S;
   let bottom = -1;
   let left = S;
   let right = -1;
+
+  // Быстрый поиск границ: сверху/снизу/по бокам, с ранним выходом.
+  // Полный скан 380*380=144k пикселей, но обычно находим границы за 10-20% проверок.
   for (let y = 0; y < S; y++) {
+    const rowOff = y * S * 4;
     for (let x = 0; x < S; x++) {
-      if (px[(y * S + x) * 4 + 3] > 0) {
-        if (y < top) top = y;
-        if (y > bottom) bottom = y;
-        if (x < left) left = x;
-        if (x > right) right = x;
+      if (px[rowOff + x * 4 + 3] > 0) {
+        top = y;
+        break;
       }
     }
+    if (top !== S) break;
   }
-  if (bottom < 0) {
+  if (top === S) {
+    boxes.set(key, null);
+    return null;
+  }
+  for (let y = S - 1; y >= top; y--) {
+    const rowOff = y * S * 4;
+    for (let x = 0; x < S; x++) {
+      if (px[rowOff + x * 4 + 3] > 0) {
+        bottom = y;
+        break;
+      }
+    }
+    if (bottom !== -1) break;
+  }
+  for (let x = 0; x < S; x++) {
+    for (let y = top; y <= bottom; y++) {
+      if (px[(y * S + x) * 4 + 3] > 0) {
+        left = x;
+        break;
+      }
+    }
+    if (left !== S) break;
+  }
+  for (let x = S - 1; x >= left; x--) {
+    for (let y = top; y <= bottom; y++) {
+      if (px[(y * S + x) * 4 + 3] > 0) {
+        right = x;
+        break;
+      }
+    }
+    if (right !== -1) break;
+  }
+
+  if (bottom < 0 || right < 0) {
     boxes.set(key, null);
     return null;
   }
 
   // Запас по краям. Берём щедро: у акварельных размывов кромка уходит
   // в почти нулевую альфу, и скупой запас срезал бы края кроны.
-  const pad = 6;
+  const pad = 8;
+  const w = Math.min(900, right - left + 1 + pad * 2);
+  const h = Math.min(900, bottom - top + 1 + pad * 2);
+  if (w <= 0 || h <= 0) {
+    boxes.set(key, null);
+    return null;
+  }
   const box = {
-    w: right - left + 1 + pad * 2,
-    h: bottom - top + 1 + pad * 2,
+    w,
+    h,
     ax: ox - left + pad,
     ay: oy - top + pad,
   };

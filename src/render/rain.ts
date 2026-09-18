@@ -40,7 +40,9 @@ export class RainRenderer {
   }
 
   update(dt: number, weather: WeatherState, world: World): void {
-    const target = Math.round(weather.rain * 320);
+    const safeDt = Number.isFinite(dt) && dt > 0 ? Math.min(dt, 100) : 16;
+    const rainSafe = Number.isFinite(weather.rain) ? clamp01(weather.rain) : 0;
+    const target = Math.round(rainSafe * 320);
     while (this.drops.length < target) {
       this.drops.push({
         x: rnd() * (this.w + 340) - 170,
@@ -54,8 +56,8 @@ export class RainRenderer {
 
     const slant = 0.24;
     for (const d of this.drops) {
-      d.y += d.speed * d.z * dt * 0.62;
-      d.x += d.speed * d.z * dt * 0.62 * slant;
+      d.y += d.speed * d.z * safeDt * 0.62;
+      d.x += d.speed * d.z * safeDt * 0.62 * slant;
       if (d.y > this.h + 30) {
         d.y = -30 - rnd() * 120;
         d.x = rnd() * (this.w + 340) - 170;
@@ -64,10 +66,10 @@ export class RainRenderer {
     }
 
     // Круги на воде под дождём
-    if (weather.rain > 0.08) {
-      this.rippleTimer -= dt;
+    if (rainSafe > 0.08) {
+      this.rippleTimer -= safeDt;
       if (this.rippleTimer <= 0) {
-        this.rippleTimer = 40 / (weather.rain + 0.1);
+        this.rippleTimer = 40 / (rainSafe + 0.1);
         for (let i = 0; i < 24; i++) {
           const tx = rnd() * GRID;
           const ty = rnd() * GRID;
@@ -88,11 +90,11 @@ export class RainRenderer {
       }
     }
     for (let i = this.ripples.length - 1; i >= 0; i--) {
-      this.ripples[i].age += dt;
+      this.ripples[i].age += safeDt;
       if (this.ripples[i].age > this.ripples[i].life) this.ripples.splice(i, 1);
     }
     for (let i = this.splashes.length - 1; i >= 0; i--) {
-      this.splashes[i].age += dt;
+      this.splashes[i].age += safeDt;
       if (this.splashes[i].age > 320) this.splashes.splice(i, 1);
     }
   }
@@ -104,7 +106,10 @@ export class RainRenderer {
     for (const r of this.ripples) {
       const t = world.at(Math.floor(r.tx), Math.floor(r.ty));
       if (!t?.water) continue;
-      const k = r.age / r.life;
+      // Возраст может уйти в минус при кривой метке кадра — радиус
+      // ellipse() обязан быть неотрицательным, иначе IndexSizeError.
+      if (r.age <= 0) continue;
+      const k = Math.min(1, r.age / r.life);
       const p = isoToScreen(r.tx, r.ty, t.level - 0.26);
       ctx.strokeStyle = css(ring, 0.3 * (1 - k));
       ctx.lineWidth = 1.2;
@@ -114,7 +119,7 @@ export class RainRenderer {
     }
     const spl = mix(atm.palette.water, { r: 255, g: 255, b: 255 }, 0.55);
     for (const s of this.splashes) {
-      const k = s.age / 320;
+      const k = clamp01(s.age / 320);
       ctx.strokeStyle = css(spl, 0.32 * (1 - k));
       ctx.lineWidth = 1;
       const r = 2 + k * 7;
