@@ -229,13 +229,19 @@ export function drawHouseRoof(ctx: Ctx, world: World, atm: Atmosphere, time: num
     col: RGB,
     curve: number,
   ) => {
-    ctx.beginPath();
-    ctx.moveTo(p0.x, p0.y);
-    // вогнутая японская кровля: край слегка задран
-    ctx.quadraticCurveTo((p0.x + p1.x) / 2, (p0.y + p1.y) / 2 + curve, p1.x, p1.y);
-    ctx.lineTo(r1.x, r1.y);
-    ctx.quadraticCurveTo((r0.x + r1.x) / 2, (r0.y + r1.y) / 2 - 3, r0.x, r0.y);
-    ctx.closePath();
+    // Контур ската собираем функцией: акварельные размывы внутри строят
+    // свои blobPath, поэтому перед обводкой контур собирается заново —
+    // иначе stroke обведёт последний блоб, а не скат.
+    const tracePath = () => {
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.y);
+      // вогнутая японская кровля: край слегка задран
+      ctx.quadraticCurveTo((p0.x + p1.x) / 2, (p0.y + p1.y) / 2 + curve, p1.x, p1.y);
+      ctx.lineTo(r1.x, r1.y);
+      ctx.quadraticCurveTo((r0.x + r1.x) / 2, (r0.y + r1.y) / 2 - 3, r0.x, r0.y);
+      ctx.closePath();
+    };
+    tracePath();
     ctx.fillStyle = css(col, 0.98);
     ctx.fill();
 
@@ -281,6 +287,7 @@ export function drawHouseRoof(ctx: Ctx, world: World, atm: Atmosphere, time: num
     );
     ctx.restore();
 
+    tracePath();
     ctx.strokeStyle = css(T.roofDark, 0.35);
     ctx.lineWidth = 1.4;
     ctx.stroke();

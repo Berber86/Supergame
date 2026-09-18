@@ -79,14 +79,14 @@ export function shadowUnder(d: DrawCtx, rx: number, ry: number, strength = 1): v
         rx * (0.85 - t * 0.35) * 1.35,
         ry * (0.95 - t * 0.3),
         atm.shadowTint,
-        base * lerp(2.6, 1.4, elev) * (1 - t * 0.55),
+        base * lerp(2, 1.35, elev) * (1 - t * 0.55),
       );
     }
   } else {
     softShadow(ctx, d.x + dirX * rx * lenK * 0.5, d.y + ry * 0.2, rx * 1.2, ry * 0.95, atm.shadowTint, base * 1.5);
   }
   // плотное контактное пятно — объект «врастает» в землю
-  softShadow(ctx, d.x, d.y, rx * 0.5, ry * 0.42, atm.shadowTint, atm.shadowAmount * 2.4 * strength);
+  softShadow(ctx, d.x, d.y, rx * 0.5, ry * 0.42, atm.shadowTint, atm.shadowAmount * 2.15 * strength);
   ctx.restore();
 }
 

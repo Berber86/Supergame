@@ -192,7 +192,7 @@ export function buildAtmosphere(t: TimeState, overcast = 0): Atmosphere {
   // полдень короткая тень лежит плотным пятном — это «вес» объектов.
   const sunT0 = clamp01((t.dayT - 0.22) / 0.58);
   const densK = lerp(0.85, 1.18, Math.sin(sunT0 * Math.PI));
-  const shadowAmount = (lerp(0.12, 0.3, d) + g * 0.06) * lerp(1, 0.38, overcast) * densK;
+  const shadowAmount = (lerp(0.11, 0.27, d) + g * 0.05) * lerp(1, 0.38, overcast) * densK;
 
   // Солнце ходит по небу: тени поворачиваются в течение дня.
   const ang = Math.PI * (0.15 + t.dayT * 1.0);
