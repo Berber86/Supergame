@@ -370,13 +370,16 @@ function drawBase(ctx: Ctx, atm: Atmosphere): void {
   const rx = (GRID * TILE_W) / 2 + 70;
   const ry = (GRID * TILE_H) / 2 + 70;
   const base = shade(mix(atm.palette.soil, atm.palette.moss, 0.4), atm.exposure * 0.86);
-  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(rx, ry));
-  g.addColorStop(0, css(base, 0.95));
-  g.addColorStop(0.85, css(base, 0.8));
-  g.addColorStop(1, css(base, 0));
+  // Градиент строится в локальных координатах после translate — иначе его
+  // центр уезжает вдвое дальше от центра острова, и мягкое поле основы
+  // вырождается: везде берётся дальняя stop-точка с нулевой альфой.
   ctx.save();
   ctx.translate(cx, cy);
   ctx.scale(1, ry / rx);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(rx, ry));
+  g.addColorStop(0, css(base, 0.95));
+  g.addColorStop(0.85, css(base, 0.8));
+  g.addColorStop(1, css(base, 0));
   ctx.fillStyle = g;
   ctx.beginPath();
   ctx.arc(0, 0, rx, 0, Math.PI * 2);

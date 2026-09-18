@@ -96,16 +96,21 @@ export function softShadow(
   strength: number,
 ): void {
   if (strength <= 0.001) return;
-  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(rx, ry));
+  // Градиент задаётся в локальных координатах, уже после сдвига: координаты
+  // градиента трансформируются текущей матрицей в момент отрисовки, и
+  // градиент, созданный в (cx, cy) до translate, уезжал в (2cx, 2cy) —
+  // за пределы пятна. Тень потому и не была видна вовсе.
+  const R = Math.max(rx, ry, 0.001);
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(1, ry / R);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
   g.addColorStop(0, css(color, 0.55 * strength));
   g.addColorStop(0.55, css(color, 0.3 * strength));
   g.addColorStop(1, css(color, 0));
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.scale(1, ry / Math.max(rx, ry, 0.001));
   ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.arc(0, 0, Math.max(rx, ry), 0, Math.PI * 2);
+  ctx.arc(0, 0, R, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }

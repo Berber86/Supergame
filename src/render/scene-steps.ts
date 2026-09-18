@@ -38,30 +38,47 @@ export interface ObjectsOpts {
 export function drawSky(ctx: Ctx, W: number, H: number, atm: Atmosphere, time: number): void {
   const g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, css(atm.skyTop, 1));
-  g.addColorStop(0.62, css(mix(atm.skyTop, atm.skyBottom, 0.7), 1));
+  g.addColorStop(0.5, css(mix(atm.skyTop, atm.skyBottom, 0.7), 1));
   g.addColorStop(1, css(atm.skyBottom, 1));
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
 
   // Солнце / луна
+  //
+  // Дуга поднята выше, чем «настоящая»: раньше низкое солнце садилось за
+  // середину сада — остров закрывал диск как раз в тот момент, когда
+  // должен читаться закат. Теперь «горизонт» проходит по видимой полосе
+  // неба над дальним краем острова, и рассвет с закатом видно целиком.
   const t = atm.time;
   const sunT = clamp01((t.dayT - 0.22) / 0.58);
   const isDay = t.dayT > 0.2 && t.dayT < 0.84;
   const bodyX = W * (0.12 + sunT * 0.76);
-  const bodyY = H * (0.62 - Math.sin(sunT * Math.PI) * 0.52);
+  const bodyY = H * (0.38 - Math.sin(sunT * Math.PI) * 0.3);
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   if (isDay) {
-    const warm = mix({ r: 255, g: 246, b: 214 }, { r: 255, g: 198, b: 140 }, atm.golden);
-    glow(ctx, bodyX, bodyY, 190, warm, 0.5 + atm.golden * 0.4);
-    ctx.fillStyle = css(warm, 0.85);
+    const warm = mix({ r: 255, g: 246, b: 214 }, { r: 255, g: 186, b: 122 }, atm.golden);
+    glow(ctx, bodyX, bodyY, 190, warm, 0.5 + atm.golden * 0.45);
+    // Диск рисуется поверх неба обычной кистью и насыщенным цветом:
+    // «lighter» на светлом небе вырождается в белое пятно, и закатное
+    // солнце не читалось — оно должно быть янтарным, как лампа.
+    const disc = mix(warm, { r: 255, g: 150, b: 74 }, atm.golden * 0.85);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = css(disc, 0.95);
+    const r = 26 + atm.golden * 5;
+    // у самого горизонта диск сплющивается — солнце «садится за горизонт»
+    const edge = Math.min(1, Math.min(sunT, 1 - sunT) / 0.09);
+    ctx.save();
+    ctx.translate(bodyX, bodyY);
+    ctx.scale(1, 0.6 + 0.4 * edge);
     ctx.beginPath();
-    ctx.arc(bodyX, bodyY, 26, 0, Math.PI * 2);
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
   } else {
     const nightT = t.dayT < 0.2 ? (t.dayT + 0.16) / 0.36 : (t.dayT - 0.84 + 0.16) / 0.36;
     const mx = W * (0.15 + clamp01(nightT) * 0.7);
-    const my = H * (0.5 - Math.sin(clamp01(nightT) * Math.PI) * 0.4);
+    const my = H * (0.36 - Math.sin(clamp01(nightT) * Math.PI) * 0.26);
     const moon: RGB = { r: 238, g: 242, b: 226 };
     glow(ctx, mx, my, 130, moon, 0.35);
     ctx.fillStyle = css(moon, 0.8);
@@ -186,15 +203,21 @@ export function drawIslandShadow(ctx: Ctx, atm: Atmosphere): void {
   const c1 = isoToScreen(GRID, GRID);
   const cx = (c0.x + c1.x) / 2;
   const cy = (c0.y + c1.y) / 2 + 30;
-  const rx = (GRID * TILE_W) / 2 + 110;
-  const ry = (GRID * TILE_H) / 2 + 90;
-  const g = ctx.createRadialGradient(cx, cy, rx * 0.5, cx, cy, rx);
+  const rx = (GRID * TILE_W) / 2 + 70;
+  const ry = (GRID * TILE_H) / 2 + 55;
   const col = mix(atm.shadowTint, { r: 40, g: 40, b: 50 }, 0.3);
-  g.addColorStop(0, css(col, 0.2));
-  g.addColorStop(1, css(col, 0));
+  // Градиент после сдвига: координаты градиента преобразуются матрицей в
+  // момент отрисовки, и градиент, созданный до translate, уезжал вдвое
+  // дальше по кадру — подложка под островом не рисовалась вовсе.
+  // Начинаем спад близко к краю: широкое тёмное поле вокруг сада читалось
+  // как грязь, а узкая мягкая кромка лишь отделяет остров от листа.
   ctx.save();
   ctx.translate(cx, cy);
   ctx.scale(1, ry / rx);
+  const g = ctx.createRadialGradient(0, 0, rx * 0.72, 0, 0, rx);
+  g.addColorStop(0, css(col, 0.16));
+  g.addColorStop(0.55, css(col, 0.1));
+  g.addColorStop(1, css(col, 0));
   ctx.fillStyle = g;
   ctx.beginPath();
   ctx.arc(0, 0, rx, 0, Math.PI * 2);
@@ -601,7 +624,7 @@ export function drawColorGrade(ctx: Ctx, W: number, H: number, atm: Atmosphere):
   ctx.save();
   if (atm.golden > 0.05) {
     ctx.globalCompositeOperation = 'soft-light';
-    ctx.fillStyle = css({ r: 255, g: 186, b: 116 }, atm.golden * 0.26);
+    ctx.fillStyle = css({ r: 255, g: 186, b: 116 }, atm.golden * 0.34);
     ctx.fillRect(0, 0, W, H);
   }
   if (t.daylight < 0.5) {

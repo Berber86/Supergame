@@ -205,19 +205,21 @@ export function drawMist(ctx: Ctx, w: number, h: number, atm: Atmosphere, time: 
 
 /** Лучи света сквозь листву (god rays) в золотой час. */
 export function drawSunShafts(ctx: Ctx, w: number, h: number, atm: Atmosphere, time: number): void {
-  const strength = atm.golden * 0.2 + atm.time.daylight * 0.05;
+  const strength = atm.golden * 0.55 + atm.time.daylight * 0.08;
   if (strength < 0.03) return;
-  const warm = mix({ r: 255, g: 226, b: 168 }, atm.lightTint, 0.3);
+  // Лучи тёплые и узкие: широкие полосы читались как блики на стекле,
+  // а не как свет низкого солнца сквозь пыль и листву.
+  const warm = mix({ r: 255, g: 208, b: 128 }, { r: 255, g: 176, b: 96 }, atm.golden);
   const dirX = atm.sunDir.x;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 6; i++) {
     const seed = hash2(i, 11, 3);
     const x = w * (0.1 + seed * 0.8) + Math.sin(time * 0.00012 + i) * 40;
-    const wdt = 120 + seed * 220;
+    const wdt = 46 + seed * 90;
     const g = ctx.createLinearGradient(x, 0, x - dirX * 260, h);
-    g.addColorStop(0, css(warm, 0.13 * strength));
-    g.addColorStop(0.55, css(warm, 0.05 * strength));
+    g.addColorStop(0, css(warm, 0.2 * strength));
+    g.addColorStop(0.55, css(warm, 0.08 * strength));
     g.addColorStop(1, css(warm, 0));
     ctx.fillStyle = g;
     ctx.beginPath();

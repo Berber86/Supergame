@@ -158,7 +158,7 @@ const DUSK_TINT = rgb(238, 172, 116);
 const DAY_TINT = rgb(255, 250, 232);
 
 const NIGHT_SKY: [RGB, RGB] = [rgb(30, 42, 74), rgb(58, 74, 108)];
-const DUSK_SKY: [RGB, RGB] = [rgb(148, 142, 168), rgb(238, 186, 148)];
+const DUSK_SKY: [RGB, RGB] = [rgb(146, 132, 168), rgb(244, 178, 128)];
 
 export function buildAtmosphere(t: TimeState, overcast = 0): Atmosphere {
   const blend = seasonBlend(t);
@@ -173,8 +173,13 @@ export function buildAtmosphere(t: TimeState, overcast = 0): Atmosphere {
   lightTint = mix(lightTint, DUSK_TINT, g * 0.75);
   lightTint = mix(lightTint, rgb(178, 190, 204), overcast * 0.55);
 
-  let skyTop = mix(mix(NIGHT_SKY[0], palette.sky[0], clamp01(d * 1.2)), DUSK_SKY[0], g * 0.6);
-  let skyBottom = mix(mix(NIGHT_SKY[1], palette.sky[1], clamp01(d * 1.2)), DUSK_SKY[1], g * 0.7);
+  // Небо на закате: тёплый градиент от охры у горизонта до сиреневого
+  // зенита. Слабое подмешивание (0.6) не пробивалось через дневную палитру —
+  // золотой час не читался в небе, хотя тон света уже был тёплым.
+  let skyTop = mix(mix(NIGHT_SKY[0], palette.sky[0], clamp01(d * 1.2)), DUSK_SKY[0], g * 0.85);
+  let skyBottom = mix(mix(NIGHT_SKY[1], palette.sky[1], clamp01(d * 1.2)), DUSK_SKY[1], g * 0.95);
+  // Самая кромка горизонта в золотой час вспыхивает янтарным.
+  skyBottom = mix(skyBottom, { r: 248, g: 166, b: 108 }, g * 0.4);
   if (overcast > 0) {
     // грозовое небо: свинцовые, слегка сизые тона
     const stormTop = mix(rgb(96, 104, 116), rgb(48, 54, 66), 1 - clamp01(d * 1.3));
@@ -192,7 +197,7 @@ export function buildAtmosphere(t: TimeState, overcast = 0): Atmosphere {
   // полдень короткая тень лежит плотным пятном — это «вес» объектов.
   const sunT0 = clamp01((t.dayT - 0.22) / 0.58);
   const densK = lerp(0.85, 1.18, Math.sin(sunT0 * Math.PI));
-  const shadowAmount = (lerp(0.11, 0.27, d) + g * 0.05) * lerp(1, 0.38, overcast) * densK;
+  const shadowAmount = (lerp(0.15, 0.34, d) + g * 0.06) * lerp(1, 0.38, overcast) * densK;
 
   // Солнце ходит по небу: тени поворачиваются в течение дня.
   const ang = Math.PI * (0.15 + t.dayT * 1.0);
