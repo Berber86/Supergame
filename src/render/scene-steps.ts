@@ -421,7 +421,12 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
           // будет от дерева другой стадии роста, и края разойдутся.
           const gq = cachedGrowth(g);
           const scale = 0.18 + 0.82 * Math.pow(gq, 0.72);
-          const sway = Math.sin(time * 0.0004 + o.seed) * 3 * wind * scale * 0.7;
+          // Качается только живое: деревья, кусты и цветы. Камни и
+          // постройки спрайтом не двигаем — валун, дрейфующий на ветру
+          // вокруг собственной тени, выглядит сломанным.
+          const kind = ITEM_BY_ID.get(o.type)?.kind;
+          const windK = kind === 'tree' || kind === 'shrub' || kind === 'flower' ? 1 : 0;
+          const sway = Math.sin(time * 0.0004 + o.seed) * 3 * wind * scale * 0.7 * windK;
           // Тень рисуем прямо здесь: она идёт режимом multiply по земле,
           // и в прозрачном холсте кэша ей не на что умножаться.
           drawObjectShadow({

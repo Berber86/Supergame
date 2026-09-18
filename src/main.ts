@@ -833,9 +833,10 @@ let growLineShown = false;
 let growRectKey = '';
 
 /** Тик растущего сада: приход действий, строка выбора, отказ-подсказка. */
-/** Кнопка кровли живая, только когда есть дом: иначе её не за что хватать. */
+/** Кнопка кровли живая, только когда есть дом: иначе её не за что хватать.
+ *  Усадьба в мире — не объект, а крытые тайлы (комнаты и терраса). */
 function syncRoofButton(): void {
-  ui.setRoofAvailable(world.objects.some((o) => o.type === 'house'));
+  ui.setRoofAvailable(world.tiles.some((t) => t.indoor));
 }
 
 let growBankShown = false;
