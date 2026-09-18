@@ -8,7 +8,7 @@ import { LEVEL_H, TILE_H, TILE_W } from '../../core/iso';
 import { makeRng } from '../../core/rng';
 import { ITEM_BY_ID } from '../../world/catalog';
 import { Ctx } from '../paint';
-import { DrawCtx, Drawer, probeShadowBegin, probeShadowEnd, shadowUnder } from './common';
+import { DrawCtx, Drawer, mirrorOf, probeShadowBegin, probeShadowEnd, scaleJitterOf, shadowUnder } from './common';
 import {
   drawSakura,
   drawMaple,
@@ -121,7 +121,8 @@ const DRAWERS: Record<string, Drawer> = {
 const shadowSpec = new Map<string, { rx: number; ry: number; strength: number } | null>();
 
 export function drawObjectShadow(d: DrawCtx): void {
-  const key = `${d.obj.type}|${Math.round(d.g * 12)}|${d.obj.rot}`;
+  // Тень зависит от сида из-за scaleJitter — включаем сид в ключ, чтобы тень не «отставала»
+  const key = `${d.obj.type}|${Math.round(d.g * 12)}|${d.obj.rot}|${d.obj.seed}`;
   let spec = shadowSpec.get(key);
   if (spec === undefined) {
     const probe = document.createElement('canvas');
@@ -145,7 +146,12 @@ export function drawObjectShadow(d: DrawCtx): void {
     shadowSpec.set(key, spec);
   }
   if (!spec) return;
-  shadowUnder(d, spec.rx, spec.ry, spec.strength);
+  // Учитываем scaleJitter для тени
+  const sc = scaleJitterOf(d.obj.seed);
+  const item = ITEM_BY_ID.get(d.obj.type);
+  const isTreeLike = item && (item.kind === 'tree' || item.kind === 'shrub' || item.kind === 'flower' || item.kind === 'micro');
+  const extraScale = isTreeLike ? 0.92 + (sc - 0.88) * 0.5 : sc;
+  shadowUnder(d, spec.rx * extraScale, spec.ry * extraScale, spec.strength);
 }
 
 export function drawObject(d: DrawCtx): void {
@@ -154,7 +160,23 @@ export function drawObject(d: DrawCtx): void {
   const { ctx } = d;
   const prev = ctx.globalAlpha;
   ctx.globalAlpha = d.alpha;
+
+  // Детерминированное разнообразие по сиду: зеркало и лёгкий масштаб.
+  // Тень уже нарисована до этого, зеркало на неё не влияет — тень от солнца, а не от формы.
+  const mirror = mirrorOf(d.obj.seed);
+  const sc = scaleJitterOf(d.obj.seed);
+  const item = ITEM_BY_ID.get(d.obj.type);
+  const isTreeLike = item && (item.kind === 'tree' || item.kind === 'shrub' || item.kind === 'flower' || item.kind === 'micro');
+  const extraScale = isTreeLike ? 0.92 + (sc - 0.88) * 0.5 : sc;
+
+  ctx.save();
+  ctx.translate(d.x, d.y);
+  ctx.scale(mirror * extraScale, extraScale);
+  ctx.translate(-d.x, -d.y);
+
   fn(d);
+
+  ctx.restore();
   ctx.globalAlpha = prev;
 }
 
