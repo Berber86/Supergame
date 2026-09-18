@@ -26,7 +26,6 @@ export class DevPanel {
   private weather: WeatherSystem;
   private hooks: DevHooks;
   private els: Record<string, HTMLElement> = {};
-  private gated = false;
   open = false;
 
   constructor(parent: HTMLElement, tc: TimeControl, weather: WeatherSystem, hooks: DevHooks) {
@@ -36,12 +35,10 @@ export class DevPanel {
     this.root = document.createElement('div');
     this.root.className = 'dev-panel paper';
     parent.appendChild(this.root);
-    // Мастерская времени — инструмент разработки: игроку её выдаём
-    // только с явным ?dev в адресе
-    this.gated = !new URLSearchParams(window.location.search).has('dev');
-    if (this.gated) this.root.style.display = 'none';
+    // Раньше мастерская была только с ?dev, игрок просил вернуть управление
+    // временем/сезоном/погодой — теперь доступна всем по T / клику по часам.
     this.build();
-    if (!this.gated) this.setOpen(tc.state.active);
+    this.setOpen(tc.state.active);
   }
 
   private build(): void {
@@ -185,13 +182,11 @@ export class DevPanel {
   }
 
   setOpen(v: boolean): void {
-    if (this.gated) return;
     this.open = v;
     this.root.classList.toggle('show', v);
   }
 
   toggle(): void {
-    if (this.gated) return;
     this.setOpen(!this.open);
   }
 

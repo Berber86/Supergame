@@ -49,17 +49,22 @@ export interface GrowState {
 export const GROW_ACTION_MS = 10 * 60 * 1000;
 /** Запас не растёт бесконечно: шесть действий впрок. */
 export const GROW_BANK_CAP = 3;
-/** Шесть расширений: 2×2 → 4×2 → 4×4 → 8×4 → 8×8 → 16×8 → 16×16. */
-export const GROW_MAX_STAGE = 6;
+/** Семь расширений: 2×2 → 4×2 → 4×4 → 8×4 → 8×8 → 16×8 → 16×16 → (32×16/16×32, если влезет).
+ *  Пороги теперь 1,2,4,8,16,32,64 как просил игрок. */
+export const GROW_MAX_STAGE = 7;
 
-/** Порог действий для расширения номер stage: 2, 4, 8, 16… */
+/** Порог действий для расширения номер stage: 1, 2, 4, 8, 16… */
 export function growThreshold(stage: number): number {
-  return 2 << stage;
+  return 1 << stage;
 }
 
-/** Расширение доступно: порог достигнут и лист ещё не вырос весь. */
+/** Расширение доступно: порог достигнут, лист ещё не вырос весь и есть куда расти. */
 export function growOfferReady(g: GrowState): boolean {
-  return g.stage < GROW_MAX_STAGE && g.progress >= growThreshold(g.stage);
+  if (g.stage >= GROW_MAX_STAGE) return false;
+  if (g.progress < growThreshold(g.stage)) return false;
+  // Если сад уже упёрся в края листа (например 16×16 в GRID 26 и 7-я стадия 32),
+  // зон нет — предложение не показываем, иначе «куда расти?» без подсветки.
+  return growZones(g.rect).length > 0;
 }
 
 /**
