@@ -224,7 +224,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
 .ch-empty {
   font-style: italic;
   color: var(--ink-soft);

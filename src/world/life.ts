@@ -16,7 +16,7 @@ import { Habitat, Invitation, invitations, scanHabitat } from './habitat';
 import { Residents, Threat } from './residents';
 import { Wildlife } from './wildlife';
 import { WeatherState } from './weatherState';
-import { World } from './world';
+import { ChronicleToastNote, World } from './world';
 
 export type CatState = 'sleep' | 'sit' | 'walk' | 'wash' | 'stretch' | 'loaf';
 export type BirdState = 'fly-in' | 'hop' | 'peck' | 'perch' | 'feed' | 'drink' | 'bathe' | 'fly-out';
@@ -112,15 +112,18 @@ export interface Fish {
   dir: number;
   speed: number;
   seed: number;
-  /** Центр родного пруда и его радиус. */
   homeX: number;
   homeY: number;
-  /** Плавный поворот. */
   turn: number;
-  /** Паника после удара цапли: миллисекунды бегства от точки. */
   panic: number;
   px: number;
   py: number;
+  state: 'wander' | 'approach' | 'feed' | 'hide';
+  feedMemory: Vec | null;
+  feedTimer: number;
+  boldness: number;
+  lastFed: number;
+  memoryStrength: number;
 }
 
 /** Порыв ветра — волна, проходящая через сад. */
@@ -221,9 +224,16 @@ export class Life {
     fireflies: 0,
     heron: false,
     deer: 0,
+    hedgehog: 0,
+    mice: 0,
+    owl: 0,
+    squirrel: 0,
+    turtle: 0,
+    bees: 0,
+    moths: 0,
   };
   /** Заметки в летопись: игровой цикл забирает их каждый кадр. */
-  pendingNotes: string[] = [];
+  pendingNotes: ChronicleToastNote[] = [];
   /** Общая фаза ветра 0..1 — плавный фон поверх порывов. */
   windBase = 0.45;
   private gustTimer = 4000;
@@ -300,6 +310,12 @@ export class Life {
             panic: 0,
             px: 0,
             py: 0,
+            state: 'wander',
+            feedMemory: null,
+            feedTimer: 0,
+            boldness: 0.35 + hash2(o.seed + k, 11, 13) * 0.5,
+            lastFed: 0,
+            memoryStrength: 0,
           });
         }
       }
@@ -349,7 +365,7 @@ export class Life {
     for (const b of this.birds) if (b.alt < 8) threats.push({ x: b.tx, y: b.ty, r: 1.0 });
 
     this.residents.update(world, h, inv, wx ?? null, dt, now, threats);
-    for (const note of this.residents.takeNotes()) this.note(world, note);
+    for (const note of this.residents.takeNotes()) this.note(world, note.id, note.x, note.y);
 
     // Удар цапли по воде: круги и разлетающиеся карпы видны со стороны
     this.wildlife.onStrike = (x, y) => {
@@ -357,7 +373,7 @@ export class Life {
       this.scareFish(x, y);
     };
     this.wildlife.update(h, inv, t, wx ?? null, dt, now, threats);
-    for (const note of this.wildlife.takeNotes()) this.note(world, note);
+    for (const note of this.wildlife.takeNotes()) this.note(world, note.id, note.x, note.y);
 
     this.updateCats(world, t, dt);
     this.updateGuest(world, h, inv, t, dt, now);
@@ -372,8 +388,8 @@ export class Life {
    * Метка времени — настоящая дата: летопись живёт по календарю, а не
    * по счётчику кадров.
    */
-  private note(world: World, id: string): void {
-    world.noteEvent(id, Date.now());
+  private note(world: World, id: string, x?: number, y?: number): void {
+    world.noteEvent(id, Date.now(), x, y);
   }
 
   // ---------------- Ветер ----------------
@@ -464,6 +480,80 @@ export class Life {
           c.timer = Math.max(c.timer, 1600);
         }
       }
+      // Кошки и мышки: кот видит мышку — караулит, потом бросается
+      if ((c.state === 'sit' || c.state === 'loaf' || c.state === 'walk') && c.greet <= 0) {
+        const mouse = this.nearestMouse(c, 4.5);
+        if (mouse) {
+          const md = Math.hypot(mouse.tx - c.tx, mouse.ty - c.ty);
+          c.facing = mouse.tx > c.tx ? 1 : -1;
+          if (md < 1.2 && rnd() < 0.15) {
+            this.note(world, 'cat_mouse', c.tx, c.ty);
+          }
+          if (c.state !== 'walk' && md > 1.8 && rnd() < 0.35) {
+            c.state = 'walk';
+            c.target = { x: mouse.tx, y: mouse.ty };
+            c.timer = 6000 + rnd() * 4000;
+          } else {
+            c.timer = Math.max(c.timer, 1200);
+          }
+        }
+      }
+      // Ёжик: кот подходит, принюхивается, но иголки останавливают
+      if ((c.state === 'sit' || c.state === 'loaf' || c.state === 'walk') && c.greet <= 0) {
+        const hog = this.nearestHedgehog(c, 3.5);
+        if (hog && hog.state !== 'curl') {
+          c.facing = hog.tx > c.tx ? 1 : -1;
+          if (Math.hypot(hog.tx - c.tx, hog.ty - c.ty) < 1.6) {
+            c.state = 'sit';
+            c.timer = 3000 + rnd() * 2000;
+            c.target = null;
+          }
+        }
+      }
+      // Белка: кот видит — замирает, потом бросается
+      if ((c.state === 'sit' || c.state === 'loaf' || c.state === 'walk') && c.greet <= 0) {
+        const sq = this.nearestSquirrel(c, 4.8);
+        if (sq) {
+          const md = Math.hypot(sq.tx - c.tx, sq.ty - c.ty);
+          c.facing = sq.tx > c.tx ? 1 : -1;
+          if (md < 1.5 && rnd() < 0.12) this.note(world, 'cat_squirrel', c.tx, c.ty);
+          if (c.state !== 'walk' && md > 2.0 && rnd() < 0.32) {
+            c.state = 'walk';
+            c.target = { x: sq.tx, y: sq.ty };
+            c.timer = 5000 + rnd() * 3000;
+          } else {
+            c.timer = Math.max(c.timer, 1000);
+          }
+        }
+      }
+      // Сова: кот смотрит вверх, но не лезет
+      if ((c.state === 'sit' || c.state === 'loaf') && c.greet <= 0) {
+        const owl = this.nearestOwl(c, 5.0);
+        if (owl) {
+          c.facing = owl.tx > c.tx ? 1 : -1;
+          c.timer = Math.max(c.timer, 1800);
+        }
+      }
+      // Черепаха: кот подходит, трогает лапой
+      if ((c.state === 'sit' || c.state === 'loaf' || c.state === 'walk') && c.greet <= 0) {
+        const tu = this.nearestTurtle(c, 3.0);
+        if (tu && tu.state !== 'hide') {
+          c.facing = tu.tx > c.tx ? 1 : -1;
+          if (Math.hypot(tu.tx - c.tx, tu.ty - c.ty) < 1.2) {
+            c.state = 'sit';
+            c.timer = 2500 + rnd() * 2000;
+            c.target = null;
+          }
+        }
+      }
+      // Пчёлы: кот следит, но держит дистанцию
+      if ((c.state === 'sit' || c.state === 'loaf') && c.greet <= 0) {
+        const bee = this.nearestBee(c, 3.0);
+        if (bee) {
+          c.facing = bee.tx > c.tx ? 1 : -1;
+          c.timer = Math.max(c.timer, 1000);
+        }
+      }
     }
 
     // Знакомство котов: сошлись близко — сели друг напротив друга
@@ -485,7 +575,7 @@ export class Life {
         if (g.greet <= 0) {
           g.greet = 9000;
           c.greet = 9000;
-          this.note(world, 'cats_greet');
+          this.note(world, 'cats_greet', (g.tx + c.tx) / 2, (g.ty + c.ty) / 2);
         }
       }
     }
@@ -496,6 +586,89 @@ export class Life {
     let bd = r;
     for (const b of this.birds) {
       if (b.state === 'fly-in' || b.state === 'fly-out' || b.alt > 8) continue;
+      const d = Math.hypot(b.tx - c.tx, b.ty - c.ty);
+      if (d < bd) {
+        bd = d;
+        best = b;
+      }
+    }
+    return best;
+  }
+
+  private nearestMouse(c: Cat, r: number): import('./wildlife').Mouse | null {
+    let best: import('./wildlife').Mouse | null = null;
+    let bd = r;
+    for (const m of this.wildlife.mice) {
+      if (m.state === 'hide' || m.state === 'leave') continue;
+      const d = Math.hypot(m.tx - c.tx, m.ty - c.ty);
+      if (d < bd) {
+        bd = d;
+        best = m;
+      }
+    }
+    return best;
+  }
+
+  private nearestHedgehog(c: Cat, r: number): import('./wildlife').Hedgehog | null {
+    let best: import('./wildlife').Hedgehog | null = null;
+    let bd = r;
+    for (const e of this.wildlife.hedgehogs) {
+      if (e.state === 'leave') continue;
+      const d = Math.hypot(e.tx - c.tx, e.ty - c.ty);
+      if (d < bd) {
+        bd = d;
+        best = e;
+      }
+    }
+    return best;
+  }
+
+  private nearestSquirrel(c: Cat, r: number): import('./wildlife').Squirrel | null {
+    let best: import('./wildlife').Squirrel | null = null;
+    let bd = r;
+    for (const s of this.wildlife.squirrels) {
+      if (s.state === 'leave') continue;
+      const d = Math.hypot(s.tx - c.tx, s.ty - c.ty);
+      if (d < bd) {
+        bd = d;
+        best = s;
+      }
+    }
+    return best;
+  }
+
+  private nearestOwl(c: Cat, r: number): import('./wildlife').Owl | null {
+    let best: import('./wildlife').Owl | null = null;
+    let bd = r;
+    for (const o of this.wildlife.owls) {
+      if (o.state === 'fly-out' || o.state === 'fly-in') continue;
+      const d = Math.hypot(o.tx - c.tx, o.ty - c.ty);
+      if (d < bd) {
+        bd = d;
+        best = o;
+      }
+    }
+    return best;
+  }
+
+  private nearestTurtle(c: Cat, r: number): import('./wildlife').Turtle | null {
+    let best: import('./wildlife').Turtle | null = null;
+    let bd = r;
+    for (const t of this.wildlife.turtles) {
+      if (t.state === 'leave') continue;
+      const d = Math.hypot(t.tx - c.tx, t.ty - c.ty);
+      if (d < bd) {
+        bd = d;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  private nearestBee(c: Cat, r: number): import('./wildlife').Bee | null {
+    let best: import('./wildlife').Bee | null = null;
+    let bd = r;
+    for (const b of this.wildlife.bees) {
       const d = Math.hypot(b.tx - c.tx, b.ty - c.ty);
       if (d < bd) {
         bd = d;
@@ -596,7 +769,7 @@ export class Life {
         placed.seed = seed;
         world.noteObjectsChanged();
         this.guests = [];
-        this.note(world, 'guest_stayed');
+        this.note(world, 'guest_stayed', guest.tx, guest.ty);
         world.checkMilestone('second_cat');
       }
     }
@@ -634,7 +807,7 @@ export class Life {
     g.stayAt = now + stay * 0.5;
     g.leaveAt = now + stay;
     this.guests = [g];
-    this.note(world, 'meet_guest');
+    this.note(world, 'meet_guest', g.tx, g.ty);
   }
 
   private exitPoint(c: Cat): Vec {
@@ -739,17 +912,20 @@ export class Life {
         for (const o of this.birds) {
           if (o.state !== 'fly-out' && Math.hypot(o.tx - b.tx, o.ty - b.ty) < 6) this.birdLeave(o);
         }
-        this.note(world, 'birds_fled');
+        this.note(world, 'birds_fled', b.tx, b.ty);
         break;
       }
     }
 
     // Компания у кормушки — событие, которое замечают
     const atFeeder = this.birds.filter((b) => b.place === 'feeder' && b.state !== 'fly-out').length;
-    if (atFeeder >= 3) this.note(world, 'flock');
+    if (atFeeder >= 3) {
+      const fb = this.birds.find(bb => bb.place === 'feeder');
+      this.note(world, 'flock', fb?.tx, fb?.ty);
+    }
     if (t.season === 'winter' && atFeeder >= 2) {
       world.checkMilestone('winter_feeder');
-      this.note(world, 'winter_table');
+      this.note(world, 'winter_table', this.birds.find(bb => bb.place === 'feeder')?.tx, this.birds.find(bb => bb.place === 'feeder')?.ty);
     }
 
     for (let i = this.birds.length - 1; i >= 0; i--) {
@@ -768,7 +944,7 @@ export class Life {
             b.state = 'perch';
             b.timer = 1600 + rnd() * 2600;
             world.checkMilestone('bird_guest');
-            this.note(world, 'meet_feeder');
+            this.note(world, 'meet_feeder', b.tx, b.ty);
           } else if (b.place === 'bath') {
             b.state = rnd() < 0.5 ? 'drink' : 'bathe';
             b.timer = 1800 + rnd() * 2600;
@@ -812,7 +988,7 @@ export class Life {
       } else if (b.state === 'drink' || b.state === 'bathe') {
         if (b.timer <= 0) {
           if (b.state === 'bathe') {
-            this.note(world, 'bath_splash');
+            this.note(world, 'bath_splash', b.tx, b.ty);
             this.residents.ripple(b.tx, b.ty, false);
           }
           if (rnd() < 0.4) this.birdLeave(b);
@@ -941,48 +1117,93 @@ export class Life {
   }
 
   private updateFish(world: World, dt: number): void {
+    const feedSpots: Vec[] = [];
+    for (const o of world.objects) {
+      if (o.type === 'feeder' || o.type === 'bowl') {
+        const item = ITEM_BY_ID.get(o.type);
+        if (!item) continue;
+        const c = { x: o.tx + item.w / 2, y: o.ty + item.h / 2 };
+        for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+          const t = world.at(Math.floor(c.x + dx), Math.floor(c.y + dy));
+          if (t?.water) { feedSpots.push({ x: c.x + dx * 0.3, y: c.y + dy * 0.3 }); break; }
+        }
+      }
+    }
     for (const f of this.fish) {
-      // Плавный поворот + лёгкое виляние
+      f.feedTimer -= dt;
+      if (f.memoryStrength > 0) f.memoryStrength = Math.max(0, f.memoryStrength - dt * 0.00005);
       const wander = (hash2(Math.floor(performance.now() * 0.0007), f.seed, 3) - 0.5) * 0.9;
       f.turn = lerp(f.turn, wander, 0.02);
-
-      // Паника: прочь от удара, побыстрее, пока не отойдут
       let panicK = 1;
       if (f.panic > 0) {
         f.panic -= dt;
         panicK = 3.2;
+        f.state = 'hide';
+        f.feedTimer = 4000 + rnd() * 4000;
         const away = Math.atan2(f.ty - f.py, f.tx - f.px);
         let diff = away - f.dir;
         while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
         f.dir += clamp(diff, -0.3, 0.3) * (dt * 0.05);
       }
-
-      // Если впереди не вода — разворачиваемся к центру пруда
+      if (f.state === 'hide' && f.panic <= 0 && f.feedTimer <= 0) f.state = 'wander';
+      if (f.state !== 'hide' && f.feedMemory && f.memoryStrength > 0.15 && f.boldness > 0.45) {
+        const dx = f.feedMemory.x - f.tx;
+        const dy = f.feedMemory.y - f.ty;
+        const d = Math.hypot(dx, dy);
+        if (d < 0.5) {
+          f.state = 'feed';
+          f.feedTimer = 2000 + rnd() * 3000;
+          f.lastFed = performance.now();
+          f.memoryStrength = Math.min(1, f.memoryStrength + 0.25);
+        } else if (d < 6 && f.state !== 'feed') {
+          f.state = 'approach';
+          const targetAng = Math.atan2(dy, dx);
+          let diff = targetAng - f.dir;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          f.dir += clamp(diff, -0.08, 0.08) * (dt * 0.07) * f.boldness;
+        }
+      }
+      if (f.state === 'feed' && f.feedTimer <= 0) {
+        f.state = 'wander';
+        f.speed = 0.00022 + rnd() * 0.00016;
+      } else if (f.state === 'feed') f.speed = 0.00008;
+      if (feedSpots.length && f.state !== 'hide') {
+        let nearest: Vec | null = null;
+        let nd = Infinity;
+        for (const sp of feedSpots) {
+          const d = Math.hypot(sp.x - f.tx, sp.y - f.ty);
+          if (d < nd) { nd = d; nearest = sp; }
+        }
+        if (nearest && nd < 2.5) {
+          if (!f.feedMemory || nd < Math.hypot(f.feedMemory.x - f.tx, f.feedMemory.y - f.ty)) {
+            f.feedMemory = { x: nearest.x, y: nearest.y };
+            f.memoryStrength = Math.min(1, f.memoryStrength + 0.12);
+            f.boldness = Math.min(1, f.boldness + 0.02);
+          }
+          if (nd < 0.8 && rnd() < 0.02) {
+            f.state = 'feed';
+            f.feedTimer = 1800 + rnd() * 2500;
+            f.lastFed = performance.now();
+          }
+        }
+      }
       const aheadX = f.tx + Math.cos(f.dir) * 0.7;
       const aheadY = f.ty + Math.sin(f.dir) * 0.7;
       const ahead = world.at(Math.floor(aheadX), Math.floor(aheadY));
       if (!ahead?.water) {
         const toHome = Math.atan2(f.homeY - f.ty, f.homeX - f.tx);
-        // мягко доворачиваем к дому
         let diff = toHome - f.dir;
         while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
         f.dir += clamp(diff, -0.06, 0.06) * (dt * 0.06);
-      } else {
-        f.dir += f.turn * dt * 0.0012;
-      }
-
-      const v = f.speed * dt * panicK;
+      } else if (f.state !== 'approach' || f.panic > 0) f.dir += f.turn * dt * 0.0012;
+      const v = f.speed * dt * panicK * (f.state === 'approach' ? 1.6 : 1);
       const nx = f.tx + Math.cos(f.dir) * v;
       const ny = f.ty + Math.sin(f.dir) * v;
       const nt = world.at(Math.floor(nx), Math.floor(ny));
-      if (nt?.water) {
-        f.tx = nx;
-        f.ty = ny;
-      } else {
-        f.dir += 0.9;
-      }
+      if (nt?.water) { f.tx = nx; f.ty = ny; } else f.dir += 0.9;
     }
   }
 

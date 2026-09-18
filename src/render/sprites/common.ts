@@ -1,6 +1,6 @@
 /** Общая утварь рисовальщиков: контекст, освещение, тени. */
 
-import { clamp01, lerp } from '../../core/rng';
+import { clamp01, hash1, lerp } from '../../core/rng';
 import { Atmosphere, RGB, mix, shade } from '../../world/palette';
 import { PlacedObject } from '../../world/types';
 import { Ctx, softShadow } from '../paint';
@@ -27,6 +27,36 @@ export const WHITE: RGB = { r: 255, g: 255, b: 255 };
 
 export function litc(c: RGB, atm: Atmosphere, boost = 0): RGB {
   return shade(mix(c, atm.lightTint, atm.lightAmount), atm.exposure + boost);
+}
+
+/**
+ * Детерминированное разнообразие по сиду — не меняется при входе в усадьбу.
+ * Всё берётся из хешей сида, без Math.random.
+ */
+
+/** Зеркало: -1 или 1, по сиду — половина деревьев/камней смотрит в другую сторону. */
+export function mirrorOf(seed: number): number {
+  return hash1(seed, 13) > 0.5 ? -1 : 1;
+}
+
+/** Масштаб 0.88..1.12 — чуть крупнее/мельче, тоже по сиду. */
+export function scaleJitterOf(seed: number): number {
+  return 0.88 + hash1(seed, 29) * 0.24;
+}
+
+/** Поворот для камней/пней: -0.18..0.18 рад. */
+export function rotJitterOf(seed: number): number {
+  return (hash1(seed, 47) - 0.5) * 0.36;
+}
+
+/** Сдвиг оттенка кроны/камня: -1..1, для лёгкой тонировки. */
+export function tintJitterOf(seed: number): number {
+  return hash1(seed, 71) * 2 - 1;
+}
+
+/** Вариант формы 0..1 — для выбора ветвления, числа камней и т.д. */
+export function variantOf(seed: number, salt = 0): number {
+  return hash1(seed + salt * 997, 101);
 }
 
 /**

@@ -61,7 +61,7 @@ export const TABS: CatalogTab[] = [
   { id: 'house', name: 'Усадьба', icon: 'house', requires: 'first_deck' },
   { id: 'shore', name: 'Берег', icon: 'water', requires: 'running_water' },
   { id: 'cat', name: 'Коту', icon: 'cat', requires: 'first_cat' },
-  { id: 'guests', name: 'Гости', icon: 'bird', requires: 'bird_guest' },
+  { id: 'guests', name: 'Гости', icon: 'bird', requires: null },
 ];
 
 export const TERRAIN_BRUSHES: TerrainBrush[] = [
@@ -740,6 +740,39 @@ export const ITEMS: CatalogItem[] = [
     growDays: 0,
     tab: 'cat',
   },
+  {
+    id: 'beehive',
+    name: 'Улей',
+    hint: 'гудит в полдень, зовёт пчёл',
+    kind: 'deco',
+    w: 1,
+    h: 1,
+    step: 0.5,
+    growDays: 0,
+    tab: 'guests',
+  },
+  {
+    id: 'squirrel_feeder',
+    name: 'Бельчатник',
+    hint: 'домик с орешками для белок',
+    kind: 'deco',
+    w: 1,
+    h: 1,
+    step: 0.5,
+    growDays: 0,
+    tab: 'guests',
+  },
+  {
+    id: 'turtle_log',
+    name: 'Кормушка для черепахи',
+    hint: 'бревно у воды, где греются',
+    kind: 'rock',
+    w: 1,
+    h: 1,
+    step: 0.5,
+    growDays: 0,
+    tab: 'pond',
+  },
 ];
 
 export const ITEM_BY_ID = new Map(ITEMS.map((i) => [i.id, i]));
@@ -950,5 +983,41 @@ export const MILESTONES: Record<string, Milestone> = {
     title: 'Олень у рощи',
     text: 'На рассвете к деревьям вышел олень. Сад стал почти лесом.',
     unlocks: 'Лес',
+  },
+  hedgehog_guest: {
+    id: 'hedgehog_guest',
+    title: 'Ночной гость',
+    text: 'В кустах поселился ёжик. Днём его не видно — только шуршание ночью.',
+    unlocks: 'Тихая ночь',
+  },
+  mouse_guest: {
+    id: 'mouse_guest',
+    title: 'Кошки и мышки',
+    text: 'У кормушки завелись мышки. Коты теперь заняты делом.',
+    unlocks: 'Погоня',
+  },
+  owl_guest: {
+    id: 'owl_guest',
+    title: 'Ночной дозор',
+    text: 'На крыше беседки ухает сова. Мышки теперь прячутся вдвойне.',
+    unlocks: 'Уханье',
+  },
+  squirrel_guest: {
+    id: 'squirrel_guest',
+    title: 'Прыжок',
+    text: 'По соснам пронеслась белка. Где-то в дупле уже спрятаны орешки.',
+    unlocks: 'Запасы',
+  },
+  turtle_guest: {
+    id: 'turtle_guest',
+    title: 'Камень ожил',
+    text: 'На камне у пруда греется черепаха. Никуда не спешит.',
+    unlocks: 'Тихий час',
+  },
+  bee_guest: {
+    id: 'bee_guest',
+    title: 'Гудение',
+    text: 'Над цветами загудели пчёлы. Улей зовёт их домой.',
+    unlocks: 'Мёд',
   },
 };

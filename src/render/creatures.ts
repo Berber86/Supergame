@@ -745,9 +745,21 @@ export function drawFish(ctx: Ctx, fish: Fish, world: World, atm: Atmosphere, ti
   if (!t?.water) return;
   const p = isoToScreen(fish.tx, fish.ty, t.level - 0.26);
   const kind = fish.seed % 3;
-  const body =
-    kind === 0 ? { r: 240, g: 132, b: 82 } : kind === 1 ? { r: 248, g: 246, b: 240 } : { r: 246, g: 200, b: 96 };
-  const c = litc(body, atm);
+  const smart = fish.memoryStrength > 0.3 || fish.boldness > 0.6;
+  const bodyBase =
+    smart
+      ? kind === 0
+        ? { r: 240, g: 152, b: 92 }
+        : kind === 1
+          ? { r: 252, g: 250, b: 244 }
+          : { r: 246, g: 210, b: 110 }
+      : kind === 0
+        ? { r: 240, g: 132, b: 82 }
+        : kind === 1
+          ? { r: 248, g: 246, b: 240 }
+          : { r: 246, g: 200, b: 96 };
+  const body = smart ? { r: bodyBase.r, g: bodyBase.g, b: bodyBase.b } : bodyBase;
+  const c = litc(body, atm, smart ? 0.04 : 0);
   // изометрическое направление
   const sx = Math.cos(fish.dir);
   const sy = Math.sin(fish.dir);
@@ -794,6 +806,18 @@ export function drawFish(ctx: Ctx, fish: Fish, world: World, atm: Atmosphere, ti
   ctx.ellipse(-3, 0.6, 1.8, 1.1, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+
+  // умные кои: пузырьки при кормлении, более яркие
+  if (fish.state === 'feed') {
+    const b = Math.sin(time * 0.008 + fish.seed) * 0.5 + 0.5;
+    ctx.fillStyle = css(mix(atm.palette.water, WHITE, 0.7), 0.35 * b);
+    ctx.beginPath();
+    ctx.arc(p.x + 2, p.y - 2 - b * 3, 1.2 + b, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(p.x - 1, p.y - 1 - b * 2, 0.8 + b * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // круги на воде, когда карп у поверхности
   const near = Math.sin(time * 0.0009 + fish.seed) > 0.75;
