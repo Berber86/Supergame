@@ -178,8 +178,15 @@ export class Scene {
     // Сад в экранных координатах: ромб шириной GRID*TILE_W и высотой GRID*TILE_H
     const w = GRID * TILE_W;
     const h = GRID * TILE_H + LEVEL_H * 4;
+    const vw = this.viewW;
+    const vh = this.viewH;
+    if (vw < 1 || vh < 1 || w < 1 || h < 1) return 0.2;
     // Небольшой запас по краям, чтобы сад не упирался в рамку
-    return Math.min(this.viewW / (w * 1.04), this.viewH / (h * 1.12));
+    const zx = vw / (w * 1.04);
+    const zy = vh / (h * 1.12);
+    const z = Math.min(zx, zy);
+    if (!Number.isFinite(z) || z <= 0) return 0.2;
+    return z;
   }
 
   /**
@@ -211,16 +218,20 @@ export class Scene {
   }
 
   screenToWorld(sx: number, sy: number): { x: number; y: number } {
+    const z = this.camera.zoom;
+    const safeZ = !Number.isFinite(z) || z < 0.05 ? 0.2 : z;
     return {
-      x: (sx - this.viewW / 2) / this.camera.zoom + this.camera.x,
-      y: (sy - this.viewH / 2) / this.camera.zoom + this.camera.y,
+      x: (sx - this.viewW / 2) / safeZ + this.camera.x,
+      y: (sy - this.viewH / 2) / safeZ + this.camera.y,
     };
   }
 
   worldToScreen(wx: number, wy: number): { x: number; y: number } {
+    const z = this.camera.zoom;
+    const safeZ = !Number.isFinite(z) || z < 0.05 ? 0.2 : z;
     return {
-      x: (wx - this.camera.x) * this.camera.zoom + this.viewW / 2,
-      y: (wy - this.camera.y) * this.camera.zoom + this.viewH / 2,
+      x: (wx - this.camera.x) * safeZ + this.viewW / 2,
+      y: (wy - this.camera.y) * safeZ + this.viewH / 2,
     };
   }
 
@@ -248,10 +259,15 @@ export class Scene {
     if (life) this.life = life;
     if (weatherState) this.weatherState = weatherState;
     const ws = this.weatherState;
-    if (ws) this.rain.update(dt, ws, world);
+    try { if (ws) this.rain.update(dt, ws, world); } catch (e) { console.warn('[scene] rain update', e); }
     const ctx = this.ctx;
     const W = this.viewW;
     const H = this.viewH;
+    if (W < 1 || H < 1) return;
+    if (!Number.isFinite(this.camera.x) || !Number.isFinite(this.camera.y) || !Number.isFinite(this.camera.zoom)) {
+      console.warn('[scene] camera NaN, resetting');
+      this.camera.x = 0; this.camera.y = 0; this.camera.zoom = 0.3;
+    }
 
     ctx.save();
     ctx.scale(this.dpr, this.dpr);
@@ -433,11 +449,15 @@ export class Scene {
     const cy = (c0.y + c1.y) / 2;
     const rx = (GRID * TILE_W) / 2 + 200;
     const ry = (GRID * TILE_H) / 2 + 200;
+    if (!Number.isFinite(this.camera.x)) this.camera.x = cx;
+    if (!Number.isFinite(this.camera.y)) this.camera.y = cy;
+    if (!Number.isFinite(this.camera.zoom) || this.camera.zoom <= 0) this.camera.zoom = 0.3;
     this.camera.x = clamp(this.camera.x, cx - rx, cx + rx);
     this.camera.y = clamp(this.camera.y, cy - ry, cy + ry);
-    // Нижний предел — «сад целиком», но не крупнее 0.45: на большом мониторе
-    // не даём отдалиться в пустоту, а на телефоне позволяем увидеть всё.
-    const minZoom = Math.min(0.45, this.fitZoom() * 0.85);
+    // Нижний предел — «сад целиком», но не крупнее 0.45 и не меньше 0.12,
+    // иначе деление на zoom даёт Infinity и камера замирает.
+    const fz = this.fitZoom();
+    const minZoom = clamp(Math.min(0.45, fz * 0.85), 0.12, 0.45);
     this.camera.zoom = clamp(this.camera.zoom, minZoom, 2.4);
   }
 }
