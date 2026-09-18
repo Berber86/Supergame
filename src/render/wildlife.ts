@@ -38,47 +38,72 @@ export function drawFirefly(ctx: Ctx, f: Firefly, x: number, y: number, atm: Atm
 export function drawMoth(ctx: Ctx, m: Moth, x: number, y: number, atm: Atmosphere, time: number): void {
   if (m.alpha <= 0.02) return;
   const hover = Math.sin(time * 0.0023 + m.seed) * 1.8;
-  const py = y - 8 - hover;
-  const flutter = Math.sin(time * 0.018 + m.flutter) * 0.7 + 0.3;
-  const wing = litc({ r: 232, g: 224, b: 206 }, atm);
-  const wingShade = litc({ r: 184, g: 172, b: 152 }, atm);
-  const bodyCol = litc({ r: 92, g: 82, b: 70 }, atm);
+  const py = y - 10 - hover;
+  const flutter = Math.sin(time * 0.022 + m.flutter) * 0.6 + 0.4;
+  // Ночью мотылёк должен оставаться светлым пятном, а не серой кляксой
+  const wing = litc({ r: 232, g: 224, b: 206 }, atm, atm.lightAmount < 0.35 ? 0.22 : 0);
+  const wingEdge = litc({ r: 196, g: 184, b: 164 }, atm, atm.lightAmount < 0.35 ? 0.18 : 0);
+  const wingShade = litc({ r: 184, g: 172, b: 152 }, atm, atm.lightAmount < 0.35 ? 0.12 : 0);
+  const bodyCol = litc({ r: 92, g: 82, b: 70 }, atm, atm.lightAmount < 0.35 ? 0.1 : 0);
 
   ctx.save();
   ctx.translate(x, py);
-  ctx.scale(0.85, 0.85);
+  // Делаем мотылька изящнее и меньше — был 0.85 и выглядел как большой серый овал с щелью
+  ctx.scale(0.62, 0.62);
 
-  // крылья трепещут
-  const open = 0.4 + flutter * 0.6;
+  const open = 0.55 + flutter * 0.55;
   for (const side of [-1, 1]) {
     ctx.save();
     ctx.scale(side * open, 1);
-    ctx.fillStyle = css(wing, 0.88 * m.alpha);
+    // нижнее крыло — чуть меньше, даёт форму бабочки, а не овала
+    ctx.fillStyle = css(wing, 0.62 * m.alpha);
     ctx.beginPath();
-    ctx.moveTo(0, -0.4);
-    ctx.bezierCurveTo(2.2, -4.2, 6.5, -3.8, 6.2, -0.6);
-    ctx.bezierCurveTo(6, 1.2, 3, 2.0, 0, 0.5);
+    ctx.moveTo(0.2, -0.2);
+    ctx.bezierCurveTo(1.8, -3.8, 5.2, -3.4, 5.0, -0.8);
+    ctx.bezierCurveTo(4.8, 0.4, 2.4, 1.2, 0.2, 0.4);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = css(wingShade, 0.35 * m.alpha);
+    // акварельная кромка — дзэн-мазок
+    ctx.strokeStyle = css(wingEdge, 0.28 * m.alpha);
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+    // пятнышко на крыле — характер, а не заливка
+    ctx.fillStyle = css(wingShade, 0.32 * m.alpha);
     ctx.beginPath();
-    ctx.ellipse(3.2, -1.0, 1.8, 0.7, 0.2, 0, Math.PI * 2);
+    ctx.ellipse(2.6, -1.1, 1.1, 0.55, 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    // нижнее крылышко — лёгкая тень
+    ctx.fillStyle = css(wing, 0.38 * m.alpha);
+    ctx.beginPath();
+    ctx.moveTo(0.2, 0.3);
+    ctx.bezierCurveTo(1.2, 0.1, 3.0, 0.6, 2.6, 1.6);
+    ctx.bezierCurveTo(1.8, 2.0, 0.4, 1.4, 0.2, 0.3);
+    ctx.closePath();
     ctx.fill();
     ctx.restore();
   }
-  // тельце
-  ctx.fillStyle = css(bodyCol, 0.92 * m.alpha);
+  // тельце — тоньше, не щель
+  ctx.fillStyle = css(bodyCol, 0.88 * m.alpha);
   ctx.beginPath();
-  ctx.ellipse(0, 0.2, 0.7, 2.4, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0.15, 0.42, 1.9, 0, 0, Math.PI * 2);
   ctx.fill();
+  // усики — две тонкие линии, сразу читается мотылёк
+  ctx.strokeStyle = css(bodyCol, 0.55 * m.alpha);
+  ctx.lineWidth = 0.35;
+  ctx.beginPath();
+  ctx.moveTo(-0.1, -1.4);
+  ctx.quadraticCurveTo(-0.6, -2.2, -0.9, -2.8);
+  ctx.moveTo(0.1, -1.4);
+  ctx.quadraticCurveTo(0.6, -2.2, 0.9, -2.8);
+  ctx.stroke();
 
-  // лёгкое свечение в темноте — пыльца
-  if (atm.lightAmount < 0.4) {
+  // лёгкое свечение в темноте — пыльца, чуть заметнее
+  if (atm.lightAmount < 0.45) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = css({ r: 255, g: 246, b: 210 }, 0.12 * m.alpha);
+    ctx.fillStyle = css({ r: 255, g: 246, b: 210 }, 0.16 * m.alpha);
     ctx.beginPath();
-    ctx.arc(0, 0, 4, 0, Math.PI * 2);
+    ctx.arc(0, 0, 3.2, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
@@ -548,25 +573,31 @@ export function drawMouse(ctx: Ctx, m: Mouse, x: number, y: number, atm: Atmosph
 
 export function drawOwl(ctx: Ctx, o: Owl, x: number, y: number, atm: Atmosphere, time: number): void {
   const flying = o.state === 'fly-in' || o.state === 'fly-out' || o.state === 'hunt' || o.state === 'look';
+  const perched = o.state === 'perch' || o.state === 'hoot';
   const bodyBase = { r: 122, g: 108, b: 88 };
-  const body = litc(bodyBase, atm);
-  const deep = litc(shade(bodyBase, 0.72), atm);
-  const pale = litc({ r: 228, g: 218, b: 198 }, atm);
-  const eye = litc({ r: 242, g: 200, b: 64 }, atm);
+  const boost = atm.lightAmount < 0.35 ? 0.18 : 0;
+  const body = litc(bodyBase, atm, boost);
+  const deep = litc(shade(bodyBase, 0.72), atm, boost);
+  const pale = litc({ r: 228, g: 218, b: 198 }, atm, boost);
+  const eye = litc({ r: 242, g: 200, b: 64 }, atm, boost * 0.5);
 
   ctx.save();
   ctx.translate(x, y);
-  ctx.scale(1.15, 1.15);
+  ctx.scale(1.18, 1.18);
 
+  // Тень всегда на земле, даже когда сова на ветке — мягче, когда высоко
   ctx.save();
   ctx.globalCompositeOperation = 'multiply';
-  softShadow(ctx, 0, 0, flying ? 10 : 8, 3.0, atm.shadowTint, atm.shadowAmount * 1.1);
+  softShadow(ctx, 0, 0, flying ? 10 : perched ? 14 : 8, perched ? 4.5 : 3.0, atm.shadowTint, atm.shadowAmount * (perched ? 0.55 : 1.1));
   ctx.restore();
 
   ctx.scale(o.facing, 1);
 
   const hoot = o.state === 'hoot' ? Math.sin(time * 0.02) * 0.6 : 0;
-  const lift = flying ? -18 - Math.sin(time * 0.004 + o.seed) * 2 : 0;
+  let lift = 0;
+  if (flying) lift = -22 - Math.sin(time * 0.004 + o.seed) * 2.5;
+  else if (perched) lift = -34 - Math.sin(time * 0.0012 + o.seed) * 0.6; // на ветке, а не под деревом
+  else lift = -10; // лёгкая приподнятость над землёй
   ctx.translate(0, lift + hoot * 0.3);
 
   if (flying) {
@@ -588,8 +619,19 @@ export function drawOwl(ctx: Ctx, o: Owl, x: number, y: number, atm: Atmosphere,
     ctx.restore();
   }
 
-  washBlob(ctx, 0, -10, 7.5, 6.0, body, 91 + (o.seed % 13), { alpha: 0.72, edge: 0.32 });
-  ctx.fillStyle = css(pale, 0.55);
+  // веточка под лапами, когда на дереве — сразу читается, что сидит НА ветке
+  if (perched) {
+    ctx.strokeStyle = css(deep, 0.55);
+    ctx.lineWidth = 1.2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-6, -2);
+    ctx.quadraticCurveTo(0, -3.2, 6, -2);
+    ctx.stroke();
+  }
+
+  washBlob(ctx, 0, -10, 7.5, 6.0, body, 91 + (o.seed % 13), { alpha: 0.74, edge: 0.32 });
+  ctx.fillStyle = css(pale, 0.58);
   ctx.beginPath();
   ctx.ellipse(0, -7, 4.5, 3.2, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -599,7 +641,7 @@ export function drawOwl(ctx: Ctx, o: Owl, x: number, y: number, atm: Atmosphere,
   ctx.ellipse(0, -18 + hoot, 5.8, 5.0, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = css(pale, 0.7);
+  ctx.fillStyle = css(pale, 0.72);
   ctx.beginPath();
   ctx.ellipse(0, -18.5 + hoot, 4.2, 3.6, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -641,16 +683,14 @@ export function drawOwl(ctx: Ctx, o: Owl, x: number, y: number, atm: Atmosphere,
   ctx.closePath();
   ctx.fill();
 
-  if (!flying) {
-    ctx.strokeStyle = css(deep, 0.85);
-    ctx.lineWidth = 1.0;
-    ctx.beginPath();
-    ctx.moveTo(-2, -4);
-    ctx.lineTo(-2, -1);
-    ctx.moveTo(2, -4);
-    ctx.lineTo(2, -1);
-    ctx.stroke();
-  }
+  ctx.strokeStyle = css(deep, 0.85);
+  ctx.lineWidth = 1.0;
+  ctx.beginPath();
+  ctx.moveTo(-2, -4);
+  ctx.lineTo(-2, -1);
+  ctx.moveTo(2, -4);
+  ctx.lineTo(2, -1);
+  ctx.stroke();
 
   ctx.restore();
 }
@@ -665,6 +705,7 @@ export function drawSquirrel(ctx: Ctx, s: Squirrel, x: number, y: number, atm: A
   const tail = litc({ r: 152, g: 92, b: 52 }, atm);
 
   const jumping = s.state === 'jump' || s.state === 'enter' || s.state === 'flee';
+  const perched = s.state === 'forage' || s.state === 'cache' || s.state === 'look';
 
   ctx.save();
   ctx.translate(x, y);
@@ -672,12 +713,14 @@ export function drawSquirrel(ctx: Ctx, s: Squirrel, x: number, y: number, atm: A
 
   ctx.save();
   ctx.globalCompositeOperation = 'multiply';
-  softShadow(ctx, 0, 0, jumping ? 5 : 8, 2.4, atm.shadowTint, atm.shadowAmount * 1.0);
+  softShadow(ctx, 0, 0, jumping ? 5 : perched ? 12 : 8, perched ? 3.6 : 2.4, atm.shadowTint, atm.shadowAmount * (perched ? 0.5 : 1.0));
   ctx.restore();
 
   ctx.scale(s.facing, 1);
 
+  const lift = perched ? -28 : jumping ? -4 : -6;
   const bob = jumping ? 0 : Math.sin(time * 0.006 + s.seed) * 0.5;
+  ctx.translate(0, lift);
   const tailWag = Math.sin(time * 0.012 + s.seed) * 0.8;
 
   ctx.save();
@@ -694,6 +737,16 @@ export function drawSquirrel(ctx: Ctx, s: Squirrel, x: number, y: number, atm: A
     ctx.fill();
   }
   ctx.restore();
+
+  if (perched) {
+    ctx.strokeStyle = css(deep, 0.45);
+    ctx.lineWidth = 1.0;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-5, -1);
+    ctx.quadraticCurveTo(0, -2, 5, -1);
+    ctx.stroke();
+  }
 
   ctx.strokeStyle = css(deep, 0.9);
   ctx.lineWidth = 1.4;
