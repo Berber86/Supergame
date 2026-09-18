@@ -17,6 +17,7 @@ import { Residents, Threat } from './residents';
 import { Wildlife } from './wildlife';
 import { WeatherState } from './weatherState';
 import { ChronicleToastNote, World } from './world';
+import { inGrowRect } from './grow';
 
 export type CatState = 'sleep' | 'sit' | 'walk' | 'wash' | 'stretch' | 'loaf';
 export type BirdState = 'fly-in' | 'hop' | 'peck' | 'perch' | 'feed' | 'drink' | 'bathe' | 'fly-out';
@@ -386,9 +387,12 @@ export class Life {
   /**
    * Заметка в летопись: дублеты гасит сам мир, здесь только передача.
    * Метка времени — настоящая дата: летопись живёт по календарю, а не
-   * по счётчику кадров.
+   * по счётчику кадров. В растущем саду за туманом — тишина.
    */
   private note(world: World, id: string, x?: number, y?: number): void {
+    if (world.grow && x != null && y != null) {
+      if (!inGrowRect(world.grow.rect, Math.floor(x), Math.floor(y))) return;
+    }
     world.noteEvent(id, Date.now(), x, y);
   }
 

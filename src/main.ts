@@ -7,7 +7,7 @@ import './ui/style.css';
 import { GRID, floorTo, inBounds } from './core/iso';
 import { Scene } from './render/scene';
 import { World } from './world/world';
-import { GROW_BANK_CAP, growOfferReady, growThreshold, newGrowState, seedGrowWorld, GROW_ACTION_MS } from './world/grow';
+import { GROW_BANK_CAP, growOfferReady, growThreshold, newGrowState, seedGrowWorld, GROW_ACTION_MS, inGrowRect } from './world/grow';
 import { moving, pathStart, pointer, setupInput } from './app/input';
 import { UI, Selection } from './ui/ui';
 import { ITEM_BY_ID, TERRAIN_BRUSHES, footprintCells } from './world/catalog';
@@ -819,6 +819,8 @@ function flushMilestones(): void {
 /** Снимок места события для Polaroid-ленты летописи — вызывается после рендера кадра */
 function capturePolaroid(tx: number, ty: number): string | null {
   try {
+    // В растущем саду за туманом не снимаем
+    if (world.grow && !inGrowRect(world.grow.rect, Math.floor(tx), Math.floor(ty))) return null;
     const iso = isoToScreen(tx, ty);
     const screen = scene.worldToScreen(iso.x, iso.y);
     const vw = scene.viewW;
@@ -875,6 +877,7 @@ function flushChronicle(): void {
   const noted = notes.length > 0;
   if (noted) {
     for (const n of notes) {
+      if (world.grow && !inGrowRect(world.grow.rect, Math.floor(n.x), Math.floor(n.y))) continue;
       chronicleToast.push(n);
       snapQueue.push({ id: n.id, x: n.x, y: n.y, at: n.at });
     }
@@ -888,6 +891,7 @@ function flushChronicleSnaps(): void {
   if (!snapQueue.length) return;
   let any = false;
   for (const n of snapQueue) {
+    if (world.grow && !inGrowRect(world.grow.rect, Math.floor(n.x), Math.floor(n.y))) continue;
     const entry =
       (n.at != null ? [...world.chronicle].reverse().find((e) => e.id === n.id && e.at === n.at) : null) ??
       [...world.chronicle].reverse().find((e) => e.id === n.id && !e.snap) ??

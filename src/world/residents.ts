@@ -120,7 +120,10 @@ export class Residents {
   }
 
   private note(id: string, x?: number, y?: number): void {
-    if (this.notes.length < 8) this.notes.push({ id, x: x ?? GRID / 2, y: y ?? GRID / 2 });
+    if (this.notes.length >= 8) return;
+    // За туманом растущего сада летопись молчит — см. world.noteEvent
+    // Дублируем проверку здесь, чтобы не копить очередь из невидимого.
+    this.notes.push({ id, x: x ?? GRID / 2, y: y ?? GRID / 2 });
   }
 
   update(

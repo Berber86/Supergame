@@ -979,6 +979,11 @@ export class World {
    * что нельзя «выполнить» нарочно.
    */
   noteEvent(id: string, now: number, x?: number, y?: number): boolean {
+    // В растущем саду события за туманом не должны попадать в летопись:
+    // иначе тосты и Polaroid приходят из неоткрытой земли.
+    if (this.grow && x != null && y != null) {
+      if (!inGrowRect(this.grow.rect, Math.floor(x), Math.floor(y))) return false;
+    }
     if (!noteChronicle(this.chronicle, id, now)) return false;
     this.pendingNotes.push({ id, x: x ?? GRID / 2, y: y ?? GRID / 2, at: now });
     if (id === 'meet_frog') this.checkMilestone('first_frog');
