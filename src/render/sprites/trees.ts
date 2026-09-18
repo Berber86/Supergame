@@ -126,15 +126,24 @@ function makeTree(style: TreeStyle): Drawer {
     // дрожат по сиду. Кэш ключуется сидом, так что дрожь стабильна.
     const shapeJ = hash2(obj.seed, 5, 7);
     const shapeJ2 = hash2(obj.seed, 6, 9);
+    const shapeJ3 = hash2(obj.seed, 7, 11);
     const cw = style.crownW * scale * (0.92 + shapeJ * 0.16);
     const ch = style.crownH * scale * (0.92 + shapeJ2 * 0.16);
     const crownDx = (shapeJ - 0.5) * cw * 0.12;
     const sway = Math.sin(d.time * 0.0004 + obj.seed) * 3 * d.wind * scale;
+    // Дополнительная детерминированная вариация по сиду:
+    // - наклон ствола (lean) -0.12..0.12
+    // - асимметрия кроны (больше влево/вправо)
+    // - плотность листвы (layers jitter)
+    const leanJ = (shapeJ3 - 0.5) * 0.24;
+    const asymJ = (hash2(obj.seed, 8, 13) - 0.5) * 0.18;
 
     shadowUnder(d, cw * 0.62, cw * 0.26, 0.9);
 
     const trunkCol = litc(style.trunk, atm);
-    const { tx, ty } = drawTrunk(d, h, Math.max(2.2, 7 * scale), trunkCol, sway * 0.35);
+    // leanJ — детерминированный наклон по сиду, не меняется при входе
+    const lean = sway * 0.35 + leanJ * h * 0.12;
+    const { tx, ty } = drawTrunk(d, h, Math.max(2.2, 7 * scale), trunkCol, lean);
 
     const { main, bare } = crownColor(style, atm);
     const branchCol = shade(trunkCol, 0.92);
@@ -166,7 +175,7 @@ function makeTree(style: TreeStyle): Drawer {
 
     drawBranches(d, tx, ty, 5, h * 0.35, branchCol, 1);
 
-    const cxx = tx + crownDx;
+    const cxx = tx + crownDx + asymJ * cw * 0.35;
     const crownMain = litc(main, atm);
     const crownDeep = litc(shade(mix(main, atm.palette.foliageDeep, 0.55), 0.92), atm);
     const crownLight = litc(mix(main, WHITE, 0.3), atm, 0.05);
@@ -372,7 +381,8 @@ export const drawPine: Drawer = (d) => {
   shadowUnder(d, 40 * scale, 17 * scale, 0.9);
 
   const trunkCol = litc({ r: 108, g: 82, b: 66 }, atm);
-  const { tx, ty } = drawTrunk(d, h, Math.max(2.4, 8 * scale), trunkCol, sway * 0.3);
+  const leanJ = (hash2(obj.seed, 7, 11) - 0.5) * 0.18;
+  const { tx, ty } = drawTrunk(d, h, Math.max(2.4, 8 * scale), trunkCol, sway * 0.3 + leanJ * h * 0.08);
 
   const needle = atm.season === 'winter' ? { r: 96, g: 124, b: 116 } : { r: 84, g: 130, b: 92 };
   const main = litc(needle, atm);
@@ -380,7 +390,8 @@ export const drawPine: Drawer = (d) => {
   const light = litc(mix(needle, { r: 200, g: 226, b: 170 }, 0.3), atm, 0.03);
 
   // Ярусы «облаков» хвои — характерная японская сосна
-  const tiers = 4;
+  // Вариация по сиду: 3..5 ярусов, не всегда 4
+  const tiers = 3 + Math.floor(hash2(obj.seed, 13, 17) * 3);
   for (let i = 0; i < tiers; i++) {
     const t = i / (tiers - 1);
     const side = i % 2 === 0 ? -1 : 1;
@@ -426,7 +437,7 @@ export const drawPine: Drawer = (d) => {
 export const drawBamboo: Drawer = (d) => {
   const { ctx, atm, g, obj } = d;
   const scale = lerp(0.3, 1, Math.pow(g, 0.6));
-  const stalks = 3;
+  const stalks = 2 + Math.floor(hash2(obj.seed, 21, 29) * 3); // 2..4 стебля
   shadowUnder(d, 16 * scale, 7 * scale, 0.6);
   const stalkCol = litc(atm.season === 'winter' ? { r: 168, g: 176, b: 150 } : { r: 158, g: 186, b: 116 }, atm);
   const leafCol = litc(atm.season === 'winter' ? { r: 150, g: 164, b: 148 } : { r: 122, g: 164, b: 100 }, atm);

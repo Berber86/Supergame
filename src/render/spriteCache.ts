@@ -218,7 +218,8 @@ function measureBox(
   atm: Parameters<typeof drawObject>[0]['atm'],
   gq: number,
 ): { w: number; h: number; ax: number; ay: number } | null {
-  const key = `${obj.type}|${atm.season}|${gq}|${obj.rot}`;
+  // Размер зависит от сида из-за scaleJitter и зеркала, поэтому включаем seed
+  const key = `${obj.type}|${atm.season}|${gq}|${obj.rot}|${obj.seed}`;
   const hit = boxes.get(key);
   if (hit !== undefined) return hit;
 
@@ -323,7 +324,8 @@ function measureBox(
 
   // Запас по краям. Берём щедро: у акварельных размывов кромка уходит
   // в почти нулевую альфу, и скупой запас срезал бы края кроны.
-  const pad = 8;
+  // Увеличили с 8 до 16 из-за scaleJitter 0.88..1.12 — чтобы не обрезать.
+  const pad = 16;
   const w = Math.min(900, right - left + 1 + pad * 2);
   const h = Math.min(900, bottom - top + 1 + pad * 2);
   if (w <= 0 || h <= 0) {
@@ -337,6 +339,10 @@ function measureBox(
     ay: oy - top + pad,
   };
   boxes.set(key, box);
+  if (boxes.size > 600) {
+    const first = boxes.keys().next().value;
+    if (first) boxes.delete(first);
+  }
   return box;
 }
 
