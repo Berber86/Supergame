@@ -7,7 +7,7 @@
  */
 
 import { GRID, TILE_H, TILE_W, isoToScreen } from '../core/iso';
-import { clamp01, hash2 } from '../core/rng';
+import { clamp01, hash2, lerp } from '../core/rng';
 import { ITEM_BY_ID } from '../world/catalog';
 import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
 import { PlacedObject } from '../world/types';
@@ -146,6 +146,39 @@ export function drawMountains(ctx: Ctx, W: number, H: number, atm: Atmosphere): 
     ctx.closePath();
     ctx.fill();
   }
+}
+
+/**
+ * Воздушная перспектива: дальний край острова тонет в бумажной пелене.
+ *
+ * Ось глубины изометрии — мировая ось Y (tx+ty), поэтому пелена — просто
+ * вертикальный градиент в мировых координатах поверх земли и объектов.
+ * Ближний край остаётся чистым, дальний светлеет и теряет контраст —
+ * кадр перестаёт читаться как карта, появляется воздух. Цвет пелены
+ * следует за небом и часом: днём — тёплая бумага, в золотой час — охра,
+ * ночью — холодная синева.
+ */
+export function drawAerialPerspective(ctx: Ctx, atm: Atmosphere): void {
+  const cFar = isoToScreen(0, 0);
+  const cNear = isoToScreen(GRID, GRID);
+  const yFar = cFar.y - TILE_H * 2.2;
+  const yNear = cNear.y + TILE_H * 1.2;
+  const paper: RGB = { r: 247, g: 244, b: 234 };
+  let hazeCol = mix(atm.skyBottom, paper, 0.55);
+  hazeCol = mix(hazeCol, { r: 244, g: 208, b: 158 }, atm.golden * 0.5);
+  const maxA = Math.min(0.3, lerp(0.04, 0.12, atm.time.daylight) + atm.golden * 0.06 + atm.overcast * 0.1);
+  if (maxA < 0.02) return;
+
+  const g = ctx.createLinearGradient(0, yFar, 0, yNear);
+  g.addColorStop(0, css(hazeCol, maxA));
+  g.addColorStop(0.45, css(hazeCol, maxA * 0.3));
+  g.addColorStop(0.7, css(hazeCol, 0));
+  g.addColorStop(1, css(hazeCol, 0));
+  ctx.save();
+  ctx.fillStyle = g;
+  const halfW = (GRID * TILE_W) / 2 + 500;
+  ctx.fillRect(-halfW, yFar, halfW * 2, yNear - yFar);
+  ctx.restore();
 }
 
 export function drawIslandShadow(ctx: Ctx, atm: Atmosphere): void {
@@ -574,6 +607,25 @@ export function drawColorGrade(ctx: Ctx, W: number, H: number, atm: Atmosphere):
   if (atm.season === 'winter') {
     ctx.globalCompositeOperation = 'soft-light';
     ctx.fillStyle = css({ r: 190, g: 214, b: 236 }, 0.14);
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Свет направленный: тёплое плечо со стороны солнца, прохладное — со
+  // стороны тени. Днём это еле заметное моделирование, в золотой час —
+  // главная драматургия кадра. Тучи съедают направленность, как и положено.
+  const dirA = (0.035 + t.daylight * 0.035 + atm.golden * 0.1) * (1 - atm.overcast * 0.65);
+  if (dirA > 0.012 && t.daylight > 0.12) {
+    const sunSide = atm.sunDir.x >= 0 ? 1 : -1;
+    const warmCol = mix({ r: 255, g: 206, b: 138 }, { r: 255, g: 166, b: 92 }, atm.golden);
+    const coolCol = mix({ r: 106, g: 126, b: 172 }, { r: 150, g: 128, b: 158 }, atm.golden * 0.5);
+    const x0 = sunSide > 0 ? 0 : W;
+    const x1 = sunSide > 0 ? W : 0;
+    const g = ctx.createLinearGradient(x0, 0, x1, H * 0.85);
+    g.addColorStop(0, css(warmCol, dirA));
+    g.addColorStop(0.55, css(mix(warmCol, coolCol, 0.5), 0));
+    g.addColorStop(1, css(coolCol, dirA * 0.85));
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
   }
   ctx.restore();

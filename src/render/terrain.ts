@@ -790,7 +790,9 @@ function drawTileSides(ctx: Ctx, world: World, x: number, y: number, t: Tile, at
     const hpx = drop * LEVEL_H;
     const p0 = dir === 'south' ? isoToScreen(x - 0.02, y + 1, t.level) : isoToScreen(x + 1, y - 0.02, t.level);
     const p1 = dir === 'south' ? isoToScreen(x + 1.02, y + 1, t.level) : isoToScreen(x + 1, y + 1.02, t.level);
-    const shadeK = dir === 'south' ? 0.74 : 0.62;
+    // Грань, обращённая к солнцу, светлее противоположной, а не одинаково
+    // тёмная весь день: утром свет слева, к вечеру — справа.
+    const shadeK = dir === 'south' ? 0.74 - atm.sunDir.x * 0.1 : 0.62 + atm.sunDir.x * 0.08;
     const col = shade(mix(baseCol, atm.palette.soil, 0.5), atm.exposure * shadeK);
 
     ctx.beginPath();
