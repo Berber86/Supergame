@@ -61,7 +61,7 @@ export const TABS: CatalogTab[] = [
   { id: 'house', name: 'Усадьба', icon: 'house', requires: 'first_deck' },
   { id: 'shore', name: 'Берег', icon: 'water', requires: 'running_water' },
   { id: 'cat', name: 'Коту', icon: 'cat', requires: 'first_cat' },
-  { id: 'guests', name: 'Гости', icon: 'bird', requires: 'bird_guest' },
+  { id: 'guests', name: 'Гости', icon: 'bird', requires: null },
 ];
 
 export const TERRAIN_BRUSHES: TerrainBrush[] = [
