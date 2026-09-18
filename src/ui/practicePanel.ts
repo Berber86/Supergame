@@ -158,24 +158,19 @@ export class PracticePanel {
 
     this.body.innerHTML = `
       <div class="pr-menu">
-        <div class="pr-lead">Сесть можно прямо сейчас: практике не нужны ни постройка, ни погода, ни особое время суток. Выбери, что делать, и нажми время — перед стартом покажем как.</div>
-        <div class="pr-how">
-          <div class="pr-how-item"><span>1</span> Выбери практику — смотри «что это» и два первых шага</div>
-          <div class="pr-how-item"><span>2</span> Нажми минуты — увидишь все шаги и дыхание</div>
-          <div class="pr-how-item"><span>3</span> Сядь. Круг, счёт и подсказки ведут тебя, встать можно в любой момент</div>
-        </div>
+        <div class="pr-lead">Сядь сейчас — без построек и погоды. Выбери что делать → время → 3 секунды на вдох.</div>
         <div class="pr-cols">
           <section>
-            <div class="pr-sec">Сесть — выбери что делать</div>
+            <div class="pr-sec">Сесть — ${PRACTICES.length} практик</div>
             <div class="pr-list">${practiceRows}</div>
           </section>
           <section>
-            <div class="pr-sec">Школа тишины · прожито ${done} из ${LESSONS.length}</div>
+            <div class="pr-sec">Школа тишины · ${done} из ${LESSONS.length}</div>
             <div class="pr-list">${lessonRows}</div>
+            ${p.minutes > 0 ? `<div class="pr-memory">в вашей тишине — ${minutesNominative(p.minutes)} · ${Object.values(p.sessions).reduce((a, b) => a + b, 0)} сеансов</div>` : ''}
+            <div class="pr-care">${CARE_NOTE}</div>
           </section>
         </div>
-        ${p.minutes > 0 ? `<div class="pr-memory">в вашей тишине — ${minutesNominative(p.minutes)} · ${Object.values(p.sessions).reduce((a, b) => a + b, 0)} сеансов</div>` : ''}
-        <div class="pr-care">${CARE_NOTE}</div>
       </div>`;
 
     this.body.querySelectorAll<HTMLElement>('.pr-row[data-practice]').forEach((row) => {
@@ -198,33 +193,27 @@ export class PracticePanel {
     if (!pr) return;
     this.lastPractice = pr;
     this.lastMinutes = minutes;
-    const breathInfo = pr.breath ? `Дыхание: вдох ${pr.breath.inhale}с → выдох ${pr.breath.exhale}с` : 'Дыхание — естественное, не управляйте им';
+    const breathInfo = pr.breath ? `вдох ${pr.breath.inhale}с → выдох ${pr.breath.exhale}с` : 'дыхание естественное';
     this.body.innerHTML = `
       <div class="pr-practice">
         <div class="pr-l-head">
           <span class="pr-l-kanji" lang="ja">${pr.kanji}</span>
           <div>
-            <div class="pr-l-n">практика · ${minutes} ${minutes === 1 ? 'минута' : 'минут'}</div>
+            <div class="pr-l-n">практика · ${minutes} ${minutes === 1 ? 'минута' : 'минут'} · ${breathInfo}</div>
             <h3>${pr.name}</h3>
             <div class="pr-p-what">${pr.what}</div>
           </div>
         </div>
-        <div class="pr-p-breath">${breathInfo}</div>
-        <div class="pr-p-steps">
-          <div class="pr-sec">Как делать — ${pr.steps.length} шага</div>
+        <div class="pr-p-steps simple">
           <ol>
-            ${pr.steps.map((s, i) => `<li><span class="pr-step-n">${i + 1}</span> ${s}</li>`).join('')}
+            ${pr.steps.map((s, i) => `<li><span class="pr-step-n">${i + 1}</span><span>${s}</span></li>`).join('')}
           </ol>
         </div>
-        <div class="pr-p-lines">
-          <div class="pr-sec">Тихие подсказки во время</div>
-          <div class="pr-lines">${pr.lines.map((l) => `<span>“${l}”</span>`).join(' · ')}</div>
-        </div>
         <div class="pr-l-actions">
-          <div class="pr-btn" data-start>сесть на ${minutes} ${minutes === 1 ? 'минуту' : 'минут'} — покажем 3-2-1</div>
+          <div class="pr-btn primary" data-start>сесть на ${minutes} ${minutes === 1 ? 'минуту' : 'минут'}</div>
           <div class="pr-btn ghost" data-back>назад</div>
         </div>
-        <div class="pr-p-meta">Встать можно в любой момент — это тоже засчитается. Чаша в начале и две в конце.</div>
+        <div class="pr-p-meta">Встать можно в любой момент — засчитается. Чаша в начале и две в конце. Во время будут тихие подсказки.</div>
       </div>`;
     this.body.querySelector('[data-start]')!.addEventListener('click', () => this.startReady(pr.id, minutes));
     this.body.querySelector('[data-back]')!.addEventListener('click', () => this.renderMenu());
@@ -241,21 +230,20 @@ export class PracticePanel {
         <div class="pr-l-head">
           <span class="pr-l-kanji" lang="ja">${l.kanji}</span>
           <div>
-            <div class="pr-l-n">урок ${l.n} · практика ${pr.name}</div>
+            <div class="pr-l-n">урок ${l.n} · ${pr.name} · ${l.minutes} мин</div>
             <h3>${l.title}</h3>
-            <div class="pr-p-what">${pr.what}</div>
           </div>
         </div>
         <div class="pr-l-text">${l.text.map((t) => `<p>${t}</p>`).join('')}</div>
-        <div class="pr-p-steps">
-          <div class="pr-sec">Как делать сейчас — ${pr.steps.length} шага</div>
-          <ol>
-            ${pr.steps.map((s, i) => `<li><span class="pr-step-n">${i + 1}</span> ${s}</li>`).join('')}
-          </ol>
-        </div>
         <div class="pr-l-notice"><em>Что заметить</em>${l.notice}</div>
+        <details class="pr-l-details">
+          <summary>Как сесть сейчас — ${pr.steps.length} шага <span>${pr.what}</span></summary>
+          <ol class="pr-mini-steps">
+            ${pr.steps.map((s, i) => `<li><span class="pr-step-n">${i + 1}</span><span>${s}</span></li>`).join('')}
+          </ol>
+        </details>
         <div class="pr-l-actions">
-          <div class="pr-btn" data-sit>сесть на ${l.minutes} ${l.minutes === 1 ? 'минуту' : 'минут'}</div>
+          <div class="pr-btn primary" data-sit>сесть на ${l.minutes} ${l.minutes === 1 ? 'минуту' : 'минут'}</div>
           <div class="pr-btn ghost" data-back>позже</div>
         </div>
       </div>`;
@@ -498,7 +486,8 @@ export class PracticePanel {
     const s = this.session;
     const el = this.body.querySelector<HTMLElement>('[data-meta]');
     if (!s || !el) return;
-    el.textContent = `осталось ${timeLeft(s.view.total - s.view.elapsed)} · ${s.view.count ? `счёт ${NUM_WORDS[s.view.count] ?? s.view.count}` : s.practice.mode}`;
+    const modeLabel = s.view.count ? `счёт ${NUM_WORDS[s.view.count] ?? s.view.count}` : s.practice.name.toLowerCase();
+    el.textContent = `осталось ${timeLeft(s.view.total - s.view.elapsed)} · ${modeLabel}`;
   }
 
   private updateDots(): void {

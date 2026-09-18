@@ -96,45 +96,7 @@
   line-height: 1.5;
 }
 
-.pr-how {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin: 0 0 18px;
-  max-width: 780px;
-}
-.pr-how-item {
-  flex: 1 1 200px;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  font-size: 12.8px;
-  line-height: 1.45;
-  color: var(--ink-soft);
-  background: rgba(59,48,40,0.05);
-  border-radius: 6px;
-  padding: 8px 10px;
-}
-.practice.night .pr-how-item {
-  background: rgba(244,236,217,0.07);
-  color: rgba(244,236,217,0.68);
-}
-.pr-how-item span {
-  flex: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--silk);
-  color: #fdfaf0;
-  display: grid;
-  place-items: center;
-  font-size: 11px;
-  font-weight: 700;
-}
-.practice.night .pr-how-item span {
-  background: #d8b48c;
-  color: #1a2130;
-}
+.pr-how { display: none; } /* убрано — перегружало вступление */
 
 .practice.night .pr-lead {
   color: rgba(244, 236, 217, 0.66);
@@ -323,73 +285,59 @@
   color: rgba(244, 236, 217, 0.55);
 }
 
-/* ---------------- Практика детально ---------------- */
+/* ---------------- Практика детально — облегчено ---------------- */
 
 .pr-practice {
-  max-width: 700px;
+  max-width: 600px;
 }
 
 .pr-p-what {
-  font-size: 15px;
+  font-size: 14.5px;
   font-style: italic;
   color: var(--ink-soft);
   margin-top: 4px;
   line-height: 1.4;
-}
-
-.pr-p-breath {
-  margin: 14px 0;
-  padding: 8px 14px;
-  border-radius: 20px;
-  background: rgba(176,83,63,0.10);
-  font-size: 13px;
-  letter-spacing: 0.04em;
-  display: inline-block;
-}
-
-.practice.night .pr-p-breath {
-  background: rgba(216,180,140,0.14);
-  color: rgba(244,236,217,0.8);
+  max-width: 520px;
 }
 
 .pr-p-steps {
-  margin: 18px 0;
-  padding: 14px 16px;
-  border: 1px solid rgba(59,48,40,0.14);
-  border-radius: 8px;
-  background: rgba(255,252,240,0.5);
+  margin: 18px 0 10px;
 }
 
-.practice.night .pr-p-steps {
-  border-color: rgba(244,236,217,0.14);
-  background: rgba(244,236,217,0.06);
+.pr-p-steps.simple {
+  margin: 20px 0 12px;
+  padding: 0;
+  border: none;
+  background: none;
 }
 
-.pr-p-steps ol {
-  margin: 10px 0 0;
+.pr-p-steps ol,
+.pr-mini-steps {
+  margin: 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
-.pr-p-steps li {
+.pr-p-steps li,
+.pr-mini-steps li {
   display: flex;
   gap: 10px;
-  font-size: 15px;
-  line-height: 1.45;
+  font-size: 15.5px;
+  line-height: 1.4;
 }
 
 .pr-step-n {
   flex: none;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: rgba(59,48,40,0.08);
   display: grid;
   place-items: center;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   margin-top: 1px;
 }
@@ -398,35 +346,45 @@
   background: rgba(244,236,217,0.12);
 }
 
-.pr-p-lines {
-  margin: 16px 0;
-}
-
-.pr-lines {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-  font-size: 13px;
-  font-style: italic;
-  color: var(--ink-soft);
-}
-
-.pr-lines span {
-  background: rgba(59,48,40,0.06);
-  padding: 3px 8px;
-  border-radius: 12px;
-}
-
-.practice.night .pr-lines span {
-  background: rgba(244,236,217,0.08);
-}
-
 .pr-p-meta {
   margin-top: 14px;
   font-size: 12.5px;
   color: var(--ink-soft);
   font-style: italic;
+  line-height: 1.4;
+  max-width: 520px;
+}
+
+.pr-l-details {
+  margin: 18px 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(59,48,40,0.12);
+  border-radius: 8px;
+  background: rgba(255,252,240,0.4);
+}
+
+.practice.night .pr-l-details {
+  border-color: rgba(244,236,217,0.12);
+  background: rgba(244,236,217,0.05);
+}
+
+.pr-l-details summary {
+  cursor: pointer;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--silk);
+  list-style: none;
+}
+
+.pr-l-details summary span {
+  font-style: italic;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  margin-left: 6px;
+}
+
+.pr-l-details[open] summary {
+  margin-bottom: 12px;
 }
 
 /* ---------------- Урок ---------------- */
@@ -529,6 +487,17 @@
 
 .practice.night .pr-btn:hover {
   background: rgba(244, 236, 217, 0.16);
+}
+
+.pr-btn.primary {
+  background: rgba(59,48,40,0.09);
+  border-color: rgba(59,48,40,0.55);
+  font-weight: 600;
+}
+
+.practice.night .pr-btn.primary {
+  background: rgba(244,236,217,0.12);
+  border-color: rgba(244,236,217,0.6);
 }
 
 .pr-btn.ghost {

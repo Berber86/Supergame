@@ -249,14 +249,20 @@ export function drawDeer(ctx: Ctx, d: Deer, x: number, y: number, atm: Atmospher
     ctx.fill();
   }
 
-  const nx = 9;
-  const ny = graze ? -4 : -26 + Math.sin(time * 0.0018 + d.seed) * 0.6;
+  const nx = graze ? 10 : 9;
+  const ny = graze ? -11 : -26 + Math.sin(time * 0.0018 + d.seed) * 0.6;
   ctx.strokeStyle = css(body, 0.96);
   ctx.lineWidth = 3.6;
   ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(7, -18);
-  ctx.bezierCurveTo(nx + 1.5, graze ? -14 : -24, nx + 0.5, graze ? -8 : -25, nx, ny);
+  if (graze) {
+    // Плавная дуга вниз-вперёд: шея не ломается через грудь, а уходит
+    // мягкой S-кривой к земле, голова чуть впереди тела
+    ctx.bezierCurveTo(8.5, -13, 9.5, -9, nx, ny);
+  } else {
+    ctx.bezierCurveTo(nx + 1.5, -24, nx + 0.5, -25, nx, ny);
+  }
   ctx.stroke();
 
   ctx.fillStyle = css(body, 0.98);
