@@ -259,14 +259,20 @@ export class Scene {
     if (life) this.life = life;
     if (weatherState) this.weatherState = weatherState;
     const ws = this.weatherState;
-    try { if (ws) this.rain.update(dt, ws, world); } catch (e) { console.warn('[scene] rain update', e); }
+    try {
+      if (ws) this.rain.update(dt, ws, world);
+    } catch (e) {
+      console.warn('[scene] rain update', e);
+    }
     const ctx = this.ctx;
     const W = this.viewW;
     const H = this.viewH;
     if (W < 1 || H < 1) return;
     if (!Number.isFinite(this.camera.x) || !Number.isFinite(this.camera.y) || !Number.isFinite(this.camera.zoom)) {
       console.warn('[scene] camera NaN, resetting');
-      this.camera.x = 0; this.camera.y = 0; this.camera.zoom = 0.3;
+      this.camera.x = 0;
+      this.camera.y = 0;
+      this.camera.zoom = 0.3;
     }
 
     ctx.save();

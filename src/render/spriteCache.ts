@@ -276,7 +276,10 @@ function measureBox(
   for (let y = 0; y < S; y++) {
     const rowOff = y * S * 4;
     for (let x = 0; x < S; x++) {
-      if (px[rowOff + x * 4 + 3] > 0) { top = y; break; }
+      if (px[rowOff + x * 4 + 3] > 0) {
+        top = y;
+        break;
+      }
     }
     if (top !== S) break;
   }
@@ -287,19 +290,28 @@ function measureBox(
   for (let y = S - 1; y >= top; y--) {
     const rowOff = y * S * 4;
     for (let x = 0; x < S; x++) {
-      if (px[rowOff + x * 4 + 3] > 0) { bottom = y; break; }
+      if (px[rowOff + x * 4 + 3] > 0) {
+        bottom = y;
+        break;
+      }
     }
     if (bottom !== -1) break;
   }
   for (let x = 0; x < S; x++) {
     for (let y = top; y <= bottom; y++) {
-      if (px[(y * S + x) * 4 + 3] > 0) { left = x; break; }
+      if (px[(y * S + x) * 4 + 3] > 0) {
+        left = x;
+        break;
+      }
     }
     if (left !== S) break;
   }
   for (let x = S - 1; x >= left; x--) {
     for (let y = top; y <= bottom; y++) {
-      if (px[(y * S + x) * 4 + 3] > 0) { right = x; break; }
+      if (px[(y * S + x) * 4 + 3] > 0) {
+        right = x;
+        break;
+      }
     }
     if (right !== -1) break;
   }

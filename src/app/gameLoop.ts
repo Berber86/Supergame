@@ -78,86 +78,89 @@ export function startLoop(deps: LoopDeps): void {
     };
   }
 
+  let frameError = false;
+
   function frame(now: number): void {
-    // Всегда планируем следующий кадр заранее — даже если текущий упадёт,
-    // сад не замрёт (раньше exception в render обрывал цепочку RAF).
-    requestAnimationFrame(frame);
+    // dt зажат с обеих сторон: после сна устройства или возврата вкладки
+    // метка rAF может прийти раньше прошлой — отрицательный dt отравил бы
+    // все возрасты (круги на воде и т.п.) и уронил бы кадр исключением.
+    const dt = Math.min(Math.max(now - last, 0), 60);
+    last = now;
 
     try {
-      // dt может быть NaN/отрицательным если вкладка спала или performance.now сбросился
-      let rawDt = now - last;
-      if (!Number.isFinite(rawDt) || rawDt < 0) rawDt = 16;
-      const dt = Math.min(rawDt, 60);
-      last = now;
-      // Пропускаем кадры с нулевой шириной/высотой — canvas ещё не в DOM или скрыт
-      if (scene.viewW < 1 || scene.viewH < 1) return;
-
-      timeCtl.tick(dt);
-      const t = timeCtl.compute();
-      weatherSys.update(dt, t);
-      const atm = buildAtmosphere(t, weatherSys.state.overcast);
-
-      // Веха «Сумерки» — когда игрок впервые застаёт вечер
-      const dayKey = `${t.year}-${t.seasonIndex}-${Math.floor(t.dayT * 4)}`;
-      if (atm.lampGlow > 0.4 && eveningChecked !== dayKey) {
-        eveningChecked = dayKey;
-        try { world.noteEvening(); deps.flushMilestones(); } catch (e) { console.warn('[loop] noteEvening', e); }
-      }
-
-      // Вехи, которые сад замечает сам. Раз в пару секунд: они про то,
-      // что уже случилось, спешить некуда.
-      observeAccum -= dt;
-      if (observeAccum <= 0) {
-        observeAccum = 2500;
-        try {
-          world.observe(Date.now(), t.season, atm.lampGlow > 0.55, weatherSys.state.rain > 0.3);
-          deps.flushMilestones();
-        } catch (e) { console.warn('[loop] observe', e); }
-      }
-
-      // Живность и ветер; погода достаётся жителям: лягушки любят дождь,
-      // стрекозы его прячут, птицы в ливень сидят по укрытиям.
-      try { life.update(world, t, dt, now, weatherSys.state); } catch (e) { console.warn('[loop] life', e); }
-      scene.wind = life.windBase;
-      try { deps.flushChronicle(); } catch (e) { console.warn('[loop] chronicle', e); }
-      try { deps.growFrame(dt); } catch (e) { console.warn('[loop] grow', e); }
-
-      // Интерфейс растворяется в бездействии
-      if (!deps.isZenMode() && !ui.buildOpen && now - deps.lastInteractionMs() > deps.idleMs) {
-        try { deps.igniteZen(); } catch {}
-      }
-
-      // Плавное возвращение камеры после входа: сколько бы ни шёл шаг,
-      // через порог игрок входит, а не оказывается.
-      if (deps.getEntryZoom() > 0) {
-        const safeDt = Math.max(1, dt);
-        const k = 1 - Math.pow(0.004, safeDt / 1000);
-        scene.camera.zoom += (deps.getEntryZoom() - scene.camera.zoom) * k;
-        if (Math.abs(deps.getEntryZoom() - scene.camera.zoom) < 0.002 || !Number.isFinite(scene.camera.zoom)) {
-          scene.camera.zoom = deps.getEntryZoom();
-          deps.setEntryZoom(0);
-        }
-        try { scene.clampCamera(); } catch (e) { console.warn('[loop] clamp', e); }
-      }
-
-      // Под листом практики сад не рисуется вовсе; свиток старта непрозрачен,
-      // но за ним сад живёт и греет первый кадр ко входу.
-      if (!deps.isPracticeActive()) {
-        try { scene.render(world, atm, now, dt, life, weatherSys.state); }
-        catch (e) { console.error('[loop] render failed, continuing', e); }
-      }
-      try { ui.tick(t, atm); } catch (e) { console.warn('[loop] ui.tick', e); }
-      try { devPanel.tick(); } catch {}
-
-      // Звук: пересобираем «что слышно» из состава сада
-      audioAccum -= dt;
-      if (audioAccum <= 0) {
-        audioAccum = 400;
-        try { audio.update(400, t, weatherSys.state, gatherAudioContext()); }
-        catch (e) { console.warn('[loop] audio', e); }
-      }
+      step(now, dt);
     } catch (e) {
-      console.error('[loop] frame fatal', e);
+      // Кадр не должен ронять цикл: одна плохая отрисовка — это пропуск
+      // кадра, а не вечное «зависание» с застывшей сценой.
+      if (!frameError) {
+        frameError = true;
+        console.error('Кадр сброшен из-за ошибки:', e);
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function step(now: number, dt: number): void {
+    // Холст ещё не в документе или вкладка схлопнута — рисовать нечего.
+    if (scene.viewW < 1 || scene.viewH < 1) return;
+
+    timeCtl.tick(dt);
+    const t = timeCtl.compute();
+    weatherSys.update(dt, t);
+    const atm = buildAtmosphere(t, weatherSys.state.overcast);
+
+    // Веха «Сумерки» — когда игрок впервые застаёт вечер
+    const dayKey = `${t.year}-${t.seasonIndex}-${Math.floor(t.dayT * 4)}`;
+    if (atm.lampGlow > 0.4 && eveningChecked !== dayKey) {
+      eveningChecked = dayKey;
+      world.noteEvening();
+      deps.flushMilestones();
+    }
+
+    // Вехи, которые сад замечает сам. Раз в пару секунд: они про то,
+    // что уже случилось, спешить некуда.
+    observeAccum -= dt;
+    if (observeAccum <= 0) {
+      observeAccum = 2500;
+      // Возраст деревьев меряется от даты посадки: нужны настоящие
+      // миллисекунды, а не счётчик кадров (иначе «старое дерево» не созрело бы).
+      world.observe(Date.now(), t.season, atm.lampGlow > 0.55, weatherSys.state.rain > 0.3);
+      deps.flushMilestones();
+    }
+
+    // Живность и ветер; погода достаётся жителям: лягушки любят дождь,
+    // стрекозы его прячут, птицы в ливень сидят по укрытиям.
+    life.update(world, t, dt, now, weatherSys.state);
+    scene.wind = life.windBase;
+    deps.flushChronicle();
+    deps.growFrame(dt);
+
+    // Интерфейс растворяется в бездействии
+    if (!deps.isZenMode() && !ui.buildOpen && now - deps.lastInteractionMs() > deps.idleMs) deps.igniteZen();
+
+    // Плавное возвращение камеры после входа: сколько бы ни шёл шаг,
+    // через порог игрок входит, а не оказывается.
+    if (deps.getEntryZoom() > 0) {
+      const k = 1 - Math.pow(0.004, dt / 1000);
+      scene.camera.zoom += (deps.getEntryZoom() - scene.camera.zoom) * k;
+      if (Math.abs(deps.getEntryZoom() - scene.camera.zoom) < 0.002 || !Number.isFinite(scene.camera.zoom)) {
+        scene.camera.zoom = deps.getEntryZoom();
+        deps.setEntryZoom(0);
+      }
+      scene.clampCamera();
+    }
+
+    // Под листом практики сад не рисуется вовсе; свиток старта непрозрачен,
+    // но за ним сад живёт и греет первый кадр ко входу.
+    if (!deps.isPracticeActive()) scene.render(world, atm, now, dt, life, weatherSys.state);
+    ui.tick(t, atm);
+    devPanel.tick();
+
+    // Звук: пересобираем «что слышно» из состава сада
+    audioAccum -= dt;
+    if (audioAccum <= 0) {
+      audioAccum = 400;
+      audio.update(400, t, weatherSys.state, gatherAudioContext());
     }
   }
 
