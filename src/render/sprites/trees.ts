@@ -32,7 +32,7 @@ function crownColor(style: TreeStyle, atm: Atmosphere): { main: RGB; bare: boole
 }
 
 function drawTrunk(d: DrawCtx, h: number, w: number, col: RGB, bend: number): { tx: number; ty: number } {
-  const { ctx } = d;
+  const { ctx, atm, obj } = d;
   const topX = d.x + bend;
   const topY = d.y - h;
   taperStroke(ctx, d.x, d.y, topX, topY, w, w * 0.34, col, 0.94, bend * 0.6);
@@ -51,7 +51,105 @@ function drawTrunk(d: DrawCtx, h: number, w: number, col: RGB, bend: number): { 
     );
     ctx.stroke();
   }
+  // северный мох и лишайник на стволе — детерминирован по seed, больше в тени
+  const mossChance = hash2(obj.seed, 101, 7);
+  if (mossChance > 0.48 && atm.season !== 'winter') {
+    const mh = h * (0.22 + hash2(obj.seed, 107, 3) * 0.18);
+    const my = lerp(d.y, topY, 0.18 + hash2(obj.seed, 109, 5) * 0.35);
+    const side = hash2(obj.seed, 103, 13) > 0.5 ? 1 : -1;
+    const mx = lerp(d.x, topX, 0.3) + side * w * 0.18;
+    const mossCol = litc(atm.palette.moss, atm);
+    ctx.fillStyle = css(mossCol, 0.28 + mossChance * 0.12);
+    blobPath(ctx, mx, my, w * 0.55, mh * 0.22, obj.seed + 101, 0.3, 7);
+    ctx.fill();
+    if (mossChance > 0.72) {
+      ctx.fillStyle = css(litc({ r: 172, g: 188, b: 152 }, atm), 0.26);
+      blobPath(ctx, mx - side * w * 0.15, my - mh * 0.2, w * 0.32, mh * 0.14, obj.seed + 113, 0.28, 6);
+      ctx.fill();
+    }
+  }
   return { tx: topX, ty: topY };
+}
+
+/** Гнёзда и дупла — детерминированно по seed, сезонно, без кропа. */
+function drawTreeCavity(d: DrawCtx, tx: number, ty: number, _h: number, w: number): void {
+  const { ctx, atm, obj } = d;
+  const cavitySeed = hash2(obj.seed, 151, 7);
+  if (cavitySeed < 0.72) return; // ~28% деревьев с фичей
+  const typeRoll = hash2(obj.seed, 157, 13);
+  const isHollow = typeRoll < 0.5;
+  const scale = lerp(0.18, 1, Math.pow(d.g, 0.72));
+  const hy = lerp(d.y, ty, 0.28 + hash2(obj.seed, 153, 11) * 0.45);
+  const hx = lerp(d.x, tx, 0.32 + hash2(obj.seed, 155, 17) * 0.35) + (hash2(obj.seed, 159, 19) - 0.5) * w * 0.6;
+  if (isHollow) {
+    // дупло — тёмный овал с бликом коры
+    const hrx = (3.2 + hash2(obj.seed, 161, 23) * 1.8) * scale;
+    const hry = (5.2 + hash2(obj.seed, 163, 29) * 2.4) * scale;
+    ctx.fillStyle = css(litc({ r: 42, g: 32, b: 26 }, atm), 0.88);
+    ctx.beginPath();
+    ctx.ellipse(hx, hy, hrx, hry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = css(litc({ r: 28, g: 20, b: 16 }, atm), 0.72);
+    ctx.beginPath();
+    ctx.ellipse(hx, hy + hry * 0.18, hrx * 0.72, hry * 0.52, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // яйца / птенец выглядывает только весной
+    if (atm.season === 'spring' && hash2(obj.seed, 167, 31) > 0.55) {
+      const eggCol = litc({ r: 240, g: 232, b: 210 }, atm);
+      ctx.fillStyle = css(eggCol, 0.85);
+      ctx.beginPath();
+      ctx.ellipse(hx + hrx * 0.1, hy + hry * 0.25, hrx * 0.32, hry * 0.22, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else {
+    // гнездо на развилке
+    const nrx = (7.5 + hash2(obj.seed, 173, 37) * 3.5) * scale;
+    const nry = (3.2 + hash2(obj.seed, 179, 41) * 1.6) * scale;
+    const twig = litc({ r: 138, g: 118, b: 88 }, atm);
+    const twigDark = litc(shade({ r: 138, g: 118, b: 88 }, 0.72), atm);
+    // base shadow
+    ctx.fillStyle = css(twigDark, 0.32);
+    blobPath(ctx, hx, hy + nry * 0.3, nrx * 1.05, nry * 0.9, obj.seed + 181, 0.24, 8);
+    ctx.fill();
+    ctx.fillStyle = css(twig, 0.88);
+    blobPath(ctx, hx, hy, nrx, nry, obj.seed + 183, 0.28, 9);
+    ctx.fill();
+    // cross-hatch веточки
+    ctx.strokeStyle = css(twigDark, 0.42);
+    ctx.lineWidth = 0.9;
+    for (let k = 0; k < 4; k++) {
+      const r = hash2(k, obj.seed, 191);
+      ctx.beginPath();
+      ctx.moveTo(hx - nrx * 0.7 + r * nrx * 0.3, hy - nry * 0.2 + (r - 0.5) * nry);
+      ctx.lineTo(hx + nrx * 0.7 - r * nrx * 0.2, hy + nry * 0.15 + (r - 0.5) * nry * 0.5);
+      ctx.stroke();
+    }
+    // яйца в гнезде — сезонно
+    if (atm.season === 'spring' || atm.season === 'summer') {
+      const eggCount = 1 + Math.floor(hash2(obj.seed, 193, 43) * 3); // 1..3
+      for (let e = 0; e < eggCount; e++) {
+        const re = hash2(e, obj.seed, 197);
+        const re2 = hash2(e, obj.seed, 199);
+        const ex = hx + (re - 0.5) * nrx * 0.7;
+        const ey = hy - nry * 0.15 + (re2 - 0.5) * nry * 0.5;
+        const speck = re > 0.5;
+        const eggC = litc(speck ? { r: 235, g: 226, b: 198 } : { r: 210, g: 228, b: 220 }, atm);
+        ctx.fillStyle = css(eggC, 0.92);
+        ctx.beginPath();
+        ctx.ellipse(ex, ey, 1.8 * scale + re * 0.6, 2.4 * scale + re2 * 0.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        if (speck) {
+          ctx.fillStyle = css(litc({ r: 120, g: 92, b: 72 }, atm), 0.35);
+          for (let s = 0; s < 3; s++) {
+            const rs = hash2(s, obj.seed + e, 211);
+            ctx.beginPath();
+            ctx.arc(ex + (rs - 0.5) * 1.2, ey + (hash2(s, obj.seed + e, 223) - 0.5) * 1.2, 0.4, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+    }
+  }
 }
 
 function drawBranches(d: DrawCtx, tx: number, ty: number, n: number, len: number, col: RGB, spread = 1): void {
@@ -143,7 +241,10 @@ function makeTree(style: TreeStyle): Drawer {
 
     const trunkCol = litc(style.trunk, atm);
     const lean = sway * 0.35 + leanJ * h * 0.14;
-    const { tx, ty } = drawTrunk(d, h, Math.max(2.2, 7 * scale * (0.9 + shapeJ4 * 0.2)), trunkCol, lean);
+    const trunkW = Math.max(2.2, 7 * scale * (0.9 + shapeJ4 * 0.2));
+    const { tx, ty } = drawTrunk(d, h, trunkW, trunkCol, lean);
+    // гнёзда / дупла — после ствола, до кроны, чтобы не перекрывалось листвой полностью
+    drawTreeCavity(d, tx, ty, h, trunkW);
 
     const { main, bare } = crownColor(style, atm);
     const branchCol = shade(trunkCol, 0.92);

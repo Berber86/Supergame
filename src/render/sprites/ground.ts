@@ -65,11 +65,37 @@ export function makeRock(sizeScale: number, count: number): Drawer {
       ctx.restore();
       granulate(ctx, cx, cy, rx * 0.8, ry * 0.8, dark, obj.seed + i, 10, 0.12);
 
-      // мох на камне — сторона зависит от сида
+      // Северный мох — растёт на северной (верхней) стороне камня, с лёгким разбросом по сиду
+      const northBias = 0.55 + hash2(obj.seed, 37, 11) * 0.3; // 0.55..0.85 севернее
       if (atm.season !== 'winter') {
-        ctx.fillStyle = css(litc(atm.palette.moss, atm), 0.35);
-        blobPath(ctx, cx + rx * 0.25 * mossSide, cy + ry * 0.35, rx * 0.34, ry * 0.26, obj.seed + i * 5, 0.35, 7);
+        // основной мох — север
+        ctx.fillStyle = css(litc(atm.palette.moss, atm), 0.38);
+        blobPath(
+          ctx,
+          cx + rx * 0.18 * mossSide,
+          cy - ry * northBias + ry * 0.15,
+          rx * 0.38,
+          ry * 0.28,
+          obj.seed + i * 5,
+          0.35,
+          7,
+        );
         ctx.fill();
+        // лишайник — светлый, тоже на севере, но пятнами
+        if (hash2(obj.seed + i, 47, 13) > 0.55) {
+          ctx.fillStyle = css(litc({ r: 168, g: 186, b: 148 }, atm), 0.32);
+          blobPath(
+            ctx,
+            cx - rx * 0.22 * mossSide,
+            cy - ry * 0.35,
+            rx * 0.22,
+            ry * 0.18,
+            obj.seed + i * 7 + 11,
+            0.32,
+            6,
+          );
+          ctx.fill();
+        }
       } else {
         ctx.fillStyle = css(litc({ r: 246, g: 248, b: 250 }, atm), 0.6);
         blobPath(ctx, cx, cy - ry * 0.55, rx * 0.8, ry * 0.3, obj.seed + i * 5, 0.3, 8);

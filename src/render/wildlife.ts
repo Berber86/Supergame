@@ -3,7 +3,7 @@
  */
 
 import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
-import { Bee, Deer, Firefly, Hedgehog, Heron, Mouse, Owl, Squirrel, Turtle, fireflyGlow } from '../world/wildlife';
+import { Bee, Deer, Firefly, Hedgehog, Heron, Moth, Mouse, Owl, Squirrel, Turtle, fireflyGlow } from '../world/wildlife';
 import { Ctx, glow, softShadow, washBlob } from './paint';
 
 function litc(c: RGB, atm: Atmosphere, boost = 0): RGB {
@@ -33,6 +33,57 @@ export function drawFirefly(ctx: Ctx, f: Firefly, x: number, y: number, atm: Atm
     ctx.arc(x, py, 0.9, 0, Math.PI * 2);
     ctx.fill();
   }
+}
+
+export function drawMoth(ctx: Ctx, m: Moth, x: number, y: number, atm: Atmosphere, time: number): void {
+  if (m.alpha <= 0.02) return;
+  const hover = Math.sin(time * 0.0023 + m.seed) * 1.8;
+  const py = y - 8 - hover;
+  const flutter = Math.sin(time * 0.018 + m.flutter) * 0.7 + 0.3;
+  const wing = litc({ r: 232, g: 224, b: 206 }, atm);
+  const wingShade = litc({ r: 184, g: 172, b: 152 }, atm);
+  const bodyCol = litc({ r: 92, g: 82, b: 70 }, atm);
+
+  ctx.save();
+  ctx.translate(x, py);
+  ctx.scale(0.85, 0.85);
+
+  // крылья трепещут
+  const open = 0.4 + flutter * 0.6;
+  for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.scale(side * open, 1);
+    ctx.fillStyle = css(wing, 0.88 * m.alpha);
+    ctx.beginPath();
+    ctx.moveTo(0, -0.4);
+    ctx.bezierCurveTo(2.2, -4.2, 6.5, -3.8, 6.2, -0.6);
+    ctx.bezierCurveTo(6, 1.2, 3, 2.0, 0, 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = css(wingShade, 0.35 * m.alpha);
+    ctx.beginPath();
+    ctx.ellipse(3.2, -1.0, 1.8, 0.7, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  // тельце
+  ctx.fillStyle = css(bodyCol, 0.92 * m.alpha);
+  ctx.beginPath();
+  ctx.ellipse(0, 0.2, 0.7, 2.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // лёгкое свечение в темноте — пыльца
+  if (atm.lightAmount < 0.4) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = css({ r: 255, g: 246, b: 210 }, 0.12 * m.alpha);
+    ctx.beginPath();
+    ctx.arc(0, 0, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.restore();
 }
 
 // ---------------- Цапля ----------------

@@ -47,6 +47,22 @@ export function fireflyGlow(f: Firefly, now: number): number {
   return s * s;
 }
 
+// ---------------- Мотыльки (спутники светлячков) ----------------
+
+export interface Moth {
+  tx: number;
+  ty: number;
+  ax: number;
+  ay: number;
+  dir: number;
+  seed: number;
+  phase: number;
+  timer: number;
+  alpha: number;
+  state: 'fly' | 'rest';
+  flutter: number;
+}
+
 // ---------------- Цапля ----------------
 
 export type HeronState = 'fly-in' | 'stand' | 'stalk' | 'strike' | 'preen' | 'fly-out';
@@ -213,6 +229,7 @@ export interface Bee {
 
 export class Wildlife {
   fireflies: Firefly[] = [];
+  moths: Moth[] = [];
   heron: Heron | null = null;
   deer: Deer[] = [];
   hedgehogs: Hedgehog[] = [];
@@ -226,6 +243,7 @@ export class Wildlife {
 
   private notes: string[] = [];
   private ffTimer = 0;
+  private mothTimer = 0;
   private heronTimer = 120_000;
   private deerTimer = 90_000;
   private hedgehogTimer = 70_000;
@@ -245,6 +263,7 @@ export class Wildlife {
 
   reset(): void {
     this.fireflies = [];
+    this.moths = [];
     this.heron = null;
     this.deer = [];
     this.hedgehogs = [];
@@ -255,6 +274,7 @@ export class Wildlife {
     this.bees = [];
     this.notes = [];
     this.ffTimer = 0;
+    this.mothTimer = 0;
     this.heronTimer = 120_000;
     this.deerTimer = 90_000;
     this.hedgehogTimer = 70_000;
@@ -277,6 +297,7 @@ export class Wildlife {
     threats: Threat[],
   ): void {
     this.updateFireflies(h, inv, t, wx, dt);
+    this.updateMoths(h, inv, t, wx, dt);
     this.updateHeron(h, inv, t, dt, now, threats);
     this.updateDeer(h, inv, t, dt, now, threats);
     this.updateHedgehogs(h, inv, t, dt, now, threats);
@@ -370,6 +391,81 @@ export class Wildlife {
     for (const tr of h.trees) pool.push({ x: tr.x + 1, y: tr.y + 1 });
     if (!pool.length) return null;
     return pool[Math.floor(rnd() * pool.length)];
+  }
+
+  private mothAnchor(h: Habitat): Vec | null {
+    const pool: Vec[] = [];
+    for (const s of h.shelters) pool.push(s);
+    for (const b of h.baths) pool.push(b);
+    for (const f of h.beeSpots) pool.push(f);
+    for (const g of h.glades) pool.push(g);
+    if (!pool.length) return null;
+    return pool[Math.floor(rnd() * pool.length)];
+  }
+
+  private updateMoths(h: Habitat, inv: Invitation, _t: TimeState, _wx: WeatherState | null, dt: number): void {
+    const want = inv.moths;
+    for (let i = this.moths.length - 1; i >= 0; i--) {
+      const m = this.moths[i];
+      if (want === 0) {
+        m.alpha -= dt / 2600;
+        if (m.alpha <= 0) {
+          this.moths.splice(i, 1);
+          continue;
+        }
+      } else if (m.alpha < 1) {
+        m.alpha = Math.min(1, m.alpha + dt / 1800);
+      }
+      m.timer -= dt;
+      m.phase += dt * 0.005;
+      m.flutter += dt * 0.018;
+      if (m.state === 'rest') {
+        if (m.timer <= 0) {
+          m.state = 'fly';
+          m.timer = 3000 + rnd() * 6000;
+        }
+        continue;
+      }
+      if (m.timer <= 0 && rnd() < 0.28) {
+        m.state = 'rest';
+        m.timer = 2000 + rnd() * 4000;
+        continue;
+      }
+      // мотылёк летит рывками, тянется к свету (ax,ay)
+      m.dir += (rnd() - 0.5) * 0.008 * dt;
+      const v = 0.00062 * dt;
+      m.tx += Math.cos(m.dir) * v + Math.sin(m.flutter) * 0.00018 * dt;
+      m.ty += Math.sin(m.dir) * v * 0.7;
+      const dx = m.ax - m.tx;
+      const dy = m.ay - m.ty;
+      const d = Math.hypot(dx, dy);
+      if (d > 2.5) {
+        m.tx += (dx / d) * v * 1.2;
+        m.ty += (dy / d) * v * 1.2;
+      }
+      m.tx = clamp(m.tx, 1, GRID - 1);
+      m.ty = clamp(m.ty, 1, GRID - 1);
+    }
+    this.mothTimer -= dt;
+    while (this.moths.length < want && this.mothTimer <= 0) {
+      this.mothTimer = 400 + rnd() * 900;
+      const a = this.mothAnchor(h);
+      if (!a) break;
+      this.moths.push({
+        tx: a.x + (rnd() - 0.5) * 2.5,
+        ty: a.y + (rnd() - 0.5) * 2.5,
+        ax: a.x,
+        ay: a.y,
+        dir: rnd() * Math.PI * 2,
+        seed: Math.floor(rnd() * 10000),
+        phase: rnd() * 10,
+        timer: 3000 + rnd() * 6000,
+        alpha: 0,
+        state: 'fly',
+        flutter: rnd() * 10,
+      });
+      this.notes.push('meet_moth');
+    }
   }
 
   // ---------------- Цапля ----------------

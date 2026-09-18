@@ -112,15 +112,18 @@ export interface Fish {
   dir: number;
   speed: number;
   seed: number;
-  /** Центр родного пруда и его радиус. */
   homeX: number;
   homeY: number;
-  /** Плавный поворот. */
   turn: number;
-  /** Паника после удара цапли: миллисекунды бегства от точки. */
   panic: number;
   px: number;
   py: number;
+  state: 'wander' | 'approach' | 'feed' | 'hide';
+  feedMemory: Vec | null;
+  feedTimer: number;
+  boldness: number;
+  lastFed: number;
+  memoryStrength: number;
 }
 
 /** Порыв ветра — волна, проходящая через сад. */
@@ -227,6 +230,7 @@ export class Life {
     squirrel: 0,
     turtle: 0,
     bees: 0,
+    moths: 0,
   };
   /** Заметки в летопись: игровой цикл забирает их каждый кадр. */
   pendingNotes: string[] = [];
@@ -306,6 +310,12 @@ export class Life {
             panic: 0,
             px: 0,
             py: 0,
+            state: 'wander',
+            feedMemory: null,
+            feedTimer: 0,
+            boldness: 0.35 + hash2(o.seed + k, 11, 13) * 0.5,
+            lastFed: 0,
+            memoryStrength: 0,
           });
         }
       }
@@ -1104,48 +1114,93 @@ export class Life {
   }
 
   private updateFish(world: World, dt: number): void {
+    const feedSpots: Vec[] = [];
+    for (const o of world.objects) {
+      if (o.type === 'feeder' || o.type === 'bowl') {
+        const item = ITEM_BY_ID.get(o.type);
+        if (!item) continue;
+        const c = { x: o.tx + item.w / 2, y: o.ty + item.h / 2 };
+        for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+          const t = world.at(Math.floor(c.x + dx), Math.floor(c.y + dy));
+          if (t?.water) { feedSpots.push({ x: c.x + dx * 0.3, y: c.y + dy * 0.3 }); break; }
+        }
+      }
+    }
     for (const f of this.fish) {
-      // Плавный поворот + лёгкое виляние
+      f.feedTimer -= dt;
+      if (f.memoryStrength > 0) f.memoryStrength = Math.max(0, f.memoryStrength - dt * 0.00005);
       const wander = (hash2(Math.floor(performance.now() * 0.0007), f.seed, 3) - 0.5) * 0.9;
       f.turn = lerp(f.turn, wander, 0.02);
-
-      // Паника: прочь от удара, побыстрее, пока не отойдут
       let panicK = 1;
       if (f.panic > 0) {
         f.panic -= dt;
         panicK = 3.2;
+        f.state = 'hide';
+        f.feedTimer = 4000 + rnd() * 4000;
         const away = Math.atan2(f.ty - f.py, f.tx - f.px);
         let diff = away - f.dir;
         while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
         f.dir += clamp(diff, -0.3, 0.3) * (dt * 0.05);
       }
-
-      // Если впереди не вода — разворачиваемся к центру пруда
+      if (f.state === 'hide' && f.panic <= 0 && f.feedTimer <= 0) f.state = 'wander';
+      if (f.state !== 'hide' && f.feedMemory && f.memoryStrength > 0.15 && f.boldness > 0.45) {
+        const dx = f.feedMemory.x - f.tx;
+        const dy = f.feedMemory.y - f.ty;
+        const d = Math.hypot(dx, dy);
+        if (d < 0.5) {
+          f.state = 'feed';
+          f.feedTimer = 2000 + rnd() * 3000;
+          f.lastFed = performance.now();
+          f.memoryStrength = Math.min(1, f.memoryStrength + 0.25);
+        } else if (d < 6 && f.state !== 'feed') {
+          f.state = 'approach';
+          const targetAng = Math.atan2(dy, dx);
+          let diff = targetAng - f.dir;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          f.dir += clamp(diff, -0.08, 0.08) * (dt * 0.07) * f.boldness;
+        }
+      }
+      if (f.state === 'feed' && f.feedTimer <= 0) {
+        f.state = 'wander';
+        f.speed = 0.00022 + rnd() * 0.00016;
+      } else if (f.state === 'feed') f.speed = 0.00008;
+      if (feedSpots.length && f.state !== 'hide') {
+        let nearest: Vec | null = null;
+        let nd = Infinity;
+        for (const sp of feedSpots) {
+          const d = Math.hypot(sp.x - f.tx, sp.y - f.ty);
+          if (d < nd) { nd = d; nearest = sp; }
+        }
+        if (nearest && nd < 2.5) {
+          if (!f.feedMemory || nd < Math.hypot(f.feedMemory.x - f.tx, f.feedMemory.y - f.ty)) {
+            f.feedMemory = { x: nearest.x, y: nearest.y };
+            f.memoryStrength = Math.min(1, f.memoryStrength + 0.12);
+            f.boldness = Math.min(1, f.boldness + 0.02);
+          }
+          if (nd < 0.8 && rnd() < 0.02) {
+            f.state = 'feed';
+            f.feedTimer = 1800 + rnd() * 2500;
+            f.lastFed = performance.now();
+          }
+        }
+      }
       const aheadX = f.tx + Math.cos(f.dir) * 0.7;
       const aheadY = f.ty + Math.sin(f.dir) * 0.7;
       const ahead = world.at(Math.floor(aheadX), Math.floor(aheadY));
       if (!ahead?.water) {
         const toHome = Math.atan2(f.homeY - f.ty, f.homeX - f.tx);
-        // мягко доворачиваем к дому
         let diff = toHome - f.dir;
         while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
         f.dir += clamp(diff, -0.06, 0.06) * (dt * 0.06);
-      } else {
-        f.dir += f.turn * dt * 0.0012;
-      }
-
-      const v = f.speed * dt * panicK;
+      } else if (f.state !== 'approach' || f.panic > 0) f.dir += f.turn * dt * 0.0012;
+      const v = f.speed * dt * panicK * (f.state === 'approach' ? 1.6 : 1);
       const nx = f.tx + Math.cos(f.dir) * v;
       const ny = f.ty + Math.sin(f.dir) * v;
       const nt = world.at(Math.floor(nx), Math.floor(ny));
-      if (nt?.water) {
-        f.tx = nx;
-        f.ty = ny;
-      } else {
-        f.dir += 0.9;
-      }
+      if (nt?.water) { f.tx = nx; f.ty = ny; } else f.dir += 0.9;
     }
   }
 
