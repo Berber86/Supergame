@@ -407,6 +407,8 @@ export interface Invitation {
   turtle: number;
   /** Пчёлы: цветы и ульи, тёплый день. */
   bees: number;
+  /** Мотыльки: тёплая ночь у света и цветов, спутники светлячков. */
+  moths: number;
 }
 
 /**
@@ -553,8 +555,18 @@ export function invitations(h: Habitat, t: TimeState, wx: WeatherState | null, w
   }
 
   // ---- Хор: поют вместе, когда сыро и не полдень ----
+  let moths = 0;
+  if (season !== 'winter' && t.daylight < 0.3 && rain < 0.35 && !stormy) {
+    // Мотыльки приходят к свету и цветам тёплой ночью, вместе со светлячками
+    const lightK = h.shelters.length + h.baths.length;
+    moths = 2 + Math.min(6, Math.floor((h.beeSpots.length + lightK) / 2));
+    if (h.beeSpots.length === 0) moths = Math.max(0, moths - 2);
+    if (season === 'summer') moths += 2;
+    moths = Math.max(0, Math.min(8, moths));
+  }
+
   const choral = rain > 0.2 || wet > 0.4 || t.hours >= 18 || t.hours < 6;
   const chorus = frogs >= 2 && choral && season !== 'winter' ? frogs : 0;
 
-  return { frogs, dragonflies, feederBirds, guestCat, chorus, fireflies, heron, deer, hedgehog, mice, owl, squirrel, turtle, bees };
+  return { frogs, dragonflies, feederBirds, guestCat, chorus, fireflies, heron, deer, hedgehog, mice, owl, squirrel, turtle, bees, moths };
 }

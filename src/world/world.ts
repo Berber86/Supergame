@@ -21,6 +21,12 @@ import { GroundId, PlacedObject, SaveData, Tile } from './types';
 
 const SAVE_KEY = 'usadba.save.v3';
 
+export interface ChronicleToastNote {
+  id: string;
+  x: number;
+  y: number;
+}
+
 export class World {
   /** Сторона сада в тайлах — чтобы рендер не импортировал GRID отдельно. */
   readonly size = GRID;
@@ -38,7 +44,7 @@ export class World {
   /** Очередь уведомлений о новых вехах. */
   pendingMilestones: string[] = [];
   /** Очередь новых строк летописи — мягкие заметки поверх сада. */
-  pendingNotes: string[] = [];
+  pendingNotes: ChronicleToastNote[] = [];
   /** Границы последней правки земли — для частичной перерисовки. */
   lastTouched: { x0: number; y0: number; x1: number; y1: number } | null = null;
 
@@ -971,9 +977,9 @@ export class World {
    * уже видел. Некоторые строки заодно поднимают веху — но только те,
    * что нельзя «выполнить» нарочно.
    */
-  noteEvent(id: string, now: number): boolean {
+  noteEvent(id: string, now: number, x?: number, y?: number): boolean {
     if (!noteChronicle(this.chronicle, id, now)) return false;
-    this.pendingNotes.push(id);
+    this.pendingNotes.push({ id, x: x ?? GRID / 2, y: y ?? GRID / 2 });
     if (id === 'meet_frog') this.checkMilestone('first_frog');
     if (id === 'guest_stayed') this.checkMilestone('second_cat');
     if (id === 'chorus') this.checkMilestone('frog_chorus');

@@ -21,6 +21,7 @@ import { TimeState } from '../core/clock';
 import { Habitat, Invitation, Vec } from './habitat';
 import { Threat } from './residents';
 import { WeatherState } from './weatherState';
+import { ChronicleToastNote } from './world';
 
 const rnd = makeRng(9173);
 
@@ -45,6 +46,22 @@ export function fireflyGlow(f: Firefly, now: number): number {
   if (x > 0.42) return 0;
   const s = Math.sin((Math.PI * x) / 0.42);
   return s * s;
+}
+
+// ---------------- Мотыльки (спутники светлячков) ----------------
+
+export interface Moth {
+  tx: number;
+  ty: number;
+  ax: number;
+  ay: number;
+  dir: number;
+  seed: number;
+  phase: number;
+  timer: number;
+  alpha: number;
+  state: 'fly' | 'rest';
+  flutter: number;
 }
 
 // ---------------- Цапля ----------------
@@ -213,6 +230,7 @@ export interface Bee {
 
 export class Wildlife {
   fireflies: Firefly[] = [];
+  moths: Moth[] = [];
   heron: Heron | null = null;
   deer: Deer[] = [];
   hedgehogs: Hedgehog[] = [];
@@ -224,8 +242,9 @@ export class Wildlife {
 
   onStrike: ((x: number, y: number, caught: boolean) => void) | null = null;
 
-  private notes: string[] = [];
+  private notes: ChronicleToastNote[] = [];
   private ffTimer = 0;
+  private mothTimer = 0;
   private heronTimer = 120_000;
   private deerTimer = 90_000;
   private hedgehogTimer = 70_000;
@@ -237,14 +256,20 @@ export class Wildlife {
   private danceTimer = 0;
   private danced = false;
 
-  takeNotes(): string[] {
+  takeNotes(): ChronicleToastNote[] {
     const out = this.notes;
     this.notes = [];
     return out;
   }
 
+  private pushNote(id: string, x?: number, y?: number): void {
+    if (this.notes.length >= 8) return;
+    this.notes.push({ id, x: x ?? GRID / 2, y: y ?? GRID / 2 });
+  }
+
   reset(): void {
     this.fireflies = [];
+    this.moths = [];
     this.heron = null;
     this.deer = [];
     this.hedgehogs = [];
@@ -255,6 +280,7 @@ export class Wildlife {
     this.bees = [];
     this.notes = [];
     this.ffTimer = 0;
+    this.mothTimer = 0;
     this.heronTimer = 120_000;
     this.deerTimer = 90_000;
     this.hedgehogTimer = 70_000;
@@ -277,6 +303,7 @@ export class Wildlife {
     threats: Threat[],
   ): void {
     this.updateFireflies(h, inv, t, wx, dt);
+    this.updateMoths(h, inv, t, wx, dt);
     this.updateHeron(h, inv, t, dt, now, threats);
     this.updateDeer(h, inv, t, dt, now, threats);
     this.updateHedgehogs(h, inv, t, dt, now, threats);
@@ -348,7 +375,7 @@ export class Wildlife {
         timer: 4000 + rnd() * 8000,
         alpha: 0,
       });
-      this.notes.push('meet_firefly');
+      this.pushNote('meet_firefly', a.x, a.y);
     }
     const wet = wx ? wx.wetness : 0;
     if (!this.danced && this.fireflies.length >= 8 && wet > 0.35 && t.daylight < 0.18) {
@@ -356,7 +383,7 @@ export class Wildlife {
       if (this.danceTimer > 9000 + 6000 * rnd()) {
         this.danced = true;
         this.danceTimer = 0;
-        this.notes.push('firefly_dance');
+        this.pushNote('firefly_dance', this.fireflies[0]?.tx, this.fireflies[0]?.ty);
       }
     } else if (this.fireflies.length < 8 || t.daylight > 0.3) {
       this.danceTimer = 0;
@@ -370,6 +397,81 @@ export class Wildlife {
     for (const tr of h.trees) pool.push({ x: tr.x + 1, y: tr.y + 1 });
     if (!pool.length) return null;
     return pool[Math.floor(rnd() * pool.length)];
+  }
+
+  private mothAnchor(h: Habitat): Vec | null {
+    const pool: Vec[] = [];
+    for (const s of h.shelters) pool.push(s);
+    for (const b of h.baths) pool.push(b);
+    for (const f of h.beeSpots) pool.push(f);
+    for (const g of h.glades) pool.push(g);
+    if (!pool.length) return null;
+    return pool[Math.floor(rnd() * pool.length)];
+  }
+
+  private updateMoths(h: Habitat, inv: Invitation, _t: TimeState, _wx: WeatherState | null, dt: number): void {
+    const want = inv.moths;
+    for (let i = this.moths.length - 1; i >= 0; i--) {
+      const m = this.moths[i];
+      if (want === 0) {
+        m.alpha -= dt / 2600;
+        if (m.alpha <= 0) {
+          this.moths.splice(i, 1);
+          continue;
+        }
+      } else if (m.alpha < 1) {
+        m.alpha = Math.min(1, m.alpha + dt / 1800);
+      }
+      m.timer -= dt;
+      m.phase += dt * 0.005;
+      m.flutter += dt * 0.018;
+      if (m.state === 'rest') {
+        if (m.timer <= 0) {
+          m.state = 'fly';
+          m.timer = 3000 + rnd() * 6000;
+        }
+        continue;
+      }
+      if (m.timer <= 0 && rnd() < 0.28) {
+        m.state = 'rest';
+        m.timer = 2000 + rnd() * 4000;
+        continue;
+      }
+      // мотылёк летит рывками, тянется к свету (ax,ay)
+      m.dir += (rnd() - 0.5) * 0.008 * dt;
+      const v = 0.00062 * dt;
+      m.tx += Math.cos(m.dir) * v + Math.sin(m.flutter) * 0.00018 * dt;
+      m.ty += Math.sin(m.dir) * v * 0.7;
+      const dx = m.ax - m.tx;
+      const dy = m.ay - m.ty;
+      const d = Math.hypot(dx, dy);
+      if (d > 2.5) {
+        m.tx += (dx / d) * v * 1.2;
+        m.ty += (dy / d) * v * 1.2;
+      }
+      m.tx = clamp(m.tx, 1, GRID - 1);
+      m.ty = clamp(m.ty, 1, GRID - 1);
+    }
+    this.mothTimer -= dt;
+    while (this.moths.length < want && this.mothTimer <= 0) {
+      this.mothTimer = 400 + rnd() * 900;
+      const a = this.mothAnchor(h);
+      if (!a) break;
+      this.moths.push({
+        tx: a.x + (rnd() - 0.5) * 2.5,
+        ty: a.y + (rnd() - 0.5) * 2.5,
+        ax: a.x,
+        ay: a.y,
+        dir: rnd() * Math.PI * 2,
+        seed: Math.floor(rnd() * 10000),
+        phase: rnd() * 10,
+        timer: 3000 + rnd() * 6000,
+        alpha: 0,
+        state: 'fly',
+        flutter: rnd() * 10,
+      });
+      this.pushNote('meet_moth', a.x, a.y);
+    }
   }
 
   // ---------------- Цапля ----------------
@@ -433,7 +535,7 @@ export class Wildlife {
         if (hr.phase >= 1) {
           hr.state = 'stand';
           hr.timer = 16_000 + rnd() * 26_000;
-          this.notes.push('meet_heron');
+          this.pushNote('meet_heron', hr.tx, hr.ty);
         }
         break;
       }
@@ -479,7 +581,7 @@ export class Wildlife {
           const caught = rnd() < 0.35;
           if (caught) {
             hr.fish = 3;
-            this.notes.push('heron_strike');
+            this.pushNote('heron_strike', hr.tx, hr.ty);
           }
           if (this.onStrike) this.onStrike(hr.tx, hr.ty, caught);
         }
@@ -634,8 +736,8 @@ export class Wildlife {
       born: now,
       stay: 150_000 + rnd() * 250_000,
     });
-    this.notes.push('meet_deer');
-    if (this.deer.length >= 2) this.notes.push('deer_pair');
+    this.pushNote('meet_deer', g.x, g.y);
+    if (this.deer.length >= 2) this.pushNote('deer_pair', g.x, g.y);
   }
 
   // ---------------- Ёжик ----------------
@@ -650,7 +752,7 @@ export class Wildlife {
         e.state = 'curl';
         e.curl = 4000 + rnd() * 6000;
         e.timer = e.curl + 1000;
-        if (rnd() < 0.4) this.notes.push('hedgehog_curl');
+        if (rnd() < 0.4) this.pushNote('hedgehog_curl', e.tx, e.ty);
       }
       if (now - e.born > e.stay && e.state !== 'leave' && e.state !== 'curl') {
         e.state = 'leave';
@@ -754,7 +856,7 @@ export class Wildlife {
       stay: 120_000 + rnd() * 200_000,
       curl: 0,
     });
-    this.notes.push('meet_hedgehog');
+    this.pushNote('meet_hedgehog', spot.x, spot.y);
   }
 
   // ---------------- Мышка ----------------
@@ -778,7 +880,7 @@ export class Wildlife {
           m.panicX = danger.x;
           m.panicY = danger.y;
           m.timer = 4000;
-          if (rnd() < 0.5) this.notes.push('mouse_fled');
+          if (rnd() < 0.5) this.pushNote('mouse_fled', m.tx, m.ty);
         }
       }
       if (now - m.born > m.stay && m.state !== 'leave' && m.state !== 'flee') {
@@ -883,7 +985,7 @@ export class Wildlife {
       panicY: 0,
       panic: 0,
     });
-    this.notes.push('meet_mouse');
+    this.pushNote('meet_mouse', spot.x, spot.y);
   }
 
   private nearestMouseSpot(h: Habitat, x: number, y: number): Vec | null {
@@ -941,7 +1043,7 @@ export class Wildlife {
               o.state = 'hoot';
               o.timer = 1800 + rnd() * 1200;
               o.hoot = 1800;
-              if (rnd() < 0.5) this.notes.push('owl_hoot');
+              if (rnd() < 0.5) this.pushNote('owl_hoot', o.tx, o.ty);
             } else if (r < 0.55 && this.mice.length > 0) {
               // Охота на мышку
               const m = this.mice[Math.floor(rnd() * this.mice.length)];
@@ -996,7 +1098,7 @@ export class Wildlife {
           o.tx = lerp(o.from.x, o.target.x, o.phase);
           o.ty = lerp(o.from.y, o.target.y, o.phase);
           if (o.phase >= 0.6 && o.phase < 0.7 && rnd() < 0.6) {
-            this.notes.push('owl_hunt');
+            this.pushNote('owl_hunt', o.tx, o.ty);
           }
           if (o.phase >= 1) {
             // Вернуться на насест
@@ -1049,7 +1151,7 @@ export class Wildlife {
       huntY: 0,
       hoot: 0,
     });
-    this.notes.push('meet_owl');
+    this.pushNote('meet_owl', spot.x, spot.y);
   }
 
   // ---------------- Белка ----------------
@@ -1118,7 +1220,7 @@ export class Wildlife {
               s.state = 'cache';
               s.timer = 2000 + rnd() * 2500;
               s.hasNut = rnd() < 0.6;
-              if (s.hasNut && rnd() < 0.4) this.notes.push('squirrel_cache');
+              if (s.hasNut && rnd() < 0.4) this.pushNote('squirrel_cache', s.tx, s.ty);
             } else {
               s.state = 'look';
               s.timer = 1500 + rnd() * 2500;
@@ -1193,7 +1295,7 @@ export class Wildlife {
       hasNut: false,
       panic: 0,
     });
-    this.notes.push('meet_squirrel');
+    this.pushNote('meet_squirrel', spot.x, spot.y);
   }
 
   private nearestSquirrelSpot(h: Habitat, x: number, y: number): Vec | null {
@@ -1243,7 +1345,7 @@ export class Wildlife {
           if (tu.phase >= 1) {
             tu.state = 'bask';
             tu.timer = 12000 + rnd() * 20000;
-            if (rnd() < 0.3) this.notes.push('turtle_bask');
+            if (rnd() < 0.3) this.pushNote('turtle_bask', tu.tx, tu.ty);
           }
           break;
         }
@@ -1342,7 +1444,7 @@ export class Wildlife {
       stay: 160_000 + rnd() * 250_000,
       hide: 0,
     });
-    this.notes.push('meet_turtle');
+    this.pushNote('meet_turtle', spot.x, spot.y);
   }
 
   // ---------------- Пчёлы ----------------
@@ -1422,9 +1524,9 @@ export class Wildlife {
         carrying: rnd() < 0.5,
         alpha: 0,
       });
-      if (this.bees.length === 1) this.notes.push('meet_bee');
+      if (this.bees.length === 1) this.pushNote('meet_bee', a.x, a.y);
     }
-    if (this.bees.length >= 5 && rnd() < 0.002) this.notes.push('bee_swarm');
+    if (this.bees.length >= 5 && rnd() < 0.002) this.pushNote('bee_swarm', this.bees[0]?.tx, this.bees[0]?.ty);
   }
 
   private exitFrom(x: number, y: number): Vec {
