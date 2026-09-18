@@ -1,14 +1,17 @@
 /**
  * Школа тишины: экран практик и сеансов.
  *
- * Полноэкранный лист поверх сада. Три вида: выбор (практики и уроки),
- * текст урока и сам сеанс с кругом дыхания. Ничего не давит: длительность
- * выбирается до, а не во время, встать можно одной кнопкой в любую секунду,
- * и это засчитается как состоявшееся сидение.
+ * Переработано: уроки хороши, а практика была неочевидна.
+ * Теперь каждая практика имеет:
+ *  - что это (what)
+ *  - как делать (steps)
+ *  - предпросмотр перед стартом с обратным отсчётом
+ *  - постоянную подсказку во время сеанса: вдох/выдох с секундами,
+ *    счёт, прогресс трёх вдохов, шаги, слушание.
  *
- * Сеанс живёт в src/zen/session.ts без DOM; панель читает его `view`,
+ * Сеанс живёт в src/zen/session.ts без DOM; панель читает view,
  * раздаёт события звуку и рисует круг. Пока сеанс идёт, сцена сада не
- * рисуется вовсе — батарея телефона важнее картинки за непрозрачным листом.
+ * рисуется — батарея важнее картинки за непрозрачным листом.
  */
 
 import './practice.css';
@@ -19,9 +22,7 @@ import { Session, SessionEvent } from '../zen/session';
 import { svgIcon } from './icons';
 
 export interface PracticeHooks {
-  /** Сеанс или выбор открыты: главному циклу не нужно рисовать сад. */
   onActive(active: boolean): void;
-  /** Приглушить сад на время сеанса. */
   duck(v: number): void;
   bowl(amount?: number): void;
   han(amount?: number): void;
@@ -39,7 +40,6 @@ function minutesPhrase(n: number): string {
   return `${n} минут`;
 }
 
-/** Именительный: «одна минута», «три минуты», «двадцать минут». */
 function minutesNominative(n: number): string {
   const mod10 = n % 10;
   const mod100 = n % 100;
@@ -67,6 +67,10 @@ export class PracticePanel {
   private lastPractice: Practice | null = null;
   private lastMinutes = 0;
   private endTimer = 0;
+  private readyTimer = 0;
+  private guideEl: HTMLElement | null = null;
+  private breathLabel: HTMLElement | null = null;
+  private countEl: HTMLElement | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -124,19 +128,22 @@ export class PracticePanel {
     const done = p.lessons.length;
     const next = LESSONS.find((l) => !p.lessons.includes(l.id)) ?? null;
 
-    const practiceRows = PRACTICES.map(
-      (pr) => `
+    const practiceRows = PRACTICES.map((pr) => {
+      const stepsPreview = pr.steps.slice(0, 2).join(' → ');
+      const count = p.sessions[pr.id] ?? 0;
+      return `
       <div class="pr-row" data-practice="${pr.id}">
         <span class="pr-row-kanji" lang="ja">${pr.kanji}</span>
         <div class="pr-row-info">
-          <div class="pr-row-name">${pr.name}</div>
-          <div class="pr-row-hint">${pr.hint}</div>
+          <div class="pr-row-name">${pr.name}<span class="pr-row-what"> — ${pr.what}</span></div>
+          <div class="pr-row-hint">${pr.hint}${count ? ` · сидели ${count} раз` : ''}</div>
+          <div class="pr-row-steps">${stepsPreview}</div>
         </div>
         <div class="pr-chips">
           ${pr.minutes.map((m, i) => `<span class="pr-chip${i === 0 ? ' on' : ''}" data-min="${m}">${m} мин</span>`).join('')}
         </div>
-      </div>`,
-    ).join('');
+      </div>`;
+    }).join('');
 
     const lessonRows = LESSONS.map(
       (l) => `
@@ -144,17 +151,22 @@ export class PracticePanel {
         <span class="pr-row-n">${l.n}</span>
         <div class="pr-row-info">
           <div class="pr-row-name"><span lang="ja">${l.kanji}</span> ${l.title}</div>
-          <div class="pr-row-hint">${p.lessons.includes(l.id) ? 'прожито' : l.id === next?.id ? 'следующий' : ' '}</div>
+          <div class="pr-row-hint">${p.lessons.includes(l.id) ? 'прожито' : l.id === next?.id ? 'следующий → открой и сядь' : 'урок'}</div>
         </div>
       </div>`,
     ).join('');
 
     this.body.innerHTML = `
       <div class="pr-menu">
-        <div class="pr-lead">Сесть можно прямо сейчас: практике не нужны ни постройка, ни погода, ни особое время суток.</div>
+        <div class="pr-lead">Сесть можно прямо сейчас: практике не нужны ни постройка, ни погода, ни особое время суток. Выбери, что делать, и нажми время — перед стартом покажем как.</div>
+        <div class="pr-how">
+          <div class="pr-how-item"><span>1</span> Выбери практику — смотри «что это» и два первых шага</div>
+          <div class="pr-how-item"><span>2</span> Нажми минуты — увидишь все шаги и дыхание</div>
+          <div class="pr-how-item"><span>3</span> Сядь. Круг, счёт и подсказки ведут тебя, встать можно в любой момент</div>
+        </div>
         <div class="pr-cols">
           <section>
-            <div class="pr-sec">Сесть</div>
+            <div class="pr-sec">Сесть — выбери что делать</div>
             <div class="pr-list">${practiceRows}</div>
           </section>
           <section>
@@ -162,25 +174,61 @@ export class PracticePanel {
             <div class="pr-list">${lessonRows}</div>
           </section>
         </div>
-        ${p.minutes > 0 ? `<div class="pr-memory">в вашей тишине — ${minutesNominative(p.minutes)}</div>` : ''}
+        ${p.minutes > 0 ? `<div class="pr-memory">в вашей тишине — ${minutesNominative(p.minutes)} · ${Object.values(p.sessions).reduce((a, b) => a + b, 0)} сеансов</div>` : ''}
         <div class="pr-care">${CARE_NOTE}</div>
       </div>`;
 
     this.body.querySelectorAll<HTMLElement>('.pr-row[data-practice]').forEach((row) => {
       const id = row.dataset.practice!;
-      row
-        .querySelector('.pr-row-info')!
-        .addEventListener('click', () => this.start(id, PRACTICE_BY_ID.get(id)!.minutes[0]));
+      row.querySelector('.pr-row-info')!.addEventListener('click', () => this.renderPractice(id, PRACTICE_BY_ID.get(id)!.minutes[0]));
       row.querySelectorAll<HTMLElement>('.pr-chip').forEach((chip) => {
         chip.addEventListener('click', (e) => {
           e.stopPropagation();
-          this.start(id, Number(chip.dataset.min));
+          this.renderPractice(id, Number(chip.dataset.min));
         });
       });
     });
     this.body.querySelectorAll<HTMLElement>('.pr-row[data-lesson]').forEach((row) => {
       row.addEventListener('click', () => this.renderLesson(row.dataset.lesson!));
     });
+  }
+
+  private renderPractice(id: string, minutes: number): void {
+    const pr = PRACTICE_BY_ID.get(id);
+    if (!pr) return;
+    this.lastPractice = pr;
+    this.lastMinutes = minutes;
+    const breathInfo = pr.breath ? `Дыхание: вдох ${pr.breath.inhale}с → выдох ${pr.breath.exhale}с` : 'Дыхание — естественное, не управляйте им';
+    this.body.innerHTML = `
+      <div class="pr-practice">
+        <div class="pr-l-head">
+          <span class="pr-l-kanji" lang="ja">${pr.kanji}</span>
+          <div>
+            <div class="pr-l-n">практика · ${minutes} ${minutes === 1 ? 'минута' : 'минут'}</div>
+            <h3>${pr.name}</h3>
+            <div class="pr-p-what">${pr.what}</div>
+          </div>
+        </div>
+        <div class="pr-p-breath">${breathInfo}</div>
+        <div class="pr-p-steps">
+          <div class="pr-sec">Как делать — ${pr.steps.length} шага</div>
+          <ol>
+            ${pr.steps.map((s, i) => `<li><span class="pr-step-n">${i + 1}</span> ${s}</li>`).join('')}
+          </ol>
+        </div>
+        <div class="pr-p-lines">
+          <div class="pr-sec">Тихие подсказки во время</div>
+          <div class="pr-lines">${pr.lines.map((l) => `<span>“${l}”</span>`).join(' · ')}</div>
+        </div>
+        <div class="pr-l-actions">
+          <div class="pr-btn" data-start>сесть на ${minutes} ${minutes === 1 ? 'минуту' : 'минут'} — покажем 3-2-1</div>
+          <div class="pr-btn ghost" data-back>назад</div>
+        </div>
+        <div class="pr-p-meta">Встать можно в любой момент — это тоже засчитается. Чаша в начале и две в конце.</div>
+      </div>`;
+    this.body.querySelector('[data-start]')!.addEventListener('click', () => this.startReady(pr.id, minutes));
+    this.body.querySelector('[data-back]')!.addEventListener('click', () => this.renderMenu());
+    this.body.scrollTop = 0;
   }
 
   private renderLesson(id: string): void {
@@ -193,20 +241,64 @@ export class PracticePanel {
         <div class="pr-l-head">
           <span class="pr-l-kanji" lang="ja">${l.kanji}</span>
           <div>
-            <div class="pr-l-n">урок ${l.n}</div>
+            <div class="pr-l-n">урок ${l.n} · практика ${pr.name}</div>
             <h3>${l.title}</h3>
+            <div class="pr-p-what">${pr.what}</div>
           </div>
         </div>
         <div class="pr-l-text">${l.text.map((t) => `<p>${t}</p>`).join('')}</div>
+        <div class="pr-p-steps">
+          <div class="pr-sec">Как делать сейчас — ${pr.steps.length} шага</div>
+          <ol>
+            ${pr.steps.map((s, i) => `<li><span class="pr-step-n">${i + 1}</span> ${s}</li>`).join('')}
+          </ol>
+        </div>
         <div class="pr-l-notice"><em>Что заметить</em>${l.notice}</div>
         <div class="pr-l-actions">
           <div class="pr-btn" data-sit>сесть на ${l.minutes} ${l.minutes === 1 ? 'минуту' : 'минут'}</div>
           <div class="pr-btn ghost" data-back>позже</div>
         </div>
       </div>`;
-    this.body.querySelector('[data-sit]')!.addEventListener('click', () => this.start(pr.id, l.minutes));
+    this.body.querySelector('[data-sit]')!.addEventListener('click', () => this.startReady(pr.id, l.minutes, l.id));
     this.body.querySelector('[data-back]')!.addEventListener('click', () => this.renderMenu());
     this.body.scrollTop = 0;
+  }
+
+  // ---------------- Подготовка к старту: 3-2-1 ----------------
+
+  private startReady(practiceId: string, minutes: number, lessonId?: string): void {
+    const pr = PRACTICE_BY_ID.get(practiceId);
+    if (!pr) return;
+    if (lessonId) this.lessonId = lessonId;
+    this.lastPractice = pr;
+    this.lastMinutes = minutes;
+    this.body.innerHTML = `
+      <div class="pr-ready">
+        <div class="pr-ready-kanji" lang="ja">${pr.kanji}</div>
+        <div class="pr-ready-name">${pr.name} · ${minutes} мин</div>
+        <div class="pr-ready-what">${pr.what}</div>
+        <div class="pr-ready-step" data-step>${pr.steps[0]}</div>
+        <div class="pr-ready-count" data-count>3</div>
+        <div class="pr-ready-hint">сядьте, поправьте спину — чаша через 3 секунды</div>
+        <div class="pr-btn ghost" data-cancel>отменить</div>
+      </div>`;
+    this.body.querySelector('[data-cancel]')!.addEventListener('click', () => this.renderPractice(pr.id, minutes));
+    let n = 3;
+    let stepIdx = 0;
+    const stepEl = this.body.querySelector<HTMLElement>('[data-step]')!;
+    const countEl = this.body.querySelector<HTMLElement>('[data-count]')!;
+    this.readyTimer = window.setInterval(() => {
+      n -= 1;
+      stepIdx = Math.min(pr.steps.length - 1, stepIdx + 1);
+      stepEl.textContent = pr.steps[stepIdx];
+      if (n > 0) {
+        countEl.textContent = String(n);
+      } else {
+        window.clearInterval(this.readyTimer);
+        this.readyTimer = 0;
+        this.start(practiceId, minutes);
+      }
+    }, 1000) as unknown as number;
   }
 
   private start(practiceId: string, minutes: number): void {
@@ -217,13 +309,25 @@ export class PracticePanel {
     this.lastMinutes = minutes;
     this.body.innerHTML = `
       <div class="pr-session">
+        <div class="pr-session-head">
+          <span class="pr-session-kanji" lang="ja">${pr.kanji}</span>
+          <span class="pr-session-name">${pr.name}</span>
+          <span class="pr-session-meta" data-meta>осталось ${minutes}:00</span>
+        </div>
+        <div class="pr-guide" data-guide>${pr.steps[0]}</div>
+        <div class="pr-breath" data-breath></div>
+        <div class="pr-count" data-count></div>
         <canvas class="pr-canvas" aria-hidden="true"></canvas>
         <div class="pr-line"></div>
-        <div class="pr-meta"></div>
-        <div class="pr-btn pr-rise" role="button" tabindex="0">встать</div>
+        <div class="pr-dots" data-dots></div>
+        <div class="pr-btn pr-rise" role="button" tabindex="0">встать — засчитается</div>
+        <div class="pr-session-hint">вдох — круг растёт · выдох — сужается · мысль пришла — вернитесь</div>
       </div>`;
     this.canvas = this.body.querySelector('canvas')!;
     this.ctx = this.canvas.getContext('2d')!;
+    this.guideEl = this.body.querySelector('[data-guide]')!;
+    this.breathLabel = this.body.querySelector('[data-breath]')!;
+    this.countEl = this.body.querySelector('[data-count]')!;
     this.sizeCanvas();
     const rise = this.body.querySelector<HTMLElement>('.pr-rise')!;
     rise.addEventListener('click', () => this.rise());
@@ -247,7 +351,6 @@ export class PracticePanel {
     this.canvas.height = Math.max(2, Math.round(h * dpr));
   }
 
-  /** Встали сами: сеанс всё равно состоялся и будет записан. */
   private rise(): void {
     const s = this.session;
     if (!s || s.done) return;
@@ -263,18 +366,33 @@ export class PracticePanel {
     this.hooks.duck(0);
     this.session = null;
     const again = pr ? pr.id : 'sit';
+    const feedback = this.feedbackFor(pr, minutes, early);
     this.body.innerHTML = `
       <div class="pr-end">
         <div class="pr-end-kanji" lang="ja">円</div>
         <div class="pr-end-line">вы сидели ${minutesPhrase(minutes)}</div>
         <div class="pr-end-sub">${early ? 'встать раньше — тоже практика' : 'чаша конца. звук растаял сам'}</div>
+        <div class="pr-end-feedback">${feedback}</div>
         <div class="pr-actions">
-          <div class="pr-btn" data-again>сесть ещё</div>
+          <div class="pr-btn" data-again>сесть ещё на ${this.lastMinutes} мин</div>
+          <div class="pr-btn ghost" data-menu>к списку практик</div>
           <div class="pr-btn ghost" data-garden>вернуться в сад</div>
         </div>
       </div>`;
-    this.body.querySelector('[data-again]')!.addEventListener('click', () => this.start(again, this.lastMinutes));
+    this.body.querySelector('[data-again]')!.addEventListener('click', () => this.startReady(again, this.lastMinutes));
+    this.body.querySelector('[data-menu]')!.addEventListener('click', () => this.renderMenu());
     this.body.querySelector('[data-garden]')!.addEventListener('click', () => this.close());
+  }
+
+  private feedbackFor(pr: Practice | null, minutes: number, early: boolean): string {
+    if (!pr) return '';
+    if (early && minutes === 1) return 'Одна минута — уже остановка. В следующий раз попробуй две.';
+    if (pr.id === 'count') return `Счёт — опора, а не экзамен. Если сбились, вы заметили — значит, внимание работало.`;
+    if (pr.id === 'three') return 'Три вдоха можно делать посреди дела — перед письмом, звонком, чаем.';
+    if (pr.id === 'walk') return 'Медленный шаг — та же тишина, только на ногах. Попробуй в коридоре.';
+    if (pr.id === 'listen') return 'Звуки сами приходят и уходят. Тишина между — тоже звук.';
+    if (pr.id === 'kindness') return 'Доброта — не награда за хорошую медитацию. Она и есть медитация.';
+    return 'Ничего не происходит — и это хорошо. Спина держалась сама.';
   }
 
   private stopSession(record: boolean): void {
@@ -288,6 +406,10 @@ export class PracticePanel {
     if (this.endTimer) {
       window.clearTimeout(this.endTimer);
       this.endTimer = 0;
+    }
+    if (this.readyTimer) {
+      window.clearInterval(this.readyTimer);
+      this.readyTimer = 0;
     }
   }
 
@@ -310,10 +432,9 @@ export class PracticePanel {
     this.draw(now);
     this.updateMeta();
     if (s.done) {
-      // чаши конца: две, с интервалом, и только потом итог
       this.hooks.bowl(0.9);
-      this.endTimer = window.setTimeout(() => this.hooks.bowl(0.7), 1700);
-      this.endTimer = window.setTimeout(() => this.finish(s.minutesSat(), false), 3600);
+      this.endTimer = window.setTimeout(() => this.hooks.bowl(0.7), 1700) as unknown as number;
+      this.endTimer = window.setTimeout(() => this.finish(s.minutesSat(), false), 3600) as unknown as number;
       this.raf = 0;
       return;
     }
@@ -321,24 +442,49 @@ export class PracticePanel {
   };
 
   private onEvent(e: SessionEvent): void {
+    const pr = this.lastPractice;
     switch (e.type) {
       case 'start':
         this.hooks.bowl(0.9);
+        if (this.guideEl && pr) this.guideEl.textContent = pr.steps[0];
         break;
       case 'breath':
         this.hooks.breath(e.phase, e.seconds);
+        if (this.breathLabel) {
+          const label = e.phase === 'in' ? `вдох ${e.seconds}с` : `выдох ${e.seconds}с`;
+          this.breathLabel.textContent = label;
+          this.breathLabel.className = `pr-breath ${e.phase}`;
+        }
+        // Обновляем гайд по шагам дыхания
+        if (this.guideEl && pr && pr.breath) {
+          if (e.phase === 'in') {
+            const idx = Math.min(pr.steps.length - 1, Math.floor(this.session!.view.cycles / 2));
+            this.guideEl.textContent = pr.steps[idx] ?? pr.steps[0];
+          }
+        }
         break;
       case 'han':
         this.hooks.han(0.8);
+        if (this.guideEl) this.guideEl.textContent = 'хан — полпути. заметь, где ты сейчас';
         break;
       case 'line':
         this.setLine(e.text);
         break;
       case 'count':
         this.setLine(`вдох — ${NUM_WORDS[e.n] ?? e.n}`);
+        if (this.countEl) {
+          this.countEl.textContent = `${NUM_WORDS[e.n] ?? e.n}`;
+          this.countEl.className = 'pr-count show';
+          window.setTimeout(() => {
+            if (this.countEl) this.countEl.className = 'pr-count';
+          }, 1200);
+        }
+        this.updateDots();
         break;
       case 'close':
         this.setLine('время вышло. досидите выдох');
+        if (this.guideEl) this.guideEl.textContent = 'время вышло — досидите выдох и вставайте когда готовы';
+        if (this.breathLabel) this.breathLabel.textContent = '';
         break;
     }
   }
@@ -350,12 +496,25 @@ export class PracticePanel {
 
   private updateMeta(): void {
     const s = this.session;
-    const el = this.body.querySelector('.pr-meta');
+    const el = this.body.querySelector<HTMLElement>('[data-meta]');
     if (!s || !el) return;
-    const bits: string[] = [];
-    if (s.view.count > 0) bits.push(`счёт · ${NUM_WORDS[s.view.count] ?? s.view.count}`);
-    bits.push(`осталось ${timeLeft(s.view.total - s.view.elapsed)}`);
-    el.textContent = bits.join('   ·   ');
+    el.textContent = `осталось ${timeLeft(s.view.total - s.view.elapsed)} · ${s.view.count ? `счёт ${NUM_WORDS[s.view.count] ?? s.view.count}` : s.practice.mode}`;
+  }
+
+  private updateDots(): void {
+    const s = this.session;
+    const dots = this.body.querySelector<HTMLElement>('[data-dots]');
+    if (!s || !dots) return;
+    const pr = s.practice;
+    if (pr.mode === 'three') {
+      const n = Math.min(3, s.view.cycles);
+      dots.innerHTML = Array.from({ length: 3 }, (_, i) => `<span class="${i < n ? 'on' : ''}">●</span>`).join('');
+    } else if (pr.mode === 'count') {
+      const c = s.view.count;
+      dots.innerHTML = Array.from({ length: 10 }, (_, i) => `<span class="${i + 1 <= c ? 'on' : ''}">${i + 1}</span>`).join('');
+    } else {
+      dots.innerHTML = '';
+    }
   }
 
   // ---------------- Круг ----------------
@@ -376,16 +535,14 @@ export class PracticePanel {
     const ink = this.night ? '214,220,232' : '46,40,36';
     const mode = s.practice.mode;
 
-    // тонкая дуга оставшегося времени: не циферблат, а след
     const left = 1 - Math.min(1, s.view.elapsed / s.view.total);
     g.strokeStyle = `rgba(${ink},0.22)`;
-    g.lineWidth = 1.5 * dpr;
+    g.lineWidth = 2.2 * dpr;
     g.beginPath();
-    g.arc(cx, cy, R * 1.16, -Math.PI / 2, -Math.PI / 2 + left * Math.PI * 2);
+    g.arc(cx, cy, R * 1.18, -Math.PI / 2, -Math.PI / 2 + left * Math.PI * 2);
     g.stroke();
 
-    // направляющий круг
-    g.strokeStyle = `rgba(${ink},0.12)`;
+    g.strokeStyle = `rgba(${ink},0.10)`;
     g.lineWidth = 1 * dpr;
     g.beginPath();
     g.arc(cx, cy, R, 0, Math.PI * 2);
@@ -396,78 +553,111 @@ export class PracticePanel {
     const breathK = v.breathPhase === 'in' ? ease(v.breathT) : 1 - ease(v.breathT);
 
     if (mode === 'listen') {
-      // круги от камня, брошенного в воду: звук приходит и уходит
       for (let i = 0; i < 3; i++) {
         const t = (now / 5200 + i / 3) % 1;
-        g.strokeStyle = `rgba(${ink},${0.3 * (1 - t)})`;
-        g.lineWidth = 1.6 * dpr;
+        g.strokeStyle = `rgba(${ink},${0.32 * (1 - t)})`;
+        g.lineWidth = 1.8 * dpr;
         g.beginPath();
         g.arc(cx, cy, R * (0.2 + t * 0.95), 0, Math.PI * 2);
         g.stroke();
       }
+      g.fillStyle = `rgba(${ink},0.55)`;
+      g.font = `${Math.round(R * 0.18)}px 'Cormorant Garamond', serif`;
+      g.textAlign = 'center';
+      g.fillText('слушай', cx, cy);
     } else if (mode === 'walk') {
-      // дорожка шагов: точка идёт по дуге, шаг на фазу
       const steps = Math.min(60, v.cycles * 2 + (v.breathPhase === 'out' ? 1 : 0));
       g.lineCap = 'round';
       for (let i = 0; i <= steps; i++) {
         const a = -Math.PI / 2 + (i / 60) * Math.PI * 2;
         const x = cx + Math.cos(a) * R * 0.9;
         const y = cy + Math.sin(a) * R * 0.9;
-        g.fillStyle = `rgba(${ink},${i === steps ? 0.75 : 0.28})`;
+        g.fillStyle = `rgba(${ink},${i === steps ? 0.78 : 0.26})`;
         g.beginPath();
-        g.ellipse(x, y, 4.5 * dpr, 3 * dpr, a, 0, Math.PI * 2);
+        g.ellipse(x, y, 5.2 * dpr, 3.4 * dpr, a, 0, Math.PI * 2);
         g.fill();
       }
+      g.fillStyle = `rgba(${ink},0.7)`;
+      g.font = `${Math.round(R * 0.16)}px sans-serif`;
+      g.textAlign = 'center';
+      g.fillText(v.breathPhase === 'in' ? 'вдох — шаг' : 'выдох — стопа на земле', cx, cy + R * 0.62);
     } else if (mode === 'sit' || mode === 'koan') {
-      // неподвижный энсо и точка, которая дышит сама, без указаний
       this.ensoGuide(g, cx, cy, R, ink);
       const slow = 0.5 + 0.5 * Math.sin(now / 4600);
-      g.fillStyle = `rgba(${ink},0.5)`;
+      g.fillStyle = `rgba(${ink},0.52)`;
       g.beginPath();
-      g.arc(cx, cy, R * (0.05 + slow * 0.035), 0, Math.PI * 2);
+      g.arc(cx, cy, R * (0.06 + slow * 0.04), 0, Math.PI * 2);
       g.fill();
       if (mode === 'koan') {
-        g.fillStyle = `rgba(${ink},0.62)`;
+        g.fillStyle = `rgba(${ink},0.64)`;
         g.font = `italic ${Math.round(R * 0.16)}px 'Cormorant Garamond', serif`;
         g.textAlign = 'center';
         g.fillText(s.practice.lines[3] ?? '', cx, cy + R * 0.5);
+      } else {
+        g.fillStyle = `rgba(${ink},0.42)`;
+        g.font = `${Math.round(R * 0.13)}px sans-serif`;
+        g.textAlign = 'center';
+        g.fillText('ничего не делай — просто сиди', cx, cy + R * 0.48);
       }
+    } else if (mode === 'kindness') {
+      const r = R * (0.62 + 0.28 * breathK);
+      g.strokeStyle = `rgba(${ink},0.32)`;
+      g.lineWidth = R * 0.06;
+      g.beginPath();
+      g.arc(cx, cy, r, 0, Math.PI * 2);
+      g.stroke();
+      g.fillStyle = `rgba(${ink},0.72)`;
+      g.font = `italic ${Math.round(R * 0.16)}px 'Cormorant Garamond', serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      const texts = ['пусть у меня', 'пусть у тебя', 'пусть у всех'];
+      const idx = Math.min(2, Math.floor(v.cycles / 3) % 3);
+      g.fillText(texts[idx] + ' будет покой', cx, cy);
+      g.textBaseline = 'alphabetic';
+      g.font = `${Math.round(R * 0.12)}px sans-serif`;
+      g.fillStyle = `rgba(${ink},0.45)`;
+      g.fillText(v.breathPhase === 'in' ? 'вдох' : 'выдох — пожелание', cx, cy + R * 0.42);
     } else {
-      // дышащее кольцо: вдох разводит, выдох собирает
-      const r = R * (0.62 + 0.3 * breathK);
-      g.strokeStyle = `rgba(${ink},0.55)`;
-      g.lineWidth = R * 0.045;
+      const r = R * (0.60 + 0.32 * breathK);
+      g.strokeStyle = `rgba(${ink},${v.breathPhase === 'in' ? 0.62 : 0.42})`;
+      g.lineWidth = R * 0.05;
       g.lineCap = 'round';
       g.beginPath();
       g.arc(cx, cy, r, 0, Math.PI * 2);
       g.stroke();
-      g.strokeStyle = `rgba(${ink},0.14)`;
-      g.lineWidth = R * 0.12;
+      g.strokeStyle = `rgba(${ink},0.13)`;
+      g.lineWidth = R * 0.13;
       g.beginPath();
       g.arc(cx, cy, r, 0, Math.PI * 2);
       g.stroke();
+
       if (mode === 'count' && v.count > 0) {
-        g.fillStyle = `rgba(${ink},0.7)`;
-        g.font = `${Math.round(R * 0.34)}px 'Cormorant Garamond', serif`;
+        g.fillStyle = `rgba(${ink},0.78)`;
+        g.font = `${Math.round(R * 0.42)}px 'Cormorant Garamond', serif`;
         g.textAlign = 'center';
         g.textBaseline = 'middle';
         g.fillText(NUM_WORDS[v.count] ?? String(v.count), cx, cy);
         g.textBaseline = 'alphabetic';
-      }
-      if (mode === 'three') {
-        for (let i = 0; i < Math.min(3, v.cycles); i++) {
-          g.strokeStyle = `rgba(${ink},0.5)`;
-          g.lineWidth = 2 * dpr;
-          g.beginPath();
-          g.moveTo(cx - R * 0.24 + i * R * 0.24, cy + R * 0.52);
-          g.lineTo(cx - R * 0.12 + i * R * 0.24, cy + R * 0.52);
-          g.stroke();
-        }
+        g.font = `${Math.round(R * 0.12)}px sans-serif`;
+        g.fillStyle = `rgba(${ink},0.48)`;
+        g.fillText(v.breathPhase === 'in' ? 'вдох — считай' : 'выдох — отпускай', cx, cy + R * 0.42);
+      } else if (mode === 'three') {
+        const n = Math.min(3, v.cycles);
+        g.fillStyle = `rgba(${ink},0.72)`;
+        g.font = `${Math.round(R * 0.32)}px 'Cormorant Garamond', serif`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText(`${n} / 3`, cx, cy);
+        g.textBaseline = 'alphabetic';
+      } else {
+        g.fillStyle = `rgba(${ink},0.52)`;
+        g.font = `${Math.round(R * 0.14)}px sans-serif`;
+        g.textAlign = 'center';
+        g.fillText(v.breathPhase === 'in' ? `вдох ${s.practice.breath?.inhale ?? ''}с` : `выдох ${s.practice.breath?.exhale ?? ''}с`, cx, cy);
       }
     }
   }
 
-  /** Тихий энсо позади: для сидения и коана круг не дышит по указке. */
   private ensoGuide(g: CanvasRenderingContext2D, cx: number, cy: number, R: number, ink: string): void {
     g.save();
     g.lineCap = 'round';
@@ -475,8 +665,8 @@ export class PracticePanel {
     for (let i = 1; i < seg; i++) {
       const a0 = -Math.PI * 0.6 + ((i - 1) / seg) * Math.PI * 2 * 0.9;
       const a1 = -Math.PI * 0.6 + (i / seg) * Math.PI * 2 * 0.9;
-      g.strokeStyle = `rgba(${ink},${0.3 - (i / seg) * 0.12})`;
-      g.lineWidth = R * (0.03 + 0.02 * Math.sin((i / seg) * Math.PI));
+      g.strokeStyle = `rgba(${ink},${0.32 - (i / seg) * 0.14})`;
+      g.lineWidth = R * (0.032 + 0.022 * Math.sin((i / seg) * Math.PI));
       g.beginPath();
       g.moveTo(cx + Math.cos(a0) * R, cy + Math.sin(a0) * R);
       g.lineTo(cx + Math.cos(a1) * R, cy + Math.sin(a1) * R);
