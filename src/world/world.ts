@@ -2,7 +2,16 @@
 
 import { GRID, inBounds } from '../core/iso';
 import { clamp, fbm, hash2 } from '../core/rng';
-import { BRUSH_BY_ID, ITEM_BY_ID, MILESTONES, TerrainBrush, footprintCells } from './catalog';
+import {
+  BRUSH_BY_ID,
+  CatalogItem,
+  ITEMS,
+  ITEM_BY_ID,
+  MILESTONES,
+  TAB_BY_ID,
+  TerrainBrush,
+  footprintCells,
+} from './catalog';
 import { ChronicleEntry, noteChronicle } from './chronicle';
 import { GrowRect, GrowState, growOfferReady, growTick, growZones, inGrowRect } from './grow';
 import { DAY_MS } from '../core/clock';
@@ -19,6 +28,10 @@ export class World {
   nextId = 1;
   milestones = new Set<string>();
   seenTabs = new Set<string>();
+  /** Каталог открытий: предметы, доступные игроку. Копятся через строительство. */
+  unlocked = new Set<string>();
+  /** Свежие открытия: золотая точка горит до первой постройки предмета. */
+  fresh = new Set<string>();
   /** Летопись сада: первые встречи и редкие события, по одной строке. */
   chronicle: ChronicleEntry[] = [];
   /** Очередь уведомлений о новых вехах. */
@@ -86,6 +99,48 @@ export class World {
     // остаётся только то, что он сделает сам.
     this.observe(Date.now(), 'spring', false, false);
     this.pendingMilestones.length = 0;
+    this.initUnlocks();
+  }
+
+  /**
+   * Открытия каталога. Игрок начинает с того, что уже стоит в саду,
+   * плюс одно случайное открытие впереди — путь, а не склад.
+   */
+  initUnlocks(): void {
+    this.unlocked = new Set();
+    this.fresh = new Set();
+    for (const o of this.objects) if (ITEM_BY_ID.has(o.type)) this.unlocked.add(o.type);
+    this.unlockRandomItem();
+  }
+
+  /** Предмет технически доступен: вкладка открыта вехами, размер влезает в сад. */
+  itemAvailable(item: CatalogItem): boolean {
+    const tab = TAB_BY_ID.get(item.tab);
+    if (!tab) return false;
+    if (tab.requires && !this.milestones.has(tab.requires)) return false;
+    if (this.grow) {
+      const r = this.grow.rect;
+      const straight = item.w <= r.w && item.h <= r.h;
+      const turned = !!item.rotatable && item.h <= r.w && item.w <= r.h;
+      if (!straight && !turned) return false;
+    }
+    return true;
+  }
+
+  /** Открыть один случайный доступный предмет. Вернул id — было что открыть. */
+  unlockRandomItem(): string | null {
+    const pool = ITEMS.filter((i) => !this.unlocked.has(i.id) && this.itemAvailable(i));
+    if (!pool.length) return null;
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    this.unlocked.add(pick.id);
+    this.fresh.add(pick.id);
+    return pick.id;
+  }
+
+  /** Строительство случилось: точка предмета гаснет, открывается что-то новое. */
+  onBuiltItem(itemId: string): void {
+    this.fresh.delete(itemId);
+    this.unlockRandomItem();
   }
 
   /** Начальная композиция: небольшая усадьба, чтобы сцена сразу выглядела как картина. */
@@ -997,6 +1052,8 @@ export class World {
       chronicle: this.chronicle.map((e) => ({ id: e.id, at: e.at })),
       grow: this.grow ? { ...this.grow, rect: { ...this.grow.rect } } : null,
       born: this.born,
+      unlocked: [...this.unlocked],
+      fresh: [...this.fresh],
     };
   }
 
@@ -1052,6 +1109,13 @@ export class World {
     this.pendingMilestones = [];
     this.pendingNotes = [];
     this.lastTouched = null;
+    if (p.unlocked) {
+      this.unlocked = new Set(p.unlocked);
+      this.fresh = new Set(p.fresh ?? []);
+    } else {
+      // Старое сохранение: доступно то, что построено, плюс одно открытие впереди
+      this.initUnlocks();
+    }
     this.noteObjectsChanged();
   }
 

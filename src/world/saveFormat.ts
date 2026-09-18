@@ -22,7 +22,7 @@ import { ITEM_BY_ID } from './catalog';
 import { GroundId, PlacedObject, SaveData, Tile } from './types';
 
 /** Версия формата, которую пишет текущая игра. */
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
 /**
  * Земли в порядке их знака в упаковке. Порядок — часть формата:
@@ -228,6 +228,8 @@ export function serializeSave(d: SaveData): string {
     g: d.grow ?? null,
     b: d.born,
     c: (d.chronicle ?? []).map((e) => [e.id, Math.round(e.at)]),
+    u: d.unlocked ?? null,
+    f: d.fresh ?? null,
   });
 }
 
@@ -301,6 +303,14 @@ export function parseSave(raw: unknown): SaveData | null {
   const grow = parseGrow(d.g);
   if (d.g !== undefined && d.g !== null && !grow) return null;
 
+  // Открытия каталога: отсутствие списка — старое сохранение (мигрирует мир)
+  const hasUnlocks = d.u !== undefined || d.unlocked !== undefined;
+  const unlocked = parseStringList(d.u ?? d.unlocked, 400);
+  const fresh = parseStringList(d.f ?? d.fresh, 400);
+  if (!unlocked || !fresh) return null;
+
   return { version: SAVE_VERSION, tiles, objects, nextId, milestones, seasons, seen, chronicle, grow,
+    unlocked: hasUnlocks ? unlocked : undefined,
+    fresh: hasUnlocks ? fresh : undefined,
     born: typeof d.b === 'number' ? d.b : undefined };
 }

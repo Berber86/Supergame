@@ -743,6 +743,7 @@ export const ITEMS: CatalogItem[] = [
 ];
 
 export const ITEM_BY_ID = new Map(ITEMS.map((i) => [i.id, i]));
+export const TAB_BY_ID = new Map(TABS.map((t) => [t.id, t]));
 export const BRUSH_BY_ID = new Map(TERRAIN_BRUSHES.map((b) => [b.id, b]));
 
 /**

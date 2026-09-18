@@ -463,6 +463,7 @@ function confirmPlace(): void {
     if (item.needsWater || item.onWater) audio.splash();
     else audio.place();
     flushMilestones();
+    builtItem(p.itemId);
     saveWorld();
   } else {
     history.abort();
@@ -629,11 +630,12 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
       if (tooClose) return;
     }
     history.begin(item.name.toLowerCase(), isClick ? null : `scatter:${item.id}`);
-    world.place(item.id, s.tx, s.ty, ghostRot);
+    const placed = world.place(item.id, s.tx, s.ty, ghostRot);
     if (history.commit()) syncHistoryUI();
     if (item.needsWater || item.onWater) audio.splash();
     else audio.place();
     flushMilestones();
+    if (placed) builtItem(item.id);
     return;
   }
 
@@ -723,10 +725,24 @@ function applyErase(sx: number, sy: number): void {
   saveWorld();
 }
 
+/** Предмет построен: его точка гаснет, каталог открывается на шаг дальше. */
+function builtItem(itemId: string): void {
+  world.onBuiltItem(itemId);
+  ui.renderTabs();
+  ui.renderItems();
+}
+
 function flushMilestones(): void {
+  let any = false;
   while (world.pendingMilestones.length) {
+    any = true;
     const id = world.pendingMilestones.shift()!;
     ui.showMilestone(id);
+  }
+  if (any) {
+    // Новая веха могла открыть вкладку или расширить пул открытий
+    ui.renderTabs();
+    ui.renderItems();
   }
   saveWorld();
 }
@@ -885,6 +901,8 @@ function enterGrow(): void {
     world.reset();
     seedGrowWorld(world, seed);
     world.grow = newGrowState(seed, Date.now());
+    // Стартовая усадьба стёрта: открытия считаем заново под чистый сад
+    world.initUnlocks();
     saveWorld();
   }
   history.clear();

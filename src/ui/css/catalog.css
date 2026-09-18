@@ -277,3 +277,29 @@
   color: rgba(70, 52, 36, 0.62);
   text-align: center;
 }
+
+/* Открытия: золотая точка горит, пока предмет не построен впервые */
+.item {
+  position: relative;
+}
+
+.item.fresh::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 8px var(--gold);
+}
+
+.tab.fresh::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 8px var(--gold);
+}

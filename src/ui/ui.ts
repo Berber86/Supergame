@@ -410,9 +410,17 @@ export class UI {
 
   private tabHasContent(id: string): boolean {
     return (
-      ITEMS.some((i) => i.tab === id && (this.fitsGrow(i.w, i.h) || this.fitsGrow(i.h, i.w))) ||
-      TERRAIN_BRUSHES.some((b) => b.tab === id && (b.kind === 'ground' || this.fitsGrow(b.w, b.h)))
+      ITEMS.some(
+        (i) =>
+          i.tab === id &&
+          this.world.unlocked.has(i.id) &&
+          (this.fitsGrow(i.w, i.h) || this.fitsGrow(i.h, i.w)),
+      ) || TERRAIN_BRUSHES.some((b) => b.tab === id && (b.kind === 'ground' || this.fitsGrow(b.w, b.h)))
     );
+  }
+
+  private tabHasFresh(id: string): boolean {
+    return ITEMS.some((i) => i.tab === id && this.world.fresh.has(i.id));
   }
 
   /** Скрыть размеры кисти, которые крупнее текущего сада. */
@@ -426,25 +434,26 @@ export class UI {
   }
 
   renderTabs(): void {
+    // Недоступное не показываем вовсе: ни замков, ни пустых вкладок
+    const visible = TABS.filter((t) => this.tabUnlocked(t.id) && this.tabHasContent(t.id));
+    if (visible.length && !visible.some((t) => t.id === this.activeTab)) {
+      this.activeTab = visible[0].id;
+    }
     this.els.tabs.innerHTML = '';
-    for (const tab of TABS) {
-      const unlocked = this.tabUnlocked(tab.id);
-      // Вкладки, где ничего не влезает в текущий сад, прячем целиком
-      if (unlocked && !this.tabHasContent(tab.id)) continue;
-      const isNew = unlocked && !this.world.seenTabs.has(tab.id);
+    for (const tab of visible) {
+      const isNew = !this.world.seenTabs.has(tab.id);
+      const fresh = this.tabHasFresh(tab.id);
       const e = this.el(
         'div',
-        `tab ${this.activeTab === tab.id ? 'active' : ''} ${unlocked ? '' : 'locked'} ${isNew ? 'new' : ''}`,
+        `tab ${this.activeTab === tab.id ? 'active' : ''} ${isNew ? 'new' : ''} ${fresh ? 'fresh' : ''}`,
       );
-      e.innerHTML = `${svgIcon(tab.icon, 17)}<span>${unlocked ? tab.name : '＊'}</span>`;
-      if (unlocked) {
-        e.addEventListener('click', () => {
-          this.activeTab = tab.id;
-          this.world.seenTabs.add(tab.id);
-          this.renderTabs();
-          this.renderItems();
-        });
-      }
+      e.innerHTML = `${svgIcon(tab.icon, 17)}<span>${tab.name}</span>`;
+      e.addEventListener('click', () => {
+        this.activeTab = tab.id;
+        this.world.seenTabs.add(tab.id);
+        this.renderTabs();
+        this.renderItems();
+      });
       this.els.tabs.appendChild(e);
     }
   }
@@ -457,7 +466,10 @@ export class UI {
       (b) => b.tab === this.activeTab && (b.kind === 'ground' || this.fitsGrow(b.w, b.h)),
     );
     const items = ITEMS.filter(
-      (i) => i.tab === this.activeTab && (this.fitsGrow(i.w, i.h) || this.fitsGrow(i.h, i.w)),
+      (i) =>
+        i.tab === this.activeTab &&
+        this.world.unlocked.has(i.id) &&
+        (this.fitsGrow(i.w, i.h) || this.fitsGrow(i.h, i.w)),
     );
     if (!brushes.length && !items.length) {
       box.innerHTML = `<div class="cat-empty">Здесь ничего не поместится, пока сад не подрастёт</div>`;
@@ -487,6 +499,8 @@ export class UI {
       const e = this.el('div', 'item paper');
       const sel = this.selection.kind === 'item' && this.selection.item.id === it.id;
       if (sel) e.classList.add('selected');
+      // Золотая точка: открытие ещё не построено впервые
+      if (this.world.fresh.has(it.id)) e.classList.add('fresh');
       const src = this.atm ? itemIcon(it.id, this.atm, 56) : '';
       const size = it.w > 1 || it.h > 1 ? ` ${it.w}×${it.h}` : '';
       e.innerHTML = `<div class="thumb">${src ? `<img src="${src}" alt="">` : svgIcon('micro', 30)}</div>
