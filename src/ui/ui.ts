@@ -415,7 +415,10 @@ export class UI {
           i.tab === id &&
           this.world.unlocked.has(i.id) &&
           (this.fitsGrow(i.w, i.h) || this.fitsGrow(i.h, i.w)),
-      ) || TERRAIN_BRUSHES.some((b) => b.tab === id && (b.kind === 'ground' || this.fitsGrow(b.w, b.h)))
+      ) ||
+      TERRAIN_BRUSHES.some(
+        (b) => b.tab === id && this.world.unlocked.has(b.id) && this.fitsGrow(b.w, b.h),
+      )
     );
   }
 
@@ -441,11 +444,11 @@ export class UI {
     }
     this.els.tabs.innerHTML = '';
     for (const tab of visible) {
-      const isNew = !this.world.seenTabs.has(tab.id);
+      // Никаких миганий на открытие вех: вкладка просто есть или её нет
       const fresh = this.tabHasFresh(tab.id);
       const e = this.el(
         'div',
-        `tab ${this.activeTab === tab.id ? 'active' : ''} ${isNew ? 'new' : ''} ${fresh ? 'fresh' : ''}`,
+        `tab ${this.activeTab === tab.id ? 'active' : ''} ${fresh ? 'fresh' : ''}`,
       );
       e.innerHTML = `${svgIcon(tab.icon, 17)}<span>${tab.name}</span>`;
       e.addEventListener('click', () => {
@@ -463,7 +466,8 @@ export class UI {
     box.innerHTML = '';
 
     const brushes = TERRAIN_BRUSHES.filter(
-      (b) => b.tab === this.activeTab && (b.kind === 'ground' || this.fitsGrow(b.w, b.h)),
+      (b) =>
+        b.tab === this.activeTab && this.world.unlocked.has(b.id) && this.fitsGrow(b.w, b.h),
     );
     const items = ITEMS.filter(
       (i) =>
@@ -479,6 +483,7 @@ export class UI {
       const e = this.el('div', 'item paper');
       const sel = this.selection.kind === 'brush' && this.selection.brush.id === b.id;
       if (sel) e.classList.add('selected');
+      if (this.world.fresh.has(b.id)) e.classList.add('fresh');
       const icon =
         b.kind === 'water'
           ? 'water'

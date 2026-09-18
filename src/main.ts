@@ -8,6 +8,7 @@ import { GRID, floorTo, inBounds } from './core/iso';
 import { Scene } from './render/scene';
 import { World } from './world/world';
 import { GROW_BANK_CAP, growOfferReady, newGrowState, seedGrowWorld, GROW_ACTION_MS } from './world/grow';
+import { moving, pathStart, pointer, setupInput } from './app/input';
 import { UI, Selection } from './ui/ui';
 import { ITEM_BY_ID, TERRAIN_BRUSHES, footprintCells } from './world/catalog';
 import { Life } from './world/life';
@@ -21,7 +22,6 @@ import { GardensPanel } from './ui/gardensPanel';
 import { findPath, layPath } from './world/paths';
 import { SettingsPanel, applyView, loadView } from './ui/settings';
 import { isTouchDevice } from './ui/touch';
-import { pointer, moving, pathStart, setupInput, touchMode } from './app/input';
 import { startLoop } from './app/gameLoop';
 import { PracticePanel } from './ui/practicePanel';
 import { ChroniclePanel } from './ui/chroniclePanel';
@@ -581,11 +581,17 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
   }
 
   if (selection.kind === 'fill') {
+    const ground = selection.ground;
     history.begin(`заливка «${selection.name}»`, null);
     world.clearTouched();
     if (world.floodFill(p.tx, p.ty, selection.ground)) {
       repaintTouched();
       if (history.commit()) syncHistoryUI();
+      const gb = TERRAIN_BRUSHES.find((b) => b.ground === ground);
+      if (gb && world.useEntry(gb.id)) {
+        ui.renderTabs();
+        ui.renderItems();
+      }
       audio.place();
       flushMilestones();
     } else {
@@ -602,7 +608,13 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
     world.clearTouched();
     world.applyBrush(b, p.tx, p.ty);
     repaintTouched();
-    if (history.commit()) syncHistoryUI();
+    if (history.commit()) {
+      syncHistoryUI();
+      if (world.useEntry(b.id)) {
+        ui.renderTabs();
+        ui.renderItems();
+      }
+    }
     flushMilestones();
     return;
   }
@@ -901,8 +913,8 @@ function enterGrow(): void {
     world.reset();
     seedGrowWorld(world, seed);
     world.grow = newGrowState(seed, Date.now());
-    // Стартовая усадьба стёрта: открытия считаем заново под чистый сад
-    world.initUnlocks();
+    // Стартовая усадьба стёрта: путь роста начинается с одного открытия
+    world.initUnlocks(false);
     saveWorld();
   }
   history.clear();
@@ -930,7 +942,6 @@ function enterGrow(): void {
   wake();
   void toggleSound(true);
   entryZoom = scene.camera.zoom;
-  showTip(5000);
 }
 
 // ---------------- Заставка ----------------
@@ -948,7 +959,6 @@ const start = new StartScreen({
     entryZoom = scene.camera.zoom;
     scene.camera.zoom *= 0.86;
     // Подсказка ждёт входа: за свитком её всё равно не видно.
-    showTip(5000);
   },
   onGrow() {
     enterGrow();
@@ -997,16 +1007,4 @@ window.addEventListener('beforeunload', saveWorld);
 
 // Тихая подсказка при входе. На телефоне клавиш нет — называем то, что там
 // действительно есть: кнопки и жесты. Показывается один раз и не поверх свитка.
-let tipShown = false;
 
-function showTip(delay: number): void {
-  setTimeout(() => {
-    if (zenMode || tipShown) return;
-    tipShown = true;
-    ui.setHint(
-      touchMode
-        ? 'Рука — каталог · щипок — приблизить · часы — время года'
-        : 'B — открыть каталог · Z — созерцание · H — свиток',
-    );
-  }, delay);
-}

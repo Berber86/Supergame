@@ -323,12 +323,21 @@ body.touch.portrait .rotate-note.dismissed {
    ===================================================================== */
 
 @media (hover: none) and (orientation: portrait) {
+  /* Четыре кнопки — строкой внизу справа: под большим пальцем и не
+     перекрывают ни сад, ни каталог. С открытым каталогом ряд садится
+     над панелью инструментов. */
   .tools {
     right: calc(8px + var(--safe-r));
-    top: 50%;
-    display: grid;
-    grid-template-columns: repeat(2, var(--touch-min));
-    gap: 7px;
+    top: auto;
+    bottom: calc(10px + var(--safe-b));
+    transform: none;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+  }
+
+  body.building .tools {
+    bottom: calc(44vh + 70px);
   }
   .tools > *,
   .tool-btn {
