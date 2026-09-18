@@ -10,6 +10,9 @@ import { svgIcon } from './icons';
 
 export interface DevHooks {
   onChange(): void;
+  /** Для растущего сада: дать действие / прогресс */
+  getGrow?(): { bank: number; progress: number; stage: number; need: number } | null;
+  giveGrowAction?(): void;
 }
 
 const HOUR_PRESETS: [string, number][] = [
@@ -79,7 +82,13 @@ export class DevPanel {
         </div>
         <div class="dev-speeds"></div>
 
-        <div class="dev-hint">T — скрыть · стрелки ←→ час · Shift+←→ сезон</div>
+        <div class="dev-row" style="margin-top:14px" data-grow-row>
+          <span class="dev-label">Рост сада</span>
+          <span class="dev-value dev-grow-val">—</span>
+        </div>
+        <div class="dev-grow"></div>
+
+        <div class="dev-hint">T — скрыть · стрелки ←→ час · Shift+←→ сезон · C — центр · + — дать действие</div>
       </div>`;
 
     this.els.active = this.root.querySelector('.dev-active')!;
@@ -89,6 +98,8 @@ export class DevPanel {
     this.els.weatherVal = this.root.querySelector('.dev-weather-val')!;
     this.els.speedVal = this.root.querySelector('.dev-speed-val')!;
     this.els.body = this.root.querySelector('.dev-body')!;
+    this.els.growVal = this.root.querySelector('.dev-grow-val')!;
+    this.els.growBox = this.root.querySelector('.dev-grow')!;
 
     this.root.querySelector('.dev-close')!.addEventListener('click', () => this.setOpen(false));
 
@@ -178,6 +189,18 @@ export class DevPanel {
       speeds.appendChild(b);
     }
 
+    // Рост — кнопка дать действие (очевидно полезно)
+    const growBox = this.els.growBox as HTMLElement;
+    const btn = document.createElement('button');
+    btn.className = 'dev-chip';
+    btn.textContent = '+1 действие';
+    btn.addEventListener('click', () => {
+      this.hooks.giveGrowAction?.();
+      this.refresh();
+      this.hooks.onChange();
+    });
+    growBox.appendChild(btn);
+
     this.refresh();
   }
 
@@ -220,11 +243,25 @@ export class DevPanel {
     this.root.querySelectorAll<HTMLElement>('.dev-chip.speed').forEach((b) => {
       b.classList.toggle('on', Number(b.dataset.speed) === st.speed);
     });
+
+    const grow = this.hooks.getGrow?.() ?? null;
+    const growRow = this.root.querySelector<HTMLElement>('[data-grow-row]');
+    const growBox = this.els.growBox as HTMLElement;
+    if (grow) {
+      if (growRow) growRow.style.display = '';
+      if (growBox) growBox.style.display = '';
+      this.els.growVal.textContent = `${grow.progress}/${grow.need} · банк ${grow.bank} · стадия ${grow.stage}`;
+    } else {
+      if (growRow) growRow.style.display = 'none';
+      if (growBox) growBox.style.display = 'none';
+    }
   }
 
   /** Раз в кадр — чтобы ползунок ехал при ускоренном времени. */
   tick(): void {
     if (!this.open) return;
     if (this.tc.state.active && this.tc.state.speed !== 1) this.refresh();
+    // Рост тоже обновляем раз в кадр, если панель открыта
+    if (this.hooks.getGrow) this.refresh();
   }
 }

@@ -8,7 +8,8 @@
  */
 
 import { clamp } from '../core/rng';
-import { floorTo } from '../core/iso';
+import { GRID, floorTo } from '../core/iso';
+import { GROW_BANK_CAP } from '../world/grow';
 import { ITEM_BY_ID } from '../world/catalog';
 import { PlacedObject } from '../world/types';
 import { TouchInput, isTouchDevice } from '../ui/touch';
@@ -488,6 +489,25 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       gardensPanel.toggle();
     } else if (k === '1' || k === '2' || k === '3') {
       ui.setBrushSize(k === '1' ? 1 : k === '2' ? 3 : 5);
+    } else if (k === 'c') {
+      // Очевидно полезное: центрировать камеру на саду (просил игрок)
+      if (world.grow) {
+        const r = world.grow.rect;
+        scene.centerOn(r.x + r.w / 2, r.y + r.h / 2);
+        scene.camera.zoom = 1.1;
+      } else {
+        scene.centerOn(GRID / 2, GRID / 2);
+        scene.camera.zoom = 0.85;
+      }
+      scene.clampCamera();
+      ui.toast('Камера — в центр сада');
+    } else if (k === '+' || k === '=' || k === 'numpadadd') {
+      // Дать одно действие в растущем саду — не ждать 10 минут (очевидно полезно)
+      if (world.grow) {
+        world.grow.bank = Math.min(GROW_BANK_CAP, world.grow.bank + 1);
+        actions.saveWorld();
+        ui.toast(`+1 действие · в запасе ${world.grow.bank}`);
+      }
     } else if (k === 't') {
       devPanel.toggle();
       devPanel.refresh();

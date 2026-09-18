@@ -70,15 +70,33 @@ export function growOfferReady(g: GrowState): boolean {
 /**
  * Четыре зоны-кандидата: приставка того же размера вдоль каждой стороны,
  * удваивающая сад. Что не помещается в лист — не предлагается.
+ * Дополнительно не даём слишком вытянутых прямоугольников: сад должен
+ * оставаться примерно квадратным, иначе 8×2 или 16×4 — это уже коридор.
  */
 export function growZones(r: GrowRect): GrowRect[] {
-  const z: GrowRect[] = [];
+  const raw: GrowRect[] = [];
   const { x, y, w, h } = r;
-  if (y - h >= 0) z.push({ x, y: y - h, w, h });
-  if (y + h + h <= GRID) z.push({ x, y: y + h, w, h });
-  if (x - w >= 0) z.push({ x: x - w, y, w, h });
-  if (x + w + w <= GRID) z.push({ x: x + w, y, w, h });
-  return z;
+  if (y - h >= 0) raw.push({ x, y: y - h, w, h });
+  if (y + h + h <= GRID) raw.push({ x, y: y + h, w, h });
+  if (x - w >= 0) raw.push({ x: x - w, y, w, h });
+  if (x + w + w <= GRID) raw.push({ x: x + w, y, w, h });
+
+  // Фильтр «слишком длинный»: после слияния соотношение сторон >2.2 — коридор.
+  const out: GrowRect[] = [];
+  for (const zone of raw) {
+    const nx = Math.min(r.x, zone.x);
+    const ny = Math.min(r.y, zone.y);
+    const nx1 = Math.max(r.x + r.w, zone.x + zone.w);
+    const ny1 = Math.max(r.y + r.h, zone.y + zone.h);
+    const nw = nx1 - nx;
+    const nh = ny1 - ny;
+    const ratio = Math.max(nw, nh) / Math.max(1, Math.min(nw, nh));
+    if (ratio > 2.2) continue;
+    out.push(zone);
+  }
+  // Если фильтр съел всё (на краю листа осталась только длинная полоса),
+  // возвращаем исходные — лучше дать хоть что-то, чем запереть рост.
+  return out.length ? out : raw;
 }
 
 export function inGrowRect(r: GrowRect, tx: number, ty: number): boolean {

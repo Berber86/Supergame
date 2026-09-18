@@ -303,7 +303,8 @@ export class Wildlife {
       case 'fly-in': {
         if (!hr.target) break;
         hr.from = hr.from ?? { x: hr.tx, y: hr.ty };
-        hr.phase = Math.min(1, hr.phase + dt * 0.00022 * 1);
+        // Цапля — грациозная, не спешит: было 0.00022 → стало 0.00014
+        hr.phase = Math.min(1, hr.phase + dt * 0.00014);
         hr.tx = lerp(hr.from.x, hr.target.x, hr.phase);
         hr.ty = lerp(hr.from.y, hr.target.y, hr.phase);
         if (hr.phase >= 1) {
@@ -330,7 +331,8 @@ export class Wildlife {
       case 'stalk': {
         if (!hr.target) break;
         hr.from = hr.from ?? { x: hr.tx, y: hr.ty };
-        hr.phase = Math.min(1, hr.phase + dt * 0.00028);
+        // Медленный крадущийся шаг вдоль берега: 0.00028 → 0.00016
+        hr.phase = Math.min(1, hr.phase + dt * 0.00016);
         hr.tx = lerp(hr.from.x, hr.target.x, hr.phase);
         hr.ty = lerp(hr.from.y, hr.target.y, hr.phase);
         if (Math.abs(hr.target.x - hr.tx) > 0.05) hr.facing = hr.target.x > hr.tx ? 1 : -1;
@@ -376,7 +378,7 @@ export class Wildlife {
       case 'fly-out': {
         if (!hr.target) break;
         hr.from = hr.from ?? { x: hr.tx, y: hr.ty };
-        hr.phase = Math.min(1, hr.phase + dt * 0.0002);
+        hr.phase = Math.min(1, hr.phase + dt * 0.00012);
         hr.tx = lerp(hr.from.x, hr.target.x, hr.phase);
         hr.ty = lerp(hr.from.y, hr.target.y, hr.phase);
         if (hr.phase >= 1 || hr.tx < -4 || hr.tx > GRID + 4 || hr.ty < -4 || hr.ty > GRID + 4) {
@@ -438,7 +440,8 @@ export class Wildlife {
         case 'walk': {
           if (!d.target) break;
           d.from = d.from ?? { x: d.tx, y: d.ty };
-          const v = d.state === 'enter' ? 0.00042 : 0.00036;
+          // Олень не должен мчаться: было 0.00042/0.00036 → стало 0.00022/0.00018
+          const v = d.state === 'enter' ? 0.00022 : 0.00018;
           d.phase = Math.min(1, d.phase + dt * v);
           d.tx = lerp(d.from.x, d.target.x, d.phase);
           d.ty = lerp(d.from.y, d.target.y, d.phase);
@@ -474,7 +477,8 @@ export class Wildlife {
         case 'leave': {
           if (!d.target) break;
           d.from = d.from ?? { x: d.tx, y: d.ty };
-          d.phase = Math.min(1, d.phase + dt * 0.00062);
+          // Уход тоже спокойный, не рывок: было 0.00062 → 0.00024
+          d.phase = Math.min(1, d.phase + dt * 0.00024);
           d.tx = lerp(d.from.x, d.target.x, d.phase);
           d.ty = lerp(d.from.y, d.target.y, d.phase);
           if (Math.abs(d.target.x - d.tx) > 0.05) d.facing = d.target.x > d.tx ? 1 : -1;
