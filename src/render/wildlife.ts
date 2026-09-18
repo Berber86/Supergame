@@ -3,7 +3,7 @@
  */
 
 import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
-import { Bee, Deer, Firefly, Hedgehog, Heron, Mouse, Moth, Owl, Squirrel, Turtle, fireflyGlow } from '../world/wildlife';
+import { Bee, Deer, Firefly, Hedgehog, Heron, Mouse, Owl, Squirrel, Turtle, fireflyGlow } from '../world/wildlife';
 import { Ctx, glow, softShadow, washBlob } from './paint';
 
 function litc(c: RGB, atm: Atmosphere, boost = 0): RGB {
@@ -789,62 +789,7 @@ export function drawTurtle(ctx: Ctx, t: Turtle, x: number, y: number, atm: Atmos
   ctx.restore();
 }
 
-// ---------------- Мотылёк ----------------
-
-export function drawMoth(ctx: Ctx, m: Moth, x: number, y: number, atm: Atmosphere, time: number): void {
-  if (m.alpha <= 0.02) return;
-  const wingBase = { r: 232, g: 222, b: 202 };
-  const wing = litc(wingBase, atm);
-  const wingDark = litc(shade(wingBase, 0.72), atm);
-  const body = litc({ r: 98, g: 86, b: 72 }, atm);
-
-  ctx.save();
-  ctx.translate(x, y - 6);
-  ctx.scale(0.68, 0.68);
-
-  const flap = m.state === 'rest' ? 0.1 : Math.sin(time * 0.04 + m.seed) * 0.9 + 0.4;
-  const hover = Math.sin(time * 0.003 + m.seed) * 1.1;
-
-  ctx.translate(0, hover);
-
-  // тень от света фонаря — лёгкое свечение
-  if (m.state === 'orbit') {
-    glow(ctx, 0, 0, 8, { r: 255, g: 228, b: 160 }, 0.18 * m.alpha);
-  }
-
-  ctx.fillStyle = css(body, 0.92 * m.alpha);
-  ctx.beginPath();
-  ctx.ellipse(0, 0, 0.8, 2.2, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // крылья — складываются в rest
-  const wingSpread = m.state === 'rest' ? 0.25 : 1;
-  ctx.fillStyle = css(wing, 0.88 * m.alpha);
-  ctx.save();
-  ctx.rotate(-0.5 * wingSpread - flap * 0.3);
-  ctx.beginPath();
-  ctx.ellipse(-2.8, -0.5, 4.2, 2.6, -0.2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = css(wingDark, 0.28 * m.alpha);
-  ctx.beginPath();
-  ctx.ellipse(-3.2, -0.2, 1.2, 0.6, -0.2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  ctx.save();
-  ctx.rotate(0.5 * wingSpread + flap * 0.3);
-  ctx.fillStyle = css(wing, 0.88 * m.alpha);
-  ctx.beginPath();
-  ctx.ellipse(2.8, -0.5, 4.2, 2.6, 0.2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = css(wingDark, 0.28 * m.alpha);
-  ctx.beginPath();
-  ctx.ellipse(3.2, -0.2, 1.2, 0.6, 0.2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
- // ---------------- Пчела ----------------
+// ---------------- Пчела ----------------
 
 export function drawBee(ctx: Ctx, b: Bee, x: number, y: number, atm: Atmosphere, time: number): void {
   if (b.alpha <= 0.02) return;

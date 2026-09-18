@@ -70,10 +70,6 @@ export interface Habitat {
   beehives: Vec[];
   /** Бельчатники — зовут белок. */
   squirrelFeeders: Vec[];
-  /** Фонари и лампы — туда летят мотыльки. */
-  lanterns: Vec[];
-  /** Места для мотыльков — фонари, веранда с лампой. */
-  mothSpots: Vec[];
   /** Сколько в саду кошек-резидентов (предметов «кот»). */
   cats: number;
   /** Клеток веранды — второе место для кошачьего знакомства. */
@@ -111,8 +107,6 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
     beeSpots: [],
     beehives: [],
     squirrelFeeders: [],
-    lanterns: [],
-    mothSpots: [],
     shelters: [],
     cushions: [],
     bowls: [],
@@ -206,11 +200,6 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
       case 'beehive':
         h.beehives.push(c);
         h.beeSpots.push(c);
-        break;
-      case 'lantern':
-      case 'stone_lantern':
-        h.lanterns.push(c);
-        h.mothSpots.push(c);
         break;
       case 'squirrel_feeder':
         h.squirrelFeeders.push(c);
@@ -385,16 +374,7 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
         vy += y + 0.5;
         n++;
       }
-    if (n) {
-      h.shelters.push({ x: vx / n, y: vy / n });
-      // лампа на веранде тоже манит мотыльков
-      h.mothSpots.push({ x: vx / n, y: vy / n - 0.5 });
-    }
-  }
-
-  // если фонарей нет — мотыльки всё равно летят к тёплым окнам дома
-  if (h.mothSpots.length === 0 && h.shelters.length > 0) {
-    for (const sh of h.shelters) if (h.mothSpots.length < 6) h.mothSpots.push(sh);
+    if (n) h.shelters.push({ x: vx / n, y: vy / n });
   }
 
   return h;
@@ -427,8 +407,6 @@ export interface Invitation {
   turtle: number;
   /** Пчёлы: цветы и ульи, тёплый день. */
   bees: number;
-  /** Мотыльки: тёплая ночь у фонаря. */
-  moths: number;
 }
 
 /**
@@ -485,19 +463,12 @@ export function invitations(h: Habitat, t: TimeState, wx: WeatherState | null, w
   // ---- Второй кот: первому нужны компания, подушка и миска ----
   const guestCat = h.cats >= 1 && h.cushions.length >= 1 && h.bowls.length >= 1;
 
-  // ---- Светлячки: гаснут днём, зимой; любят влажную ночь после дождя, воду и тень рощи ----
+  // ---- Светлячки: гаснут днём, в дождь и зимой; любят воду и тень рощи ----
   let fireflies = 0;
-  if ((season === 'summer' || season === 'spring') && t.daylight < 0.22 && !stormy) {
-    // влажная ночь после дождя — их больше
-    const humidBonus = wet > 0.35 || rain > 0.05 ? 3 : 0;
-    const baseFire = season === 'summer' ? 3 : 2;
-    if (rain < 0.45) {
-      fireflies = baseFire + Math.min(6, Math.floor(h.trees.length / 3)) + humidBonus;
-      if (h.water > 0) fireflies += 3;
-      // фонари чуть отпугивают светлячков, но не сильно
-      if (h.lanterns.length > 0) fireflies = Math.max(2, fireflies - 1);
-      fireflies = Math.max(0, Math.min(14, fireflies));
-    }
+  if (season === 'summer' && t.daylight < 0.18 && rain < 0.15 && !stormy) {
+    fireflies = 3 + Math.min(6, Math.floor(h.trees.length / 3));
+    if (h.water > 0) fireflies += 3;
+    fireflies = Math.max(0, Math.min(12, fireflies));
   }
 
   // ---- Цапля: большая птица приходит к большой воде, днём и на заре ----
@@ -581,21 +552,9 @@ export function invitations(h: Habitat, t: TimeState, wx: WeatherState | null, w
     }
   }
 
-  // ---- Мотыльки: тёплая ночь у фонаря, влажно после дождя ----
-  let moths = 0;
-  if (h.mothSpots.length > 0 && t.daylight < 0.25 && !stormy && season !== 'winter') {
-    const warm = season === 'summer' || season === 'spring';
-    const humid = wet > 0.3 || rain > 0.05;
-    if (warm) {
-      moths = 2 + h.lanterns.length + (humid ? 2 : 0);
-      moths = Math.max(0, Math.min(10, moths));
-      if (rain > 0.5) moths = Math.max(0, moths - 2);
-    }
-  }
-
   // ---- Хор: поют вместе, когда сыро и не полдень ----
   const choral = rain > 0.2 || wet > 0.4 || t.hours >= 18 || t.hours < 6;
   const chorus = frogs >= 2 && choral && season !== 'winter' ? frogs : 0;
 
-  return { frogs, dragonflies, feederBirds, guestCat, chorus, fireflies, heron, deer, hedgehog, mice, owl, squirrel, turtle, bees, moths };
+  return { frogs, dragonflies, feederBirds, guestCat, chorus, fireflies, heron, deer, hedgehog, mice, owl, squirrel, turtle, bees };
 }

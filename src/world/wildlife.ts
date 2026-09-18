@@ -211,20 +211,6 @@ export interface Bee {
   alpha: number;
 }
 
-export interface Moth {
-  tx: number;
-  ty: number;
-  ax: number;
-  ay: number;
-  dir: number;
-  seed: number;
-  timer: number;
-  phase: number;
-  alpha: number;
-  state: 'fly' | 'orbit' | 'rest';
-  target: Vec | null;
-}
-
 export class Wildlife {
   fireflies: Firefly[] = [];
   heron: Heron | null = null;
@@ -235,7 +221,6 @@ export class Wildlife {
   squirrels: Squirrel[] = [];
   turtles: Turtle[] = [];
   bees: Bee[] = [];
-  moths: Moth[] = [];
 
   onStrike: ((x: number, y: number, caught: boolean) => void) | null = null;
 
@@ -249,7 +234,6 @@ export class Wildlife {
   private squirrelTimer = 80_000;
   private turtleTimer = 110_000;
   private beeTimer = 0;
-  private mothTimer = 0;
   private danceTimer = 0;
   private danced = false;
 
@@ -269,7 +253,6 @@ export class Wildlife {
     this.squirrels = [];
     this.turtles = [];
     this.bees = [];
-    this.moths = [];
     this.notes = [];
     this.ffTimer = 0;
     this.heronTimer = 120_000;
@@ -280,7 +263,6 @@ export class Wildlife {
     this.squirrelTimer = 80_000;
     this.turtleTimer = 110_000;
     this.beeTimer = 0;
-    this.mothTimer = 0;
     this.danceTimer = 0;
     this.danced = false;
   }
@@ -303,7 +285,6 @@ export class Wildlife {
     this.updateSquirrels(h, inv, t, dt, now, threats);
     this.updateTurtles(h, inv, t, dt, now, threats);
     this.updateBees(h, inv, t, wx, dt);
-    this.updateMoths(h, inv, t, wx, dt);
   }
 
   // ---------------- Светлячки ----------------
@@ -1446,90 +1427,6 @@ export class Wildlife {
     if (this.bees.length >= 5 && rnd() < 0.002) this.notes.push('bee_swarm');
   }
 
-  // ---------------- Мотыльки ----------------
-  private updateMoths(h: Habitat, inv: Invitation, _t: TimeState, wx: WeatherState | null, dt: number): void {
-    const want = inv.moths;
-    const wet = wx ? wx.wetness : 0;
-    void wet;
-    for (let i = this.moths.length - 1; i >= 0; i--) {
-      const m = this.moths[i];
-      if (want === 0) {
-        m.alpha -= dt / 2400;
-        if (m.alpha <= 0) {
-          this.moths.splice(i, 1);
-          continue;
-        }
-      } else if (m.alpha < 1) {
-        m.alpha = Math.min(1, m.alpha + dt / 1400);
-      }
-      m.timer -= dt;
-      m.phase += dt * 0.003 + rnd() * 0.0005;
-
-      if (m.state === 'rest' && m.timer <= 0) {
-        m.state = 'fly';
-        m.timer = 3000 + rnd() * 6000;
-      }
-      if (m.state === 'fly' && m.timer <= 0 && rnd() < 0.3) {
-        m.state = 'rest';
-        m.timer = 2000 + rnd() * 5000;
-        continue;
-      }
-
-      if (m.target && m.state !== 'rest') {
-        const dx = m.target.x - m.tx;
-        const dy = m.target.y - m.ty;
-        const d = Math.hypot(dx, dy) || 1;
-        // орбита вокруг фонаря
-        if (d < 1.2 && m.state === 'fly') {
-          m.state = 'orbit';
-          m.timer = 4000 + rnd() * 8000;
-        }
-        if (m.state === 'orbit') {
-          // кружим вокруг лампы
-          const ang = m.phase * 0.9 + m.seed * 0.1;
-          const rad = 0.6 + Math.sin(m.phase * 0.7) * 0.3;
-          m.tx = m.target.x + Math.cos(ang) * rad;
-          m.ty = m.target.y + Math.sin(ang) * rad * 0.7;
-          m.dir = ang + Math.PI / 2;
-          if (m.timer <= 0) {
-            m.state = 'fly';
-            m.timer = 3000 + rnd() * 6000;
-            // новый фонарь
-            m.target = h.mothSpots[Math.floor(rnd() * h.mothSpots.length)] ?? m.target;
-          }
-        } else {
-          const v = 0.0007 + rnd() * 0.0003;
-          m.tx += (dx / d) * v * dt + Math.sin(m.phase) * 0.0004 * dt;
-          m.ty += (dy / d) * v * dt * 0.7 + Math.cos(m.phase * 1.3) * 0.0003 * dt;
-          m.dir = Math.atan2(dy, dx) + Math.sin(m.phase) * 0.5;
-        }
-      }
-      m.tx = clamp(m.tx, 0.5, GRID - 0.5);
-      m.ty = clamp(m.ty, 0.5, GRID - 0.5);
-    }
-
-    this.mothTimer -= dt;
-    while (this.moths.length < want && this.mothTimer <= 0) {
-      this.mothTimer = 220 + rnd() * 420;
-      const a = h.mothSpots[Math.floor(rnd() * h.mothSpots.length)] ?? h.lanterns[0];
-      if (!a) break;
-      this.moths.push({
-        tx: a.x + (rnd() - 0.5) * 2.2,
-        ty: a.y + (rnd() - 0.5) * 2.2,
-        ax: a.x,
-        ay: a.y,
-        dir: rnd() * Math.PI * 2,
-        seed: Math.floor(rnd() * 10000),
-        timer: 3000 + rnd() * 7000,
-        phase: rnd() * 10,
-        alpha: 0,
-        state: 'fly',
-        target: a,
-      });
-      if (this.moths.length === 1) this.notes.push('meet_moth');
-    }
-  }
-
   private exitFrom(x: number, y: number): Vec {
     const cx = GRID / 2;
     const cy = GRID / 2;
@@ -1540,7 +1437,7 @@ export class Wildlife {
   }
 
   force(
-    kind: 'fireflies' | 'heron' | 'deer' | 'hedgehog' | 'mouse' | 'owl' | 'squirrel' | 'turtle' | 'bee' | 'moth',
+    kind: 'fireflies' | 'heron' | 'deer' | 'hedgehog' | 'mouse' | 'owl' | 'squirrel' | 'turtle' | 'bee',
     h: Habitat,
     t: TimeState,
   ): void {
@@ -1705,26 +1602,6 @@ export class Wildlife {
           target: spot,
           carrying: rnd() < 0.5,
           alpha: 1,
-        });
-      }
-      return;
-    }
-    if (kind === 'moth') {
-      const spot = h.mothSpots[Math.floor(rnd() * h.mothSpots.length)] ?? h.lanterns[0] ?? h.glades[0];
-      if (!spot) return;
-      for (let i = 0; i < 6; i++) {
-        this.moths.push({
-          tx: spot.x + (rnd() - 0.5) * 1.5,
-          ty: spot.y + (rnd() - 0.5) * 1.5,
-          ax: spot.x,
-          ay: spot.y,
-          dir: rnd() * Math.PI * 2,
-          seed: 41 + i,
-          timer: 6000,
-          phase: rnd() * 10,
-          alpha: 1,
-          state: 'fly',
-          target: spot,
         });
       }
       return;

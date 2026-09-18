@@ -23,7 +23,6 @@ import {
   drawFirefly,
   drawHedgehog,
   drawHeron,
-  drawMoth,
   drawMouse,
   drawOwl,
   drawSquirrel,
@@ -616,19 +615,13 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
         list.push({ depth: (tu.tx + tu.ty) * 100 + lvl * 20 + 4, draw: () => drawTurtle(ctx, tu, p.x, p.y, atm, time) });
       }
     }
-    // Светлячки, мотыльки и пчёлы — ночная и дневная мелочь: на дальнем плане бережём кадр
+    // Светлячки и пчёлы — ночная и дневная мелочь: на дальнем плане бережём кадр
     if (opts.zoom >= 0.42 && opts.particles) {
       for (const f of opts.life.wildlife.fireflies) {
         const tile = world.at(Math.floor(f.tx), Math.floor(f.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(f.tx, f.ty, lvl);
         list.push({ depth: (f.tx + f.ty) * 100 + lvl * 20 + 10, draw: () => drawFirefly(ctx, f, p.x, p.y, atm, time) });
-      }
-      for (const m of opts.life.wildlife.moths) {
-        const tile = world.at(Math.floor(m.tx), Math.floor(m.ty));
-        const lvl = tile ? tile.level : 0;
-        const p = isoToScreen(m.tx, m.ty, lvl);
-        list.push({ depth: (m.tx + m.ty) * 100 + lvl * 20 + 10, draw: () => drawMoth(ctx, m, p.x, p.y, atm, time) });
       }
       for (const b of opts.life.wildlife.bees) {
         const tile = world.at(Math.floor(b.tx), Math.floor(b.ty));
