@@ -240,7 +240,10 @@ function drawDragonflyBody(ctx: Ctx, body: RGB, bodyDeep: RGB, hawker: boolean):
 
 /** Всплеск лягушки или след купания: круг расходится и тает. */
 export function drawRipple(ctx: Ctx, r: Ripple, x: number, y: number, atm: Atmosphere): void {
-  const k = r.age / 1600;
+  // Отрицательный возраст (кривая метка кадра) дал бы отрицательный радиус,
+  // а ellipse() с таким бросает IndexSizeError и кладёт весь кадр.
+  if (r.age <= 0) return;
+  const k = Math.min(1, r.age / 1600);
   const a = (1 - k) * 0.5;
   if (a <= 0.02) return;
   const rad = (r.big ? 3 : 2) + k * (r.big ? 15 : 8);

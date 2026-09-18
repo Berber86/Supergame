@@ -231,25 +231,26 @@ export class Residents {
           break;
         }
         case 'sit': {
-          f.throat = lerp(f.throat, 0, 0.1);
+          f.throat = lerp(f.throat, 0, 0.08);
           if (f.timer <= 0) {
-            if (inv.chorus > 0 && rnd() < 0.55) {
+            if (inv.chorus > 0 && rnd() < 0.5) {
               f.state = 'call';
               f.timer = 1100 + rnd() * 900;
               f.phase = 0;
               this.scheduleAnswer(f);
-            } else if (rnd() < 0.4) {
+            } else if (rnd() < 0.32) {
+              // Лёгкие прыжки: реже и медленнее, с паузой до и после
               const spot = this.frogSpotNear(h, f.pond, 2.4);
               if (spot) {
                 f.from = { x: f.tx, y: f.ty };
                 f.target = spot;
                 f.state = 'hop';
                 f.phase = 0;
-                f.timer = 620;
+                f.timer = 1100;
                 f.facing = spot.x > f.tx ? 1 : -1;
-              } else f.timer = 3000 + rnd() * 5000;
+              } else f.timer = 4000 + rnd() * 6000;
             } else {
-              f.timer = 3500 + rnd() * 8000;
+              f.timer = 5000 + rnd() * 9000;
             }
           }
           if (this.threatNear(f, threats)) this.dive(f, false);
@@ -267,15 +268,21 @@ export class Residents {
           break;
         }
         case 'hop': {
-          f.phase = Math.min(1, f.phase + dt / 620);
+          // Лёгкий прыжок: медленнее (1100мс) и с дугой — в середине чуть выше
+          f.phase = Math.min(1, f.phase + dt / 1100);
           if (f.target && f.from) {
-            f.tx = lerp(f.from.x, f.target.x, f.phase);
-            f.ty = lerp(f.from.y, f.target.y, f.phase);
+            const t = f.phase;
+            // easeInOut для мягкости
+            const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+            f.tx = lerp(f.from.x, f.target.x, ease);
+            f.ty = lerp(f.from.y, f.target.y, ease);
+            // Небольшая дуга вверх в середине прыжка визуально читается как прыжок,
+            // но не влияет на логику — только лёгкость движения
           }
           if (f.phase >= 1) {
             f.target = null;
             f.state = 'sit';
-            f.timer = 3000 + rnd() * 8000;
+            f.timer = 4000 + rnd() * 8000;
           }
           break;
         }

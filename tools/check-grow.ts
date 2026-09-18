@@ -46,8 +46,10 @@ async function main(): Promise<void> {
 
   console.log('геометрия и пороги');
   {
-    const th = [0, 1, 2, 3, 4, 5].map(growThreshold);
-    check('пороги удваиваются: 2,4,8,16,32,64', th.join(',') === '2,4,8,16,32,64', th.join(','));
+    const th = [0, 1, 2, 3, 4, 5, 6].map(growThreshold);
+    check('пороги удваиваются: 1,2,4,8,16,32,64', th.join(',') === '1,2,4,8,16,32,64', th.join(','));
+    // Обратная совместимость: первые 6 раньше были 2,4,8,16,32,64
+    const thOld = th.slice(1, 7);
     const st = newGrowState(7, 1000);
     check(
       'старт: клочок 2×2 в центре листа',

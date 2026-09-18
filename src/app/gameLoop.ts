@@ -78,9 +78,31 @@ export function startLoop(deps: LoopDeps): void {
     };
   }
 
+  let frameError = false;
+
   function frame(now: number): void {
-    const dt = Math.min(now - last, 60);
+    // dt зажат с обеих сторон: после сна устройства или возврата вкладки
+    // метка rAF может прийти раньше прошлой — отрицательный dt отравил бы
+    // все возрасты (круги на воде и т.п.) и уронил бы кадр исключением.
+    const dt = Math.min(Math.max(now - last, 0), 60);
     last = now;
+
+    try {
+      step(now, dt);
+    } catch (e) {
+      // Кадр не должен ронять цикл: одна плохая отрисовка — это пропуск
+      // кадра, а не вечное «зависание» с застывшей сценой.
+      if (!frameError) {
+        frameError = true;
+        console.error('Кадр сброшен из-за ошибки:', e);
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function step(now: number, dt: number): void {
+    // Холст ещё не в документе или вкладка схлопнута — рисовать нечего.
+    if (scene.viewW < 1 || scene.viewH < 1) return;
 
     timeCtl.tick(dt);
     const t = timeCtl.compute();
@@ -121,7 +143,7 @@ export function startLoop(deps: LoopDeps): void {
     if (deps.getEntryZoom() > 0) {
       const k = 1 - Math.pow(0.004, dt / 1000);
       scene.camera.zoom += (deps.getEntryZoom() - scene.camera.zoom) * k;
-      if (Math.abs(deps.getEntryZoom() - scene.camera.zoom) < 0.002) {
+      if (Math.abs(deps.getEntryZoom() - scene.camera.zoom) < 0.002 || !Number.isFinite(scene.camera.zoom)) {
         scene.camera.zoom = deps.getEntryZoom();
         deps.setEntryZoom(0);
       }
@@ -140,8 +162,6 @@ export function startLoop(deps: LoopDeps): void {
       audioAccum = 400;
       audio.update(400, t, weatherSys.state, gatherAudioContext());
     }
-
-    requestAnimationFrame(frame);
   }
 
   requestAnimationFrame(frame);

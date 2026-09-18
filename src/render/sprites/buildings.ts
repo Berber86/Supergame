@@ -469,3 +469,125 @@ export const drawBirdbath: Drawer = (d) => {
     ctx.fill();
   }
 };
+
+export const drawBeehive: Drawer = (d) => {
+  const { ctx, atm, obj } = d;
+  shadowUnder(d, 11, 5, 1);
+  const straw = litc({ r: 206, g: 182, b: 118 }, atm);
+  const strawDark = litc({ r: 168, g: 138, b: 84 }, atm);
+  const wood = litc({ r: 132, g: 96, b: 68 }, atm);
+
+  // Ножки
+  ctx.fillStyle = css(wood, 0.9);
+  ctx.fillRect(d.x - 6, d.y - 2, 2, 6);
+  ctx.fillRect(d.x + 4, d.y - 2, 2, 6);
+
+  // Корпус — плетёный купол
+  washBlob(ctx, d.x, d.y - 10, 8, 6.5, straw, obj.seed, { alpha: 0.85, edge: 0.3 });
+  // Полоски плетения
+  ctx.strokeStyle = css(strawDark, 0.45);
+  ctx.lineWidth = 0.8;
+  for (let i = 0; i < 4; i++) {
+    const yy = d.y - 14 + i * 3;
+    ctx.beginPath();
+    ctx.ellipse(d.x, yy, 7 - i * 0.5, 0.6, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  // Леток
+  ctx.fillStyle = css({ r: 58, g: 48, b: 36 }, 0.9);
+  ctx.beginPath();
+  ctx.ellipse(d.x, d.y - 5, 2.2, 1.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Пчёлы у летка — точки
+  if (atm.time.daylight > 0.4) {
+    ctx.fillStyle = css({ r: 48, g: 42, b: 36 }, 0.6);
+    for (let i = 0; i < 3; i++) {
+      const a = d.time * 0.01 + i + obj.seed * 0.1;
+      ctx.beginPath();
+      ctx.arc(d.x + Math.cos(a) * 4, d.y - 8 + Math.sin(a * 1.3) * 2, 0.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+};
+
+export const drawSquirrelFeeder: Drawer = (d) => {
+  const { ctx, atm, obj } = d;
+  shadowUnder(d, 10, 4, 1);
+  const wood = litc({ r: 160, g: 116, b: 78 }, atm);
+  const woodDark = litc({ r: 108, g: 76, b: 52 }, atm);
+  const roof = litc({ r: 148, g: 92, b: 68 }, atm);
+
+  // Столбик
+  ctx.fillStyle = css(woodDark, 0.9);
+  ctx.fillRect(d.x - 1.5, d.y - 18, 3, 18);
+
+  // Домик — маленький скворечник с платформой
+  ctx.fillStyle = css(wood, 0.96);
+  ctx.beginPath();
+  ctx.moveTo(d.x - 9, d.y - 18);
+  ctx.lineTo(d.x + 9, d.y - 18);
+  ctx.lineTo(d.x + 7, d.y - 24);
+  ctx.lineTo(d.x - 7, d.y - 24);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = css(woodDark, 0.6);
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Крыша
+  ctx.fillStyle = css(roof, 0.96);
+  ctx.beginPath();
+  ctx.moveTo(d.x - 10, d.y - 24);
+  ctx.lineTo(d.x, d.y - 32);
+  ctx.lineTo(d.x + 10, d.y - 24);
+  ctx.closePath();
+  ctx.fill();
+
+  // Вход — круг
+  ctx.fillStyle = css({ r: 48, g: 38, b: 32 }, 0.9);
+  ctx.beginPath();
+  ctx.arc(d.x, d.y - 21, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Орешки на платформе
+  ctx.fillStyle = css(litc({ r: 110, g: 78, b: 52 }, atm), 0.9);
+  for (let i = 0; i < 4; i++) {
+    const ox = -6 + (i % 3) * 4 + (obj.seed % 3) * 0.2;
+    const oy = -19 + Math.floor(i / 3) * 2;
+    ctx.beginPath();
+    ctx.ellipse(d.x + ox, d.y + oy, 0.9, 1.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+};
+
+export const drawTurtleLog: Drawer = (d) => {
+  const { ctx, atm, obj } = d;
+  shadowUnder(d, 14, 6, 1);
+  const log = litc({ r: 132, g: 108, b: 78 }, atm);
+  const logDark = litc({ r: 96, g: 78, b: 56 }, atm);
+  const moss = litc({ r: 96, g: 124, b: 82 }, atm);
+
+  // Бревно у воды — полузатопленное
+  washBlob(ctx, d.x, d.y - 3, 9, 3.5, log, obj.seed, { alpha: 0.8, edge: 0.3 });
+  ctx.strokeStyle = css(logDark, 0.5);
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(d.x - 8, d.y - 4);
+  ctx.lineTo(d.x + 8, d.y - 2);
+  ctx.stroke();
+
+  // Мох на бревне
+  ctx.fillStyle = css(moss, 0.6);
+  ctx.beginPath();
+  ctx.ellipse(d.x - 2, d.y - 5, 3, 1.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(d.x + 3, d.y - 4, 2, 0.9, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Вода вокруг — блик
+  ctx.fillStyle = css(litc({ r: 168, g: 196, b: 196 }, atm), 0.3);
+  ctx.beginPath();
+  ctx.ellipse(d.x, d.y - 1, 11, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+};

@@ -205,28 +205,34 @@ export function drawMist(ctx: Ctx, w: number, h: number, atm: Atmosphere, time: 
 
 /** Лучи света сквозь листву (god rays) в золотой час. */
 export function drawSunShafts(ctx: Ctx, w: number, h: number, atm: Atmosphere, time: number): void {
-  const strength = atm.golden * 0.55 + atm.time.daylight * 0.08;
+  // Сила — только золотой час, днём почти не видно. Раньше добавляли daylight*0.08
+  // и даже в полдень были полосы, а они должны быть только на рассвете/закате.
+  const strength = atm.golden * 0.32 + atm.time.daylight * 0.02;
   if (strength < 0.03) return;
   // Лучи тёплые и узкие: широкие полосы читались как блики на стекле,
-  // а не как свет низкого солнца сквозь пыль и листву.
+  // а не как свет низкого солнца сквозь пыль и листву. Исправлено направление:
+  // тень = +sunDir.x (вправо утром), и лучи должны идти туда же — от солнца,
+  // а не к солнцу. Было x - dirX*…, стало x + dirX*….
   const warm = mix({ r: 255, g: 208, b: 128 }, { r: 255, g: 176, b: 96 }, atm.golden);
   const dirX = atm.sunDir.x;
   ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  for (let i = 0; i < 6; i++) {
+  ctx.globalCompositeOperation = 'soft-light';
+  for (let i = 0; i < 5; i++) {
     const seed = hash2(i, 11, 3);
-    const x = w * (0.1 + seed * 0.8) + Math.sin(time * 0.00012 + i) * 40;
-    const wdt = 46 + seed * 90;
-    const g = ctx.createLinearGradient(x, 0, x - dirX * 260, h);
-    g.addColorStop(0, css(warm, 0.2 * strength));
-    g.addColorStop(0.55, css(warm, 0.08 * strength));
+    // Привязываем к стороне солнца: утром лучи начинаются левее, вечером правее
+    const sunBias = dirX * 0.18;
+    const x = w * (0.15 + seed * 0.7 + sunBias * 0.2) + Math.sin(time * 0.00012 + i) * 24;
+    const wdt = 18 + seed * 38;
+    const g = ctx.createLinearGradient(x, 0, x + dirX * 220, h);
+    g.addColorStop(0, css(warm, 0.09 * strength));
+    g.addColorStop(0.5, css(warm, 0.035 * strength));
     g.addColorStop(1, css(warm, 0));
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.moveTo(x - wdt / 2, -20);
     ctx.lineTo(x + wdt / 2, -20);
-    ctx.lineTo(x + wdt * 0.9 - dirX * 300, h + 20);
-    ctx.lineTo(x - wdt * 0.9 - dirX * 300, h + 20);
+    ctx.lineTo(x + wdt * 0.7 + dirX * 240, h + 20);
+    ctx.lineTo(x - wdt * 0.7 + dirX * 240, h + 20);
     ctx.closePath();
     ctx.fill();
   }

@@ -91,9 +91,12 @@
 .pr-lead {
   font-style: italic;
   color: var(--ink-soft);
-  margin: 2px 0 18px;
-  max-width: 640px;
+  margin: 2px 0 14px;
+  max-width: 680px;
+  line-height: 1.5;
 }
+
+.pr-how { display: none; } /* убрано — перегружало вступление */
 
 .practice.night .pr-lead {
   color: rgba(244, 236, 217, 0.66);
@@ -127,12 +130,14 @@
 
 .pr-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
-  min-height: 54px;
-  padding: 8px 10px;
-  border-radius: 3px;
+  min-height: 72px;
+  padding: 10px 12px;
+  border-radius: 6px;
   cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.2s, border-color 0.2s;
 }
 
 .pr-row:hover {
@@ -181,16 +186,38 @@
 
 .pr-row-info {
   min-width: 0;
+  flex: 1;
 }
 
 .pr-row-name {
   font-size: 16.5px;
+  line-height: 1.25;
+}
+
+.pr-row-what {
+  font-weight: 400;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  font-style: italic;
 }
 
 .pr-row-hint {
   font-size: 12.5px;
   font-style: italic;
   color: var(--ink-soft);
+  margin-top: 2px;
+}
+
+.pr-row-steps {
+  font-size: 11.8px;
+  color: var(--silk);
+  margin-top: 4px;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+  opacity: 0.9;
+}
+.practice.night .pr-row-steps {
+  color: #d8b48c;
 }
 
 .practice.night .pr-row-hint {
@@ -256,6 +283,108 @@
 .practice.night .pr-care {
   border-top-color: rgba(244, 236, 217, 0.25);
   color: rgba(244, 236, 217, 0.55);
+}
+
+/* ---------------- Практика детально — облегчено ---------------- */
+
+.pr-practice {
+  max-width: 600px;
+}
+
+.pr-p-what {
+  font-size: 14.5px;
+  font-style: italic;
+  color: var(--ink-soft);
+  margin-top: 4px;
+  line-height: 1.4;
+  max-width: 520px;
+}
+
+.pr-p-steps {
+  margin: 18px 0 10px;
+}
+
+.pr-p-steps.simple {
+  margin: 20px 0 12px;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.pr-p-steps ol,
+.pr-mini-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pr-p-steps li,
+.pr-mini-steps li {
+  display: flex;
+  gap: 10px;
+  font-size: 15.5px;
+  line-height: 1.4;
+}
+
+.pr-step-n {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(59,48,40,0.08);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  margin-top: 1px;
+}
+
+.practice.night .pr-step-n {
+  background: rgba(244,236,217,0.12);
+}
+
+.pr-p-meta {
+  margin-top: 14px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  font-style: italic;
+  line-height: 1.4;
+  max-width: 520px;
+}
+
+.pr-l-details {
+  margin: 18px 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(59,48,40,0.12);
+  border-radius: 8px;
+  background: rgba(255,252,240,0.4);
+}
+
+.practice.night .pr-l-details {
+  border-color: rgba(244,236,217,0.12);
+  background: rgba(244,236,217,0.05);
+}
+
+.pr-l-details summary {
+  cursor: pointer;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--silk);
+  list-style: none;
+}
+
+.pr-l-details summary span {
+  font-style: italic;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  margin-left: 6px;
+}
+
+.pr-l-details[open] summary {
+  margin-bottom: 12px;
 }
 
 /* ---------------- Урок ---------------- */
@@ -360,6 +489,17 @@
   background: rgba(244, 236, 217, 0.16);
 }
 
+.pr-btn.primary {
+  background: rgba(59,48,40,0.09);
+  border-color: rgba(59,48,40,0.55);
+  font-weight: 600;
+}
+
+.practice.night .pr-btn.primary {
+  background: rgba(244,236,217,0.12);
+  border-color: rgba(244,236,217,0.6);
+}
+
 .pr-btn.ghost {
   border-color: transparent;
   background: none;
@@ -370,6 +510,80 @@
   color: rgba(244, 236, 217, 0.62);
 }
 
+/* ---------------- Ready 3-2-1 ---------------- */
+
+.pr-ready {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.pr-ready-kanji {
+  font-family: var(--jp);
+  font-size: 64px;
+  color: var(--silk);
+  opacity: 0.9;
+}
+
+.practice.night .pr-ready-kanji {
+  color: #d8b48c;
+}
+
+.pr-ready-name {
+  font-size: 18px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pr-ready-what {
+  font-size: 16px;
+  font-style: italic;
+  color: var(--ink-soft);
+  max-width: 520px;
+  line-height: 1.4;
+}
+
+.pr-ready-step {
+  margin-top: 10px;
+  padding: 12px 18px;
+  border-radius: 10px;
+  background: rgba(59,48,40,0.07);
+  font-size: 18px;
+  line-height: 1.4;
+  max-width: 520px;
+  transition: all 0.3s;
+}
+
+.practice.night .pr-ready-step {
+  background: rgba(244,236,217,0.09);
+  color: rgba(244,236,217,0.9);
+}
+
+.pr-ready-count {
+  font-size: 84px;
+  font-weight: 200;
+  line-height: 1;
+  color: var(--silk);
+  margin: 6px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.practice.night .pr-ready-count {
+  color: #d8b48c;
+}
+
+.pr-ready-hint {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
 /* ---------------- Сеанс ---------------- */
 
 .pr-session {
@@ -378,25 +592,154 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: 10px;
+  position: relative;
+}
+
+.pr-session-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.pr-session-kanji {
+  font-family: var(--jp);
+  font-size: 18px;
+  color: var(--silk);
+}
+
+.pr-session-name {
+  font-weight: 600;
+}
+
+.pr-session-meta {
+  opacity: 0.7;
+}
+
+.pr-guide {
+  min-height: 28px;
+  padding: 8px 18px;
+  border-radius: 20px;
+  background: rgba(59,48,40,0.07);
+  font-size: 16px;
+  line-height: 1.35;
+  text-align: center;
+  max-width: 560px;
+  transition: background 0.3s;
+}
+
+.practice.night .pr-guide {
+  background: rgba(244,236,217,0.08);
+  color: rgba(244,236,217,0.9);
+}
+
+.pr-breath {
+  min-height: 22px;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--silk);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.pr-breath.in {
+  opacity: 1;
+  color: #5a8a6a;
+}
+
+.pr-breath.out {
+  opacity: 1;
+  color: var(--silk);
+}
+
+.pr-count {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%,-50%) scale(0.8);
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 96px;
+  font-weight: 200;
+  color: var(--silk);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.5s var(--ease);
+  z-index: 2;
+}
+
+.pr-count.show {
+  opacity: 0.22;
+  transform: translate(-50%,-50%) scale(1.15);
 }
 
 .pr-canvas {
-  width: min(60vmin, 520px);
-  height: min(60vmin, 520px);
+  width: min(58vmin, 500px);
+  height: min(58vmin, 500px);
 }
 
 .pr-line {
-  min-height: 26px;
+  min-height: 28px;
   padding: 0 16px;
   text-align: center;
-  font-size: 17px;
+  font-size: 16px;
   font-style: italic;
   color: var(--ink-soft);
+  max-width: 560px;
+  line-height: 1.4;
 }
 
 .practice.night .pr-line {
   color: rgba(244, 236, 217, 0.75);
+}
+
+.pr-dots {
+  display: flex;
+  gap: 8px;
+  min-height: 20px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+}
+
+.pr-dots span {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(59,48,40,0.2);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  color: var(--ink-soft);
+  transition: all 0.3s;
+}
+
+.pr-dots span.on {
+  background: var(--silk);
+  color: #fdfaf0;
+  border-color: var(--silk);
+}
+
+.practice.night .pr-dots span {
+  border-color: rgba(244,236,217,0.22);
+  color: rgba(244,236,217,0.5);
+}
+
+.practice.night .pr-dots span.on {
+  background: #d8b48c;
+  color: #1a2130;
+  border-color: #d8b48c;
+}
+
+.pr-session-hint {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  opacity: 0.6;
+  letter-spacing: 0.04em;
+  margin-top: 4px;
 }
 
 .pr-meta {
@@ -421,6 +764,8 @@
   justify-content: center;
   gap: 10px;
   text-align: center;
+  max-width: 600px;
+  margin: 0 auto;
 }
 
 .pr-end-kanji {
@@ -444,6 +789,23 @@
 
 .practice.night .pr-end-sub {
   color: rgba(244, 236, 217, 0.6);
+}
+
+.pr-end-feedback {
+  margin-top: 10px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: rgba(59,48,40,0.06);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  font-style: italic;
+  max-width: 520px;
+}
+
+.practice.night .pr-end-feedback {
+  background: rgba(244,236,217,0.07);
+  color: rgba(244,236,217,0.7);
 }
 
 .pr-end .pr-actions {

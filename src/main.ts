@@ -7,7 +7,7 @@ import './ui/style.css';
 import { GRID, floorTo, inBounds } from './core/iso';
 import { Scene } from './render/scene';
 import { World } from './world/world';
-import { GROW_BANK_CAP, growOfferReady, newGrowState, seedGrowWorld, GROW_ACTION_MS } from './world/grow';
+import { GROW_BANK_CAP, growOfferReady, growThreshold, newGrowState, seedGrowWorld, GROW_ACTION_MS } from './world/grow';
 import { moving, pathStart, pointer, setupInput } from './app/input';
 import { UI, Selection } from './ui/ui';
 import { ITEM_BY_ID, TERRAIN_BRUSHES, footprintCells } from './world/catalog';
@@ -311,6 +311,31 @@ const devPanel = new DevPanel(app, timeCtl, weatherSys, {
   onChange() {
     scene.markTerrainDirty();
     wake();
+  },
+  getGrow() {
+    const g = world.grow;
+    if (!g) return null;
+    return {
+      bank: g.bank,
+      progress: g.progress,
+      stage: g.stage,
+      need: growThreshold(g.stage),
+    };
+  },
+  giveGrowAction() {
+    const g = world.grow;
+    if (!g) {
+      ui.toast('Сначала войдите в растущий сад');
+      return;
+    }
+    if (g.bank >= GROW_BANK_CAP) {
+      ui.toast(`Банк полон: ${GROW_BANK_CAP}/${GROW_BANK_CAP}`);
+      return;
+    }
+    g.bank = Math.min(GROW_BANK_CAP, g.bank + 1);
+    g.tick = Date.now();
+    saveWorld();
+    ui.toast(`Дано действие — теперь ${g.bank}/${GROW_BANK_CAP}`);
   },
 });
 
@@ -863,6 +888,29 @@ function growFrame(dt: number): void {
     const mins = Math.max(1, Math.ceil((GROW_ACTION_MS - (Date.now() - world.grow.tick)) / 60000));
     ui.setHint(`Действий нет — новое придёт через ${mins} мин`);
   }
+  // Принудительное расширение: как только порог достигнут, другие
+  // интерфейсы сворачиваются и показывается выбор зон (просил игрок).
+  if (growOfferReady(world.grow) && !world.grow.choosing) {
+    ui.toggleBuild(false);
+    ui.toggleHelp(false);
+    settingsPanel.setOpen(false);
+    gardensPanel.setOpen(false);
+    devPanel.setOpen(false);
+    chronicle.setOpen(false);
+    if (practice.isOpen) practice.close();
+    clearPending();
+    input.cancelOngoingAction();
+    ui.select({ kind: 'none' });
+    world.grow.choosing = true;
+    saveWorld();
+    ui.toast('Сад готов расти — выберите подсвеченную зону');
+    ui.setHint('Коснитесь зоны за туманом — сад вырастет туда');
+    const r = world.grow.rect;
+    scene.centerOn(r.x + r.w / 2, r.y + r.h / 2);
+    scene.clampCamera();
+    growLineShown = false;
+    ui.setGrowVisible(false);
+  }
   const show = !zenMode && !world.grow.choosing && growOfferReady(world.grow);
   if (show !== growLineShown) {
     growLineShown = show;
@@ -1006,6 +1054,9 @@ syncGrowRect();
 // Периодическое автосохранение — сад не должен теряться
 setInterval(saveWorld, 20000);
 window.addEventListener('beforeunload', saveWorld);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) saveWorld();
+});
 
 // Тихая подсказка при входе. На телефоне клавиш нет — называем то, что там
 // действительно есть: кнопки и жесты. Показывается один раз и не поверх свитка.
