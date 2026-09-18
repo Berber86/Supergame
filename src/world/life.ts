@@ -16,7 +16,7 @@ import { Habitat, Invitation, invitations, scanHabitat } from './habitat';
 import { Residents, Threat } from './residents';
 import { Wildlife } from './wildlife';
 import { WeatherState } from './weatherState';
-import { World } from './world';
+import { ChronicleToastNote, World } from './world';
 
 export type CatState = 'sleep' | 'sit' | 'walk' | 'wash' | 'stretch' | 'loaf';
 export type BirdState = 'fly-in' | 'hop' | 'peck' | 'perch' | 'feed' | 'drink' | 'bathe' | 'fly-out';
@@ -233,7 +233,7 @@ export class Life {
     moths: 0,
   };
   /** Заметки в летопись: игровой цикл забирает их каждый кадр. */
-  pendingNotes: string[] = [];
+  pendingNotes: ChronicleToastNote[] = [];
   /** Общая фаза ветра 0..1 — плавный фон поверх порывов. */
   windBase = 0.45;
   private gustTimer = 4000;
@@ -365,7 +365,7 @@ export class Life {
     for (const b of this.birds) if (b.alt < 8) threats.push({ x: b.tx, y: b.ty, r: 1.0 });
 
     this.residents.update(world, h, inv, wx ?? null, dt, now, threats);
-    for (const note of this.residents.takeNotes()) this.note(world, note);
+    for (const note of this.residents.takeNotes()) this.note(world, note.id, note.x, note.y);
 
     // Удар цапли по воде: круги и разлетающиеся карпы видны со стороны
     this.wildlife.onStrike = (x, y) => {
@@ -373,7 +373,7 @@ export class Life {
       this.scareFish(x, y);
     };
     this.wildlife.update(h, inv, t, wx ?? null, dt, now, threats);
-    for (const note of this.wildlife.takeNotes()) this.note(world, note);
+    for (const note of this.wildlife.takeNotes()) this.note(world, note.id, note.x, note.y);
 
     this.updateCats(world, t, dt);
     this.updateGuest(world, h, inv, t, dt, now);
@@ -388,8 +388,8 @@ export class Life {
    * Метка времени — настоящая дата: летопись живёт по календарю, а не
    * по счётчику кадров.
    */
-  private note(world: World, id: string): void {
-    world.noteEvent(id, Date.now());
+  private note(world: World, id: string, x?: number, y?: number): void {
+    world.noteEvent(id, Date.now(), x, y);
   }
 
   // ---------------- Ветер ----------------
@@ -487,7 +487,7 @@ export class Life {
           const md = Math.hypot(mouse.tx - c.tx, mouse.ty - c.ty);
           c.facing = mouse.tx > c.tx ? 1 : -1;
           if (md < 1.2 && rnd() < 0.15) {
-            this.note(world, 'cat_mouse');
+            this.note(world, 'cat_mouse', c.tx, c.ty);
           }
           if (c.state !== 'walk' && md > 1.8 && rnd() < 0.35) {
             c.state = 'walk';
@@ -516,7 +516,7 @@ export class Life {
         if (sq) {
           const md = Math.hypot(sq.tx - c.tx, sq.ty - c.ty);
           c.facing = sq.tx > c.tx ? 1 : -1;
-          if (md < 1.5 && rnd() < 0.12) this.note(world, 'cat_squirrel');
+          if (md < 1.5 && rnd() < 0.12) this.note(world, 'cat_squirrel', c.tx, c.ty);
           if (c.state !== 'walk' && md > 2.0 && rnd() < 0.32) {
             c.state = 'walk';
             c.target = { x: sq.tx, y: sq.ty };
@@ -575,7 +575,7 @@ export class Life {
         if (g.greet <= 0) {
           g.greet = 9000;
           c.greet = 9000;
-          this.note(world, 'cats_greet');
+          this.note(world, 'cats_greet', (g.tx + c.tx) / 2, (g.ty + c.ty) / 2);
         }
       }
     }
@@ -769,7 +769,7 @@ export class Life {
         placed.seed = seed;
         world.noteObjectsChanged();
         this.guests = [];
-        this.note(world, 'guest_stayed');
+        this.note(world, 'guest_stayed', guest.tx, guest.ty);
         world.checkMilestone('second_cat');
       }
     }
@@ -807,7 +807,7 @@ export class Life {
     g.stayAt = now + stay * 0.5;
     g.leaveAt = now + stay;
     this.guests = [g];
-    this.note(world, 'meet_guest');
+    this.note(world, 'meet_guest', g.tx, g.ty);
   }
 
   private exitPoint(c: Cat): Vec {
@@ -912,17 +912,20 @@ export class Life {
         for (const o of this.birds) {
           if (o.state !== 'fly-out' && Math.hypot(o.tx - b.tx, o.ty - b.ty) < 6) this.birdLeave(o);
         }
-        this.note(world, 'birds_fled');
+        this.note(world, 'birds_fled', b.tx, b.ty);
         break;
       }
     }
 
     // Компания у кормушки — событие, которое замечают
     const atFeeder = this.birds.filter((b) => b.place === 'feeder' && b.state !== 'fly-out').length;
-    if (atFeeder >= 3) this.note(world, 'flock');
+    if (atFeeder >= 3) {
+      const fb = this.birds.find(bb => bb.place === 'feeder');
+      this.note(world, 'flock', fb?.tx, fb?.ty);
+    }
     if (t.season === 'winter' && atFeeder >= 2) {
       world.checkMilestone('winter_feeder');
-      this.note(world, 'winter_table');
+      this.note(world, 'winter_table', this.birds.find(bb => bb.place === 'feeder')?.tx, this.birds.find(bb => bb.place === 'feeder')?.ty);
     }
 
     for (let i = this.birds.length - 1; i >= 0; i--) {
@@ -941,7 +944,7 @@ export class Life {
             b.state = 'perch';
             b.timer = 1600 + rnd() * 2600;
             world.checkMilestone('bird_guest');
-            this.note(world, 'meet_feeder');
+            this.note(world, 'meet_feeder', b.tx, b.ty);
           } else if (b.place === 'bath') {
             b.state = rnd() < 0.5 ? 'drink' : 'bathe';
             b.timer = 1800 + rnd() * 2600;
@@ -985,7 +988,7 @@ export class Life {
       } else if (b.state === 'drink' || b.state === 'bathe') {
         if (b.timer <= 0) {
           if (b.state === 'bathe') {
-            this.note(world, 'bath_splash');
+            this.note(world, 'bath_splash', b.tx, b.ty);
             this.residents.ripple(b.tx, b.ty, false);
           }
           if (rnd() < 0.4) this.birdLeave(b);

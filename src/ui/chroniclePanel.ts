@@ -12,7 +12,7 @@ import { World } from '../world/world';
 import { svgIcon } from './icons';
 import { MILESTONES } from '../world/catalog';
 
-const CHRONICLE_IMAGES: Record<string, string> = {
+export const CHRONICLE_IMAGES: Record<string, string> = {
   // лягушки и вода
   meet_frog: './images/chronicle/meet_frog.webp',
   chorus: './images/chronicle/chorus.webp',

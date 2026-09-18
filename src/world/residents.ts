@@ -92,12 +92,14 @@ export interface Threat {
 
 const MAX_RIPPLES = 24;
 
+import { ChronicleToastNote } from './world';
+
 export class Residents {
   frogs: Frog[] = [];
   dragonflies: PondDragonfly[] = [];
   ripples: Ripple[] = [];
   /** Заметки для летописи: игровой цикл забирает их каждый кадр. */
-  private notes: string[] = [];
+  private notes: ChronicleToastNote[] = [];
   private nextId = 1;
   private chorusCooldown = 0;
   private pairCooldown = 0;
@@ -111,14 +113,14 @@ export class Residents {
     this.pairCooldown = 0;
   }
 
-  takeNotes(): string[] {
+  takeNotes(): ChronicleToastNote[] {
     const out = this.notes;
     this.notes = [];
     return out;
   }
 
-  private note(id: string): void {
-    if (this.notes.length < 8) this.notes.push(id);
+  private note(id: string, x?: number, y?: number): void {
+    if (this.notes.length < 8) this.notes.push({ id, x: x ?? GRID / 2, y: y ?? GRID / 2 });
   }
 
   update(
@@ -173,7 +175,9 @@ export class Residents {
     const calling = this.frogs.filter((f) => f.state === 'call' && f.hidden <= 0);
     if (calling.length >= 2 && this.chorusCooldown <= 0 && inv.chorus > 0) {
       this.chorusCooldown = 45_000;
-      this.note('chorus');
+      const ax = calling.reduce((s, f) => s + f.tx, 0) / calling.length;
+      const ay = calling.reduce((s, f) => s + f.ty, 0) / calling.length;
+      this.note('chorus', ax, ay);
     }
 
     // Отложенные ответы соседок
@@ -226,7 +230,7 @@ export class Residents {
           if (f.phase >= 1) {
             f.state = 'sit';
             f.timer = 4000 + rnd() * 9000;
-            this.note('meet_frog');
+            this.note('meet_frog', f.tx, f.ty);
           }
           break;
         }
@@ -434,7 +438,7 @@ export class Residents {
           if (d.timer <= 0 || (d.target && Math.hypot(d.target.x - d.tx, d.target.y - d.ty) < 0.5)) {
             d.state = 'patrol';
             d.timer = 2200 + rnd() * 3200;
-            this.note('meet_dragonfly');
+            this.note('meet_dragonfly', d.tx, d.ty);
           }
           break;
         }
@@ -520,7 +524,7 @@ export class Residents {
             o.timer = 2400;
             if (this.pairCooldown <= 0) {
               this.pairCooldown = 60_000;
-              this.note('dragonfly_pair');
+              this.note('dragonfly_pair', d.tx, d.ty);
             }
           }
           break;

@@ -25,7 +25,9 @@ import { isTouchDevice } from './ui/touch';
 import { startLoop } from './app/gameLoop';
 import { PracticePanel } from './ui/practicePanel';
 import { ChroniclePanel } from './ui/chroniclePanel';
+import { ChronicleToast } from './ui/chronicleToast';
 import { StartScreen } from './ui/startScreen';
+import { isoToScreen } from './core/iso';
 
 const app = document.getElementById('app')!;
 
@@ -265,6 +267,32 @@ const ui = new UI(app, world, {
 
 // Летопись сада: свиток с первыми встречами. Открывается тихо, без кнопки.
 const chronicle = new ChroniclePanel(app, world);
+
+/** Плавный перенос камеры к событию летописи */
+function smoothPanTo(tx: number, ty: number): void {
+  const target = isoToScreen(tx, ty);
+  const startX = scene.camera.x;
+  const startY = scene.camera.y;
+  const dx = target.x - startX;
+  const dy = target.y - startY;
+  const dur = 900;
+  const t0 = performance.now();
+  const ease = (t: number) => (t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t);
+  const step = (now: number) => {
+    const p = Math.min(1, (now - t0) / dur);
+    const k = ease(p);
+    scene.camera.x = startX + dx * k;
+    scene.camera.y = startY + dy * k;
+    scene.clampCamera();
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+  wake();
+}
+
+const chronicleToast = new ChronicleToast(app, (x, y) => {
+  smoothPanTo(x, y);
+});
 
 // Настройки вида применяем до первого кадра, чтобы интерфейс
 // сразу открылся таким, каким игрок его оставил.
@@ -789,14 +817,17 @@ function flushMilestones(): void {
 }
 
 /**
- * Новые строки летописи: мягкая заметка поверх сада и запись в сохранение.
- * Вехи, которые подняли эти же события, показываем следом своим чередом.
+ * Новые строки летописи: всплывающее уведомление с картинкой на 20 секунд.
+ * При клике — камера летит к месту события, иначе плавное растворение.
+ * Очередь — если несколько событий подряд, показываются по очереди.
  */
 function flushChronicle(): void {
-  // Летопись пишется тихо: строки ложатся в книгу без бумажных полосок
-  // поверх сада — игрок найдёт их сам, когда захочет перечитать.
-  const noted = world.pendingNotes.length > 0;
-  if (noted) world.pendingNotes.length = 0;
+  const notes = [...world.pendingNotes];
+  const noted = notes.length > 0;
+  if (noted) {
+    for (const n of notes) chronicleToast.push(n);
+    world.pendingNotes.length = 0;
+  }
   if (world.pendingMilestones.length) flushMilestones();
   else if (noted) saveWorld();
 }
