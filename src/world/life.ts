@@ -221,6 +221,8 @@ export class Life {
     fireflies: 0,
     heron: false,
     deer: 0,
+    hedgehog: 0,
+    mice: 0,
   };
   /** Заметки в летопись: игровой цикл забирает их каждый кадр. */
   pendingNotes: string[] = [];
@@ -464,6 +466,37 @@ export class Life {
           c.timer = Math.max(c.timer, 1600);
         }
       }
+      // Кошки и мышки: кот видит мышку — караулит, потом бросается
+      if ((c.state === 'sit' || c.state === 'loaf' || c.state === 'walk') && c.greet <= 0) {
+        const mouse = this.nearestMouse(c, 4.5);
+        if (mouse) {
+          const md = Math.hypot(mouse.tx - c.tx, mouse.ty - c.ty);
+          c.facing = mouse.tx > c.tx ? 1 : -1;
+          if (md < 1.2 && rnd() < 0.15) {
+            this.note(world, 'cat_mouse');
+          }
+          if (c.state !== 'walk' && md > 1.8 && rnd() < 0.35) {
+            c.state = 'walk';
+            c.target = { x: mouse.tx, y: mouse.ty };
+            c.timer = 6000 + rnd() * 4000;
+          } else {
+            c.timer = Math.max(c.timer, 1200);
+          }
+        }
+      }
+      // Ёжик: кот подходит, принюхивается, но иголки останавливают
+      if ((c.state === 'sit' || c.state === 'loaf' || c.state === 'walk') && c.greet <= 0) {
+        const hog = this.nearestHedgehog(c, 3.5);
+        if (hog && hog.state !== 'curl') {
+          c.facing = hog.tx > c.tx ? 1 : -1;
+          if (Math.hypot(hog.tx - c.tx, hog.ty - c.ty) < 1.6) {
+            // Кот потрогал — ёжик свернулся, кот отступает
+            c.state = 'sit';
+            c.timer = 3000 + rnd() * 2000;
+            c.target = null;
+          }
+        }
+      }
     }
 
     // Знакомство котов: сошлись близко — сели друг напротив друга
@@ -500,6 +533,34 @@ export class Life {
       if (d < bd) {
         bd = d;
         best = b;
+      }
+    }
+    return best;
+  }
+
+  private nearestMouse(c: Cat, r: number): import('./wildlife').Mouse | null {
+    let best: import('./wildlife').Mouse | null = null;
+    let bd = r;
+    for (const m of this.wildlife.mice) {
+      if (m.state === 'hide' || m.state === 'leave') continue;
+      const d = Math.hypot(m.tx - c.tx, m.ty - c.ty);
+      if (d < bd) {
+        bd = d;
+        best = m;
+      }
+    }
+    return best;
+  }
+
+  private nearestHedgehog(c: Cat, r: number): import('./wildlife').Hedgehog | null {
+    let best: import('./wildlife').Hedgehog | null = null;
+    let bd = r;
+    for (const e of this.wildlife.hedgehogs) {
+      if (e.state === 'leave') continue;
+      const d = Math.hypot(e.tx - c.tx, e.ty - c.ty);
+      if (d < bd) {
+        bd = d;
+        best = e;
       }
     }
     return best;

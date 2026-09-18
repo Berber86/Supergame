@@ -951,4 +951,16 @@ export const MILESTONES: Record<string, Milestone> = {
     text: 'На рассвете к деревьям вышел олень. Сад стал почти лесом.',
     unlocks: 'Лес',
   },
+  hedgehog_guest: {
+    id: 'hedgehog_guest',
+    title: 'Ночной гость',
+    text: 'В кустах поселился ёжик. Днём его не видно — только шуршание ночью.',
+    unlocks: 'Тихая ночь',
+  },
+  mouse_guest: {
+    id: 'mouse_guest',
+    title: 'Кошки и мышки',
+    text: 'У кормушки завелись мышки. Коты теперь заняты делом.',
+    unlocks: 'Погоня',
+  },
 };

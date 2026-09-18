@@ -253,7 +253,7 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       actions.wake();
       const before = scene.screenToWorld(e.clientX, e.clientY);
       const k = Math.exp(-e.deltaY * 0.0012);
-      scene.camera.zoom = clamp(scene.camera.zoom * k, 0.12, 2.4);
+      scene.camera.zoom = clamp(scene.camera.zoom * k, 0.12, 6);
       const after = scene.screenToWorld(e.clientX, e.clientY);
       scene.camera.x += before.x - after.x;
       scene.camera.y += before.y - after.y;
@@ -276,7 +276,7 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
   /** Масштаб вокруг точки: картинка не должна уезжать из-под пальцев. */
   function zoomAt(k: number, sx: number, sy: number): void {
     const before = scene.screenToWorld(sx, sy);
-    scene.camera.zoom = clamp(scene.camera.zoom * k, 0.12, 2.4);
+    scene.camera.zoom = clamp(scene.camera.zoom * k, 0.12, 6);
     const after = scene.screenToWorld(sx, sy);
     scene.camera.x += before.x - after.x;
     scene.camera.y += before.y - after.y;

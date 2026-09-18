@@ -202,12 +202,12 @@ export class Scene {
     if (portrait) {
       // Впишем по ширине: по высоте место есть, а мельчить незачем
       const w = GRID * TILE_W * 0.62;
-      this.camera.zoom = clamp(this.viewW / w, 0.16, 2.4);
+      this.camera.zoom = clamp(this.viewW / w, 0.16, 6);
       this.centerOn(GRID / 2, GRID / 2 + 1);
       this.clampCamera();
       return;
     }
-    this.camera.zoom = clamp(this.fitZoom(), 0.12, 2.4);
+    this.camera.zoom = clamp(this.fitZoom(), 0.12, 6);
     this.centerOn(GRID / 2, GRID / 2);
   }
 
@@ -464,7 +464,7 @@ export class Scene {
     // иначе деление на zoom даёт Infinity и камера замирает.
     const fz = this.fitZoom();
     const minZoom = clamp(Math.min(0.45, fz * 0.85), 0.12, 0.45);
-    this.camera.zoom = clamp(this.camera.zoom, minZoom, 2.4);
+    this.camera.zoom = clamp(this.camera.zoom, minZoom, 6);
   }
 }
 

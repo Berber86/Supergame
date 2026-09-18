@@ -1,14 +1,15 @@
 /**
- * Отрисовка диких соседей: светлячок, цапля, олень.
+ * Отрисовка диких соседей: светлячок, цапля, олень, ёжик и мышка.
  *
  * Та же акварельная кисть, что и весь сад: пятна с мягкой кромкой,
  * свет — радиальным свечением, ни одного растрового ассета.
  * Силуэты читаются с общего плана: цапля — вертикаль над водой,
- * олень — рыжее пятно у рощи, светлячок — тёплая точка в темноте.
+ * олень — рыжее пятно у рощи, светлячок — тёплая точка в темноте,
+ * ёжик — колючий клубок у кустов, мышка — серый штрих у камней.
  */
 
 import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
-import { Deer, Firefly, Heron, fireflyGlow } from '../world/wildlife';
+import { Deer, Firefly, Hedgehog, Heron, Mouse, fireflyGlow } from '../world/wildlife';
 import { Ctx, glow, softShadow, washBlob } from './paint';
 
 function litc(c: RGB, atm: Atmosphere, boost = 0): RGB {
@@ -331,6 +332,206 @@ export function drawDeer(ctx: Ctx, d: Deer, x: number, y: number, atm: Atmospher
       }
       ctx.stroke();
     }
+  }
+
+  ctx.restore();
+}
+
+// ---------------- Ёжик ----------------
+
+export function drawHedgehog(ctx: Ctx, e: Hedgehog, x: number, y: number, atm: Atmosphere, time: number): void {
+  const curl = e.state === 'curl';
+  const base = { r: 98, g: 86, b: 72 };
+  const body = litc(base, atm);
+  const spiky = litc({ r: 84, g: 72, b: 60 }, atm);
+  const light = litc({ r: 210, g: 198, b: 182 }, atm);
+  const nose = litc({ r: 48, g: 42, b: 38 }, atm);
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(0.95, 0.95);
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'multiply';
+  softShadow(ctx, 0, 0, curl ? 6 : 9, 2.6, atm.shadowTint, atm.shadowAmount * 1.1);
+  ctx.restore();
+
+  ctx.scale(e.facing, 1);
+
+  if (curl) {
+    // Клубок: иголки во все стороны
+    const pulse = 0.9 + Math.sin(time * 0.003 + e.seed) * 0.1;
+    washBlob(ctx, 0, -6 * pulse, 8.5, 6.5, spiky, 81, { alpha: 0.7, edge: 0.35 });
+    // Иголки — короткие штрихи по кругу
+    ctx.strokeStyle = css(light, 0.85);
+    ctx.lineWidth = 1.1;
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2 + e.seed * 0.1;
+      const r0 = 5 + Math.sin(a * 2 + time * 0.001) * 0.5;
+      const r1 = 9.5 + Math.cos(a * 3) * 0.8;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * r0, -6 + Math.sin(a) * r0 * 0.6);
+      ctx.lineTo(Math.cos(a) * r1, -6 + Math.sin(a) * r1 * 0.6);
+      ctx.stroke();
+    }
+    // Носик едва торчит
+    ctx.fillStyle = css(nose, 0.9);
+    ctx.beginPath();
+    ctx.ellipse(2, -5, 1.2, 0.9, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    const bob = Math.sin(time * 0.004 + e.seed) * 0.6;
+    const sniff = e.state === 'sniff' ? Math.sin(time * 0.02) * 1.2 : 0;
+
+    // Лапки — короткие, едва видно
+    ctx.strokeStyle = css(spiky, 0.9);
+    ctx.lineWidth = 1.6;
+    const gait = e.state === 'walk' || e.state === 'enter' ? Math.sin(e.phase * Math.PI * 6) : 0;
+    ctx.beginPath();
+    ctx.moveTo(-4, -3);
+    ctx.lineTo(-4 - gait, 0);
+    ctx.moveTo(4, -3);
+    ctx.lineTo(4 + gait, 0);
+    ctx.stroke();
+
+    // Тело: капля с игольчатой спиной
+    washBlob(ctx, 0, -6 + bob, 8.2, 4.2, body, 33 + (e.seed % 10), { alpha: 0.68, edge: 0.3 });
+    // Игольчатая спина — более тёмная
+    ctx.fillStyle = css(spiky, 0.65);
+    ctx.beginPath();
+    ctx.ellipse(-0.5, -9 + bob, 6.5, 3.2, -0.1, 0, Math.PI * 2);
+    ctx.fill();
+    // Иголки — лёгкие светлые точки
+    ctx.fillStyle = css(light, 0.55);
+    for (let i = 0; i < 8; i++) {
+      const sx = -5 + ((i * 53 + e.seed) % 11);
+      const sy = -10 + ((i * 29 + e.seed) % 5) + bob;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 0.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Мордочка вытянутая
+    ctx.fillStyle = css(light, 0.95);
+    ctx.beginPath();
+    ctx.ellipse(6 + sniff * 0.3, -6 + bob, 3.2, 2.0, 0.15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = css(nose, 0.95);
+    ctx.beginPath();
+    ctx.ellipse(8.5 + sniff * 0.4, -6 + bob, 1.1, 0.8, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    // Глаз
+    ctx.fillStyle = css({ r: 30, g: 28, b: 26 }, 0.9);
+    ctx.beginPath();
+    ctx.arc(5.2, -7.5 + bob, 0.6, 0, Math.PI * 2);
+    ctx.fill();
+    // Ушко маленькое
+    ctx.fillStyle = css(body, 0.9);
+    ctx.beginPath();
+    ctx.ellipse(2, -8.5 + bob, 1.2, 1.5, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+// ---------------- Мышка ----------------
+
+export function drawMouse(ctx: Ctx, m: Mouse, x: number, y: number, atm: Atmosphere, time: number): void {
+  const bodyBase = { r: 148, g: 138, b: 128 };
+  const body = litc(bodyBase, atm);
+  const deep = litc(shade(bodyBase, 0.75), atm);
+  const belly = litc({ r: 230, g: 222, b: 210 }, atm);
+  const pink = litc({ r: 212, g: 168, b: 168 }, atm);
+  const flee = m.state === 'flee';
+  const hide = m.state === 'hide';
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(0.72, 0.72);
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'multiply';
+  softShadow(ctx, 0, 0, flee ? 5 : 7, 2.0, atm.shadowTint, atm.shadowAmount * 0.9);
+  ctx.restore();
+
+  ctx.scale(m.facing, 1);
+
+  if (hide) {
+    // Спряталась — только ушки и носик из-за камня
+    ctx.fillStyle = css(body, 0.9);
+    ctx.beginPath();
+    ctx.ellipse(0, -2, 3.5, 2.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = css(pink, 0.85);
+    ctx.beginPath();
+    ctx.ellipse(-1.2, -4, 1.0, 1.3, -0.2, 0, Math.PI * 2);
+    ctx.ellipse(1.2, -4, 1.0, 1.3, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    const bob = flee ? Math.abs(Math.sin(m.phase * Math.PI * 8)) * 1.5 : Math.sin(time * 0.008 + m.seed) * 0.4;
+    const runStretch = flee ? 1.2 : 1;
+
+    // Хвостик — тонкая линия, виляет
+    const tailWag = flee ? Math.sin(m.phase * Math.PI * 10) * 2 : Math.sin(time * 0.01 + m.seed) * 0.8;
+    ctx.strokeStyle = css(deep, 0.85);
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(-4, -3);
+    ctx.bezierCurveTo(-8, -4 + tailWag, -12, -2 + tailWag * 0.5, -14, -3);
+    ctx.stroke();
+
+    // Лапки — быстрый перебор
+    ctx.strokeStyle = css(deep, 0.9);
+    ctx.lineWidth = 0.8;
+    const gait = flee ? Math.sin(m.phase * Math.PI * 12) : Math.sin(time * 0.02 + m.seed) * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(-2, -3);
+    ctx.lineTo(-2 - gait, 0);
+    ctx.moveTo(2, -3);
+    ctx.lineTo(2 + gait, 0);
+    ctx.stroke();
+
+    // Тело
+    ctx.save();
+    ctx.scale(runStretch, 1);
+    washBlob(ctx, 0, -4 + bob, 4.8, 2.6, body, 19 + (m.seed % 7), { alpha: 0.7, edge: 0.28 });
+    ctx.restore();
+
+    ctx.fillStyle = css(belly, 0.6);
+    ctx.beginPath();
+    ctx.ellipse(0.5, -2.8 + bob, 2.2, 1.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Голова
+    ctx.fillStyle = css(body, 0.96);
+    ctx.beginPath();
+    ctx.ellipse(4.2, -5 + bob, 2.4, 1.8, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ушки — большие, розовые внутри
+    ctx.fillStyle = css(body, 0.92);
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(3.2 + s * 0.3, -7 + bob, 1.8, 2.2, s * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = css(pink, 0.9);
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(3.2 + s * 0.3, -7 + bob, 0.9, 1.2, s * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Носик и глаз
+    ctx.fillStyle = css({ r: 48, g: 42, b: 40 }, 0.95);
+    ctx.beginPath();
+    ctx.arc(6.2, -5 + bob, 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = css({ r: 32, g: 30, b: 28 }, 0.9);
+    ctx.beginPath();
+    ctx.arc(4.6, -6 + bob, 0.45, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   ctx.restore();

@@ -17,7 +17,7 @@ import { drawCost, drawObject, drawObjectShadow } from './sprites';
 import { cacheable, cachedGrowth, drawCached } from './spriteCache';
 import { drawBird, drawButterfly, drawCat } from './creatures';
 import { drawDragonfly, drawFrog } from './residents';
-import { drawDeer, drawFirefly, drawHeron } from './wildlife';
+import { drawDeer, drawFirefly, drawHedgehog, drawHeron, drawMouse } from './wildlife';
 import type { GhostPreview } from './scene';
 
 /** Наборка состояния сцены, нужная одному кадру сортированных объектов. */
@@ -403,7 +403,7 @@ export function drawGhost(
         x: p.x,
         y: p.y,
         atm,
-        g: item.growDays > 0 ? 0.55 : 1,
+        g: 1,
         obj: fake,
         time,
         wind: wind,
@@ -571,6 +571,21 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
       const lvl = tile ? tile.level : 0;
       const p = isoToScreen(d.tx, d.ty, lvl);
       list.push({ depth: (d.tx + d.ty) * 100 + lvl * 20 + 5, draw: () => drawDeer(ctx, d, p.x, p.y, atm, time) });
+    }
+    // Ёжик и мышка — видны при приближении (0.5+), но и на общем плане как точки
+    if (opts.zoom >= 0.42) {
+      for (const e of opts.life.wildlife.hedgehogs) {
+        const tile = world.at(Math.floor(e.tx), Math.floor(e.ty));
+        const lvl = tile ? tile.level : 0;
+        const p = isoToScreen(e.tx, e.ty, lvl);
+        list.push({ depth: (e.tx + e.ty) * 100 + lvl * 20 + 5, draw: () => drawHedgehog(ctx, e, p.x, p.y, atm, time) });
+      }
+      for (const m of opts.life.wildlife.mice) {
+        const tile = world.at(Math.floor(m.tx), Math.floor(m.ty));
+        const lvl = tile ? tile.level : 0;
+        const p = isoToScreen(m.tx, m.ty, lvl);
+        list.push({ depth: (m.tx + m.ty) * 100 + lvl * 20 + 5, draw: () => drawMouse(ctx, m, p.x, p.y, atm, time) });
+      }
     }
     // Светлячки — ночная мелочь: на дальнем плане бережём кадр
     if (opts.zoom >= 0.42 && opts.particles) {

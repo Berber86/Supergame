@@ -1,16 +1,18 @@
 /**
- * Дикие соседи: светлячки, цапля и олень.
+ * Дикие соседи: светлячки, цапля, олень, ёжик и мышка.
  *
  * Третий слой жизни после котов и птиц: никто из них не живёт в саду
  * постоянно. Светлячки приходят тёплой тихой ночью и гаснут к рассвету,
  * цапля выбирает большой пруд и стоит подолгу, олень выходит к роще
- * на рассвете и сумерках. Игрок не зовёт их и не кормит: они приходят
- * сами, когда сад готов, и уходят по своим причинам.
+ * на рассвете и сумерках. Ёжик — преимущественно ночной, любит кусты
+ * и тихие уголки, сворачивается клубком при виде кота. Мышка — у кормушек
+ * и камней, кошки её гоняют (кошки и мышки).
  *
  * Поведение прежнее по духу: пришёл — наблюдает — переместился — ушёл.
  * Никаких нужд и наказаний; только сезон, час, погода и соседи.
  * Социальные реакции видно глазами: цапля бьёт по воде — карпы
- * разлетаются; кот подошёл — олень поднимает голову и уходит.
+ * разлетаются; кот подошёл — олень уходит, ёжик сворачивается,
+ * мышка бросается в укрытие.
  */
 
 import { GRID } from '../core/iso';
@@ -98,14 +100,58 @@ export interface Deer {
   stay: number;
 }
 
+// ---------------- Ёжик ----------------
+
+export type HedgehogState = 'enter' | 'walk' | 'forage' | 'sniff' | 'curl' | 'leave';
+
+export interface Hedgehog {
+  tx: number;
+  ty: number;
+  from: Vec | null;
+  target: Vec | null;
+  state: HedgehogState;
+  timer: number;
+  facing: 1 | -1;
+  phase: number;
+  seed: number;
+  born: number;
+  stay: number;
+  /** Сколько ещё свернут клубком */
+  curl: number;
+}
+
+// ---------------- Мышка ----------------
+
+export type MouseState = 'enter' | 'forage' | 'walk' | 'hide' | 'flee' | 'leave';
+
+export interface Mouse {
+  tx: number;
+  ty: number;
+  from: Vec | null;
+  target: Vec | null;
+  state: MouseState;
+  timer: number;
+  facing: 1 | -1;
+  phase: number;
+  seed: number;
+  born: number;
+  stay: number;
+  /** Паника: куда бежать */
+  panicX: number;
+  panicY: number;
+  panic: number;
+}
+
 /**
- * Все трое живут одним классом: приходят по приглашению среды обитания,
+ * Все живут одним классом: приходят по приглашению среды обитания,
  * заметки отдают наружу тем же путём, что лягушки и стрекозы.
  */
 export class Wildlife {
   fireflies: Firefly[] = [];
   heron: Heron | null = null;
   deer: Deer[] = [];
+  hedgehogs: Hedgehog[] = [];
+  mice: Mouse[] = [];
 
   /** Удар цапли по воде: жизнь сада раскидывает карпов и круги. */
   onStrike: ((x: number, y: number, caught: boolean) => void) | null = null;
@@ -114,6 +160,8 @@ export class Wildlife {
   private ffTimer = 0;
   private heronTimer = 120_000;
   private deerTimer = 90_000;
+  private hedgehogTimer = 70_000;
+  private mouseTimer = 45_000;
   private danceTimer = 0;
   private danced = false;
 
@@ -127,10 +175,14 @@ export class Wildlife {
     this.fireflies = [];
     this.heron = null;
     this.deer = [];
+    this.hedgehogs = [];
+    this.mice = [];
     this.notes = [];
     this.ffTimer = 0;
     this.heronTimer = 120_000;
     this.deerTimer = 90_000;
+    this.hedgehogTimer = 70_000;
+    this.mouseTimer = 45_000;
     this.danceTimer = 0;
     this.danced = false;
   }
@@ -147,6 +199,8 @@ export class Wildlife {
     this.updateFireflies(h, inv, t, wx, dt);
     this.updateHeron(h, inv, t, dt, now, threats);
     this.updateDeer(h, inv, t, dt, now, threats);
+    this.updateHedgehogs(h, inv, t, dt, now, threats);
+    this.updateMice(h, inv, t, dt, now, threats);
   }
 
   // ---------------- Светлячки ----------------
@@ -524,6 +578,287 @@ export class Wildlife {
     if (this.deer.length >= 2) this.notes.push('deer_pair');
   }
 
+  // ---------------- Ёжик ----------------
+
+  private updateHedgehogs(h: Habitat, inv: Invitation, t: TimeState, dt: number, now: number, threats: Threat[]): void {
+    for (let i = this.hedgehogs.length - 1; i >= 0; i--) {
+      const e = this.hedgehogs[i];
+      e.timer -= dt;
+      if (e.curl > 0) e.curl -= dt;
+
+      // Кот рядом — ёжик сворачивается клубком, а не убегает
+      const catClose = threats.find((c) => Math.hypot(c.x - e.tx, c.y - e.ty) < 2.2);
+      if (catClose && e.state !== 'curl' && e.state !== 'leave') {
+        e.state = 'curl';
+        e.curl = 4000 + rnd() * 6000;
+        e.timer = e.curl + 1000;
+        if (rnd() < 0.4) this.notes.push('hedgehog_curl');
+      }
+
+      // Мышь рядом — ёжик принюхивается (любопытство), но не охотится
+      // Олень или цапля — ёжик замирает, но не сворачивается (они не хищники)
+
+      if (now - e.born > e.stay && e.state !== 'leave' && e.state !== 'curl') {
+        e.state = 'leave';
+        e.target = this.exitFrom(e.tx, e.ty);
+        e.from = { x: e.tx, y: e.ty };
+        e.phase = 0;
+      }
+
+      switch (e.state) {
+        case 'enter':
+        case 'walk': {
+          if (!e.target) break;
+          e.from = e.from ?? { x: e.tx, y: e.ty };
+          const v = e.state === 'enter' ? 0.00032 : 0.00022;
+          e.phase = Math.min(1, e.phase + dt * v);
+          e.tx = lerp(e.from.x, e.target.x, e.phase);
+          e.ty = lerp(e.from.y, e.target.y, e.phase);
+          if (Math.abs(e.target.x - e.tx) > 0.05) e.facing = e.target.x > e.tx ? 1 : -1;
+          if (e.phase >= 1) {
+            e.state = rnd() < 0.5 ? 'forage' : 'sniff';
+            e.timer = 4000 + rnd() * 8000;
+          }
+          break;
+        }
+        case 'forage': {
+          // Медленно копается в листве, иногда делает шажок
+          if (e.timer <= 0) {
+            const r = rnd();
+            if (r < 0.45 && h.hedgehogSpots.length) {
+              const g = h.hedgehogSpots[Math.floor(rnd() * h.hedgehogSpots.length)];
+              e.from = { x: e.tx, y: e.ty };
+              e.target = { x: g.x, y: g.y };
+              e.phase = 0;
+              e.state = 'walk';
+            } else if (r < 0.7) {
+              e.state = 'sniff';
+              e.timer = 2000 + rnd() * 3000;
+            } else {
+              e.state = 'forage';
+              e.timer = 3000 + rnd() * 6000;
+            }
+          }
+          break;
+        }
+        case 'sniff': {
+          if (e.timer <= 0) {
+            e.state = 'forage';
+            e.timer = 3000 + rnd() * 7000;
+          }
+          break;
+        }
+        case 'curl': {
+          // Свернут — почти не двигается, иголки торчат
+          if (e.curl <= 0) {
+            // Кот ушёл?
+            const stillClose = threats.some((c) => Math.hypot(c.x - e.tx, c.y - e.ty) < 2.8);
+            if (stillClose) {
+              e.curl = 2000 + rnd() * 4000;
+              e.timer = e.curl + 500;
+            } else {
+              e.state = 'forage';
+              e.timer = 2000 + rnd() * 4000;
+            }
+          }
+          break;
+        }
+        case 'leave': {
+          if (!e.target) break;
+          e.from = e.from ?? { x: e.tx, y: e.ty };
+          e.phase = Math.min(1, e.phase + dt * 0.00028);
+          e.tx = lerp(e.from.x, e.target.x, e.phase);
+          e.ty = lerp(e.from.y, e.target.y, e.phase);
+          if (Math.abs(e.target.x - e.tx) > 0.05) e.facing = e.target.x > e.tx ? 1 : -1;
+          if (e.phase >= 1 || e.tx < -4 || e.tx > GRID + 4 || e.ty < -4 || e.ty > GRID + 4) {
+            this.hedgehogs.splice(i, 1);
+          }
+          break;
+        }
+      }
+      e.tx = clamp(e.tx, 0.5, GRID - 0.5);
+      e.ty = clamp(e.ty, 0.5, GRID - 0.5);
+    }
+
+    if (this.hedgehogs.length >= inv.hedgehog) return;
+    this.hedgehogTimer -= dt;
+    if (this.hedgehogTimer > 0) return;
+    this.hedgehogTimer = 120_000 + rnd() * 180_000;
+    // Ёжик преимущественно ночной: днём шанс почти ноль
+    const night = t.daylight < 0.22;
+    const dusk = t.hours >= 19 || t.hours <= 5;
+    const chance = night ? 0.55 : dusk ? 0.35 : 0.06;
+    if (rnd() > chance) return;
+    const spot = h.hedgehogSpots[Math.floor(rnd() * h.hedgehogSpots.length)];
+    if (!spot) return;
+    const edge = this.exitFrom(spot.x, spot.y);
+    this.hedgehogs.push({
+      tx: edge.x,
+      ty: edge.y,
+      from: null,
+      target: { x: spot.x, y: spot.y },
+      state: 'enter',
+      timer: 0,
+      facing: edge.x < spot.x ? 1 : -1,
+      phase: 0,
+      seed: Math.floor(rnd() * 10000),
+      born: now,
+      stay: 120_000 + rnd() * 200_000,
+      curl: 0,
+    });
+    this.notes.push('meet_hedgehog');
+  }
+
+  // ---------------- Мышка ----------------
+
+  private updateMice(h: Habitat, inv: Invitation, _t: TimeState, dt: number, now: number, threats: Threat[]): void {
+    for (let i = this.mice.length - 1; i >= 0; i--) {
+      const m = this.mice[i];
+      m.timer -= dt;
+      if (m.panic > 0) m.panic -= dt;
+
+      // Кот рядом — мышка бросается в укрытие
+      const cat = threats.find((c) => Math.hypot(c.x - m.tx, c.y - m.ty) < 3.0);
+      if (cat && m.state !== 'flee' && m.state !== 'hide' && m.state !== 'leave') {
+        const shelter = this.nearestMouseSpot(h, m.tx, m.ty);
+        if (shelter) {
+          m.state = 'flee';
+          m.from = { x: m.tx, y: m.ty };
+          m.target = shelter;
+          m.phase = 0;
+          m.panic = 2500;
+          m.panicX = cat.x;
+          m.panicY = cat.y;
+          m.timer = 4000;
+          if (rnd() < 0.5) this.notes.push('mouse_fled');
+        }
+      }
+
+      // Ёжик рядом — мышка замирает, но не убегает (ёжик не хищник для взрослой мыши)
+      // Цапля / олень — тоже не страшны
+
+      if (now - m.born > m.stay && m.state !== 'leave' && m.state !== 'flee') {
+        m.state = 'leave';
+        m.target = this.exitFrom(m.tx, m.ty);
+        m.from = { x: m.tx, y: m.ty };
+        m.phase = 0;
+      }
+
+      switch (m.state) {
+        case 'enter':
+        case 'walk': {
+          if (!m.target) break;
+          m.from = m.from ?? { x: m.tx, y: m.ty };
+          const v = m.state === 'enter' ? 0.00055 : 0.00042;
+          m.phase = Math.min(1, m.phase + dt * v);
+          m.tx = lerp(m.from.x, m.target.x, m.phase);
+          m.ty = lerp(m.from.y, m.target.y, m.phase);
+          if (Math.abs(m.target.x - m.tx) > 0.05) m.facing = m.target.x > m.tx ? 1 : -1;
+          if (m.phase >= 1) {
+            m.state = rnd() < 0.6 ? 'forage' : 'hide';
+            m.timer = m.state === 'forage' ? 3000 + rnd() * 6000 : 2000 + rnd() * 4000;
+          }
+          break;
+        }
+        case 'forage': {
+          if (m.timer <= 0) {
+            const r = rnd();
+            if (r < 0.5 && h.mouseSpots.length) {
+              const g = h.mouseSpots[Math.floor(rnd() * h.mouseSpots.length)];
+              m.from = { x: m.tx, y: m.ty };
+              m.target = { x: g.x, y: g.y };
+              m.phase = 0;
+              m.state = 'walk';
+            } else if (r < 0.75) {
+              m.state = 'hide';
+              m.timer = 2500 + rnd() * 5000;
+            } else {
+              m.state = 'forage';
+              m.timer = 2000 + rnd() * 4000;
+            }
+          }
+          break;
+        }
+        case 'hide': {
+          if (m.timer <= 0) {
+            m.state = 'forage';
+            m.timer = 2000 + rnd() * 5000;
+          }
+          break;
+        }
+        case 'flee': {
+          if (!m.target) break;
+          m.from = m.from ?? { x: m.tx, y: m.ty };
+          // Быстрый рывок
+          m.phase = Math.min(1, m.phase + dt * 0.0011);
+          m.tx = lerp(m.from.x, m.target.x, m.phase);
+          m.ty = lerp(m.from.y, m.target.y, m.phase);
+          if (Math.abs(m.target.x - m.tx) > 0.05) m.facing = m.target.x > m.tx ? 1 : -1;
+          if (m.phase >= 1) {
+            m.state = 'hide';
+            m.timer = 3000 + rnd() * 7000;
+            m.panic = 0;
+          }
+          break;
+        }
+        case 'leave': {
+          if (!m.target) break;
+          m.from = m.from ?? { x: m.tx, y: m.ty };
+          m.phase = Math.min(1, m.phase + dt * 0.00052);
+          m.tx = lerp(m.from.x, m.target.x, m.phase);
+          m.ty = lerp(m.from.y, m.target.y, m.phase);
+          if (Math.abs(m.target.x - m.tx) > 0.05) m.facing = m.target.x > m.tx ? 1 : -1;
+          if (m.phase >= 1 || m.tx < -4 || m.tx > GRID + 4 || m.ty < -4 || m.ty > GRID + 4) {
+            this.mice.splice(i, 1);
+          }
+          break;
+        }
+      }
+      m.tx = clamp(m.tx, 0.5, GRID - 0.5);
+      m.ty = clamp(m.ty, 0.5, GRID - 0.5);
+    }
+
+    if (this.mice.length >= inv.mice) return;
+    this.mouseTimer -= dt;
+    if (this.mouseTimer > 0) return;
+    this.mouseTimer = 60_000 + rnd() * 120_000;
+    // Мышки чаще ночью, но могут и днём
+    if (rnd() > 0.55) return;
+    const spot = h.mouseSpots[Math.floor(rnd() * h.mouseSpots.length)];
+    if (!spot) return;
+    const edge = this.exitFrom(spot.x, spot.y);
+    this.mice.push({
+      tx: edge.x,
+      ty: edge.y,
+      from: null,
+      target: { x: spot.x, y: spot.y },
+      state: 'enter',
+      timer: 0,
+      facing: edge.x < spot.x ? 1 : -1,
+      phase: 0,
+      seed: Math.floor(rnd() * 10000),
+      born: now,
+      stay: 90_000 + rnd() * 180_000,
+      panicX: 0,
+      panicY: 0,
+      panic: 0,
+    });
+    this.notes.push('meet_mouse');
+  }
+
+  private nearestMouseSpot(h: Habitat, x: number, y: number): Vec | null {
+    let best: Vec | null = null;
+    let bd = Infinity;
+    for (const s of h.mouseSpots) {
+      const d = Math.hypot(s.x - x, s.y - y);
+      if (d < bd && d < 6) {
+        bd = d;
+        best = s;
+      }
+    }
+    return best;
+  }
+
   /** Ближайший край сада: откуда прийти и куда уйти. */
   private exitFrom(x: number, y: number): Vec {
     const cx = GRID / 2;
@@ -537,7 +872,7 @@ export class Wildlife {
   // ---------------- Отладочный крючок для оффлайн-кадров ----------------
 
   /** Позвать жителей сразу: для превью и листов, без ожидания вероятностей. */
-  force(kind: 'fireflies' | 'heron' | 'deer', h: Habitat, t: TimeState): void {
+  force(kind: 'fireflies' | 'heron' | 'deer' | 'hedgehog' | 'mouse', h: Habitat, t: TimeState): void {
     if (kind === 'fireflies') {
       for (let i = 0; i < 9; i++) {
         const a = this.fireflyAnchor(h);
@@ -578,6 +913,46 @@ export class Wildlife {
         born: 0,
         stay: 10_000_000,
       };
+      return;
+    }
+    if (kind === 'hedgehog') {
+      const spot = h.hedgehogSpots[Math.floor(rnd() * h.hedgehogSpots.length)] ?? h.glades[0];
+      if (!spot) return;
+      this.hedgehogs.push({
+        tx: spot.x,
+        ty: spot.y,
+        from: null,
+        target: null,
+        state: 'forage',
+        timer: 20_000,
+        facing: 1,
+        phase: 1,
+        seed: 11,
+        born: 0,
+        stay: 10_000_000,
+        curl: 0,
+      });
+      return;
+    }
+    if (kind === 'mouse') {
+      const spot = h.mouseSpots[Math.floor(rnd() * h.mouseSpots.length)];
+      if (!spot) return;
+      this.mice.push({
+        tx: spot.x,
+        ty: spot.y,
+        from: null,
+        target: null,
+        state: 'forage',
+        timer: 20_000,
+        facing: 1,
+        phase: 1,
+        seed: 13,
+        born: 0,
+        stay: 10_000_000,
+        panicX: 0,
+        panicY: 0,
+        panic: 0,
+      });
       return;
     }
     const g = h.glades[Math.floor(rnd() * h.glades.length)];

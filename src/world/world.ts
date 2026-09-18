@@ -974,6 +974,8 @@ export class World {
     if (id === 'meet_firefly') this.checkMilestone('night_lights');
     if (id === 'meet_heron') this.checkMilestone('heron_guest');
     if (id === 'meet_deer') this.checkMilestone('deer_guest');
+    if (id === 'meet_hedgehog') this.checkMilestone('hedgehog_guest');
+    if (id === 'meet_mouse') this.checkMilestone('mouse_guest');
     return true;
   }
 
@@ -981,12 +983,9 @@ export class World {
     return this.chronicle.some((e) => e.id === id);
   }
 
-  /** Стадия роста 0..1 для объекта. */
-  growth(o: PlacedObject, now: number): number {
-    const item = ITEM_BY_ID.get(o.type);
-    if (!item || item.growDays <= 0) return 1;
-    const age = (now - o.planted) / (item.growDays * DAY_MS);
-    return clamp(age, 0.06, 1);
+  /** Стадия роста 0..1 для объекта — рост убран, всё сажается сразу взрослым. */
+  growth(_o: PlacedObject, _now: number): number {
+    return 1;
   }
 
   // ---- Сохранение ----
@@ -1181,7 +1180,7 @@ export class World {
    * игрок застал снег, остался под дождём, дождался взрослого дерева.
    * Поэтому проверка живёт здесь, а не в местах постройки.
    */
-  observe(now: number, season: string, night: boolean, raining: boolean): void {
+  observe(_now: number, season: string, night: boolean, raining: boolean): void {
     // Круг года: сезоны накапливаются между сессиями
     if (!this.seasonsSeen.has(season)) {
       this.seasonsSeen.add(season);
@@ -1216,8 +1215,8 @@ export class World {
         seenIndoor.add(o.type);
         indoorKinds++;
       }
-      // Взрослое дерево: то, что растили по-настоящему долго
-      if (!grown && item && item.growDays >= 6 && this.growth(o, now) >= 1) grown = true;
+      // Рост убран: дерево сразу взрослое, веха даётся за наличие крупного дерева
+      if (!grown && item && item.kind === 'tree') grown = true;
     }
     if (lanterns >= 5) this.checkMilestone('lantern_path');
     if (koi >= 3) this.checkMilestone('koi_pond');
