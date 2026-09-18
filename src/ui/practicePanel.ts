@@ -421,7 +421,7 @@ export class PracticePanel {
     this.updateMeta();
     if (s.done) {
       this.hooks.bowl(0.9);
-      this.endTimer = window.setTimeout(() => this.hooks.bowl(0.7), 1700) as unknown as number;
+      window.setTimeout(() => this.hooks.bowl(0.7), 1700);
       this.endTimer = window.setTimeout(() => this.finish(s.minutesSat(), false), 3600) as unknown as number;
       this.raf = 0;
       return;
