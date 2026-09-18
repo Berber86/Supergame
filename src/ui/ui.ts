@@ -61,7 +61,6 @@ export class UI {
   buildOpen = false;
   private activeTab = 'trees';
   private els: Record<string, HTMLElement> = {};
-  private milestoneTimer = 0;
   private toastTimer = 0;
   private iconSeason = '';
   brushSize = 1;
@@ -230,12 +229,6 @@ export class UI {
       : 'Перетаскивайте — осматривайте сад. Колесо — приблизить.';
     layer.appendChild(hint);
     this.els.hint = hint;
-
-    // --- Веха ---
-    const ms = this.el('div', 'milestone paper');
-    ms.innerHTML = `<div class="seal">道</div><h3></h3><p></p><div class="unlock"></div>`;
-    layer.appendChild(ms);
-    this.els.milestone = ms;
 
     // --- Тост ---
     const toast = this.el('div', 'toast paper');
@@ -655,16 +648,10 @@ export class UI {
     this.toastTimer = window.setTimeout(() => this.els.toast.classList.remove('show'), 2600);
   }
 
+  /** Веха свершилась: каталог обновляем, а поверх сада не всплываем —
+      список вех тихо живёт в книге летописи. */
   showMilestone(id: string): void {
-    const m = MILESTONES[id];
-    if (!m) return;
-    const e = this.els.milestone;
-    e.querySelector('h3')!.textContent = m.title;
-    e.querySelector('p')!.textContent = m.text;
-    e.querySelector('.unlock')!.textContent = `открыто: ${m.unlocks}`;
-    e.classList.add('show');
-    clearTimeout(this.milestoneTimer);
-    this.milestoneTimer = window.setTimeout(() => e.classList.remove('show'), 5200);
+    if (!MILESTONES[id]) return;
     this.renderTabs();
   }
 

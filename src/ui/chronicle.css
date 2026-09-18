@@ -172,3 +172,40 @@
   line-height: 1.6;
   padding: 6px 2px 2px;
 }
+
+/* Тихий список вех: свершившееся видно в книге, а не поверх сада */
+.ch-miles-wrap {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(107, 74, 51, 0.22);
+}
+
+.ch-miles-wrap h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  color: rgba(70, 52, 36, 0.66);
+}
+
+.ch-mile {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.ch-mile-title {
+  letter-spacing: 0.03em;
+}
+
+.ch-mile-unlock {
+  font-size: 11.5px;
+  color: rgba(70, 52, 36, 0.55);
+}
+
+.ch-mile-unlock::before {
+  content: '— ';
+}

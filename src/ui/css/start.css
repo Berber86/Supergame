@@ -60,19 +60,26 @@
 
 /* Вход — строка тушью, а не кнопка с рамкой: под словами прорисовывается
    линия, когда рука уже потянулась. */
-/* Вторая дверь: тише первой, но та же тушь */
+/* Вторая дверь: тише первой, но та же тушь. Свиток не ловит касания
+   вовсе — кнопки входа возвращают себе pointer-events сами. */
 .splash-grow {
-  display: block;
-  margin: 14px auto 0;
-  padding: 6px 10px;
+  position: absolute;
+  left: 50%;
+  top: calc(var(--enter, 0.78) * 100% + 52px);
+  transform: translateX(-50%);
+  min-height: 34px;
+  padding: 6px 12px;
   background: none;
   border: none;
+  pointer-events: auto;
   cursor: pointer;
-  font: inherit;
-  font-size: 13px;
-  letter-spacing: 0.14em;
-  color: rgba(43, 34, 26, 0.62);
+  font-family: var(--serif);
+  font-size: clamp(11px, calc(var(--sw, 420px) * 0.038), 14px);
+  letter-spacing: 0.16em;
+  color: rgba(43, 38, 33, 0.66);
+  text-shadow: 0 1px 0 rgba(255, 252, 242, 0.45);
   transition: color 0.4s var(--ease);
+  animation: splash-write 1.5s var(--ease) 1.85s both;
 }
 
 .splash-grow:hover,
