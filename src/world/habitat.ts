@@ -58,6 +58,18 @@ export interface Habitat {
   hedgehogSpots: Vec[];
   /** Укромные места у дома и кормушек — туда выходит мышка. */
   mouseSpots: Vec[];
+  /** Высокие насесты — беседка, тории, старые деревья — туда садится сова. */
+  owlSpots: Vec[];
+  /** Деревья и бельчатники — туда приходит белка. */
+  squirrelSpots: Vec[];
+  /** Камни у воды, где греется черепаха. */
+  turtleSpots: Vec[];
+  /** Цветы и ульи — туда летят пчёлы. */
+  beeSpots: Vec[];
+  /** Ульи — зовут пчёл. */
+  beehives: Vec[];
+  /** Бельчатники — зовут белок. */
+  squirrelFeeders: Vec[];
   /** Сколько в саду кошек-резидентов (предметов «кот»). */
   cats: number;
   /** Клеток веранды — второе место для кошачьего знакомства. */
@@ -89,6 +101,12 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
     glades: [],
     hedgehogSpots: [],
     mouseSpots: [],
+    owlSpots: [],
+    squirrelSpots: [],
+    turtleSpots: [],
+    beeSpots: [],
+    beehives: [],
+    squirrelFeeders: [],
     shelters: [],
     cushions: [],
     bowls: [],
@@ -177,13 +195,38 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
       case 'pavilion':
       case 'torii':
         h.shelters.push(c);
+        h.owlSpots.push({ x: c.x, y: c.y - 0.3 });
+        break;
+      case 'beehive':
+        h.beehives.push(c);
+        h.beeSpots.push(c);
+        break;
+      case 'squirrel_feeder':
+        h.squirrelFeeders.push(c);
+        h.squirrelSpots.push(c);
         break;
       default:
         break;
     }
     if (PERCH_TYPES.includes(o.type)) h.perches.push(c);
-    if (item.kind === 'tree') h.trees.push(c);
+    if (item.kind === 'tree') {
+      h.trees.push(c);
+      // Старые высокие деревья — насест для совы и дом для белки
+      h.owlSpots.push({ x: c.x, y: c.y });
+      if (['pine', 'maple', 'ginkgo', 'persimmon', 'sakura', 'willow'].includes(o.type)) {
+        h.squirrelSpots.push(c);
+      }
+    }
     if (item.kind === 'shrub' || o.type === 'hedge') h.shrubs.push(c);
+    if (['lily', 'iris', 'azalea', 'lotus', 'wisteria', 'camellia'].includes(o.type)) {
+      h.beeSpots.push(c);
+    }
+    if (['rock_mid', 'rock_big', 'water_stone'].includes(o.type)) {
+      // Камень у воды — место для черепахи
+      const nearWater = h.ponds.length === 0 || world.objects.some(() => true); // проверим позже через близость к воде в turtleSpots сборке
+      void nearWater;
+      h.turtleSpots.push(c);
+    }
   }
 
   // --- Берега, где лягушке хорошо: суша у воды с растительностью или тенью ---
@@ -271,6 +314,48 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
     }
   }
 
+  // --- Совы: высокие точки — беседка, тории, старые деревья ---
+  // Уже наполнены в обходе предметов, но если пусто — берём поляны у деревьев
+  if (h.owlSpots.length === 0) {
+    for (const g of h.glades) if (h.owlSpots.length < 8) h.owlSpots.push(g);
+  }
+
+  // --- Белки: деревья + бельчатники ---
+  if (h.squirrelSpots.length === 0) {
+    for (const tr of h.trees) h.squirrelSpots.push(tr);
+  }
+  // Добавим ещё немного точек у деревьев для прыжков
+  for (const g of h.glades) if (h.squirrelSpots.length < 24) h.squirrelSpots.push({ x: g.x + (Math.random() - 0.5), y: g.y });
+
+  // --- Черепахи: камни у воды ---
+  // Фильтруем камни, оставляем только те, что в 2.5 тайла от воды
+  {
+    const nearWater: Vec[] = [];
+    for (const s of h.turtleSpots) {
+      let ok = false;
+      for (const p of h.ponds) {
+        for (const shore of p.shores) {
+          if (Math.hypot(shore.x - s.x, shore.y - s.y) < 3.2) { ok = true; break; }
+        }
+        if (ok) break;
+      }
+      // Если прудов нет, считаем что камень у воды, если рядом есть влажный тайл
+      if (!ok && h.ponds.length === 0) ok = true;
+      if (ok) nearWater.push(s);
+    }
+    // Если камней у воды нет — берём берега прудов
+    if (nearWater.length === 0) {
+      for (const p of h.ponds) for (const sh of p.shores) if (nearWater.length < 12) nearWater.push(sh);
+    }
+    h.turtleSpots = nearWater;
+  }
+
+  // --- Пчёлы: цветы + ульи ---
+  if (h.beeSpots.length === 0) {
+    for (const g of h.glades) if (h.beeSpots.length < 12) h.beeSpots.push(g);
+  }
+  // Ульи уже в beeSpots, но если их нет — всё равно есть цветы
+
   // --- Веранда: место кошачьих встреч и птижьих укоров ---
   for (let y = 0; y < GRID; y++)
     for (let x = 0; x < GRID; x++) {
@@ -314,6 +399,14 @@ export interface Invitation {
   hedgehog: number;
   /** Мышки: у кормушек, мисок, камней — кошки их гоняют. */
   mice: number;
+  /** Сова: ночной охотник, любит высокие насесты, охотится на мышей. */
+  owl: number;
+  /** Белка: дневная, любит хвойные и широколиственные, бельчатники. */
+  squirrel: number;
+  /** Черепаха: греется на камне у воды днём. */
+  turtle: number;
+  /** Пчёлы: цветы и ульи, тёплый день. */
+  bees: number;
 }
 
 /**
@@ -417,9 +510,51 @@ export function invitations(h: Habitat, t: TimeState, wx: WeatherState | null, w
     }
   }
 
+  // ---- Сова: ночной охотник, любит высокие насесты, тишину ----
+  let owl = 0;
+  if (h.owlSpots.length > 0 && t.daylight < 0.28 && !stormy && rain < 0.4) {
+    // Осенью и зимой совы чаще, летом тоже бывают
+    const seasonK = season === 'autumn' || season === 'winter' ? 1 : 0.7;
+    if (h.trees.length >= 4 || h.shelters.length > 0) owl = seasonK > 0.8 ? 1 : Math.random() < 0.6 ? 1 : 0;
+    // Если есть мыши — сова приходит охотнее
+    if (h.mouseSpots.length > 0 && owl === 0 && t.daylight < 0.18) owl = 1;
+  }
+
+  // ---- Белка: дневная, любит хвойные и широколиственные, бельчатники ----
+  let squirrel = 0;
+  if (h.squirrelSpots.length > 0 && t.daylight > 0.35 && !stormy && rain < 0.5) {
+    const base = h.squirrelFeeders.length * 2 + Math.floor(h.trees.length / 3);
+    if (base >= 1 || h.trees.length >= 6) {
+      squirrel = Math.min(2, Math.max(1, Math.floor(base / 2) + 1));
+      if (season === 'winter') squirrel = Math.min(squirrel, 1);
+    }
+  }
+
+  // ---- Черепаха: греется на камне у воды днём, любит тепло ----
+  let turtle = 0;
+  if (h.turtleSpots.length > 0 && h.water >= 4 && t.daylight > 0.4 && !stormy) {
+    if (season === 'winter') turtle = 0;
+    else if (season === 'summer') turtle = h.water >= 8 ? 2 : 1;
+    else turtle = 1;
+    if (rain > 0.35) turtle = 0;
+  }
+
+  // ---- Пчёлы: цветы и ульи, тёплый день, не дождь ----
+  let bees = 0;
+  if (h.beeSpots.length > 0 && t.daylight > 0.45 && !stormy && rain < 0.2) {
+    if (season === 'winter') bees = 0;
+    else {
+      const flowerK = h.beeSpots.length;
+      const hiveK = h.beehives.length * 4;
+      bees = Math.min(8, Math.floor((flowerK + hiveK) / 2) + 1);
+      if (season === 'spring' || season === 'summer') bees = Math.min(8, bees + 2);
+      if (h.beehives.length > 0) bees = Math.max(bees, 3);
+    }
+  }
+
   // ---- Хор: поют вместе, когда сыро и не полдень ----
   const choral = rain > 0.2 || wet > 0.4 || t.hours >= 18 || t.hours < 6;
   const chorus = frogs >= 2 && choral && season !== 'winter' ? frogs : 0;
 
-  return { frogs, dragonflies, feederBirds, guestCat, chorus, fireflies, heron, deer, hedgehog, mice };
+  return { frogs, dragonflies, feederBirds, guestCat, chorus, fireflies, heron, deer, hedgehog, mice, owl, squirrel, turtle, bees };
 }

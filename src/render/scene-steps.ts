@@ -17,7 +17,17 @@ import { drawCost, drawObject, drawObjectShadow } from './sprites';
 import { cacheable, cachedGrowth, drawCached } from './spriteCache';
 import { drawBird, drawButterfly, drawCat } from './creatures';
 import { drawDragonfly, drawFrog } from './residents';
-import { drawDeer, drawFirefly, drawHedgehog, drawHeron, drawMouse } from './wildlife';
+import {
+  drawBee,
+  drawDeer,
+  drawFirefly,
+  drawHedgehog,
+  drawHeron,
+  drawMouse,
+  drawOwl,
+  drawSquirrel,
+  drawTurtle,
+} from './wildlife';
 import type { GhostPreview } from './scene';
 
 /** Наборка состояния сцены, нужная одному кадру сортированных объектов. */
@@ -586,14 +596,38 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
         const p = isoToScreen(m.tx, m.ty, lvl);
         list.push({ depth: (m.tx + m.ty) * 100 + lvl * 20 + 5, draw: () => drawMouse(ctx, m, p.x, p.y, atm, time) });
       }
+      for (const o of opts.life.wildlife.owls) {
+        const tile = world.at(Math.floor(o.tx), Math.floor(o.ty));
+        const lvl = tile ? tile.level : 0;
+        const p = isoToScreen(o.tx, o.ty, lvl);
+        list.push({ depth: (o.tx + o.ty) * 100 + lvl * 20 + 7, draw: () => drawOwl(ctx, o, p.x, p.y, atm, time) });
+      }
+      for (const sq of opts.life.wildlife.squirrels) {
+        const tile = world.at(Math.floor(sq.tx), Math.floor(sq.ty));
+        const lvl = tile ? tile.level : 0;
+        const p = isoToScreen(sq.tx, sq.ty, lvl);
+        list.push({ depth: (sq.tx + sq.ty) * 100 + lvl * 20 + 5, draw: () => drawSquirrel(ctx, sq, p.x, p.y, atm, time) });
+      }
+      for (const tu of opts.life.wildlife.turtles) {
+        const tile = world.at(Math.floor(tu.tx), Math.floor(tu.ty));
+        const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
+        const p = isoToScreen(tu.tx, tu.ty, lvl);
+        list.push({ depth: (tu.tx + tu.ty) * 100 + lvl * 20 + 4, draw: () => drawTurtle(ctx, tu, p.x, p.y, atm, time) });
+      }
     }
-    // Светлячки — ночная мелочь: на дальнем плане бережём кадр
+    // Светлячки и пчёлы — ночная и дневная мелочь: на дальнем плане бережём кадр
     if (opts.zoom >= 0.42 && opts.particles) {
       for (const f of opts.life.wildlife.fireflies) {
         const tile = world.at(Math.floor(f.tx), Math.floor(f.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(f.tx, f.ty, lvl);
         list.push({ depth: (f.tx + f.ty) * 100 + lvl * 20 + 10, draw: () => drawFirefly(ctx, f, p.x, p.y, atm, time) });
+      }
+      for (const b of opts.life.wildlife.bees) {
+        const tile = world.at(Math.floor(b.tx), Math.floor(b.ty));
+        const lvl = tile ? tile.level : 0;
+        const p = isoToScreen(b.tx, b.ty, lvl);
+        list.push({ depth: (b.tx + b.ty) * 100 + lvl * 20 + 11, draw: () => drawBee(ctx, b, p.x, p.y, atm, time) });
       }
     }
   }

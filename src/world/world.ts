@@ -976,6 +976,10 @@ export class World {
     if (id === 'meet_deer') this.checkMilestone('deer_guest');
     if (id === 'meet_hedgehog') this.checkMilestone('hedgehog_guest');
     if (id === 'meet_mouse') this.checkMilestone('mouse_guest');
+    if (id === 'meet_owl') this.checkMilestone('owl_guest');
+    if (id === 'meet_squirrel') this.checkMilestone('squirrel_guest');
+    if (id === 'meet_turtle') this.checkMilestone('turtle_guest');
+    if (id === 'meet_bee') this.checkMilestone('bee_guest');
     return true;
   }
 
