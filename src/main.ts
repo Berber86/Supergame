@@ -251,6 +251,10 @@ const chronicle = new ChroniclePanel(app, world);
 const view = loadView();
 applyView(view);
 
+// Звук: состояние живёт выше панели настроек — её строка «Звук сада»
+// спрашивает его уже в момент постройки.
+let soundOn = false;
+
 const settingsPanel = new SettingsPanel(
   app,
   view,
@@ -639,7 +643,6 @@ function flushChronicle(): void {
 /** Соотношение сторон снимка — переключается там же, на кнопке. */
 // ---------------- Звук ----------------
 
-let soundOn = false;
 
 async function toggleSound(force?: boolean): Promise<void> {
   const want = force ?? !soundOn;
