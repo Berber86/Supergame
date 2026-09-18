@@ -19,6 +19,7 @@
 
 import { GRID } from '../core/iso';
 import { makeRng } from '../core/rng';
+import { ITEM_BY_ID } from './catalog';
 import { World } from './world';
 
 export interface GrowRect {
@@ -47,7 +48,7 @@ export interface GrowState {
 /** Действие приходит раз в десять настоящих минут. */
 export const GROW_ACTION_MS = 10 * 60 * 1000;
 /** Запас не растёт бесконечно: шесть действий впрок. */
-export const GROW_BANK_CAP = 6;
+export const GROW_BANK_CAP = 3;
 /** Шесть расширений: 2×2 → 4×2 → 4×4 → 8×4 → 8×8 → 16×8 → 16×16. */
 export const GROW_MAX_STAGE = 6;
 
@@ -233,6 +234,14 @@ export function seedGrowWorld(world: World, seed: number): void {
     if (world.objects.some((o) => Math.hypot(o.tx - x, o.ty - y) < 1)) continue;
     world.place(t.ground === 'grass' ? (rnd() < 0.5 ? 'grass_tuft' : 'azalea') : 'moss_clump', x, y, 0, old);
   }
+
+  // Стартовый клочок 2×2 — чистая бумага: чужие кроны и кусты не нависают
+  world.objects = world.objects.filter((o) => {
+    const it = ITEM_BY_ID.get(o.type);
+    const w = it?.w ?? 1;
+    const h = it?.h ?? 1;
+    return o.tx + w <= c || o.tx >= c + 2 || o.ty + h <= c || o.ty >= c + 2;
+  });
 
   world.noteObjectsChanged();
 }

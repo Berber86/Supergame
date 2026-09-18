@@ -226,6 +226,7 @@ export function serializeSave(d: SaveData): string {
     s: d.seasons ?? [],
     e: d.seen,
     g: d.grow ?? null,
+    b: d.born,
     c: (d.chronicle ?? []).map((e) => [e.id, Math.round(e.at)]),
   });
 }
@@ -300,5 +301,6 @@ export function parseSave(raw: unknown): SaveData | null {
   const grow = parseGrow(d.g);
   if (d.g !== undefined && d.g !== null && !grow) return null;
 
-  return { version: SAVE_VERSION, tiles, objects, nextId, milestones, seasons, seen, chronicle, grow };
+  return { version: SAVE_VERSION, tiles, objects, nextId, milestones, seasons, seen, chronicle, grow,
+    born: typeof d.b === 'number' ? d.b : undefined };
 }

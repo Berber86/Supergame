@@ -33,3 +33,38 @@
   font-family: var(--jp);
   font-size: 16px;
 }
+
+/* Запас действий: печати под карточкой времени */
+.grow-bank {
+  position: absolute;
+  left: calc(10px + var(--safe-l, 0px));
+  top: calc(10px + var(--safe-t, 0px) + 96px);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 16px;
+  background: rgba(38, 28, 20, 0.5);
+  color: rgba(244, 236, 217, 0.88);
+  font-size: 12.5px;
+  letter-spacing: 0.12em;
+  backdrop-filter: blur(6px);
+  z-index: 5;
+}
+
+.grow-bank .kanji {
+  font-family: var(--jp);
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.grow-bank .gb-dots {
+  letter-spacing: 0.18em;
+}
+
+/* В тишине укрытия интерфейс растворён целиком */
+body.zen .grow-line,
+body.zen .grow-bank {
+  opacity: 0;
+  pointer-events: none;
+}

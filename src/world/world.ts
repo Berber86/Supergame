@@ -58,6 +58,7 @@ export class World {
   }
 
   reset(): void {
+    this.born = Date.now();
     this.tiles = [];
     for (let y = 0; y < GRID; y++) {
       for (let x = 0; x < GRID; x++) {
@@ -436,6 +437,8 @@ export class World {
 
   /** Режим растущего сада: null у вольных усадеб. */
   grow: GrowState | null = null;
+  /** Когда сад родился: годы летописи считаем отсюда. */
+  born = Date.now();
   /** Действие кончилось: последний отказ, чтобы интерфейс тихо пояснил. */
   growRefused = false;
   private strokeCharged = false;
@@ -993,6 +996,7 @@ export class World {
       seen: [...this.seenTabs],
       chronicle: this.chronicle.map((e) => ({ id: e.id, at: e.at })),
       grow: this.grow ? { ...this.grow, rect: { ...this.grow.rect } } : null,
+      born: this.born,
     };
   }
 
@@ -1025,6 +1029,24 @@ export class World {
     this.seenTabs = new Set(p.seen);
     this.chronicle = (p.chronicle ?? []).map((e) => ({ id: e.id, at: e.at }));
     this.grow = p.grow ?? null;
+    this.born = p.born ?? this.born;
+    // Лягушки из тумана: если в открытом саду нет воды, случайные строки
+    // прежних ошибок не остаются в книге
+    if (this.grow) {
+      const r = this.grow.rect;
+      let water = false;
+      for (let y = r.y; y < r.y + r.h && !water; y++)
+        for (let x = r.x; x < r.x + r.w; x++)
+          if (this.tiles[y * GRID + x].water) {
+            water = true;
+            break;
+          }
+      if (!water) {
+        this.chronicle = this.chronicle.filter((e) => e.id !== 'meet_frog' && e.id !== 'frog_chorus');
+        this.milestones.delete('first_frog');
+        this.milestones.delete('frog_chorus');
+      }
+    }
     this.growRefused = false;
     this.strokeCharged = false;
     this.pendingMilestones = [];

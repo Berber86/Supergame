@@ -94,6 +94,11 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
     for (let x = 0; x < GRID; x++) {
       const i = y * GRID + x;
       if (seen[i] || !world.tiles[i].water) continue;
+      // За туманом растущего сада вода жизни не даёт
+      if (!inside(x, y)) {
+        seen[i] = 1;
+        continue;
+      }
       const pond: Pond = { id: pondId++, cx: 0, cy: 0, area: 0, shores: [] };
       const queue: number[] = [i];
       seen[i] = 1;
@@ -102,9 +107,11 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
         const k = queue.pop()!;
         const kx = k % GRID;
         const ky = (k / GRID) | 0;
-        pond.cx += kx + 0.5;
-        pond.cy += ky + 0.5;
-        pond.area++;
+        if (inside(kx, ky)) {
+          pond.cx += kx + 0.5;
+          pond.cy += ky + 0.5;
+          pond.area++;
+        }
         for (const [dx, dy] of [
           [1, 0],
           [-1, 0],
@@ -120,7 +127,7 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
               seen[j] = 1;
               queue.push(j);
             }
-          } else if (!shoreSet.has(j)) {
+          } else if (!shoreSet.has(j) && inside(nx, ny)) {
             shoreSet.add(j);
           }
         }
@@ -128,8 +135,10 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
       pond.cx /= pond.area;
       pond.cy /= pond.area;
       for (const j of shoreSet) pond.shores.push({ x: (j % GRID) + 0.5, y: ((j / GRID) | 0) + 0.5 });
-      h.ponds.push(pond);
-      h.water += pond.area;
+      if (pond.area > 0) {
+        h.ponds.push(pond);
+        h.water += pond.area;
+      }
     }
   }
 

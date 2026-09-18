@@ -42,6 +42,8 @@ export interface SaveData {
   seen: string[];
   /** Летопись: первые встречи и редкие события сада. */
   chronicle?: { id: string; at: number }[];
+  /** Когда сад родился: отсюда считаем годы летописи. */
+  born?: number;
   /** Режим растущего сада: null или отсутствие — вольный сад. */
   grow?: {
     rect: { x: number; y: number; w: number; h: number };

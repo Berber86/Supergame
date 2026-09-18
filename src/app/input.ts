@@ -48,9 +48,8 @@ export interface InputActions {
   syncHistoryUI(): void;
   doUndo(): void;
   doRedo(): void;
-  setZen(on: boolean): void;
-  takeScreenshot(): void;
-  cycleShotRatio(): void;
+
+
   setRoofVisible(visible: boolean): void;
   toggleSound(): void;
   /** Поворот призрака на 90° — состояние ghostRot живёт в main. */
@@ -70,7 +69,6 @@ export interface InputDeps {
   devPanel: DevPanel;
   chronicle: ChroniclePanel;
   selection(): Selection;
-  isZenMode(): boolean;
   isStartOpen(): boolean;
   isPracticeOpen(): boolean;
   closePractice(): void;
@@ -81,7 +79,7 @@ export interface InputDeps {
 
 export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
   const { canvas, scene, world, history, ui, audio, timeCtl, gardensPanel, settingsPanel, devPanel, chronicle } = deps;
-  const { selection, isZenMode, isStartOpen, isPracticeOpen, closePractice, paintMode, actions } = deps;
+  const { selection, isStartOpen, isPracticeOpen, closePractice, paintMode, actions } = deps;
 
   // ---------------- Ввод ----------------
 
@@ -289,6 +287,11 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
 
       onTap(x, y) {
         actions.wake();
+        // Растущий сад выбирает сторону: касание зоны важнее пустого выбора
+        if (world.grow?.choosing) {
+          const p = scene.pickTile(x, y, world);
+          if (actions.growPick(p.tx, p.ty)) return;
+        }
         if (selection().kind === 'none') return;
         pointer.x = x;
         pointer.y = y;
@@ -298,10 +301,6 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
         if (selection().kind === 'move') {
           tapMove(x, y);
           return;
-        }
-        if (world.grow?.choosing) {
-          const p = scene.pickTile(x, y, world);
-          if (actions.growPick(p.tx, p.ty)) return;
         }
         actions.applyAt(x, y, true);
         if (history.commit()) actions.syncHistoryUI();
@@ -448,12 +447,6 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
 
     if (k === 'b') {
       ui.toggleBuild();
-    } else if (k === 'z') {
-      actions.setZen(!isZenMode());
-    } else if (k === 'p') {
-      // Shift меняет формат кадра, без него — снимаем
-      if (e.shiftKey) actions.cycleShotRatio();
-      else actions.takeScreenshot();
     } else if (k === 'h' || k === '?') {
       ui.toggleHelp();
     } else if (k === 'r') {

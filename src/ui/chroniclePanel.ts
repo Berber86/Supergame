@@ -94,7 +94,7 @@ export class ChroniclePanel {
       body.className = 'ch-body';
       const date = document.createElement('div');
       date.className = 'ch-date';
-      date.textContent = chronicleDate(e.at);
+      date.textContent = chronicleDate(e.at, this.world.born);
       const text = document.createElement('div');
       text.className = 'ch-text';
       text.textContent = t.text;

@@ -27,8 +27,6 @@ export type Selection =
 export interface UIHooks {
   onSelect(sel: Selection): void;
   onToggleBuild(open: boolean): void;
-  onZen(): void;
-  onScreenshot(): void;
   onReset(): void;
   onUndo(): void;
   onRedo(): void;
@@ -65,7 +63,6 @@ export class UI {
   private iconSeason = '';
   brushSize = 1;
   /** Назначается извне: переключение звука. */
-  onSound: (() => void) | null = null;
 
   constructor(root: HTMLElement, world: World, hooks: UIHooks) {
     this.root = root;
@@ -101,6 +98,13 @@ export class UI {
     time.addEventListener('click', () => this.hooks.onTimeWorkshop());
     layer.appendChild(time);
     this.els.timeCard = time;
+
+    // --- Запас действий растущего сада: печати вместо чисел ---
+    const gb = this.el('div', 'grow-bank fade keep');
+    gb.innerHTML = `<span class="kanji" lang="ja">行</span><span class="gb-dots"></span>`;
+    gb.style.display = 'none';
+    layer.appendChild(gb);
+    this.els.growBank = gb;
     this.els.clock = time.querySelector('.clock')!;
     this.els.kanji = time.querySelector('.season-kanji')!;
     this.els.sub = time.querySelector('.time-sub')!;
@@ -115,10 +119,9 @@ export class UI {
       return b;
     };
     this.els.btnBuild = mk('hand', 'Строить (B)');
-    this.els.btnZen = mk('eye', 'Созерцание (Z)');
-    this.els.btnShot = mk('camera', 'Снимок (P)');
-    this.els.btnSound = mk('sound-off', 'Звук (M)');
-    this.els.btnRoof = mk('roof', 'Крыша (R)');
+    // Крыша появляется только с домом: пока крыть нечего, кнопка спит
+    this.els.btnRoof = mk('roof', 'Крыша');
+    this.els.btnRoof.style.display = 'none';
     this.els.btnGardens = mk('gardens', 'Усадьбы (U)');
     this.els.btnSettings = mk('settings', 'Настройки (S)');
     this.els.btnHelp = mk('scroll', 'Свиток (H)');
@@ -152,9 +155,6 @@ export class UI {
     this.els.rotate = rotate;
 
     this.els.btnBuild.addEventListener('click', () => this.toggleBuild());
-    this.els.btnZen.addEventListener('click', () => this.hooks.onZen());
-    this.els.btnShot.addEventListener('click', () => this.hooks.onScreenshot());
-    this.els.btnSound.addEventListener('click', () => this.onSound?.());
     this.els.btnRoof.addEventListener('click', () => this.hooks.onRoof());
     this.els.btnSettings.addEventListener('click', () => this.hooks.onSettings());
     this.els.btnGardens.addEventListener('click', () => this.hooks.onGardens());
@@ -339,45 +339,6 @@ export class UI {
         goChron();
       }
     });
-
-    // --- Тихая строка входа в летопись: приходит в созерцании ---
-    const chron = this.el('div', 'chron-line');
-    chron.innerHTML = `<span class="kanji" lang="ja">記</span>летопись сада`;
-    chron.setAttribute('role', 'button');
-    chron.setAttribute('tabindex', '0');
-    chron.addEventListener('click', () => this.hooks.onChronicle());
-    chron.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        this.hooks.onChronicle();
-      }
-    });
-    layer.appendChild(chron);
-    this.els.chron = chron;
-
-    // --- Заметка о созерцании ---
-    const note = this.el('div', 'zen-note fade keep');
-    note.textContent = '';
-    layer.appendChild(note);
-    this.els.note = note;
-
-    // --- Тихая строка входа в практику ---
-    // Приходит только в созерцании, когда интерфейс уже растворился:
-    // практика предлагает себя ровно тогда, когда исчезло всё остальное.
-    // Девятой кнопки в столбце не будет (её лишней назвала ещё сессия 6).
-    const sit = this.el('div', 'sit-line');
-    sit.innerHTML = `<span class="kanji" lang="ja">坐</span>сесть в тишине`;
-    sit.setAttribute('role', 'button');
-    sit.setAttribute('tabindex', '0');
-    sit.addEventListener('click', () => this.hooks.onSit());
-    sit.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        this.hooks.onSit();
-      }
-    });
-    layer.appendChild(sit);
-    this.els.sit = sit;
 
     // --- Тихая строка растущего сада: «куда расти?» ---
     const grow = this.el('div', 'grow-line');
@@ -618,14 +579,7 @@ export class UI {
     this.els.btnHelp.classList.toggle('active', open);
   }
 
-  setSoundState(on: boolean): void {
-    const b = this.els.btnSound;
-    if (!b) return;
-    b.classList.toggle('active', on);
-    b.innerHTML = `${svgIcon(on ? 'sound-on' : 'sound-off', 23)}<span class="label">${
-      on ? 'Тишина (M)' : 'Звук (M)'
-    }</span>`;
-  }
+
 
   /** Кнопка кровли: подписываем действием, а не состоянием. */
   setRoofState(visible: boolean): void {
@@ -670,17 +624,33 @@ export class UI {
     }
   }
 
-  setZenNote(text: string): void {
-    this.els.note.textContent = text;
-    // Класс включает отложенное проявление: надпись приходит, когда
-    // интерфейс уже почти растворился, а не спорит с ним за место.
-    this.els.note.classList.toggle('on', text !== '');
+  /** Запас действий растущего сада: печати вместо чисел. */
+  setGrowBank(bank: number, cap: number, minsNext: number | null): void {
+    const e = this.els.growBank;
+    if (!e) return;
+    const dots = Array.from({ length: cap }, (_, i) => (i < bank ? '●' : '○')).join('');
+    e.querySelector('.gb-dots')!.textContent = dots;
+    e.title =
+      minsNext === null
+        ? `Действий в запасе: ${bank} из ${cap}`
+        : `Действий в запасе: ${bank} из ${cap}; новое через ${minsNext} мин`;
   }
 
-  /** Тихая строка «сесть в тишине» видна только в созерцании. */
-  setSitVisible(v: boolean): void {
-    this.els.sit.classList.toggle('show', v);
+  setGrowBankVisible(v: boolean): void {
+    const e = this.els.growBank;
+    if (e) e.style.display = v ? '' : 'none';
   }
+
+  /** Кнопка кровли: живая только когда есть дом с крышей. */
+  setRoofAvailable(v: boolean): void {
+    const b = this.els.btnRoof;
+    if (b) b.style.display = v ? '' : 'none';
+  }
+
+
+
+  /** Тихая строка «сесть в тишине» видна только в созерцании. */
+
 
   /** Тихая строка летописи приходит туда же, где исчез остальной интерфейс. */
   /** Строка «куда расти?»: видна, когда сад готов вырасти. */
@@ -688,7 +658,5 @@ export class UI {
     this.els.grow?.classList.toggle('show', v);
   }
 
-  setChronVisible(v: boolean): void {
-    this.els.chron.classList.toggle('show', v);
-  }
+
 }

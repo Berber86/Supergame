@@ -55,9 +55,12 @@ export function chronicleText(id: string): ChronicleText | null {
 }
 
 /** Дата строки человеческими словами: «весна · год 2 · сумерки». */
-export function chronicleDate(at: number): string {
+export function chronicleDate(at: number, born?: number): string {
   const t = computeTime(at);
-  return `${SEASON_NAMES[t.season].toLowerCase()} · год ${t.year} · ${partOfDay(t)}`;
+  // Год сада — от его рождения, а не от эпохи календаря: новый сад
+  // начинает первый год, даже если за окном двадцать пятый
+  const year = born ? Math.max(1, t.year - computeTime(born).year + 1) : t.year;
+  return `${SEASON_NAMES[t.season].toLowerCase()} · год ${year} · ${partOfDay(t)}`;
 }
 
 /**

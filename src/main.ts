@@ -5,10 +5,9 @@
 
 import './ui/style.css';
 import { GRID, floorTo, inBounds } from './core/iso';
-import { computeTime } from './core/clock';
 import { Scene } from './render/scene';
 import { World } from './world/world';
-import { growOfferReady, newGrowState, seedGrowWorld, GROW_ACTION_MS } from './world/grow';
+import { GROW_BANK_CAP, growOfferReady, newGrowState, seedGrowWorld, GROW_ACTION_MS } from './world/grow';
 import { UI, Selection } from './ui/ui';
 import { ITEM_BY_ID, TERRAIN_BRUSHES, footprintCells } from './world/catalog';
 import { Life } from './world/life';
@@ -20,7 +19,6 @@ import { History } from './core/history';
 import { GardenStore } from './world/gardens';
 import { GardensPanel } from './ui/gardensPanel';
 import { findPath, layPath } from './world/paths';
-import { ShotRatio, composeScroll } from './ui/snapshot';
 import { SettingsPanel, applyView, loadView } from './ui/settings';
 import { isTouchDevice } from './ui/touch';
 import { pointer, moving, pathStart, setupInput, touchMode } from './app/input';
@@ -95,6 +93,7 @@ function hideStorageWarn(): void {
 
 /** Сохранение теперь всегда идёт в активный слот усадьбы. */
 function saveWorld(): void {
+  syncRoofButton();
   const res = gardens.save(world);
   // Запись снова пошла — плашку убираем сами, без лишних слов.
   if (res.ok) hideStorageWarn();
@@ -188,12 +187,6 @@ const ui = new UI(app, world, {
     }
     wake();
   },
-  onZen() {
-    setZen(!zenMode);
-  },
-  onScreenshot() {
-    takeScreenshot();
-  },
   onReset() {
     world.clearSave();
     location.reload();
@@ -258,9 +251,17 @@ const chronicle = new ChroniclePanel(app, world);
 const view = loadView();
 applyView(view);
 
-const settingsPanel = new SettingsPanel(app, view, (v) => {
-  scene.particles = v.particles;
-});
+const settingsPanel = new SettingsPanel(
+  app,
+  view,
+  (v) => {
+    scene.particles = v.particles;
+  },
+  {
+    get: () => soundOn,
+    toggle: () => void toggleSound(),
+  },
+);
 
 const gardensPanel = new GardensPanel(app, world, gardens, {
   onSwitch() {
@@ -275,6 +276,7 @@ const gardensPanel = new GardensPanel(app, world, gardens, {
     ui.renderTabs();
     ui.renderItems();
     syncHistoryUI();
+    syncRoofButton();
     wake();
   },
   toast: (t) => ui.toast(t),
@@ -320,21 +322,16 @@ function doRedo(): void {
 
 // ---------------- Режим созерцания ----------------
 
+/** Интерфейс растворяется без движения: без режима, просто тишина экрана. */
 function setZen(on: boolean): void {
   zenMode = on;
   document.body.classList.toggle('zen', on);
   if (on) {
     ui.toggleBuild(false);
     ui.toggleHelp(false);
-    ui.setZenNote('созерцание · любое движение вернёт интерфейс');
-    // практика и летопись предлагают себя ровно тогда, когда исчезло всё остальное
-    ui.setSitVisible(true);
-    ui.setChronVisible(true);
-    ui.setGrowVisible(false);
+    settingsPanel.setOpen(false);
+    gardensPanel.setOpen(false);
   } else {
-    ui.setZenNote('');
-    ui.setSitVisible(false);
-    ui.setChronVisible(false);
     ui.setGrowVisible(growLineShown);
   }
 }
@@ -345,7 +342,7 @@ function wake(): void {
   if (zenMode) setZen(false);
 }
 
-const IDLE_MS = 14000;
+const IDLE_MS = 20000;
 
 // ---------------- Ввод ----------------
 // Жесты, клавиши и их состояние — в app/input.ts; здесь только связка.
@@ -363,7 +360,6 @@ const input = setupInput({
   devPanel,
   chronicle,
   selection: () => selection,
-  isZenMode: () => zenMode,
   isStartOpen: () => startOpen,
   isPracticeOpen: () => practice.isOpen,
   closePractice: () => practice.close(),
@@ -378,9 +374,6 @@ const input = setupInput({
     syncHistoryUI,
     doUndo,
     doRedo,
-    setZen,
-    takeScreenshot,
-    cycleShotRatio,
     setRoofVisible,
     toggleSound,
     rotateGhost: () => {
@@ -644,47 +637,6 @@ function flushChronicle(): void {
 }
 
 /** Соотношение сторон снимка — переключается там же, на кнопке. */
-const SHOT_RATIOS: ShotRatio[] = ['wide', 'square', 'tall'];
-const SHOT_NAMES: Record<ShotRatio, string> = {
-  wide: 'широкий',
-  square: 'квадрат',
-  tall: 'свиток',
-};
-let shotRatio: ShotRatio = 'wide';
-
-function cycleShotRatio(): void {
-  shotRatio = SHOT_RATIOS[(SHOT_RATIOS.indexOf(shotRatio) + 1) % SHOT_RATIOS.length];
-  ui.toast(`Снимок: ${SHOT_NAMES[shotRatio]}`);
-}
-
-function takeScreenshot(): void {
-  // Интерфейс живёт в DOM, а снимок собирает только холст — прятать
-  // интерфейс не за чем: раньше кнопки мигали на глазах игрока, а тихие
-  // строки созерцания вспыхивали поверх вернувшегося интерфейса.
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      const t = computeTime(Date.now());
-      // Кадр обрамляем свитком: поля рисовой бумаги и подпись сезона
-      const scroll = composeScroll(canvas, shotRatio, {
-        season: t.season,
-        year: t.year,
-        time: t.label,
-        garden: gardens.active?.name ?? 'Усадьба',
-      });
-      scroll.toBlob((blob) => {
-        if (!blob) return;
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `усадьба-${t.season}-год-${t.year}-${t.label.replace(':', '-')}.png`;
-        a.click();
-        URL.revokeObjectURL(url);
-        ui.toast('Снимок сохранён');
-      }, 'image/png');
-    });
-  });
-}
-
 // ---------------- Звук ----------------
 
 let soundOn = false;
@@ -701,7 +653,7 @@ async function toggleSound(force?: boolean): Promise<void> {
     soundOn = false;
     ui.toast('Тишина');
   }
-  ui.setSoundState(soundOn);
+  settingsPanel.sync();
 }
 
 /** Показать или убрать кровлю — и запомнить выбор. */
@@ -711,8 +663,6 @@ function setRoofVisible(visible: boolean): void {
   saveRoofPref(visible);
   ui.toast(visible ? 'Крыша на месте' : 'Крыша убрана — видно комнаты');
 }
-
-ui.onSound = () => void toggleSound();
 
 // ---------------- Школа тишины ----------------
 
@@ -725,7 +675,6 @@ const practice = new PracticePanel(app, {
     practiceActive = active;
     if (active) {
       ui.toggleBuild(false);
-      ui.setSitVisible(false);
     } else {
       wake();
     }
@@ -744,8 +693,22 @@ let growAccum = 0;
 let growLineShown = false;
 
 /** Тик растущего сада: приход действий, строка выбора, отказ-подсказка. */
+/** Кнопка кровли живая, только когда есть дом: иначе её не за что хватать. */
+function syncRoofButton(): void {
+  ui.setRoofAvailable(world.objects.some((o) => o.type === 'house'));
+}
+
+let growBankShown = false;
+
 function growFrame(dt: number): void {
-  if (startOpen || !world.grow) return;
+  if (startOpen) return;
+  if (!world.grow) {
+    if (growBankShown) {
+      growBankShown = false;
+      ui.setGrowBankVisible(false);
+    }
+    return;
+  }
   growAccum += dt;
   if (growAccum < 250) return;
   growAccum = 0;
@@ -759,6 +722,17 @@ function growFrame(dt: number): void {
   if (show !== growLineShown) {
     growLineShown = show;
     ui.setGrowVisible(show);
+  }
+  // Запас действий: печати и минуты до нового действия
+  const bank = world.grow.bank;
+  const mins =
+    bank < GROW_BANK_CAP
+      ? Math.max(1, Math.ceil((world.grow.tick + GROW_ACTION_MS - Date.now()) / 60000))
+      : null;
+  ui.setGrowBank(bank, GROW_BANK_CAP, mins);
+  if (!growBankShown) {
+    growBankShown = true;
+    ui.setGrowBankVisible(true);
   }
 }
 
@@ -812,6 +786,9 @@ function enterGrow(): void {
   }
   growLineShown = false;
   ui.setGrowVisible(false);
+  growBankShown = false;
+  ui.setGrowBankVisible(false);
+  syncRoofButton();
   // Те же пороги, что и у обычного входа
   startOpen = false;
   wake();
@@ -875,6 +852,7 @@ scene.snapRoof();
 ui.setRoofState(scene.roofVisible);
 scene.particles = view.particles;
 ui.setPaintMode(paintMode);
+syncRoofButton();
 
 // Периодическое автосохранение — сад не должен теряться
 setInterval(saveWorld, 20000);
