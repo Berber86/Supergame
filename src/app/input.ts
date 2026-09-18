@@ -52,6 +52,8 @@ export interface InputActions {
 
   setRoofVisible(visible: boolean): void;
   toggleSound(): void;
+  /** Снять ждущий призрак бесплатно. true — призрак был. */
+  cancelPlace(): boolean;
   /** Поворот призрака на 90° — состояние ghostRot живёт в main. */
   rotateGhost(): void;
 }
@@ -455,6 +457,8 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       ui.select({ kind: 'erase' });
       ui.toggleBuild(true);
     } else if (k === 'escape') {
+      // Ждущий призрак убирается первым: Esc — тоже «другое действие»
+      if (actions.cancelPlace()) return;
       // Выбор «куда расти» откладывается: туман снова укроет зоны
       if (world.grow?.choosing) {
         world.grow.choosing = false;

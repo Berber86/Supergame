@@ -91,9 +91,17 @@ function hideStorageWarn(): void {
   storageWarnKind = null;
 }
 
+/** Каталог видит только то, что влезает в текущий растущий сад. */
+function syncGrowRect(): void {
+  const r = world.grow?.rect;
+  growRectKey = r ? `${r.x},${r.y},${r.w},${r.h}` : '';
+  ui.setGrowRect(r ? { w: r.w, h: r.h } : null);
+}
+
 /** Сохранение теперь всегда идёт в активный слот усадьбы. */
 function saveWorld(): void {
   syncRoofButton();
+  syncGrowRect();
   const res = gardens.save(world);
   // Запись снова пошла — плашку убираем сами, без лишних слов.
   if (res.ok) hideStorageWarn();
@@ -162,6 +170,8 @@ let entryZoom = 0;
 
 const ui = new UI(app, world, {
   onSelect(sel) {
+    // Смена инструмента убирает ждущий призрак бесплатно
+    if (pendingPlace && (sel.kind !== 'item' || sel.item.id !== pendingPlace.itemId)) cancelPlace();
     selection = sel;
     ghostRot = 0;
     // Сетка нужна, когда кладут землю или предметы; пипетке и переносу — нет
@@ -182,10 +192,17 @@ const ui = new UI(app, world, {
   onToggleBuild(open) {
     scene.showGrid = open && selection.kind !== 'none';
     if (!open) {
+      clearPending();
       scene.ghost = null;
       canvas.classList.remove('building');
     }
     wake();
+  },
+  onConfirmPlace() {
+    confirmPlace();
+  },
+  onCancelPlace() {
+    cancelPlace();
   },
   onReset() {
     world.clearSave();
@@ -224,8 +241,7 @@ const ui = new UI(app, world, {
     saveWorld();
   },
   onRotate() {
-    ghostRot = (ghostRot + 1) % 4;
-    updateGhost();
+    rotateGhost();
   },
   onPaintMode(m) {
     paintMode = m;
@@ -281,6 +297,7 @@ const gardensPanel = new GardensPanel(app, world, gardens, {
     ui.renderItems();
     syncHistoryUI();
     syncRoofButton();
+    syncGrowRect();
     wake();
   },
   toast: (t) => ui.toast(t),
@@ -317,10 +334,12 @@ function afterHistory(label: string | null, verb: string): void {
 }
 
 function doUndo(): void {
+  cancelPlace();
   afterHistory(history.undo(), 'отмена');
 }
 
 function doRedo(): void {
+  cancelPlace();
   afterHistory(history.redo(), 'повтор');
 }
 
@@ -380,14 +399,23 @@ const input = setupInput({
     doRedo,
     setRoofVisible,
     toggleSound,
-    rotateGhost: () => {
-      ghostRot = (ghostRot + 1) % 4;
-      updateGhost();
-    },
+    rotateGhost,
+    cancelPlace,
   },
 });
 
 // ---------------- Действия ----------------
+
+/** Поворот на 90°: ждущий призрак крутится на месте, обычный — до постановки. */
+function rotateGhost(): void {
+  if (pendingPlace) {
+    pendingPlace.rot = (pendingPlace.rot + 1) % 4;
+    syncPendingGhost();
+    return;
+  }
+  ghostRot = (ghostRot + 1) % 4;
+  updateGhost();
+}
 
 function snapForSelection(tx: number, ty: number): { tx: number; ty: number } {
   if (selection.kind === 'item') {
@@ -401,7 +429,72 @@ function snapForSelection(tx: number, ty: number): { tx: number; ty: number } {
   return { tx: Math.floor(tx), ty: Math.floor(ty) };
 }
 
+/**
+ * Призрак, ждущий подтверждения: только в растущем саду.
+ * Ставится тапом, объект появляется лишь на ✓; любое другое действие
+ * (кроме движения и масштаба камеры) убирает призрак бесплатно.
+ */
+let pendingPlace: { itemId: string; tx: number; ty: number; rot: number } | null = null;
+
+function clearPending(): void {
+  pendingPlace = null;
+  ui.showConfirm(false);
+}
+
+/** Отменить призрак бесплатно: действие роста не тратится. */
+function cancelPlace(): boolean {
+  if (!pendingPlace) return false;
+  clearPending();
+  updateGhost();
+  return true;
+}
+
+/** ✓: призрак становится объектом (в растущем саду тратит действие). */
+function confirmPlace(): void {
+  const p = pendingPlace;
+  if (!p) return;
+  const item = ITEM_BY_ID.get(p.itemId);
+  clearPending();
+  if (!item) return;
+  history.begin(item.name.toLowerCase(), null);
+  const placed = world.place(p.itemId, p.tx, p.ty, p.rot);
+  if (placed) {
+    if (history.commit()) syncHistoryUI();
+    if (item.needsWater || item.onWater) audio.splash();
+    else audio.place();
+    flushMilestones();
+    saveWorld();
+  } else {
+    history.abort();
+  }
+  updateGhost();
+}
+
+/** Пока призрак ждёт подтверждения, он закреплён на месте: указатель его не двигает. */
+function syncPendingGhost(): void {
+  const p = pendingPlace;
+  if (!p) return;
+  const item = ITEM_BY_ID.get(p.itemId);
+  if (!item) return;
+  scene.ghost = {
+    kind: 'item',
+    itemId: p.itemId,
+    tx: p.tx,
+    ty: p.ty,
+    rot: p.rot,
+    valid: world.canPlace(p.itemId, p.tx, p.ty, p.rot),
+    w: item.w,
+    h: item.h,
+    hl: footprintCells(item, p.tx, p.ty, p.rot),
+  };
+}
+
 function updateGhost(): void {
+  if (pendingPlace) {
+    scene.highlightId = -1;
+    syncPendingGhost();
+    return;
+  }
   if (!pointer.has || selection.kind === 'none') {
     scene.ghost = null;
     scene.highlightId = -1;
@@ -471,6 +564,9 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
   const p = scene.pickTile(sx, sy, world);
   if (!inBounds(Math.floor(p.tx), Math.floor(p.ty))) return;
 
+  // Любое действие мимо подтверждения снимает призрак бесплатно
+  if (pendingPlace && selection.kind !== 'item') cancelPlace();
+
   // Пипетка: подобрать то, что уже стоит, и продолжить тем же
   if (selection.kind === 'pick') {
     pickAt(p.tx, p.ty);
@@ -515,6 +611,14 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
     const s = snapForSelection(p.tx, p.ty);
     if (!world.canPlace(item.id, s.tx, s.ty, ghostRot)) {
       if (isClick) ui.toast(item.needsWater ? 'Это растёт только в воде' : 'Здесь вода — нужно другое место');
+      return;
+    }
+    // Растущий сад: тап ставит призрак; объект появится только на ✓
+    if (world.grow) {
+      if (!isClick) return; // рассыпание движением несовместимо с подтверждением
+      pendingPlace = { itemId: item.id, tx: s.tx, ty: s.ty, rot: ghostRot };
+      syncPendingGhost();
+      ui.showConfirm(true);
       return;
     }
     // при «рассыпании» не ставим слишком плотно
@@ -694,6 +798,8 @@ const practice = new PracticePanel(app, {
 const GROW_NAME = 'Растущий сад';
 let growAccum = 0;
 let growLineShown = false;
+/** Ключ текущего прямоугольника роста — чтобы не дёргать каталог каждый кадр. */
+let growRectKey = '';
 
 /** Тик растущего сада: приход действий, строка выбора, отказ-подсказка. */
 /** Кнопка кровли живая, только когда есть дом: иначе её не за что хватать. */
@@ -706,6 +812,10 @@ let growBankShown = false;
 function growFrame(dt: number): void {
   if (startOpen) return;
   if (!world.grow) {
+    if (growRectKey !== '') {
+      growRectKey = '';
+      ui.setGrowRect(null);
+    }
     if (growBankShown) {
       growBankShown = false;
       ui.setGrowBankVisible(false);
@@ -727,6 +837,10 @@ function growFrame(dt: number): void {
     ui.setGrowVisible(show);
   }
   // Запас действий: печати и минуты до нового действия
+  // Сад мог вырасти — каталог пересобирается под новый размер
+  const r = world.grow.rect;
+  const key = `${r.x},${r.y},${r.w},${r.h}`;
+  if (key !== growRectKey) syncGrowRect();
   const bank = world.grow.bank;
   const mins =
     bank < GROW_BANK_CAP
@@ -792,6 +906,7 @@ function enterGrow(): void {
   growBankShown = false;
   ui.setGrowBankVisible(false);
   syncRoofButton();
+  syncGrowRect();
   // Те же пороги, что и у обычного входа
   startOpen = false;
   wake();
@@ -856,6 +971,7 @@ ui.setRoofState(scene.roofVisible);
 scene.particles = view.particles;
 ui.setPaintMode(paintMode);
 syncRoofButton();
+syncGrowRect();
 
 // Периодическое автосохранение — сад не должен теряться
 setInterval(saveWorld, 20000);

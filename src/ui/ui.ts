@@ -27,6 +27,10 @@ export type Selection =
 export interface UIHooks {
   onSelect(sel: Selection): void;
   onToggleBuild(open: boolean): void;
+  /** Поставить призрак как объект (тратит действие роста). */
+  onConfirmPlace(): void;
+  /** Убрать призрак бесплатно. */
+  onCancelPlace(): void;
   onReset(): void;
   onUndo(): void;
   onRedo(): void;
@@ -187,6 +191,16 @@ export class UI {
       </div>`;
     layer.appendChild(bb);
     this.els.buildbar = bb;
+
+    // Пара подтверждения призрака: ✓ поставить / ✕ убрать
+    const cf = this.el('div', 'confirm-pair');
+    cf.innerHTML = `
+      <div class="cf-btn cf-ok" role="button" tabindex="0" title="Поставить">${svgIcon('check', 22)}</div>
+      <div class="cf-btn cf-no" role="button" tabindex="0" title="Убрать">${svgIcon('close', 20)}</div>`;
+    layer.appendChild(cf);
+    this.els.confirm = cf;
+    cf.querySelector('.cf-ok')!.addEventListener('click', () => this.hooks.onConfirmPlace());
+    cf.querySelector('.cf-no')!.addEventListener('click', () => this.hooks.onCancelPlace());
     bb.querySelectorAll<HTMLElement>('.bb-btn').forEach((b) => {
       b.addEventListener('click', () => {
         const act = b.dataset.act!;
@@ -213,11 +227,13 @@ export class UI {
     cat.innerHTML = `
       <div class="catalog-inner wood">
         <div class="catalog-handle"><div class="cord"></div></div>
+        <div class="catalog-close" role="button" tabindex="0" title="Закрыть">${svgIcon('close', 18)}</div>
         <div class="tabs"></div>
         <div class="items paper"></div>
       </div>`;
     layer.appendChild(cat);
     this.els.catalog = cat;
+    cat.querySelector('.catalog-close')!.addEventListener('click', () => this.toggleBuild(false));
     this.els.tabs = cat.querySelector('.tabs')!;
     this.els.items = cat.querySelector('.items')!;
     cat.querySelector('.catalog-handle')!.addEventListener('click', () => this.toggleBuild());
@@ -368,10 +384,53 @@ export class UI {
     return !tab.requires || this.world.milestones.has(tab.requires);
   }
 
+  /** Размер текущего сада роста: каталог показывает только то, что влезет */
+  private growRect: { w: number; h: number } | null = null;
+
+  setGrowRect(r: { w: number; h: number } | null): void {
+    const key = r ? `${r.w}x${r.h}` : '';
+    const prev = this.growRect ? `${this.growRect.w}x${this.growRect.h}` : '';
+    this.growRect = r;
+    if (key === prev) return;
+    // Текущий размер кисти мог перестать влезать — вернуть к наибольшему подходящему
+    if (!this.fitsGrow(this.brushSize, this.brushSize)) {
+      const fit = [5, 3, 1].find((n) => this.fitsGrow(n, n)) ?? 1;
+      this.setBrushSize(fit);
+    }
+    this.renderTabs();
+    this.renderItems();
+    this.syncSizes();
+  }
+
+  private fitsGrow(w: number, h: number): boolean {
+    const r = this.growRect;
+    if (!r) return true;
+    return w <= r.w && h <= r.h;
+  }
+
+  private tabHasContent(id: string): boolean {
+    return (
+      ITEMS.some((i) => i.tab === id && (this.fitsGrow(i.w, i.h) || this.fitsGrow(i.h, i.w))) ||
+      TERRAIN_BRUSHES.some((b) => b.tab === id && (b.kind === 'ground' || this.fitsGrow(b.w, b.h)))
+    );
+  }
+
+  /** Скрыть размеры кисти, которые крупнее текущего сада. */
+  private syncSizes(): void {
+    const bb = this.els.buildbar;
+    if (!bb) return;
+    bb.querySelectorAll<HTMLElement>('.bb-size').forEach((b) => {
+      const n = Number(b.dataset.size);
+      b.classList.toggle('hide', this.growRect !== null && !this.fitsGrow(n, n));
+    });
+  }
+
   renderTabs(): void {
     this.els.tabs.innerHTML = '';
     for (const tab of TABS) {
       const unlocked = this.tabUnlocked(tab.id);
+      // Вкладки, где ничего не влезает в текущий сад, прячем целиком
+      if (unlocked && !this.tabHasContent(tab.id)) continue;
       const isNew = unlocked && !this.world.seenTabs.has(tab.id);
       const e = this.el(
         'div',
@@ -394,8 +453,15 @@ export class UI {
     const box = this.els.items;
     box.innerHTML = '';
 
-    const brushes = TERRAIN_BRUSHES.filter((b) => b.tab === this.activeTab);
-    const items = ITEMS.filter((i) => i.tab === this.activeTab);
+    const brushes = TERRAIN_BRUSHES.filter(
+      (b) => b.tab === this.activeTab && (b.kind === 'ground' || this.fitsGrow(b.w, b.h)),
+    );
+    const items = ITEMS.filter(
+      (i) => i.tab === this.activeTab && (this.fitsGrow(i.w, i.h) || this.fitsGrow(i.h, i.w)),
+    );
+    if (!brushes.length && !items.length) {
+      box.innerHTML = `<div class="cat-empty">Здесь ничего не поместится, пока сад не подрастёт</div>`;
+    }
 
     for (const b of brushes) {
       const e = this.el('div', 'item paper');
@@ -558,6 +624,11 @@ export class UI {
     } else if (sel.kind === 'path') {
       this.setHint('Тропа — отметьте начало, потом конец; дорога ляжет сама');
     }
+  }
+
+  /** Показать/убрать пару ✓/✕ под призраком. */
+  showConfirm(v: boolean): void {
+    this.els.confirm?.classList.toggle('show', v);
   }
 
   toggleBuild(force?: boolean): void {

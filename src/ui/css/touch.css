@@ -442,3 +442,16 @@ body.touch .dev-toggle input[type='checkbox'] {
 .time-card.clickable:active {
   transform: scale(0.98);
 }
+
+/* Пара ✓/✕ на пальце: над панелью инструментов, вне каталога */
+@media (hover: none) and (orientation: landscape) and (max-height: 560px) {
+  .confirm-pair {
+    bottom: calc(74px + var(--safe-b));
+  }
+}
+
+@media (hover: none) and (orientation: portrait) {
+  .confirm-pair {
+    bottom: calc(44vh + 70px);
+  }
+}

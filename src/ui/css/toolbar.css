@@ -120,3 +120,55 @@
   opacity: 1;
   color: #fff6e9;
 }
+
+/* Пара подтверждения призрака (✓ поставить / ✕ убрать) */
+.confirm-pair {
+  position: absolute;
+  left: 50%;
+  bottom: calc(262px + var(--safe-b, 0px));
+  transform: translate(-50%, 10px);
+  display: flex;
+  gap: 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.28s var(--ease, ease),
+    transform 0.28s var(--ease, ease);
+  z-index: 7;
+}
+
+.confirm-pair.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+
+.cf-btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  box-shadow: var(--shadow, 0 6px 18px rgba(30, 20, 12, 0.35));
+  transition: transform 0.18s var(--ease, ease);
+}
+
+.cf-btn:hover {
+  transform: scale(1.07);
+}
+
+.cf-ok {
+  color: #e4ecd4;
+  background: rgba(58, 74, 44, 0.78);
+}
+
+.cf-no {
+  color: #f0dad3;
+  background: rgba(96, 48, 38, 0.72);
+}
+
+.bb-size.hide {
+  display: none;
+}
