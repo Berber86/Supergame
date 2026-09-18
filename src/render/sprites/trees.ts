@@ -264,6 +264,20 @@ function makeTree(style: TreeStyle): Drawer {
       0.14,
     );
 
+    // Ветви проступают сквозь листву: крона — не облако на палке,
+    // а листва на скелете дерева.
+    if (scale > 0.45) {
+      const nb = 3;
+      for (let i = 0; i < nb; i++) {
+        const r = hash2(i, obj.seed, 67);
+        const r2 = hash2(i, obj.seed, 71);
+        const bx = tx + (r - 0.5) * cw * 0.3 + sway * 0.5;
+        const ex = cxx + (r2 - 0.5) * cw * 0.85 + sway * 0.8;
+        const ey = ty - ch * (0.28 + r * 0.3);
+        taperStroke(ctx, bx, ty + 6, ex, ey, 1.8 * scale, 0.7 * scale, branchCol, 0.3, (r - 0.5) * cw * 0.2);
+      }
+    }
+
     // Цветение (сакура, азалия)
     if (style.blossom && (atm.season === 'spring' || (atm.season === 'summer' && style.blossom))) {
       const strength = atm.season === 'spring' ? 1 : 0.25;

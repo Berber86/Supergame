@@ -948,7 +948,13 @@ function drawWaterEdge(ctx: Ctx, world: World, x: number, y: number, atm: Atmosp
 
 /** Анимированные блики — рисуются каждый кадр поверх кэшированного слоя. */
 export function drawWaterAnimation(ctx: Ctx, world: World, atm: Atmosphere, time: number): void {
-  const hi = shade(mix(atm.palette.water, { r: 255, g: 255, b: 250 }, 0.7), atm.exposure);
+  // Блики отвечают настоящему свету: днём ярче, в золотой час вода
+  // ловит низкое солнце и теплеет, ночью остаётся еле заметный лунный отсвет.
+  const hi = shade(
+    mix(mix(atm.palette.water, { r: 255, g: 255, b: 250 }, 0.7), { r: 255, g: 212, b: 148 }, atm.golden * 0.55),
+    atm.exposure,
+  );
+  const glintK = 0.75 + atm.time.daylight * 0.45 + atm.golden * 0.55;
   for (let y = 0; y < GRID; y++) {
     for (let x = 0; x < GRID; x++) {
       const t = world.at(x, y)!;
@@ -957,7 +963,7 @@ export function drawWaterAnimation(ctx: Ctx, world: World, atm: Atmosphere, time
       const ph = hash2(x, y, 7) * Math.PI * 2;
       for (let i = 0; i < 2; i++) {
         const s = Math.sin(time * 0.0009 + ph + i * 2.1);
-        const a = 0.05 + 0.07 * (s * 0.5 + 0.5);
+        const a = (0.05 + 0.07 * (s * 0.5 + 0.5)) * glintK;
         const ox = Math.sin(time * 0.0006 + ph + i) * 11;
         const oy = Math.cos(time * 0.0005 + ph * 1.3) * 3;
         ctx.strokeStyle = css(hi, a);
@@ -968,7 +974,7 @@ export function drawWaterAnimation(ctx: Ctx, world: World, atm: Atmosphere, time
         ctx.stroke();
       }
       const rp = clamp01(Math.sin(time * 0.0012 + ph) * 0.5 + 0.5);
-      ctx.fillStyle = css(hi, 0.04 * rp);
+      ctx.fillStyle = css(hi, 0.04 * rp * glintK);
       ctx.beginPath();
       ctx.ellipse(c.x, c.y, TILE_W * 0.3, TILE_H * 0.28, 0, 0, Math.PI * 2);
       ctx.fill();

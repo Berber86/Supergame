@@ -251,7 +251,11 @@ const ui = new UI(app, world, {
     } catch {
       /* приватный режим — переживём */
     }
-    ui.setHint(m === 'stroke' ? 'Мазок: зажмите и ведите — кисть и мелочь сыплются движением' : 'Касание: клик ставит один предмет, движение ведёт камеру');
+    ui.setHint(
+      m === 'stroke'
+        ? 'Мазок: зажмите и ведите — кисть и мелочь сыплются движением'
+        : 'Касание: клик ставит один предмет, движение ведёт камеру',
+    );
   },
   onChronicle() {
     chronicle.toggle();
@@ -775,7 +779,6 @@ function flushChronicle(): void {
 /** Соотношение сторон снимка — переключается там же, на кнопке. */
 // ---------------- Звук ----------------
 
-
 async function toggleSound(force?: boolean): Promise<void> {
   const want = force ?? !soundOn;
   if (want) {
@@ -871,9 +874,7 @@ function growFrame(dt: number): void {
   if (key !== growRectKey) syncGrowRect();
   const bank = world.grow.bank;
   const mins =
-    bank < GROW_BANK_CAP
-      ? Math.max(1, Math.ceil((world.grow.tick + GROW_ACTION_MS - Date.now()) / 60000))
-      : null;
+    bank < GROW_BANK_CAP ? Math.max(1, Math.ceil((world.grow.tick + GROW_ACTION_MS - Date.now()) / 60000)) : null;
   ui.setGrowBank(bank, GROW_BANK_CAP, mins);
   if (!growBankShown) {
     growBankShown = true;
@@ -1007,4 +1008,3 @@ window.addEventListener('beforeunload', saveWorld);
 
 // Тихая подсказка при входе. На телефоне клавиш нет — называем то, что там
 // действительно есть: кнопки и жесты. Показывается один раз и не поверх свитка.
-
