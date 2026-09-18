@@ -200,6 +200,14 @@ body.touch .tool-btn .label {
     width: 38px;
     height: 38px;
   }
+  .bb-btn.cap {
+    width: auto;
+    height: 44px;
+    padding: 0 9px;
+  }
+  .bb-cap {
+    font-size: 9.5px;
+  }
 
   /* ---- Подсказка: справа от панели строителя, не поверх неё ----
      Панель строителя занимает слева около 400 px, кнопки — около 100 px

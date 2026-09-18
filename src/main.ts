@@ -142,6 +142,17 @@ if (isTouchDevice()) {
 }
 
 let selection: Selection = { kind: 'none' };
+
+// Как ставит инструмент: одиночное касание или мазок движением.
+// Выбор игрока переживает перезагрузку — привычка руки не должна теряться.
+function loadPaintPref(): 'tap' | 'stroke' {
+  try {
+    return localStorage.getItem('usadba.paintMode') === 'tap' ? 'tap' : 'stroke';
+  } catch {
+    return 'stroke';
+  }
+}
+let paintMode: 'tap' | 'stroke' = loadPaintPref();
 /** Свиток стартовой страницы ещё висит: сад за ним живёт, но не слушает клавиш. */
 let startOpen = true;
 let ghostRot = 0;
@@ -218,6 +229,20 @@ const ui = new UI(app, world, {
     if (!g || !growOfferReady(g)) return;
     g.choosing = true;
     saveWorld();
+  },
+  onRotate() {
+    ghostRot = (ghostRot + 1) % 4;
+    updateGhost();
+  },
+  onPaintMode(m) {
+    paintMode = m;
+    ui.setPaintMode(m);
+    try {
+      localStorage.setItem('usadba.paintMode', m);
+    } catch {
+      /* приватный режим — переживём */
+    }
+    ui.setHint(m === 'stroke' ? 'Мазок: зажмите и ведите — кисть и мелочь сыплются движением' : 'Касание: клик ставит один предмет, движение ведёт камеру');
   },
   onChronicle() {
     chronicle.toggle();
@@ -342,6 +367,7 @@ const input = setupInput({
   isStartOpen: () => startOpen,
   isPracticeOpen: () => practice.isOpen,
   closePractice: () => practice.close(),
+  paintMode: () => paintMode,
   actions: {
     applyAt,
     applyErase,
@@ -848,6 +874,7 @@ scene.roofVisible = loadRoofPref();
 scene.snapRoof();
 ui.setRoofState(scene.roofVisible);
 scene.particles = view.particles;
+ui.setPaintMode(paintMode);
 
 // Периодическое автосохранение — сад не должен теряться
 setInterval(saveWorld, 20000);

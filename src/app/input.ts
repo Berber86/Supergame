@@ -74,17 +74,21 @@ export interface InputDeps {
   isStartOpen(): boolean;
   isPracticeOpen(): boolean;
   closePractice(): void;
+  /** Как ставит инструмент: одиночное касание или мазок движением. */
+  paintMode(): 'tap' | 'stroke';
   actions: InputActions;
 }
 
 export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
   const { canvas, scene, world, history, ui, audio, timeCtl, gardensPanel, settingsPanel, devPanel, chronicle } = deps;
-  const { selection, isZenMode, isStartOpen, isPracticeOpen, closePractice, actions } = deps;
+  const { selection, isZenMode, isStartOpen, isPracticeOpen, closePractice, paintMode, actions } = deps;
 
   // ---------------- Ввод ----------------
 
   let dragging = false;
   let painting = false;
+  /** Одиночное касание: клик ставит предмет, движение ведёт камеру. */
+  let tapPlace: { x: number; y: number; moved: boolean } | null = null;
   let lastX = 0;
   let lastY = 0;
 
@@ -98,6 +102,7 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
     scene.movingId = -1;
     dragging = false;
     painting = false;
+    tapPlace = null;
     pathStart.current = null;
     scene.pathFrom = null;
     scene.pathPreview = null;
@@ -144,9 +149,16 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       return;
     }
     if (selection().kind !== 'none' && e.button === 0) {
-      painting = true;
-      world.beginStroke();
-      actions.applyAt(e.clientX, e.clientY, true);
+      if (paintMode() === 'stroke') {
+        painting = true;
+        world.beginStroke();
+        actions.applyAt(e.clientX, e.clientY, true);
+      } else {
+        // Касание: предмет встанет на отпускании, если палец не повёл камеру
+        tapPlace = { x: e.clientX, y: e.clientY, moved: false };
+        dragging = true;
+        canvas.classList.add('dragging');
+      }
     } else {
       dragging = true;
       canvas.classList.add('dragging');
@@ -164,6 +176,7 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       actions.wake();
     }
     if (dragging) {
+      if (tapPlace && (Math.abs(dx) > 2 || Math.abs(dy) > 2)) tapPlace.moved = true;
       scene.camera.x -= dx / scene.camera.zoom;
       scene.camera.y -= dy / scene.camera.zoom;
       scene.clampCamera();
@@ -204,9 +217,18 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       // мазок кистью закончен — следующий станет отдельным шагом отмены
       if (history.commit()) actions.syncHistoryUI();
       history.breakMerge();
+    } else if (tapPlace) {
+      // одиночное касание: клик без движения камеры ставит предмет
+      const tp = tapPlace;
+      if (!tp.moved && selection().kind !== 'none') {
+        actions.applyAt(tp.x, tp.y, true);
+        if (history.commit()) actions.syncHistoryUI();
+        history.breakMerge();
+      }
     }
     dragging = false;
     painting = false;
+    tapPlace = null;
     canvas.classList.remove('dragging');
     actions.saveWorld();
   };
@@ -302,8 +324,10 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
           return;
         }
         // Кистью и мелочью рисуем, всем остальным — возим камеру.
+        // В режиме касания движение всегда ведёт камеру: предмет ставит тап.
         const sel2 = selection();
-        const paintable = sel2.kind === 'brush' || (sel2.kind === 'item' && sel2.item.step < 1);
+        const paintable =
+          paintMode() === 'stroke' && (sel2.kind === 'brush' || (sel2.kind === 'item' && sel2.item.step < 1));
         if (paintable) {
           painting = true;
           world.beginStroke();

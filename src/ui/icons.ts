@@ -144,6 +144,10 @@ export const GLYPHS: Record<string, string> = {
   minus: '<path d="M5 12h14"/>',
   grid: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5" opacity=".5"/>',
   undo: '<path d="M9 7L4 12l5 5"/><path d="M4 12h9.5a5.5 5.5 0 010 11H10"/>',
+  // Одиночное касание: точка и круги-рябь вокруг
+  tap: '<circle cx="12" cy="12" r="2.1"/><circle cx="12" cy="12" r="6.2" opacity=".45"/><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2" opacity=".5"/>',
+  // Мазок: волнистая лента кисти
+  stroke: '<path d="M4 17c3.4 0 4.2-8.4 7.4-8.4 3 0 2.6 6.4 8.6 6.4"/><path d="M4 20.4h16" opacity=".4"/>',
   redo: '<path d="M15 7l5 5-5 5"/><path d="M20 12h-9.5a5.5 5.5 0 000 11H14"/>',
   dropper:
     '<path d="M14.5 4.8a2.6 2.6 0 013.7 3.7l-1.3 1.3 1 1-1.6 1.6-1-1L9 18.7l-3.6.9.9-3.6 6.3-6.3-1-1L13.2 7l1 1z"/>',

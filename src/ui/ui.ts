@@ -46,6 +46,10 @@ export interface UIHooks {
   onChronicle(): void;
   /** Растущий сад: открыть выбор, куда расти. */
   onGrowLine(): void;
+  /** Повернуть призрак предмета (R). */
+  onRotate(): void;
+  /** Одиночное касание или мазок кистью. */
+  onPaintMode(mode: 'tap' | 'stroke'): void;
 }
 
 export class UI {
@@ -161,8 +165,13 @@ export class UI {
     const bb = this.el('div', 'buildbar wood');
     bb.innerHTML = `
       <div class="bb-group">
-        <div class="bb-btn" data-act="undo" title="Отменить (Ctrl+Z)">${svgIcon('undo', 19)}</div>
-        <div class="bb-btn" data-act="redo" title="Повторить (Ctrl+Shift+Z)">${svgIcon('redo', 19)}</div>
+        <div class="bb-btn cap" data-act="undo" title="Отменить (Ctrl+Z)">${svgIcon('undo', 18)}<span class="bb-cap">отменить</span></div>
+        <div class="bb-btn cap" data-act="redo" title="Повторить (Ctrl+Shift+Z)">${svgIcon('redo', 18)}<span class="bb-cap">повтор</span></div>
+      </div>
+      <div class="bb-sep"></div>
+      <div class="bb-group">
+        <div class="bb-btn cap off" data-act="rotate" title="Повернуть (R)">${svgIcon('rotate', 18)}<span class="bb-cap">поворот</span></div>
+        <div class="bb-btn cap" data-act="mode" title="Как ставит инструмент: одно касание или мазок">${svgIcon('stroke', 18)}<span class="bb-cap">мазок</span></div>
       </div>
       <div class="bb-sep"></div>
       <div class="bb-group">
@@ -184,6 +193,12 @@ export class UI {
         const act = b.dataset.act!;
         if (act === 'undo') this.hooks.onUndo();
         else if (act === 'redo') this.hooks.onRedo();
+        else if (act === 'rotate') {
+          if (b.classList.contains('off')) return;
+          this.hooks.onRotate();
+        } else if (act === 'mode') {
+          this.hooks.onPaintMode(this.paintMode === 'stroke' ? 'tap' : 'stroke');
+        }
         else if (act === 'pick') this.select(this.selection.kind === 'pick' ? { kind: 'none' } : { kind: 'pick' });
         else if (act === 'move') this.select(this.selection.kind === 'move' ? { kind: 'none' } : { kind: 'move' });
         else if (act === 'fill') this.startFill();
@@ -522,6 +537,28 @@ export class UI {
     bb.querySelector('[data-act="path"]')!.classList.toggle('active', k === 'path');
   }
 
+  /** Кнопка поворота: живая только у поворачиваемых предметов. */
+  setRotateEnabled(v: boolean): void {
+    const b = this.els.buildbar.querySelector<HTMLElement>('[data-act="rotate"]');
+    b?.classList.toggle('off', !v);
+  }
+
+  /** Как ставит инструмент: одиночное касание или мазок движением. */
+  paintMode: 'tap' | 'stroke' = 'stroke';
+  setPaintMode(m: 'tap' | 'stroke'): void {
+    this.paintMode = m;
+    const b = this.els.buildbar.querySelector<HTMLElement>('[data-act="mode"]');
+    if (!b) return;
+    b.innerHTML =
+      m === 'stroke'
+        ? `${svgIcon('stroke', 18)}<span class="bb-cap">мазок</span>`
+        : `${svgIcon('tap', 18)}<span class="bb-cap">касание</span>`;
+    b.title =
+      m === 'stroke'
+        ? 'Мазок: зажмите и ведите — кисть и мелочь сыплются движением'
+        : 'Одиночное касание: каждый клик ставит один предмет, движение ведёт камеру';
+  }
+
   setHistoryState(canUndo: boolean, canRedo: boolean, undoLabel: string, redoLabel: string): void {
     const bb = this.els.buildbar;
     if (!bb) return;
@@ -537,6 +574,8 @@ export class UI {
     this.selection = sel;
     this.renderItems();
     this.syncBuildbar();
+    // Поворот есть не у каждого предмета: кнопка гаснет, когда нечего вертеть
+    this.setRotateEnabled(sel.kind === 'item' && !!sel.item.rotatable);
     this.hooks.onSelect(sel);
     // Подсказки называют то действие, которое у игрока под рукой:
     // на телефоне «коснитесь», на мыши «кликните».
