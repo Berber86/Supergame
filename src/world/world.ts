@@ -21,6 +21,13 @@ import { GroundId, PlacedObject, SaveData, Tile } from './types';
 
 const SAVE_KEY = 'usadba.save.v3';
 
+export interface ChronicleToastNote {
+  id: string;
+  x: number;
+  y: number;
+  at?: number;
+}
+
 export class World {
   /** Сторона сада в тайлах — чтобы рендер не импортировал GRID отдельно. */
   readonly size = GRID;
@@ -38,7 +45,7 @@ export class World {
   /** Очередь уведомлений о новых вехах. */
   pendingMilestones: string[] = [];
   /** Очередь новых строк летописи — мягкие заметки поверх сада. */
-  pendingNotes: string[] = [];
+  pendingNotes: ChronicleToastNote[] = [];
   /** Границы последней правки земли — для частичной перерисовки. */
   lastTouched: { x0: number; y0: number; x1: number; y1: number } | null = null;
 
@@ -107,6 +114,9 @@ export class World {
    * Открытия каталога. Строгий старт (растущий сад): ровно одно случайное
    * открытие, всё остальное впереди. Мягкий (вольный сад-витрина): доступно
    * то, что уже стоит, и земные кисти, плюс одно открытие впереди.
+   * Дикие постройки (улей, бельчатник, бревно черепахи, кормушка, поилка)
+   * должны быть видны сразу — иначе вкладка Гости не появляется вовсе,
+   * т.к. tabHasContent требует unlocked.
    */
   initUnlocks(lenient: boolean): void {
     this.unlocked = new Set();
@@ -114,6 +124,10 @@ export class World {
     if (lenient) {
       for (const o of this.objects) if (ITEM_BY_ID.has(o.type)) this.unlocked.add(o.type);
       for (const b of TERRAIN_BRUSHES) this.unlocked.add(b.id);
+      // Всегда открыты базовые приглашения дикой жизни
+      for (const id of ['feeder', 'birdbath', 'beehive', 'squirrel_feeder', 'turtle_log']) {
+        this.unlocked.add(id);
+      }
     }
     this.unlockRandomItem();
   }
@@ -964,9 +978,9 @@ export class World {
    * уже видел. Некоторые строки заодно поднимают веху — но только те,
    * что нельзя «выполнить» нарочно.
    */
-  noteEvent(id: string, now: number): boolean {
+  noteEvent(id: string, now: number, x?: number, y?: number): boolean {
     if (!noteChronicle(this.chronicle, id, now)) return false;
-    this.pendingNotes.push(id);
+    this.pendingNotes.push({ id, x: x ?? GRID / 2, y: y ?? GRID / 2, at: now });
     if (id === 'meet_frog') this.checkMilestone('first_frog');
     if (id === 'guest_stayed') this.checkMilestone('second_cat');
     if (id === 'chorus') this.checkMilestone('frog_chorus');
@@ -974,6 +988,12 @@ export class World {
     if (id === 'meet_firefly') this.checkMilestone('night_lights');
     if (id === 'meet_heron') this.checkMilestone('heron_guest');
     if (id === 'meet_deer') this.checkMilestone('deer_guest');
+    if (id === 'meet_hedgehog') this.checkMilestone('hedgehog_guest');
+    if (id === 'meet_mouse') this.checkMilestone('mouse_guest');
+    if (id === 'meet_owl') this.checkMilestone('owl_guest');
+    if (id === 'meet_squirrel') this.checkMilestone('squirrel_guest');
+    if (id === 'meet_turtle') this.checkMilestone('turtle_guest');
+    if (id === 'meet_bee') this.checkMilestone('bee_guest');
     return true;
   }
 
@@ -981,12 +1001,9 @@ export class World {
     return this.chronicle.some((e) => e.id === id);
   }
 
-  /** Стадия роста 0..1 для объекта. */
-  growth(o: PlacedObject, now: number): number {
-    const item = ITEM_BY_ID.get(o.type);
-    if (!item || item.growDays <= 0) return 1;
-    const age = (now - o.planted) / (item.growDays * DAY_MS);
-    return clamp(age, 0.06, 1);
+  /** Стадия роста 0..1 для объекта — рост убран, всё сажается сразу взрослым. */
+  growth(_o: PlacedObject, _now: number): number {
+    return 1;
   }
 
   // ---- Сохранение ----
@@ -1051,6 +1068,8 @@ export class World {
   }
 
   toJSON(): SaveData {
+    // Фото-ловушка: храним снимки только для последних 18 строк, иначе localStorage переполнится
+    const keepSnapFrom = Math.max(0, this.chronicle.length - 18);
     return {
       version: SAVE_VERSION,
       tiles: this.tiles,
@@ -1059,7 +1078,11 @@ export class World {
       milestones: [...this.milestones],
       seasons: [...this.seasonsSeen],
       seen: [...this.seenTabs],
-      chronicle: this.chronicle.map((e) => ({ id: e.id, at: e.at })),
+      chronicle: this.chronicle.map((e, i) => ({
+        id: e.id,
+        at: e.at,
+        snap: i >= keepSnapFrom ? e.snap : undefined,
+      })),
       grow: this.grow ? { ...this.grow, rect: { ...this.grow.rect } } : null,
       born: this.born,
       unlocked: [...this.unlocked],
@@ -1094,7 +1117,7 @@ export class World {
     this.milestones = new Set(p.milestones);
     this.seasonsSeen = new Set(p.seasons);
     this.seenTabs = new Set(p.seen);
-    this.chronicle = (p.chronicle ?? []).map((e) => ({ id: e.id, at: e.at }));
+    this.chronicle = (p.chronicle ?? []).map((e) => ({ id: e.id, at: e.at, snap: (e as any).snap }));
     this.grow = p.grow ?? null;
     this.born = p.born ?? this.born;
     // Лягушки из тумана: если в открытом саду нет воды, случайные строки
@@ -1122,6 +1145,11 @@ export class World {
     if (p.unlocked) {
       this.unlocked = new Set(p.unlocked);
       this.fresh = new Set(p.fresh ?? []);
+      // Миграция: старые сохранения не имели улья/бельчатника/бревна в unlocked,
+      // из-за чего вкладка Гости не появлялась. Добавляем их принудительно.
+      for (const id of ['feeder', 'birdbath', 'beehive', 'squirrel_feeder', 'turtle_log']) {
+        if (ITEM_BY_ID.has(id)) this.unlocked.add(id);
+      }
     } else {
       // Старое сохранение: растущий сад начинает путь заново с одного открытия,
       // вольный оставляет себе то, что уже прожито
@@ -1181,7 +1209,7 @@ export class World {
    * игрок застал снег, остался под дождём, дождался взрослого дерева.
    * Поэтому проверка живёт здесь, а не в местах постройки.
    */
-  observe(now: number, season: string, night: boolean, raining: boolean): void {
+  observe(_now: number, season: string, night: boolean, raining: boolean): void {
     // Круг года: сезоны накапливаются между сессиями
     if (!this.seasonsSeen.has(season)) {
       this.seasonsSeen.add(season);
@@ -1216,8 +1244,8 @@ export class World {
         seenIndoor.add(o.type);
         indoorKinds++;
       }
-      // Взрослое дерево: то, что растили по-настоящему долго
-      if (!grown && item && item.growDays >= 6 && this.growth(o, now) >= 1) grown = true;
+      // Рост убран: дерево сразу взрослое, веха даётся за наличие крупного дерева
+      if (!grown && item && item.kind === 'tree') grown = true;
     }
     if (lanterns >= 5) this.checkMilestone('lantern_path');
     if (koi >= 3) this.checkMilestone('koi_pond');

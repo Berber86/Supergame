@@ -7,7 +7,7 @@ import './ui/style.css';
 import { GRID, floorTo, inBounds } from './core/iso';
 import { Scene } from './render/scene';
 import { World } from './world/world';
-import { GROW_BANK_CAP, growOfferReady, newGrowState, seedGrowWorld, GROW_ACTION_MS } from './world/grow';
+import { GROW_BANK_CAP, growOfferReady, growThreshold, newGrowState, seedGrowWorld, GROW_ACTION_MS } from './world/grow';
 import { moving, pathStart, pointer, setupInput } from './app/input';
 import { UI, Selection } from './ui/ui';
 import { ITEM_BY_ID, TERRAIN_BRUSHES, footprintCells } from './world/catalog';
@@ -25,7 +25,9 @@ import { isTouchDevice } from './ui/touch';
 import { startLoop } from './app/gameLoop';
 import { PracticePanel } from './ui/practicePanel';
 import { ChroniclePanel } from './ui/chroniclePanel';
+import { ChronicleToast } from './ui/chronicleToast';
 import { StartScreen } from './ui/startScreen';
+import { isoToScreen } from './core/iso';
 
 const app = document.getElementById('app')!;
 
@@ -266,6 +268,32 @@ const ui = new UI(app, world, {
 // Летопись сада: свиток с первыми встречами. Открывается тихо, без кнопки.
 const chronicle = new ChroniclePanel(app, world);
 
+/** Плавный перенос камеры к событию летописи */
+function smoothPanTo(tx: number, ty: number): void {
+  const target = isoToScreen(tx, ty);
+  const startX = scene.camera.x;
+  const startY = scene.camera.y;
+  const dx = target.x - startX;
+  const dy = target.y - startY;
+  const dur = 900;
+  const t0 = performance.now();
+  const ease = (t: number) => (t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t);
+  const step = (now: number) => {
+    const p = Math.min(1, (now - t0) / dur);
+    const k = ease(p);
+    scene.camera.x = startX + dx * k;
+    scene.camera.y = startY + dy * k;
+    scene.clampCamera();
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+  wake();
+}
+
+const chronicleToast = new ChronicleToast(app, (x, y) => {
+  smoothPanTo(x, y);
+});
+
 // Настройки вида применяем до первого кадра, чтобы интерфейс
 // сразу открылся таким, каким игрок его оставил.
 const view = loadView();
@@ -311,6 +339,31 @@ const devPanel = new DevPanel(app, timeCtl, weatherSys, {
   onChange() {
     scene.markTerrainDirty();
     wake();
+  },
+  getGrow() {
+    const g = world.grow;
+    if (!g) return null;
+    return {
+      bank: g.bank,
+      progress: g.progress,
+      stage: g.stage,
+      need: growThreshold(g.stage),
+    };
+  },
+  giveGrowAction() {
+    const g = world.grow;
+    if (!g) {
+      ui.toast('Сначала войдите в растущий сад');
+      return;
+    }
+    if (g.bank >= GROW_BANK_CAP) {
+      ui.toast(`Банк полон: ${GROW_BANK_CAP}/${GROW_BANK_CAP}`);
+      return;
+    }
+    g.bank = Math.min(GROW_BANK_CAP, g.bank + 1);
+    g.tick = Date.now();
+    saveWorld();
+    ui.toast(`Дано действие — теперь ${g.bank}/${GROW_BANK_CAP}`);
   },
 });
 
@@ -763,17 +816,89 @@ function flushMilestones(): void {
   saveWorld();
 }
 
+/** Снимок места события для Polaroid-ленты летописи — вызывается после рендера кадра */
+function capturePolaroid(tx: number, ty: number): string | null {
+  try {
+    const iso = isoToScreen(tx, ty);
+    const screen = scene.worldToScreen(iso.x, iso.y);
+    const vw = scene.viewW;
+    const vh = scene.viewH;
+    if (screen.x < -260 || screen.x > vw + 260 || screen.y < -260 || screen.y > vh + 260) return null;
+    const dpr = window.devicePixelRatio || 1;
+    const size = 220;
+    const finalSize = 160;
+    const sx = Math.round((screen.x - size / 2) * dpr);
+    const sy = Math.round((screen.y - size / 2) * dpr);
+    const sSize = Math.round(size * dpr);
+    const cw = scene.canvas.width;
+    const ch = scene.canvas.height;
+    if (cw < 10 || ch < 10) return null;
+    const tmp = document.createElement('canvas');
+    tmp.width = finalSize;
+    tmp.height = finalSize;
+    const tctx = tmp.getContext('2d')!;
+    if (!tctx) return null;
+    tctx.fillStyle = '#F7F4EA';
+    tctx.fillRect(0, 0, finalSize, finalSize);
+    const srcX = Math.max(0, sx);
+    const srcY = Math.max(0, sy);
+    const srcW = Math.min(sSize, cw - srcX);
+    const srcH = Math.min(sSize, ch - srcY);
+    if (srcW <= 0 || srcH <= 0) return null;
+    const dstX = ((srcX - sx) / sSize) * finalSize;
+    const dstY = ((srcY - sy) / sSize) * finalSize;
+    const dstW = (srcW / sSize) * finalSize;
+    const dstH = (srcH / sSize) * finalSize;
+    tctx.drawImage(scene.canvas, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH);
+    tctx.fillStyle = 'rgba(90,64,40,0.04)';
+    tctx.fillRect(0, 0, finalSize, finalSize);
+    let url = tmp.toDataURL('image/webp', 0.62);
+    if (url.length > 50000) url = tmp.toDataURL('image/jpeg', 0.55);
+    if (url.length > 58000) return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+type SnapJob = { id: string; x: number; y: number; at?: number };
+let snapQueue: SnapJob[] = [];
+
 /**
- * Новые строки летописи: мягкая заметка поверх сада и запись в сохранение.
- * Вехи, которые подняли эти же события, показываем следом своим чередом.
+ * Новые строки летописи: тост сразу, снимок — после рендера кадра.
  */
 function flushChronicle(): void {
-  // Летопись пишется тихо: строки ложатся в книгу без бумажных полосок
-  // поверх сада — игрок найдёт их сам, когда захочет перечитать.
-  const noted = world.pendingNotes.length > 0;
-  if (noted) world.pendingNotes.length = 0;
+  const notes = [...world.pendingNotes];
+  const noted = notes.length > 0;
+  if (noted) {
+    for (const n of notes) {
+      chronicleToast.push(n);
+      snapQueue.push({ id: n.id, x: n.x, y: n.y, at: n.at });
+    }
+    world.pendingNotes.length = 0;
+  }
   if (world.pendingMilestones.length) flushMilestones();
   else if (noted) saveWorld();
+}
+
+function flushChronicleSnaps(): void {
+  if (!snapQueue.length) return;
+  let any = false;
+  for (const n of snapQueue) {
+    const entry =
+      (n.at != null ? [...world.chronicle].reverse().find((e) => e.id === n.id && e.at === n.at) : null) ??
+      [...world.chronicle].reverse().find((e) => e.id === n.id && !e.snap) ??
+      world.chronicle.find((e) => e.id === n.id);
+    if (entry && !entry.snap) {
+      const snap = capturePolaroid(n.x, n.y);
+      if (snap) {
+        entry.snap = snap;
+        any = true;
+      }
+    }
+  }
+  snapQueue = [];
+  if (any) saveWorld();
 }
 
 /** Соотношение сторон снимка — переключается там же, на кнопке. */
@@ -862,6 +987,29 @@ function growFrame(dt: number): void {
     world.growRefused = false;
     const mins = Math.max(1, Math.ceil((GROW_ACTION_MS - (Date.now() - world.grow.tick)) / 60000));
     ui.setHint(`Действий нет — новое придёт через ${mins} мин`);
+  }
+  // Принудительное расширение: как только порог достигнут, другие
+  // интерфейсы сворачиваются и показывается выбор зон (просил игрок).
+  if (growOfferReady(world.grow) && !world.grow.choosing) {
+    ui.toggleBuild(false);
+    ui.toggleHelp(false);
+    settingsPanel.setOpen(false);
+    gardensPanel.setOpen(false);
+    devPanel.setOpen(false);
+    chronicle.setOpen(false);
+    if (practice.isOpen) practice.close();
+    clearPending();
+    input.cancelOngoingAction();
+    ui.select({ kind: 'none' });
+    world.grow.choosing = true;
+    saveWorld();
+    ui.toast('Сад готов расти — выберите подсвеченную зону');
+    ui.setHint('Коснитесь зоны за туманом — сад вырастет туда');
+    const r = world.grow.rect;
+    scene.centerOn(r.x + r.w / 2, r.y + r.h / 2);
+    scene.clampCamera();
+    growLineShown = false;
+    ui.setGrowVisible(false);
   }
   const show = !zenMode && !world.grow.choosing && growOfferReady(world.grow);
   if (show !== growLineShown) {
@@ -990,6 +1138,7 @@ startLoop({
   },
   flushMilestones,
   flushChronicle,
+  flushChronicleSnaps,
   growFrame,
 });
 
@@ -1006,6 +1155,9 @@ syncGrowRect();
 // Периодическое автосохранение — сад не должен теряться
 setInterval(saveWorld, 20000);
 window.addEventListener('beforeunload', saveWorld);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) saveWorld();
+});
 
 // Тихая подсказка при входе. На телефоне клавиш нет — называем то, что там
 // действительно есть: кнопки и жесты. Показывается один раз и не поверх свитка.

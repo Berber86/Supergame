@@ -196,19 +196,26 @@ function parseStringList(raw: unknown, max: number): string[] | null {
 }
 
 /**
- * Летопись в сохранении — пары [событие, метка времени]. Старые сады
+ * Летопись в сохранении — [событие, метка времени, ?snap]. Старые сады
  * жили без неё: отсутствие поля значит пустую летопись, а не ошибку.
+ * snap — dataURL Polaroid 160px, может отсутствовать.
  */
-function parseChronicle(raw: unknown): { id: string; at: number }[] | null {
+function parseChronicle(raw: unknown): { id: string; at: number; snap?: string }[] | null {
   if (raw === undefined) return [];
   if (!Array.isArray(raw) || raw.length > 200) return null;
-  const out: { id: string; at: number }[] = [];
+  const out: { id: string; at: number; snap?: string }[] = [];
   for (const e of raw) {
-    if (!Array.isArray(e) || e.length !== 2) return null;
-    const [id, at] = e;
+    if (!Array.isArray(e) || (e.length !== 2 && e.length !== 3)) return null;
+    const [id, at, snap] = e as any[];
     if (typeof id !== 'string' || id.length === 0 || id.length > 40) return null;
     if (!isInt(at) || at < 0 || at > 4e12) return null;
-    out.push({ id, at });
+    if (snap !== undefined) {
+      if (typeof snap !== 'string' || snap.length > 60000) return null;
+      if (!snap.startsWith('data:image/')) return null;
+      out.push({ id, at, snap });
+    } else {
+      out.push({ id, at });
+    }
   }
   return out;
 }
@@ -227,7 +234,7 @@ export function serializeSave(d: SaveData): string {
     e: d.seen,
     g: d.grow ?? null,
     b: d.born,
-    c: (d.chronicle ?? []).map((e) => [e.id, Math.round(e.at)]),
+    c: (d.chronicle ?? []).map((e) => (e as any).snap ? [e.id, Math.round(e.at), (e as any).snap] : [e.id, Math.round(e.at)]),
     u: d.unlocked ?? null,
     f: d.fresh ?? null,
   });
