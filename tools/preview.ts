@@ -39,6 +39,20 @@ async function main() {
   (canvas as unknown as Record<string, unknown>).clientHeight = H;
 
   const world = new World();
+
+  // Растущий сад: туман над неоткрытой землёй; GROWCHOOSE=1 — зоны выбора
+  if (process.env.GROW) {
+    const { seedGrowWorld, newGrowState } = await import('../src/world/grow');
+    world.reset();
+    const seed = Number(process.env.GROWSEED ?? 4242);
+    seedGrowWorld(world, seed);
+    world.grow = newGrowState(seed, Date.now());
+    if (process.env.GROWCHOOSE) {
+      world.grow.progress = 2;
+      world.grow.choosing = true;
+    }
+  }
+
   const scene = new Scene(canvas);
   scene.resize();
   scene.centerOn(GRID / 2, GRID / 2 + 1.5);

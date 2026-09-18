@@ -4,6 +4,7 @@ import { GRID, inBounds } from '../core/iso';
 import { clamp, fbm, hash2 } from '../core/rng';
 import { BRUSH_BY_ID, ITEM_BY_ID, MILESTONES, TerrainBrush, footprintCells } from './catalog';
 import { ChronicleEntry, noteChronicle } from './chronicle';
+import { GrowRect, GrowState, growOfferReady, growTick, growZones, inGrowRect } from './grow';
 import { DAY_MS } from '../core/clock';
 import { SAVE_VERSION, parseSave, serializeSave } from './saveFormat';
 import { GroundId, PlacedObject, SaveData, Tile } from './types';
@@ -67,6 +68,9 @@ export class World {
     }
     this.objects = [];
     this.nextId = 1;
+    // Вольный сад: режима роста нет
+    this.grow = null;
+    this.growRefused = false;
     this.milestones = new Set();
     this.seasonsSeen = new Set();
     // Летопись нового сада пуста: встречи ещё впереди
@@ -430,12 +434,21 @@ export class World {
    */
   brushSize = 1;
 
+  /** Режим растущего сада: null у вольных усадеб. */
+  grow: GrowState | null = null;
+  /** Действие кончилось: последний отказ, чтобы интерфейс тихо пояснил. */
+  growRefused = false;
+  private strokeCharged = false;
+
   /** Заливка области одним материалом вместо мазков по клетке. */
   floodFill(tx: number, ty: number, g: GroundId): boolean {
     const sx = Math.floor(tx);
     const sy = Math.floor(ty);
     const start = this.at(sx, sy);
     if (!start) return false;
+    // В растущем саду заливать можно лишь открытую землю
+    if (this.grow && !inGrowRect(this.grow.rect, sx, sy)) return false;
+    if (!this.growPay()) return false;
     // Что считаем «той же областью»: материал и наличие воды
     const srcGround = start.ground;
     const srcWater = start.water;
@@ -454,6 +467,7 @@ export class World {
       const y = (i / GRID) | 0;
       const t = this.tiles[i];
       if (t.indoor || t.veranda) continue;
+      if (this.grow && !inGrowRect(this.grow.rect, x, y)) continue;
       if (t.ground !== srcGround || t.water !== srcWater) continue;
       t.ground = g;
       t.water = false;
@@ -475,6 +489,13 @@ export class World {
     const x0 = Math.floor(tx - (bw - 1) / 2);
     const y0 = Math.floor(ty - (bh - 1) / 2);
     const rad = (bw - 1) / 2;
+    // За туманом растущего сада кисть не работает: сперва открой землю
+    if (
+      this.grow &&
+      !(inGrowRect(this.grow.rect, x0, y0) && inGrowRect(this.grow.rect, x0 + bw - 1, y0 + bh - 1))
+    )
+      return false;
+    if (!this.growPayStroke()) return false;
     switch (brush.kind) {
       case 'ground':
         for (let y = y0; y < y0 + bh; y++)
@@ -713,6 +734,10 @@ export class World {
   place(type: string, tx: number, ty: number, rot = 0, planted = Date.now()): PlacedObject | null {
     const item = ITEM_BY_ID.get(type);
     if (!item) return null;
+    // В растущем саду каждое посаженное стоит действия,
+    // а за туманом сажать нечего: сперва открой землю
+    if (this.grow && !inGrowRect(this.grow.rect, tx, ty)) return null;
+    if (!this.growPay()) return null;
     const obj: PlacedObject = {
       id: this.nextId++,
       type,
@@ -833,6 +858,9 @@ export class World {
     const item = ITEM_BY_ID.get(obj.type);
     if (!item) return false;
     if (!this.objects.includes(obj)) return false;
+    // Перенести за туман нельзя: там земля ещё не открыта
+    if (this.grow && !inGrowRect(this.grow.rect, Math.floor(tx), Math.floor(ty))) return false;
+    if (!this.growPay()) return false;
     const oldX = obj.tx;
     const oldY = obj.ty;
     const oldRot = obj.rot;
@@ -895,6 +923,65 @@ export class World {
 
   // ---- Сохранение ----
 
+  // ---------------- Растущий сад ----------------
+
+  /** Начислить действия за прошедшее настоящее время (тихо, без UI). */
+  growTickNow(): void {
+    if (this.grow) growTick(this.grow, Date.now());
+  }
+
+  /**
+   * Списать одно действие. У вольного сада счета нет вовсе — возвращаем
+   * true, чтобы прежняя игра не заметила новой бухгалтерии.
+   */
+  growPay(): boolean {
+    if (!this.grow) return true;
+    growTick(this.grow, Date.now());
+    if (this.grow.bank <= 0) {
+      this.growRefused = true;
+      return false;
+    }
+    this.grow.bank -= 1;
+    this.grow.progress += 1;
+    return true;
+  }
+
+  /** Мазок кисти земли стоит как одно действие, каким бы длинным ни был. */
+  growPayStroke(): boolean {
+    if (!this.grow) return true;
+    if (this.strokeCharged) return true;
+    const ok = this.growPay();
+    if (ok) this.strokeCharged = true;
+    return ok;
+  }
+
+  /** Новая кисть — новый мазок: счётчик мазка сбрасывается. */
+  beginStroke(): void {
+    this.strokeCharged = false;
+  }
+
+  /** Зоны-кандидаты расширения, когда порог действий достигнут. */
+  growZonesNow(): GrowRect[] {
+    if (!this.grow || !growOfferReady(this.grow)) return [];
+    return growZones(this.grow.rect);
+  }
+
+  /** Выбранная зона открыта: сад вырос, счёт до следующего порога. */
+  growExpand(zone: GrowRect): void {
+    const g = this.grow;
+    if (!g) return;
+    const r = g.rect;
+    const x = Math.min(r.x, zone.x);
+    const y = Math.min(r.y, zone.y);
+    const x1 = Math.max(r.x + r.w, zone.x + zone.w);
+    const y1 = Math.max(r.y + r.h, zone.y + zone.h);
+    g.rect = { x, y, w: x1 - x, h: y1 - y };
+    g.progress = 0;
+    g.stage += 1;
+    g.choosing = false;
+    this.noteObjectsChanged();
+  }
+
   toJSON(): SaveData {
     return {
       version: SAVE_VERSION,
@@ -905,6 +992,7 @@ export class World {
       seasons: [...this.seasonsSeen],
       seen: [...this.seenTabs],
       chronicle: this.chronicle.map((e) => ({ id: e.id, at: e.at })),
+      grow: this.grow ? { ...this.grow, rect: { ...this.grow.rect } } : null,
     };
   }
 
@@ -936,6 +1024,9 @@ export class World {
     this.seasonsSeen = new Set(p.seasons);
     this.seenTabs = new Set(p.seen);
     this.chronicle = (p.chronicle ?? []).map((e) => ({ id: e.id, at: e.at }));
+    this.grow = p.grow ?? null;
+    this.growRefused = false;
+    this.strokeCharged = false;
     this.pendingMilestones = [];
     this.pendingNotes = [];
     this.lastTouched = null;

@@ -42,4 +42,14 @@ export interface SaveData {
   seen: string[];
   /** Летопись: первые встречи и редкие события сада. */
   chronicle?: { id: string; at: number }[];
+  /** Режим растущего сада: null или отсутствие — вольный сад. */
+  grow?: {
+    rect: { x: number; y: number; w: number; h: number };
+    seed: number;
+    bank: number;
+    tick: number;
+    progress: number;
+    stage: number;
+    choosing: boolean;
+  } | null;
 }

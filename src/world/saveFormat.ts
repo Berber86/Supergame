@@ -22,7 +22,7 @@ import { ITEM_BY_ID } from './catalog';
 import { GroundId, PlacedObject, SaveData, Tile } from './types';
 
 /** Версия формата, которую пишет текущая игра. */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 /**
  * Земли в порядке их знака в упаковке. Порядок — часть формата:
@@ -225,6 +225,7 @@ export function serializeSave(d: SaveData): string {
     m: d.milestones,
     s: d.seasons ?? [],
     e: d.seen,
+    g: d.grow ?? null,
     c: (d.chronicle ?? []).map((e) => [e.id, Math.round(e.at)]),
   });
 }
@@ -235,6 +236,27 @@ export function serializeSave(d: SaveData): string {
  * само содержимое: строка тайлов — v4, массив объектов — v3.
  * Номер версии служит только защитой от будущего.
  */
+/** Режим роста из упаковки: целиком пригодный или null. */
+function parseGrow(raw: unknown): SaveData['grow'] {
+  if (raw === undefined || raw === null) return null;
+  if (!raw || typeof raw !== 'object') return null;
+  const g = raw as Record<string, unknown>;
+  const r = g.rect as Record<string, unknown> | undefined;
+  const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+  if (!r || !num(r.x) || !num(r.y) || !num(r.w) || !num(r.h)) return null;
+  if (r.w < 1 || r.h < 1 || r.x < 0 || r.y < 0 || r.x + r.w > 64 || r.y + r.h > 64) return null;
+  if (!num(g.seed) || !num(g.bank) || !num(g.tick) || !num(g.progress) || !num(g.stage)) return null;
+  return {
+    rect: { x: Math.floor(r.x), y: Math.floor(r.y), w: Math.floor(r.w), h: Math.floor(r.h) },
+    seed: Math.floor(g.seed),
+    bank: Math.max(0, Math.floor(g.bank)),
+    tick: g.tick,
+    progress: Math.max(0, Math.floor(g.progress)),
+    stage: Math.max(0, Math.floor(g.stage)),
+    choosing: Boolean(g.choosing),
+  };
+}
+
 export function parseSave(raw: unknown): SaveData | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const d = raw as Record<string, unknown>;
@@ -275,5 +297,8 @@ export function parseSave(raw: unknown): SaveData | null {
   const chronicle = parseChronicle(d.c ?? d.chronicle);
   if (!milestones || !seasons || !seen || !chronicle) return null;
 
-  return { version: SAVE_VERSION, tiles, objects, nextId, milestones, seasons, seen, chronicle };
+  const grow = parseGrow(d.g);
+  if (d.g !== undefined && d.g !== null && !grow) return null;
+
+  return { version: SAVE_VERSION, tiles, objects, nextId, milestones, seasons, seen, chronicle, grow };
 }

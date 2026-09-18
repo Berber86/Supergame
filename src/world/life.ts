@@ -143,6 +143,7 @@ function tileWalkable(world: World, tx: number, ty: number): boolean {
 }
 
 function randomWalkable(world: World, near?: Vec, radius = 6): Vec | null {
+  const bounds = world.grow?.rect ?? null;
   for (let i = 0; i < 40; i++) {
     let x: number;
     let y: number;
@@ -154,6 +155,8 @@ function randomWalkable(world: World, near?: Vec, radius = 6): Vec | null {
       y = rnd() * GRID;
     }
     if (x < 1 || y < 1 || x > GRID - 1 || y > GRID - 1) continue;
+    // В растущем саду гулять можно лишь по открытой земле
+    if (bounds && (x < bounds.x || x >= bounds.x + bounds.w || y < bounds.y || y >= bounds.y + bounds.h)) continue;
     if (tileWalkable(world, x, y)) return { x, y };
   }
   return null;
@@ -161,11 +164,15 @@ function randomWalkable(world: World, near?: Vec, radius = 6): Vec | null {
 
 /** Ищет объекты заданного типа — коту нужны подушки, птицам земля, бабочкам цветы. */
 function findObjects(world: World, types: string[]): Vec[] {
+  const bounds = world.grow?.rect ?? null;
   const out: Vec[] = [];
   for (const o of world.objects) {
     if (!types.includes(o.type)) continue;
     const item = ITEM_BY_ID.get(o.type);
     if (!item) continue;
+    // Цветок за туманом растущего сада бабочек не зовёт
+    if (bounds && (o.tx < bounds.x || o.tx >= bounds.x + bounds.w || o.ty < bounds.y || o.ty >= bounds.y + bounds.h))
+      continue;
     out.push({ x: o.tx + item.w / 2, y: o.ty + item.h / 2 });
   }
   return out;
@@ -329,7 +336,7 @@ export class Life {
     this.habitatTimer -= dt;
     if (!this.habitat || this.habitatTimer <= 0) {
       this.habitatTimer = 2000;
-      this.habitat = scanHabitat(world);
+      this.habitat = scanHabitat(world, world.grow?.rect ?? null);
     }
     const h = this.habitat;
     const inv = invitations(h, t, wx ?? null, this.windBase);
@@ -571,7 +578,11 @@ export class Life {
       guest.timer = 30_000;
     }
     if (guest.state === 'walk' && now > guest.leaveAt) {
-      if (guest.tx < 1.2 || guest.tx > GRID - 1.2 || guest.ty < 1.2 || guest.ty > GRID - 1.2) {
+      const b = world.grow?.rect;
+      const gone = b
+        ? guest.tx < b.x - 0.5 || guest.tx > b.x + b.w - 0.5 || guest.ty < b.y - 0.5 || guest.ty > b.y + b.h - 0.5
+        : guest.tx < 1.2 || guest.tx > GRID - 1.2 || guest.ty < 1.2 || guest.ty > GRID - 1.2;
+      if (gone) {
         this.guests = [];
         return;
       }
@@ -592,17 +603,23 @@ export class Life {
   }
 
   private spawnGuest(world: World, h: Habitat, now: number): void {
-    // Входим с кромки сада, поближе к дому или веранде
+    // Входим с кромки сада, поближе к дому или веранде;
+    // в растущем саду кромка — граница открытой земли, из тумана
     const anchor = h.shelters.length ? h.shelters[Math.floor(rnd() * h.shelters.length)] : { x: GRID / 2, y: GRID / 2 };
+    const b = world.grow?.rect;
+    const L = b ? b.x : 1;
+    const R = b ? b.x + b.w - 1 : GRID - 1;
+    const T = b ? b.y : 1;
+    const B = b ? b.y + b.h - 1 : GRID - 1;
     const side = Math.floor(rnd() * 4);
     const start: Vec =
       side === 0
-        ? { x: 1, y: clamp(anchor.y, 2, GRID - 2) }
+        ? { x: L, y: clamp(anchor.y, T + 1, B - 1) }
         : side === 1
-          ? { x: GRID - 1, y: clamp(anchor.y, 2, GRID - 2) }
+          ? { x: R, y: clamp(anchor.y, T + 1, B - 1) }
           : side === 2
-            ? { x: clamp(anchor.x, 2, GRID - 2), y: 1 }
-            : { x: clamp(anchor.x, 2, GRID - 2), y: GRID - 1 };
+            ? { x: clamp(anchor.x, L + 1, R - 1), y: T }
+            : { x: clamp(anchor.x, L + 1, R - 1), y: B };
     if (!tileWalkable(world, start.x, start.y)) {
       const fallback = randomWalkable(world, anchor, 8);
       if (!fallback) return;

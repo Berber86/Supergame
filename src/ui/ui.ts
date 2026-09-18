@@ -6,6 +6,7 @@ import { Atmosphere } from '../world/palette';
 import { GroundId } from '../world/types';
 import { World } from '../world/world';
 import { itemIcon, svgIcon } from './icons';
+import './grow.css';
 
 const SEASON_KANJI: Record<string, string> = { spring: '春', summer: '夏', autumn: '秋', winter: '冬' };
 
@@ -43,6 +44,8 @@ export interface UIHooks {
   onSit(): void;
   /** Открыть летопись сада. */
   onChronicle(): void;
+  /** Растущий сад: открыть выбор, куда расти. */
+  onGrowLine(): void;
 }
 
 export class UI {
@@ -368,6 +371,21 @@ export class UI {
     layer.appendChild(sit);
     this.els.sit = sit;
 
+    // --- Тихая строка растущего сада: «куда расти?» ---
+    const grow = this.el('div', 'grow-line');
+    grow.innerHTML = `<span class="kanji" lang="ja">拡</span>куда расти?`;
+    grow.setAttribute('role', 'button');
+    grow.setAttribute('tabindex', '0');
+    grow.addEventListener('click', () => this.hooks.onGrowLine());
+    grow.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        this.hooks.onGrowLine();
+      }
+    });
+    layer.appendChild(grow);
+    this.els.grow = grow;
+
     this.root.appendChild(layer);
     this.renderTabs();
     this.renderItems();
@@ -639,6 +657,11 @@ export class UI {
   }
 
   /** Тихая строка летописи приходит туда же, где исчез остальной интерфейс. */
+  /** Строка «куда расти?»: видна, когда сад готов вырасти. */
+  setGrowVisible(v: boolean): void {
+    this.els.grow?.classList.toggle('show', v);
+  }
+
   setChronVisible(v: boolean): void {
     this.els.chron.classList.toggle('show', v);
   }

@@ -20,6 +20,8 @@ export interface StartScreenOptions {
   hour: () => number;
   /** Игрок вошёл: клик одновременно разблокирует звук. */
   onEnter: () => void;
+  /** Вторая дверь: растущий сад с ограниченным ресурсом действий. */
+  onGrow?: () => void;
   /** Настройки вида: выключенные плавные движения гасят дыхание и пыль. */
   motion: boolean;
 }
@@ -65,7 +67,8 @@ export class StartScreen {
     scroll.className = 'splash-scroll';
     scroll.innerHTML = `
       <h1 class="splash-title">Усадьба Безмятежности</h1>
-      <button class="splash-enter" type="button">войти в сад</button>`;
+      <button class="splash-enter" type="button">войти в сад</button>
+      <button class="splash-grow" type="button">растущий сад</button>`;
     this.el.appendChild(scroll);
     this.scroll = scroll;
 
@@ -80,6 +83,13 @@ export class StartScreen {
     enter.addEventListener('click', (e) => {
       e.stopPropagation();
       this.enter();
+    });
+    const grow = scroll.querySelector<HTMLButtonElement>('.splash-grow')!;
+    grow.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (this.opened) return;
+      this.opts.onGrow?.();
+      this.enter(false);
     });
     this.el.addEventListener('click', () => this.enter());
     window.addEventListener('keydown', this.onKey);
@@ -175,7 +185,7 @@ export class StartScreen {
   };
 
   /** Игрок вошёл в сад. */
-  private enter(): void {
+  private enter(enter = true): void {
     if (this.opened) return;
     this.opened = true;
     this.el.classList.add('hide');
@@ -186,7 +196,7 @@ export class StartScreen {
     window.visualViewport?.removeEventListener('resize', this.onResize);
     document.removeEventListener('visibilitychange', this.onVisibility);
     // Сад за заставкой живой: пока лист поднимается, камера уже двигается.
-    this.opts.onEnter();
+    if (enter) this.opts.onEnter();
     setTimeout(() => {
       cancelAnimationFrame(this.raf);
       this.raf = 0;

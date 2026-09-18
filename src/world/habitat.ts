@@ -68,7 +68,9 @@ const SHORE_PLANTS = ['reed', 'horsetail', 'iris', 'fern', 'lily', 'lotus', 'lil
  * и списка предметов слишком дёшев, чтобы жалеть его, но и гонять его
  * каждый кадр незачем — постройки не двигаются сами.
  */
-export function scanHabitat(world: World): Habitat {
+export function scanHabitat(world: World, bounds?: { x: number; y: number; w: number; h: number } | null): Habitat {
+  const inside = (x: number, y: number): boolean =>
+    !bounds || (x >= bounds.x && x < bounds.x + bounds.w && y >= bounds.y && y < bounds.y + bounds.h);
   const h: Habitat = {
     ponds: [],
     water: 0,
@@ -136,6 +138,8 @@ export function scanHabitat(world: World): Habitat {
     const item = ITEM_BY_ID.get(o.type);
     if (!item) continue;
     const c: Vec = { x: o.tx + item.w / 2, y: o.ty + item.h / 2 };
+    // За границей растущего сада жизнь не считается: там туман
+    if (!inside(Math.floor(c.x), Math.floor(c.y))) continue;
     switch (o.type) {
       case 'feeder':
         h.feeders.push(c);
@@ -193,6 +197,7 @@ export function scanHabitat(world: World): Habitat {
   // Шаг 2: сплошной обход нам не нужен, полян и так хватит с запасом.
   for (let y = 1; y < GRID - 1 && h.glades.length < 48; y += 2) {
     for (let x = 1; x < GRID - 1 && h.glades.length < 48; x += 2) {
+      if (!inside(x, y)) continue;
       const t = world.tiles[y * GRID + x];
       if (t.water || t.indoor || t.veranda) continue;
       if (t.ground !== 'moss' && t.ground !== 'grass') continue;
@@ -204,7 +209,11 @@ export function scanHabitat(world: World): Habitat {
   }
 
   // --- Веранда: место кошачьих встреч и птижьих укоров ---
-  for (const t of world.tiles) if (t.veranda) h.veranda++;
+  for (let y = 0; y < GRID; y++)
+    for (let x = 0; x < GRID; x++) {
+      if (!inside(x, y)) continue;
+      if (world.tiles[y * GRID + x].veranda) h.veranda++;
+    }
   if (h.veranda > 0) {
     // центр веранды берём усреднением по кромке дома
     let vx = 0;

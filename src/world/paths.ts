@@ -27,6 +27,11 @@ function stepCost(world: World, x: number, y: number, fromLevel: number): number
   // Вода и комнаты непроходимы: через пруд кладут мост, а не тропу
   if (t.water) return Infinity;
   if (t.indoor) return Infinity;
+  // В растущем саду тропа не уходит за туман
+  if (world.grow) {
+    const r = world.grow.rect;
+    if (x < r.x || x >= r.x + r.w || y < r.y || y >= r.y + r.h) return Infinity;
+  }
 
   let c = 1;
   // Перепад высот: тропа любит пологое
@@ -170,6 +175,8 @@ export function findPath(
  * по сторонам, чтобы дорожка не выглядела бордюром.
  */
 export function layPath(world: World, cells: { x: number; y: number }[], ground: GroundId = 'stone'): number {
+  // Тропа в растущем саду — тоже действие: одно на всю дорожку
+  if (!world.growPay()) return 0;
   let laid = 0;
   for (const c of cells) {
     const t = world.at(c.x, c.y);

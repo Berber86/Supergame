@@ -8,6 +8,7 @@ import { GRID, floorTo, inBounds } from './core/iso';
 import { computeTime } from './core/clock';
 import { Scene } from './render/scene';
 import { World } from './world/world';
+import { growOfferReady, newGrowState, seedGrowWorld, GROW_ACTION_MS } from './world/grow';
 import { UI, Selection } from './ui/ui';
 import { ITEM_BY_ID, TERRAIN_BRUSHES, footprintCells } from './world/catalog';
 import { Life } from './world/life';
@@ -212,6 +213,12 @@ const ui = new UI(app, world, {
   onSit() {
     practice.openMenu();
   },
+  onGrowLine() {
+    const g = world.grow;
+    if (!g || !growOfferReady(g)) return;
+    g.choosing = true;
+    saveWorld();
+  },
   onChronicle() {
     chronicle.toggle();
     wake();
@@ -298,10 +305,12 @@ function setZen(on: boolean): void {
     // практика и летопись предлагают себя ровно тогда, когда исчезло всё остальное
     ui.setSitVisible(true);
     ui.setChronVisible(true);
+    ui.setGrowVisible(false);
   } else {
     ui.setZenNote('');
     ui.setSitVisible(false);
     ui.setChronVisible(false);
+    ui.setGrowVisible(growLineShown);
   }
 }
 
@@ -336,6 +345,7 @@ const input = setupInput({
   actions: {
     applyAt,
     applyErase,
+    growPick,
     updateGhost,
     wake,
     saveWorld,
@@ -701,6 +711,89 @@ const practice = new PracticePanel(app, {
   toast: (text) => ui.toast(text),
 });
 
+// ---------------- Растущий сад ----------------
+
+const GROW_NAME = 'Растущий сад';
+let growAccum = 0;
+let growLineShown = false;
+
+/** Тик растущего сада: приход действий, строка выбора, отказ-подсказка. */
+function growFrame(dt: number): void {
+  if (startOpen || !world.grow) return;
+  growAccum += dt;
+  if (growAccum < 250) return;
+  growAccum = 0;
+  world.growTickNow();
+  if (world.growRefused) {
+    world.growRefused = false;
+    const mins = Math.max(1, Math.ceil((GROW_ACTION_MS - (Date.now() - world.grow.tick)) / 60000));
+    ui.setHint(`Действий нет — новое придёт через ${mins} мин`);
+  }
+  const show = !zenMode && !world.grow.choosing && growOfferReady(world.grow);
+  if (show !== growLineShown) {
+    growLineShown = show;
+    ui.setGrowVisible(show);
+  }
+}
+
+/** Тап по подсвеченной зоне: сад вырастает в выбранную сторону. */
+function growPick(tx: number, ty: number): boolean {
+  const zones = world.growZonesNow();
+  if (!zones.length) return false;
+  for (const z of zones) {
+    if (tx >= z.x && tx < z.x + z.w && ty >= z.y && ty < z.y + z.h) {
+      world.growExpand(z);
+      saveWorld();
+      scene.markTerrainDirty();
+      ui.setHint('Сад вырос — туман отступил');
+      wake();
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Вторая дверь заставки: войти в растущий сад (создать или открыть свой). */
+function enterGrow(): void {
+  const meta = gardens.list.find((m) => m.name === GROW_NAME);
+  if (meta) {
+    if (meta.id === gardens.activeId) {
+      // уже в нём
+    } else if (!gardens.switchTo(world, meta.id)) {
+      return;
+    }
+  } else {
+    gardens.create(world, GROW_NAME);
+    const seed = Math.floor(Math.random() * 1_000_000_000);
+    world.reset();
+    seedGrowWorld(world, seed);
+    world.grow = newGrowState(seed, Date.now());
+    saveWorld();
+  }
+  history.clear();
+  input.cancelOngoingAction();
+  scene.markTerrainDirty();
+  life.reset();
+  ui.select({ kind: 'none' });
+  ui.renderTabs();
+  ui.renderItems();
+  syncHistoryUI();
+  // Камера — на открытый клочок земли
+  const r = world.grow?.rect;
+  if (r) {
+    scene.camera.zoom = 1.15;
+    scene.centerOn(r.x + r.w / 2, r.y + r.h / 2);
+  }
+  growLineShown = false;
+  ui.setGrowVisible(false);
+  // Те же пороги, что и у обычного входа
+  startOpen = false;
+  wake();
+  void toggleSound(true);
+  entryZoom = scene.camera.zoom;
+  showTip(5000);
+}
+
 // ---------------- Заставка ----------------
 
 // Свиток на стене: свет идёт по тем же часам, что и сад, а вход
@@ -717,6 +810,9 @@ const start = new StartScreen({
     scene.camera.zoom *= 0.86;
     // Подсказка ждёт входа: за свитком её всё равно не видно.
     showTip(5000);
+  },
+  onGrow() {
+    enterGrow();
   },
 });
 start.mount(document.body);
@@ -743,6 +839,7 @@ startLoop({
   },
   flushMilestones,
   flushChronicle,
+  growFrame,
 });
 
 // Кровля: восстанавливаем прошлый выбор игрока до первого кадра,

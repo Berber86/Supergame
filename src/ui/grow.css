@@ -1,0 +1,35 @@
+/* Тихая строка растущего сада: предложение выбрать, куда расти */
+
+.grow-line {
+  position: absolute;
+  left: 50%;
+  bottom: calc(66px + var(--safe-b, 0px));
+  transform: translateX(-50%);
+  min-height: var(--touch-min, 44px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-radius: 22px;
+  background: rgba(38, 28, 20, 0.55);
+  color: rgba(244, 236, 217, 0.85);
+  font-size: 13.5px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  z-index: 8;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s var(--ease);
+}
+
+.grow-line.show {
+  opacity: 1;
+  transition: opacity 1.1s var(--ease);
+  pointer-events: auto;
+}
+
+.grow-line .kanji {
+  font-family: var(--jp);
+  font-size: 16px;
+}

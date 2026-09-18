@@ -37,6 +37,8 @@ export interface LoopDeps {
   flushMilestones(): void;
   /** Новые строки летописи: мягкие заметки и запись в сохранение. */
   flushChronicle(): void;
+  /** Растущий сад: тик действий, строка выбора, подсказка об отказе. */
+  growFrame(dt: number): void;
 }
 
 export function startLoop(deps: LoopDeps): void {
@@ -109,6 +111,7 @@ export function startLoop(deps: LoopDeps): void {
     life.update(world, t, dt, now, weatherSys.state);
     scene.wind = life.windBase;
     deps.flushChronicle();
+    deps.growFrame(dt);
 
     // Интерфейс растворяется в бездействии
     if (!deps.isZenMode() && !ui.buildOpen && now - deps.lastInteractionMs() > deps.idleMs) deps.igniteZen();

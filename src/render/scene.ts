@@ -5,6 +5,7 @@ import { clamp, clamp01, lerp } from '../core/rng';
 import { Atmosphere, mix } from '../world/palette';
 import { World } from '../world/world';
 import { Ctx, vignette } from './paint';
+import { drawGrowFog } from './growFog';
 import { TerrainLayer, TileRect, drawWaterAnimation, renderTerrain } from './terrain';
 import { drawHouseRoof, drawHouseWalls } from './building';
 import { Life } from '../world/life';
@@ -369,6 +370,9 @@ export class Scene {
       drawWetSheen(ctx, world, atm, ws, time);
       if (this.particles) this.rain.drawWorldLayer(ctx, world, atm, ws);
     }
+
+    // Туман неоткрытой земли: поверх всего мира, под атмосферными слоями
+    if (world.grow) drawGrowFog(ctx, world, time, this.camera.zoom);
 
     ctx.restore();
 
