@@ -376,7 +376,9 @@ function drawReflections(
       ctx.restore();
       continue;
     }
-    // Mirror the same seasonal object at its actual growth stage, not a placeholder.
+    // Mirror the same annual sprite and live sway, not a separate seasonal silhouette.
+    // Leaf area/opacity already encodes density. Do not multiply the whole reflection
+    // by canopy cover: that would double-fade foliage and erase the bare trunk too.
     drawCachedReflection(
       {
         ctx,
@@ -384,7 +386,7 @@ function drawReflections(
         y: p.y,
         atm: materialAtm,
         obj: o,
-        g: world.growth(o, Date.now()),
+        g: world.growth(o, atm.time.now),
         time,
         wind,
         alpha: item.kind === 'tree' ? 0.61 : 0.4,

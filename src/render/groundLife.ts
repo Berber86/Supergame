@@ -1,3 +1,4 @@
+import { rainField, rainShade } from './afterRain';
 import { flowerYear, litterYear, winterYear } from '../world/annualEnvironment';
 import { crownCacheKey, crownCacheTime } from '../world/phenology';
 /** Sparse, persistent-looking ground ecology. Decoration only: never places objects or changes saves. */
@@ -191,6 +192,10 @@ function litterColor(p: GroundPatch, atm: Atmosphere): RGB {
         : { r: 171, g: 139, b: 72 };
   return mix(mix({ r: 133, g: 120, b: 76 }, fresh, year.fresh), { r: 224, g: 186, b: 183 }, year.petals);
 }
+/** Communities keep their sites; only their appearance follows the current microclimate. */
+export function groundPatchClimate(p: GroundPatch, shade: number): { shade: number; damp: number } {
+  return { shade, damp: clamp01(p.damp - p.shade * 0.3 + shade * 0.3) };
+}
 function paintPatch(ctx: Ctx, p: GroundPatch, atm: Atmosphere, zoom: number): void {
   const snow = winterYear(atm.time.now).snow;
   const exposed = 1 - smoothstep(0.12 + hash2(p.seed, 3, 1523) * 0.35, 0.74 + hash2(p.seed, 5, 1523) * 0.24, snow);
@@ -200,7 +205,10 @@ function paintPatch(ctx: Ctx, p: GroundPatch, atm: Atmosphere, zoom: number): vo
   const flowers = flowerYear('wildflowers', p.seed, atm.time.now);
   const q = isoToScreen(p.x, p.y, p.level),
     fine = groundDetailAlpha(p.kind, zoom);
-  const lit = (c: RGB) => shade(mix(c, atm.lightTint, atm.lightAmount), atm.exposure);
+  if (p.kind === 'mushrooms') ctx.globalAlpha *= smoothstep(0.25, 0.65, p.damp);
+  if (p.kind === 'moss') ctx.globalAlpha *= 0.55 + 0.45 * p.damp;
+  if (p.kind === 'flowers') ctx.globalAlpha *= 1 - 0.35 * p.shade;
+  const lit = (c: RGB) => shade(mix(c, atm.lightTint, atm.lightAmount), atm.exposure * (1 - p.shade * 0.06));
   const grass = lit(atm.palette.grassDeep),
     earth = lit(atm.palette.soil),
     litter = lit(litterColor(p, atm));
@@ -366,6 +374,7 @@ export function drawGroundLife(ctx: Ctx, world: World, atm: Atmosphere, view: Gr
     );
   });
   if (!visible.length) return 0;
+  let climate: Float32Array | undefined;
   for (const p of visible) {
     let stamp = field.paint!.images.get(p);
     if (!stamp) {
@@ -397,7 +406,9 @@ export function drawGroundLife(ctx: Ctx, world: World, atm: Atmosphere, view: Gr
           c.rect(ax, ay, 100, 56);
           c.clip('evenodd');
         }
-      paintPatch(c, p, atm, detailZoom);
+      climate ??= rainShade(rainField(world), atm.time.now);
+      const cover = climate[Math.floor(p.y) * world.size + Math.floor(p.x)] ?? 0;
+      paintPatch(c, { ...p, ...groundPatchClimate(p, cover) }, atm, detailZoom);
       stamp = { canvas, x: ax, y: ay };
       field.paint!.images.set(p, stamp);
     }

@@ -82,9 +82,9 @@ const tree = w.place('pine', 10, 10, 0)!,
 const field = rainField(w);
 assert.equal(rainField(w), field);
 assert.ok(field.puddles.length > 0 && field.puddles.length <= 24);
-assert.equal(wetnessAt(field, wet, 5, 4), 0, 'floors stay dry even in cutaway view');
-assert.ok(wetnessAt(field, wet, 18, 7) > 0, 'exposed boards get wet');
-assert.equal(wetnessAt(field, wet, -1, 4), 0);
+assert.equal(wetnessAt(field, wet, 5, 4, dayTime.now), 0, 'floors stay dry even in cutaway view');
+assert.ok(wetnessAt(field, wet, 18, 7, dayTime.now) > 0, 'exposed boards get wet');
+assert.equal(wetnessAt(field, wet, -1, 4, dayTime.now), 0);
 for (const p of field.puddles) {
   const t = w.at(p.x, p.y)!;
   assert.ok(!t.water && !t.indoor && !t.veranda && t.ground !== 'deck');
@@ -234,7 +234,7 @@ for (let rot = 0; rot < 4; rot++) {
   const house = pond.place('tea_house', 21, 9, rot)!;
   const item = (await import('../src/world/catalog')).ITEM_BY_ID.get('tea_house')!;
   assert.equal(
-    wetnessAt(rainField(pond), wet, house.tx + item.w / 2, house.ty + item.h / 2),
+    wetnessAt(rainField(pond), wet, house.tx + item.w / 2, house.ty + item.h / 2, dayTime.now),
     0,
     'miniature roof shelters its interior in every rotation',
   );

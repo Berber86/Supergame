@@ -3,6 +3,8 @@
 import { clamp01, hash1, lerp } from '../../core/rng';
 import { Atmosphere, RGB, mix, shade } from '../../world/palette';
 import { PlacedObject } from '../../world/types';
+import { cachedCanopyDensity } from '../../world/canopy';
+import { ANNUAL_CROWN_TYPES } from '../../world/phenology';
 import { Ctx, softShadow } from '../paint';
 import type { ReflectionWarp } from '../waterMotion';
 
@@ -104,7 +106,16 @@ export function shadowUnder(d: DrawCtx, rx: number, ry: number, strength = 1): v
   const elev = clamp01(atm.sunElev);
   const lenK = 0.55 + (1 - elev) * 1.75;
   const dirX = atm.sunDir.x;
-  const base = atm.shadowAmount * strength;
+  // Probe caches only permanent dimensions. Annual density is applied after probing,
+  // so visiting winter first cannot poison the summer shadow (or grow a year-long cache).
+  const tree = ANNUAL_CROWN_TYPES.has(d.obj.type);
+  const density = tree ? cachedCanopyDensity(d.obj.type, d.obj.seed, atm.time.now) : 1;
+  const contactRx = rx * (tree ? 0.2 + 0.3 * density : 0.5);
+  const contactRy = ry * (tree ? 0.18 + 0.24 * density : 0.42);
+  const spread = tree ? 0.45 + 0.55 * Math.sqrt(density) : 1;
+  rx *= spread;
+  ry *= spread;
+  const base = atm.shadowAmount * strength * (tree ? 0.1 + 0.9 * density : 1);
   if (elev < 0.6 && Math.abs(dirX) > 0.12) {
     const len = rx * lenK * 1.5;
     for (let i = 0; i < 3; i++) {
@@ -123,7 +134,7 @@ export function shadowUnder(d: DrawCtx, rx: number, ry: number, strength = 1): v
     softShadow(ctx, d.x + dirX * rx * lenK * 0.5, d.y + ry * 0.2, rx * 1.2, ry * 0.95, atm.shadowTint, base * 1.95);
   }
   // плотное контактное пятно — объект «врастает» в землю
-  softShadow(ctx, d.x, d.y, rx * 0.5, ry * 0.42, atm.shadowTint, Math.min(atm.shadowAmount * 2.6, 1.2) * strength);
+  softShadow(ctx, d.x, d.y, contactRx, contactRy, atm.shadowTint, Math.min(atm.shadowAmount * 2.6, 1.2) * strength);
   ctx.restore();
 }
 

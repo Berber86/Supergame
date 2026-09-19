@@ -23,7 +23,7 @@ import { DrawCtx, drawObject, drawCost, hasDrawer, setSkipShadows } from './spri
 import { Ctx } from './paint';
 import { flowerCycleKey } from './flowerCycle';
 import { css } from '../world/palette';
-import { SMALL_HOUSE_IDS } from '../world/catalog';
+import { ITEM_BY_ID, SMALL_HOUSE_IDS } from '../world/catalog';
 import { roofSnowKey } from './roofSnow';
 
 interface Entry {
@@ -214,6 +214,14 @@ function drawEntry(d: DrawCtx, e: Entry): void {
   ctx.globalAlpha = prev;
 }
 
+/** Shared live pose for the displayed sprite and its reflection; rigid objects never sway. */
+export function spriteSway(type: string, seed: number, g: number, time: number, wind: number): number {
+  const kind = ITEM_BY_ID.get(type)?.kind;
+  if (kind !== 'tree' && kind !== 'shrub' && kind !== 'flower') return 0;
+  const scale = 0.18 + 0.82 * Math.pow(cachedGrowth(g), 0.72);
+  return Math.sin(time * 0.0004 + seed) * 3 * wind * scale * 0.7;
+}
+
 /** The very same painted sprite, mirrored in broken horizontal strips; no shadow. */
 export function drawCachedReflection(d: DrawCtx, compression = 0.82): void {
   const e = getCachedSprite(d);
@@ -221,7 +229,7 @@ export function drawCachedReflection(d: DrawCtx, compression = 0.82): void {
   const ctx = d.ctx;
   ctx.save();
   const alpha = ctx.globalAlpha * d.alpha;
-  ctx.translate(d.x, d.y);
+  ctx.translate(d.x + spriteSway(d.obj.type, d.obj.seed, d.g, d.time, d.wind), d.y);
   ctx.scale(1, -compression);
   // Only the part above the object's foot reflects. A fragment is 5 world pixels,
   // not a screen-sized offscreen canvas; reused sprites also bound memory.

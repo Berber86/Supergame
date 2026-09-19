@@ -164,7 +164,7 @@ function makeTree(style: TreeStyle): Drawer {
     const trunkCol = litc(style.trunk, atm),
       branchCol = shade(trunkCol, 0.92);
     const trunkW = Math.max(2.2, 7 * scale * (0.9 + hash2(obj.seed, 12, 17) * 0.2));
-    // Keep cast-shadow behaviour unchanged until the canopy-aware lighting stage.
+    // Permanent dimensions; shadowUnder applies the shared annual canopy density.
     shadowUnder(d, cw * 0.62, cw * 0.26, 0.9);
     const { tx, ty } = drawTrunk(d, h, trunkW, trunkCol, sway * 0.35 + leanJ * h * 0.14);
     drawTreeCavity(d, tx, ty, h, trunkW);

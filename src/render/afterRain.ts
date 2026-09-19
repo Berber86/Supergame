@@ -1,6 +1,8 @@
 /** Residual rain: receiver-aware drying, small temporary puddles and bounded roof drips. No save mutations. */
 import { isoToScreen, tileDiamond, type Pt } from '../core/iso';
 import { clamp01, hash2, lerp } from '../core/rng';
+import { cachedCanopyDensity } from '../world/canopy';
+import { ANNUAL_CROWN_TYPES, crownCacheKey } from '../world/phenology';
 import { ITEM_BY_ID, SMALL_HOUSE_IDS } from '../world/catalog';
 import { css, mix, shade, type Atmosphere } from '../world/palette';
 import type { WeatherState } from '../world/weatherState';
@@ -16,7 +18,9 @@ interface RainCell {
   x: number;
   y: number;
   level: number;
+  /** Permanent building shade; vegetation is evaluated separately for the chosen date. */
   shade: number;
+  crowns: { index: number; weight: number }[];
   sheltered: boolean;
   water: boolean;
   hard: boolean;
@@ -32,6 +36,8 @@ export interface RainField {
   size: number;
   cells: RainCell[];
   puddles: PuddleSite[];
+  plants: { type: string; seed: number }[];
+  annual?: { key: string; now: number; shade: Float32Array };
 }
 const fields = new WeakMap<World, RainField>();
 /** One geometric state per world; edits, moves, undo and imported gardens invalidate it. */
@@ -43,15 +49,17 @@ export function rainField(world: World): RainField {
   const key =
     world.tiles.map((t) => `${t.ground}:${t.level}:${+t.water}${+t.indoor}${+t.veranda}`).join('|') +
     ';' +
-    objects.map((o) => `${o.type}:${o.tx}:${o.ty}:${o.rot}`).join('|');
+    objects.map((o) => `${o.type}:${o.tx}:${o.ty}:${o.rot}:${o.seed}`).join('|');
   const old = fields.get(world);
   if (old?.key === key) return old;
   const house = findHouse(world);
-  const obstacles = objects.map((o) => {
+  const obstacles = objects.map((o, index) => {
     const i = ITEM_BY_ID.get(o.type)!,
       roof = SMALL_HOUSE_IDS.has(o.type),
       s = roof ? smallHouseSize(o.type) : { u: 0, v: 0 };
     return {
+      index,
+      level: world.at(Math.floor(o.tx + i.w / 2), Math.floor(o.ty + i.h / 2))?.level ?? 0,
       x: o.tx + i.w / 2,
       y: o.ty + i.h / 2,
       roof,
@@ -60,7 +68,13 @@ export function rainField(world: World): RainField {
       r: i.kind === 'tree' ? 1.8 : 1,
     };
   });
-  const f: RainField = { key, size: world.size, cells: [], puddles: [] };
+  const f: RainField = {
+    key,
+    size: world.size,
+    cells: [],
+    puddles: [],
+    plants: objects.map((o) => ({ type: o.type, seed: o.seed })),
+  };
   for (let y = 0; y < world.size; y++)
     for (let x = 0; x < world.size; x++) {
       const t = world.at(x, y)!,
@@ -70,6 +84,7 @@ export function rainField(world: World): RainField {
           t.indoor ||
           !!(house && px > house.x0 - 0.85 && px < house.x1 + 1.85 && py > house.y0 - 0.85 && py < house.y1 + 1.85),
         cover = 0;
+      const crowns: RainCell['crowns'] = [];
       for (const o of obstacles) {
         if (o.roof) {
           if (Math.abs(px - o.x) < o.u && Math.abs(py - o.y) < o.v) sheltered = true;
@@ -77,7 +92,10 @@ export function rainField(world: World): RainField {
             cover,
             clamp01(1 - Math.hypot(Math.max(0, Math.abs(px - o.x) - o.u), Math.max(0, Math.abs(py - o.y) - o.v)) / 0.9),
           );
-        } else cover = Math.max(cover, clamp01(1 - Math.hypot(px - o.x, py - o.y) / o.r));
+        } else if (Math.abs(t.level - o.level) <= 1) {
+          const weight = clamp01(1 - Math.hypot(px - o.x, py - o.y) / o.r);
+          if (weight > 0) crowns.push({ index: o.index, weight });
+        }
       }
       if (house) {
         const dx = Math.max(house.x0 - px, 0, px - house.x1 - 1),
@@ -89,6 +107,7 @@ export function rainField(world: World): RainField {
         y,
         level: t.level,
         shade: cover,
+        crowns,
         sheltered,
         water: t.water,
         hard: ['stone', 'gravel', 'deck'].includes(t.ground),
@@ -123,15 +142,41 @@ export function rainField(world: World): RainField {
   fields.set(world, f);
   return f;
 }
+/** One current scalar field, not a bitmap or an archive of past dates. Geometry survives scrubbing. */
+export function rainShade(field: RainField, now: number): Float32Array {
+  if (field.annual && field.annual.now === now) return field.annual.shade;
+  const key = field.plants.map((p) => crownCacheKey(p.type, p.seed, now)).join('|');
+  if (field.annual?.key === key) {
+    field.annual.now = now;
+    return field.annual.shade;
+  }
+  const densities = field.plants.map((p) =>
+    ANNUAL_CROWN_TYPES.has(p.type) ? 0.08 + 0.92 * cachedCanopyDensity(p.type, p.seed, now) : 0,
+  );
+  const shade = Float32Array.from(field.cells, (c) => {
+    let cover = c.shade;
+    for (const crown of c.crowns) cover = Math.max(cover, crown.weight * densities[crown.index]);
+    return cover;
+  });
+  field.annual = { key, now, shade };
+  return shade;
+}
+
 /** Same recent rain, different evaporation: exposed areas lose their visible water first. */
 export function residualWetness(wetness: number, cover: number, sheltered = false): number {
   return sheltered ? 0 : Math.pow(clamp01(wetness), lerp(1.8, 0.55, clamp01(cover)));
 }
-export function wetnessAt(field: RainField, weather: WeatherState | undefined, x: number, y: number): number {
+export function wetnessAt(
+  field: RainField,
+  weather: WeatherState | undefined,
+  x: number,
+  y: number,
+  now: number,
+): number {
   const c = field.cells[Math.floor(y) * field.size + Math.floor(x)];
   return !weather || x < 0 || y < 0 || x >= field.size || y >= field.size || !c
     ? 0
-    : residualWetness(weather.wetness, c.shade, c.sheltered);
+    : residualWetness(weather.wetness, rainShade(field, now)[Math.floor(y) * field.size + Math.floor(x)], c.sheltered);
 }
 const WET_MATERIALS = new Set([
   'rock_big',
@@ -157,7 +202,7 @@ export function rainMaterial(
   y: number,
 ): Atmosphere {
   if (!field || !weather || atm.season === 'winter' || !WET_MATERIALS.has(type)) return atm;
-  const wet = wetnessAt(field, weather, x, y);
+  const wet = wetnessAt(field, weather, x, y, atm.time.now);
   const q = Math.round(wet * 12) / 12;
   return q > 0 ? { ...atm, materialWetness: q } : atm;
 }
@@ -178,6 +223,7 @@ export function drawRainGround(
 ): number {
   if (!weather || weather.wetness < 0.015 || atm.season === 'winter') return 0;
   const f = rainField(world),
+    annualShade = rainShade(f, atm.time.now),
     sky = mix(mix(atm.skyTop, atm.skyBottom, 0.65), atm.palette.water, 0.28);
   const visible = (p: Pt) =>
     Math.abs(p.x - view.x) < view.width / (2 * view.zoom) + 65 &&
@@ -191,7 +237,7 @@ export function drawRainGround(
     if (c.sheltered || c.water) continue;
     const p = isoToScreen(c.x + 0.5, c.y + 0.5, c.level);
     if (!visible(p)) continue;
-    const q = Math.round(residualWetness(weather.wetness, c.shade) * 12);
+    const q = Math.round(residualWetness(weather.wetness, annualShade[c.y * f.size + c.x]) * 12);
     if (!q) continue;
     const key = q + (c.hard ? 16 : 0),
       list = groups.get(key) ?? [];
@@ -258,7 +304,7 @@ export function drawRainGround(
   ctx.globalCompositeOperation = 'source-over';
   let count = 0;
   for (const s of f.puddles) {
-    const wet = residualWetness(weather.wetness, s.shade),
+    const wet = residualWetness(weather.wetness, annualShade[s.y * f.size + s.x]),
       amount = clamp01((wet - 0.2) / 0.8);
     if (amount <= 0.015) continue;
     const p = isoToScreen(s.x + 0.5, s.y + 0.5, s.level);

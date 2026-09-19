@@ -152,6 +152,8 @@ export function drawObjectShadow(d: DrawCtx): void {
     }
     spec = probeShadowEnd();
     shadowSpec.set(key, spec);
+    probe.width = probe.height = 1;
+    if (shadowSpec.size > 600) shadowSpec.delete(shadowSpec.keys().next().value!);
   }
   if (!spec) return;
   // Учитываем scaleJitter для тени
