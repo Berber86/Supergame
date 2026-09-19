@@ -6,6 +6,9 @@ import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
 import { GroundId, Tile } from '../world/types';
 import { World } from '../world/world';
 import { Ctx, blobPath, granulate } from './paint';
+import { cascadeStone } from './cascadeStone';
+import { prepareWaterSurface, drawWaterSurface } from './waterSurface';
+export { drawWaterAnimation } from './waterSurface';
 
 interface Bounds {
   bx0: number;
@@ -184,30 +187,15 @@ export function renderTerrain(
   // 4.5) Снежный покров
   if (atm.season === 'winter') drawSnowCover(ctx, world, atm, bounds);
 
-  // 4.7) Возвращаем поверхность воды поверх разводов.
-  //
-  // Кляксы разводов крупнее клетки и заливают соседнюю воду, отчего пруд
-  // выглядит прозрачным — сквозь него просвечивает трава. На уровне земли
-  // это сходило за игру света, но приподнятый пруд от этого становится
-  // стеклянным. Вода — не земля, акварельных затёков на ней быть не должно.
-  for (const { x, y } of order) {
-    const t = world.at(x, y)!;
-    if (t.water) drawWaterTop(ctx, x, y, t.level, atm);
-  }
-
   // 5) Мягкие границы между разными материалами
   for (const { x, y } of order) drawMaterialEdges(ctx, world, x, y, atm);
 
   // 6) Фактура материалов
   for (const { x, y } of order) drawTileDetail(ctx, world, x, y, world.at(x, y)!, atm);
 
-  // 7) Скругление силуэта водоёма + берег
-  for (const { x, y } of order) {
-    if (world.at(x, y)!.water) roundWaterCorners(ctx, world, x, y, atm);
-  }
-  for (const { x, y } of order) {
-    if (world.at(x, y)!.water) drawWaterEdge(ctx, world, x, y, atm);
-  }
+  // 7) Единая поверхность водоёмов поверх затёков земли, с мягкой отмелью.
+  prepareWaterSurface(world);
+  drawWaterSurface(ctx, world, atm);
 
   ctx.restore();
 
@@ -498,16 +486,42 @@ function tileColor(world: World, x: number, y: number, t: Tile, atm: Atmosphere,
   return mix(col, atm.lightTint, atm.lightAmount * 0.75);
 }
 
+/** Local mountain skirt: no changes to indoor floors or constructed verandas. */
+function isRockySlope(world: World, x: number, y: number, t: Tile): boolean {
+  if (t.water || t.indoor || t.veranda || t.level <= 0 || !['moss','grass','stone'].includes(t.ground)) return false;
+  for (let dy=-3;dy<=3;dy++) for(let dx=-3;dx<=3;dx++) {
+    if (Math.abs(dx)+Math.abs(dy)>3) continue;
+    if (world.at(x+dx,y+dy)?.water) return true;
+  }
+  return false;
+}
+
+/** Only elevated waterside stone: ordinary stone paths and level ponds stay unchanged. */
+function isCascadeBank(world: World, x: number, y: number, t: Tile): boolean {
+  if (t.ground !== 'stone' || t.water || t.indoor || t.veranda) return false;
+  if (isRockySlope(world,x,y,t)) return true;
+  for (let dy = -1; dy <= 1; dy++)
+    for (let dx = -1; dx <= 1; dx++) {
+      const n = world.at(x + dx, y + dy);
+      if (n?.water && Math.max(t.level, n.level) > 0) return true;
+    }
+  return false;
+}
+
 function drawTileFill(ctx: Ctx, world: World, x: number, y: number, t: Tile, atm: Atmosphere): void {
   if (t.water) {
-    drawWaterTop(ctx, x, y, t.level, atm);
+    // Dry substrate only: rounded pond corners must not reveal blue tile diamonds.
+    tilePath(ctx, x, y, t.level, 0.025);
+    ctx.fillStyle = css(tileColor(world, x, y, t, atm, 'moss'));
+    ctx.fill();
     return;
   }
   tilePath(ctx, x, y, t.level, 0.025);
-  ctx.fillStyle = css(tileColor(world, x, y, t, atm), 1);
+  const bank = isCascadeBank(world, x, y, t);
+  ctx.fillStyle = css(tileColor(world, x, y, t, atm, bank ? 'moss' : undefined), 1);
   ctx.fill();
   // Дорожка поверх подстилающего грунта: лента к соседям, а не квадрат.
-  drawRoadRibbon(ctx, world, x, y, t, atm);
+  if (!bank) drawRoadRibbon(ctx, world, x, y, t, atm);
 }
 
 /** Конусная лента от c до m в цвет покрытия. */
@@ -777,6 +791,29 @@ function drawMaterialEdges(ctx: Ctx, world: World, x: number, y: number, atm: At
 
 function drawTileDetail(ctx: Ctx, world: World, x: number, y: number, t: Tile, atm: Atmosphere): void {
   if (t.water) return;
+  // Break the skyline of a grassy ledge as well as its face. Rounded stones
+  // overlap the tile edge, then water is clipped/drawn above them as usual.
+  if (t.ground !== 'stone' && isRockySlope(world, x, y, t)) {
+    for (const [dx, dy] of [
+      [1, 0],
+      [0, 1],
+    ]) {
+      const n = world.at(x + dx, y + dy);
+      if (!n || n.level >= t.level || n.water) continue;
+      const p = isoToScreen(x + 0.5 + dx * 0.48, y + 0.5 + dy * 0.48, t.level);
+      const r = hash2(x + dx, y + dy, 443);
+      cascadeStone(
+        ctx,
+        p.x,
+        p.y + 3,
+        19 + r * 10,
+        7 + r * 5,
+        shade(mix(atm.palette.stone, atm.palette.moss, 0.38), atm.exposure * 0.9),
+        shade(atm.palette.moss, atm.exposure),
+        x * 31 + y * 17 + dx,
+      );
+    }
+  }
   const sk = isRoad(t.ground) ? roadSkeleton(world, x, y, t) : null;
   const col = tileColor(world, x, y, t, atm, sk ? t.ground : undefined);
   const c = isoToScreen(x + 0.5, y + 0.5, t.level);
@@ -786,7 +823,24 @@ function drawTileDetail(ctx: Ctx, world: World, x: number, y: number, t: Tile, a
       else drawGravel(ctx, c.x, c.y, col, x * 17 + y * 31);
       break;
     case 'stone':
-      if (sk) drawRibbonFlags(ctx, sk, col, x * 29 + y);
+      if (isCascadeBank(world, x, y, t)) {
+        const stone = shade(mix(atm.palette.stone, atm.palette.soil, 0.24), atm.exposure * 0.92);
+        const moss = shade(atm.palette.moss, atm.exposure);
+        for (let i = 0; i < 3; i++) {
+          const r = hash2(x + i, y, 353),
+            q = hash2(x, y + i, 359);
+          cascadeStone(
+            ctx,
+            c.x + (i - 1) * 22 + (q - 0.5) * 9,
+            c.y + (r - 0.5) * 18,
+            16 + r * 15,
+            9 + q * 9,
+            stone,
+            moss,
+            x * 71 + y * 17 + i * 31,
+          );
+        }
+      } else if (sk) drawRibbonFlags(ctx, sk, col, x * 29 + y);
       else drawStoneSlab(ctx, world, x, y, t.level, col);
       break;
     case 'tatami':
@@ -917,8 +971,8 @@ function drawTatami(ctx: Ctx, x: number, y: number, level: number, atm: Atmosphe
   const horiz = (x + y) % 2 === 0;
   ctx.strokeStyle = css(shade(base, 0.92), 0.28);
   ctx.lineWidth = 1;
-  for (let i = 1; i < 7; i++) {
-    const t = i / 7;
+  for (let i = 1; i < 15; i++) {
+    const t = i / 15;
     const p0 = horiz ? isoToScreen(x + t, y, level) : isoToScreen(x, y + t, level);
     const p1 = horiz ? isoToScreen(x + t, y + 1, level) : isoToScreen(x + 1, y + t, level);
     ctx.beginPath();
@@ -926,9 +980,9 @@ function drawTatami(ctx: Ctx, x: number, y: number, level: number, atm: Atmosphe
     ctx.lineTo(p1.x, p1.y);
     ctx.stroke();
   }
-  // тканевая кайма только по краю комнаты
+  // Тканевая кайма каждой циновки; локальна тайлу, без зависимости от соседних комнат.
   ctx.strokeStyle = css(shade({ r: 96, g: 80, b: 60 }, atm.exposure), 0.22);
-  ctx.lineWidth = 1.6;
+  ctx.lineWidth = 2.2;
   tilePath(ctx, x, y, level, -0.02);
   ctx.stroke();
 }
@@ -974,6 +1028,25 @@ function drawTileSides(ctx: Ctx, world: World, x: number, y: number, t: Tile, at
     const shadeK = dir === 'south' ? 0.74 - atm.sunDir.x * 0.1 : 0.62 + atm.sunDir.x * 0.08;
     const col = shade(mix(baseCol, atm.palette.soil, 0.5), atm.exposure * shadeK);
 
+    if (isCascadeBank(world, x, y, t) || isRockySlope(world, x, y, t)) {
+      const rock = shade(mix(atm.palette.stone, atm.palette.soil, 0.32), atm.exposure * 0.88);
+      for (let i = 0; i < 3; i++) {
+        const u = (i + 0.5) / 3,
+          r = hash2(x + i, y, 367);
+        cascadeStone(
+          ctx,
+          lerp(p0.x, p1.x, u),
+          lerp(p0.y, p1.y, u) + hpx * 0.4,
+          17 + r * 9,
+          hpx * 0.48 + 5,
+          rock,
+          shade(atm.palette.moss, atm.exposure),
+          x * 73 + y * 37 + i * 19,
+        );
+      }
+      return;
+    }
+
     ctx.beginPath();
     ctx.moveTo(p0.x, p0.y);
     ctx.lineTo(p1.x, p1.y);
@@ -1017,262 +1090,4 @@ function drawTileSides(ctx: Ctx, world: World, x: number, y: number, t: Tile, at
 
   drawSide(south, 'south');
   drawSide(east, 'east');
-}
-
-function drawWaterTop(ctx: Ctx, x: number, y: number, level: number, atm: Atmosphere): void {
-  // Вода не должна проваливаться в темноту на рассвете: держим дно светлее
-  // и ближе к палитре water, иначе пруд в 05:03 выглядит «в непонятно чём».
-  const bottom = shade(mix(atm.palette.waterDeep, atm.palette.water, 0.55), Math.max(atm.exposure, 0.72) * 0.88);
-  const surfBase = mix(atm.palette.water, bottom, 0.18);
-  const surf = shade(mix(surfBase, atm.lightTint, atm.lightAmount * 0.42), Math.max(atm.exposure, 0.78));
-
-  // Центр тайла в экране
-  const cDeep = isoToScreen(x + 0.5, y + 0.5, level - 0.34);
-  const cSurf = isoToScreen(x + 0.5, y + 0.5, level - 0.26);
-
-  // Вариация глубины по шуму — вода не однотонная плита
-  const deepVar = fbm(x * 0.6, y * 0.6, 2, 11);
-  const surfVar = fbm(x * 0.9 + 5, y * 0.9 - 3, 2, 19);
-  const bottomCol = shade(bottom, 0.96 + deepVar * 0.1);
-  const surfCol = shade(surf, 0.98 + surfVar * 0.08);
-
-  // Неровный акварельный blob — делаем крупнее, чтобы каскад не выглядел кубично:
-  // соседние кляксы должны перекрываться даже при перепаде уровня.
-  const seed = x * 137 + y * 73;
-  const rx = TILE_W * (0.68 + hash2(x, y, 3) * 0.18);
-  const ry = TILE_H * (0.68 + hash2(x, y, 7) * 0.18);
-
-  // глубина — чуть больше и мягче
-  ctx.fillStyle = css(bottomCol, 1);
-  blobPath(ctx, cDeep.x, cDeep.y, rx * 1.12, ry * 1.12, seed, 0.28, 11);
-  ctx.fill();
-
-  // поверхность — почти во всю клетку, с рваным краем
-  ctx.fillStyle = css(surfCol, 1);
-  blobPath(ctx, cSurf.x, cSurf.y, rx * 1.02, ry * 1.02, seed + 7, 0.3, 12);
-  ctx.fill();
-
-  // лёгкая внутренняя тень у края — объём, но слабее
-  const edge = hash2(x, y, 13);
-  if (edge > 0.55) {
-    ctx.fillStyle = css(shade(bottomCol, 0.88), 0.08 + edge * 0.05);
-    blobPath(ctx, cSurf.x + (hash2(x, y, 17) - 0.5) * 8, cSurf.y + 2, rx * 0.42, ry * 0.36, seed + 13, 0.34, 8);
-    ctx.fill();
-  }
-}
-
-/** Ступенчатый силуэт пруда сглаживается кляксами воды на углах — без ровных ступеней. */
-function roundWaterCorners(ctx: Ctx, world: World, x: number, y: number, atm: Atmosphere): void {
-  const t = world.at(x, y)!;
-  const lv = t.level - 0.26;
-  const bottom = shade(mix(atm.palette.waterDeep, atm.palette.soil, 0.4), atm.exposure * 0.78);
-  const surf = shade(mix(mix(atm.palette.water, bottom, 0.26), atm.lightTint, atm.lightAmount * 0.5), atm.exposure);
-  const diag: [number, number][] = [
-    [1, 1],
-    [1, -1],
-    [-1, 1],
-    [-1, -1],
-  ];
-  for (const [dx, dy] of diag) {
-    const a = world.at(x + dx, y);
-    const b = world.at(x, y + dy);
-    const c = world.at(x + dx, y + dy);
-    // внутренний угол: оба соседа — вода, диагональ — суша → заполняем плавно рваной кляксой
-    if (a?.water && b?.water && c && !c.water && !c.indoor && !c.veranda) {
-      const p = isoToScreen(x + 0.5 + dx * 0.62, y + 0.5 + dy * 0.62, lv);
-      const seed = x * 53 + y * 11 + dx * 3 + dy;
-      const r = hash2(x + dx, y + dy, 19);
-      // более крупная и неровная, чем раньше
-      ctx.fillStyle = css(surf, 0.92);
-      blobPath(ctx, p.x, p.y, TILE_W * (0.34 + r * 0.18), TILE_H * (0.34 + r * 0.18), seed, 0.36, 10);
-      ctx.fill();
-    }
-    // внешний угол: вода граничит с сушей по диагонали — делаем выступ, чтобы берег не был 90°
-    if (a && !a.water && b && !b.water && !a.indoor && !a.veranda && !b.indoor && !b.veranda) {
-      // только если этот внешний угол действительно на берегу (есть вода рядом)
-      const hasWaterSide = world.at(x + dx, y)?.water || world.at(x, y + dy)?.water;
-      if (!hasWaterSide) continue;
-      const p = isoToScreen(x + 0.5 + dx * 0.38, y + 0.5 + dy * 0.38, lv);
-      const seed = x * 71 + y * 29 + dx * 7 + dy * 11;
-      ctx.fillStyle = css(surf, 0.42);
-      blobPath(ctx, p.x, p.y, TILE_W * 0.18, TILE_H * 0.16, seed, 0.42, 8);
-      ctx.fill();
-    }
-  }
-}
-
-/** Берег: неровный акварельный край — влажная полоса и рваная пена, без прямых линий. */
-function drawWaterEdge(ctx: Ctx, world: World, x: number, y: number, atm: Atmosphere): void {
-  const t = world.at(x, y)!;
-  const level = t.level;
-  const wet = shade(mix(atm.palette.soil, atm.palette.waterDeep, 0.28), atm.exposure * 0.86);
-  const foam = shade(mix(atm.palette.water, { r: 255, g: 255, b: 255 }, 0.62), atm.exposure);
-  const sandCol = shade(mix(atm.palette.soil, { r: 238, g: 226, b: 198 }, 0.52), atm.exposure);
-
-  const dirs: [number, number][] = [
-    [0, -1],
-    [1, 0],
-    [0, 1],
-    [-1, 0],
-  ];
-  for (const [dx, dy] of dirs) {
-    const nb = world.at(x + dx, y + dy);
-    if (nb?.water) continue;
-    if (nb && (nb.indoor || nb.veranda)) continue;
-
-    const seed = x * 41 + y * 17 + (dx + 2) * 5 + (dy + 2);
-    const r = hash2(x * 13 + dx, y * 7 + dy, 61);
-    const r2 = hash2(x * 23 + dx * 3, y * 37 + dy * 5, 97);
-
-    // 1) Влажная тёмная полоса на берегу — неровная клякса, заходящая на сушу
-    if (r > 0.18) {
-      const p = isoToScreen(x + 0.5 + dx * (0.52 + r * 0.18), y + 0.5 + dy * (0.52 + r * 0.18), nb ? nb.level : level);
-      ctx.save();
-      ctx.globalCompositeOperation = 'multiply';
-      // более крупная и рваная, чем раньше
-      ctx.fillStyle = css(mix({ r: 255, g: 255, b: 255 }, wet, 0.28 + r * 0.28), 1);
-      blobPath(ctx, p.x, p.y, TILE_W * (0.26 + r * 0.24), TILE_H * (0.22 + r * 0.2), seed, 0.44, 11);
-      ctx.fill();
-      // вторая маленькая клякса рядом — рваность
-      if (r > 0.6) {
-        ctx.fillStyle = css(mix({ r: 255, g: 255, b: 255 }, wet, 0.22), 1);
-        blobPath(ctx, p.x + (r2 - 0.5) * 12, p.y + (r - 0.5) * 6, TILE_W * 0.14, TILE_H * 0.12, seed + 9, 0.48, 8);
-        ctx.fill();
-      }
-      ctx.restore();
-    }
-
-    // 2) Песчаная кромка на суше — светлый акварельный наплыв, не сплошной
-    if (nb && !nb.water && r > 0.32 && (nb.ground === 'sand' || hash2(x, y, 53) > 0.55)) {
-      const ps = isoToScreen(x + 0.5 + dx * 0.72, y + 0.5 + dy * 0.72, nb.level);
-      ctx.fillStyle = css(sandCol, 0.22 + r * 0.18);
-      blobPath(ctx, ps.x, ps.y, TILE_W * (0.18 + r * 0.14), TILE_H * (0.16 + r * 0.12), seed + 21, 0.38, 9);
-      ctx.fill();
-    }
-
-    // 3) Пена — рваная линия с волной + отдельные пузырьки
-    const lv = level - 0.26;
-    let p0, p1;
-    if (dx === 0 && dy === -1) {
-      p0 = isoToScreen(x, y, lv);
-      p1 = isoToScreen(x + 1, y, lv);
-    } else if (dx === 1) {
-      p0 = isoToScreen(x + 1, y, lv);
-      p1 = isoToScreen(x + 1, y + 1, lv);
-    } else if (dy === 1) {
-      p0 = isoToScreen(x, y + 1, lv);
-      p1 = isoToScreen(x + 1, y + 1, lv);
-    } else {
-      p0 = isoToScreen(x, y, lv);
-      p1 = isoToScreen(x, y + 1, lv);
-    }
-    if (r2 > 0.32) {
-      const t0 = r2 * 0.32;
-      const t1 = 1 - hash2(x + dx, y + dy, 43) * 0.38;
-      const a0 = { x: lerp(p0.x, p1.x, t0), y: lerp(p0.y, p1.y, t0) };
-      const a1 = { x: lerp(p0.x, p1.x, t1), y: lerp(p0.y, p1.y, t1) };
-      // волнистая линия вместо прямой
-      const mx = (a0.x + a1.x) / 2 + (hash2(x, y, 71) - 0.5) * 8;
-      const my = (a0.y + a1.y) / 2 + 2.5 + (hash2(x, y, 73) - 0.5) * 4;
-      ctx.strokeStyle = css(foam, 0.14 + r2 * 0.18);
-      ctx.lineWidth = 1.4 + r2 * 1.2;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(a0.x, a0.y);
-      ctx.quadraticCurveTo(mx, my, a1.x, a1.y);
-      ctx.stroke();
-      ctx.lineCap = 'butt';
-
-      // пузырьки пены — маленькие белые кляксы
-      if (r2 > 0.68) {
-        ctx.fillStyle = css(foam, 0.18);
-        blobPath(ctx, mx, my - 1, 3.5 + r2 * 2, 2.2, seed + 33, 0.5, 6);
-        ctx.fill();
-      }
-    }
-  }
-}
-
-/** Анимированные блики, рябь и отражения — вода живая даже в озере без течения. */
-export function drawWaterAnimation(ctx: Ctx, world: World, atm: Atmosphere, time: number): void {
-  const hi = shade(
-    mix(mix(atm.palette.water, { r: 255, g: 255, b: 250 }, 0.75), { r: 255, g: 212, b: 148 }, atm.golden * 0.55),
-    Math.max(atm.exposure, 0.78),
-  );
-  const glintK = 0.85 + atm.time.daylight * 0.55 + atm.golden * 0.65;
-
-  // 1) Блики — ярче, крупнее, чтобы озеро не выглядело статично
-  for (let y = 0; y < GRID; y++) {
-    for (let x = 0; x < GRID; x++) {
-      const t = world.at(x, y)!;
-      if (!t.water) continue;
-      const c = isoToScreen(x + 0.5, y + 0.5, t.level - 0.26);
-      const ph = hash2(x, y, 7) * Math.PI * 2;
-      for (let i = 0; i < 2; i++) {
-        const s = Math.sin(time * 0.0011 + ph + i * 2.1);
-        const a = (0.07 + 0.1 * (s * 0.5 + 0.5)) * glintK;
-        const ox = Math.sin(time * 0.0007 + ph + i) * 12;
-        const oy = Math.cos(time * 0.0006 + ph * 1.3) * 3.5;
-        ctx.strokeStyle = css(hi, a);
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(c.x - 19 + ox, c.y + oy + i * 8 - 5);
-        ctx.quadraticCurveTo(c.x + ox, c.y + oy + i * 8 - 1, c.x + 19 + ox, c.y + oy + i * 8 - 5);
-        ctx.stroke();
-      }
-      const rp = clamp01(Math.sin(time * 0.0013 + ph) * 0.5 + 0.5);
-      ctx.fillStyle = css(hi, 0.055 * rp * glintK);
-      ctx.beginPath();
-      ctx.ellipse(c.x, c.y, TILE_W * 0.36, TILE_H * 0.32, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  // 2) Медленная рябь по всему озеру — даже без течения
-  ctx.save();
-  ctx.lineCap = 'round';
-  for (let y = 0; y < GRID; y++) {
-    for (let x = 0; x < GRID; x++) {
-      const t = world.at(x, y)!;
-      if (!t.water) continue;
-      const seed = hash2(x * 3, y * 7, 91);
-      if (seed < 0.38) continue;
-      const ph = seed * 12 + time * 0.00055;
-      const c = isoToScreen(x + 0.5, y + 0.5, t.level - 0.26);
-      const r = 5 + Math.sin(ph) * 2.5 + seed * 7;
-      const a = 0.07 + Math.sin(ph * 1.7) * 0.035;
-      ctx.strokeStyle = css(hi, a * glintK * 0.65);
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.ellipse(
-        c.x + Math.sin(ph * 0.7) * 4,
-        c.y + Math.cos(ph * 0.5) * 2.5,
-        r,
-        r * 0.58,
-        0,
-        0,
-        Math.PI * 2,
-      );
-      ctx.stroke();
-    }
-  }
-  ctx.restore();
-
-  // 3) Отражения — лёгкая пелена неба и листвы на воде (soft-light)
-  ctx.save();
-  ctx.globalCompositeOperation = 'soft-light';
-  for (let y = 0; y < GRID; y++) {
-    for (let x = 0; x < GRID; x++) {
-      const t = world.at(x, y)!;
-      if (!t.water) continue;
-      const c = isoToScreen(x + 0.5, y + 0.5, t.level - 0.26);
-      const refl = mix(atm.skyBottom, atm.palette.foliageDeep, 0.22);
-      const a = 0.08 + atm.time.daylight * 0.07;
-      ctx.fillStyle = css(refl, a);
-      ctx.beginPath();
-      ctx.ellipse(c.x, c.y + 5, TILE_W * 0.3, TILE_H * 0.2, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  ctx.restore();
 }

@@ -215,7 +215,7 @@ export function buildAtmosphere(t: TimeState, overcast = 0): Atmosphere {
   return {
     palette,
     lightTint,
-    lightAmount: lerp(0.28, 0.1, d) + g * 0.2,
+    lightAmount: lerp(0.28, 0.065, d) + g * 0.2,
     shadowTint,
     shadowAmount,
     exposure,

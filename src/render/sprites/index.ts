@@ -6,7 +6,7 @@
 
 import { LEVEL_H, TILE_H, TILE_W } from '../../core/iso';
 import { makeRng } from '../../core/rng';
-import { ITEM_BY_ID } from '../../world/catalog';
+import { ITEM_BY_ID, FURNITURE_IDS, SMALL_HOUSE_IDS } from '../../world/catalog';
 import { Ctx } from '../paint';
 import { DrawCtx, Drawer, mirrorOf, probeShadowBegin, probeShadowEnd, scaleJitterOf, shadowUnder } from './common';
 import {
@@ -25,19 +25,18 @@ import { makeRock, drawStepStone, drawMossClump, drawPebbles, drawGrassTuft, mak
 import { drawLilypad, drawLotus, drawKoi, drawReed, drawHorsetail, drawWaterStone } from './water';
 import { drawBridge, drawPlankBridge } from './bridges';
 import { drawStoneLantern, drawPaperLantern, drawPathLight, drawBrazier } from './light';
+import { drawTorii, drawFeeder, drawBirdbath, drawBeehive, drawSquirrelFeeder, drawTurtleLog } from './buildings';
 import {
-  drawPavilion,
-  drawTorii,
   drawShoji,
   drawFusuma,
   drawTokonoma,
-  drawFeeder,
-  drawBirdbath,
-  drawBeehive,
-  drawSquirrelFeeder,
-  drawTurtleLog,
-} from './buildings';
-import { drawTeaHouse, drawShed, drawTinyHouse } from './smallHouses';
+  drawTansu,
+  drawIndoorPlant,
+  drawKotatsu,
+  drawBookshelf,
+  drawEngawaBench,
+} from './furniture';
+import { drawTeaHouse, drawShed, drawTinyHouse, drawPavilion } from './smallHouses';
 import {
   drawTable,
   drawCushion,
@@ -105,6 +104,11 @@ const DRAWERS: Record<string, Drawer> = {
   futon: drawFuton,
   byobu: drawByobu,
   bonsai: drawBonsai,
+  kotatsu: drawKotatsu,
+  bookshelf: drawBookshelf,
+  engawa_bench: drawEngawaBench,
+  tansu: drawTansu,
+  indoor_plant: drawIndoorPlant,
   feeder: drawFeeder,
   birdbath: drawBirdbath,
   beehive: drawBeehive,
@@ -153,8 +157,14 @@ export function drawObjectShadow(d: DrawCtx): void {
   // Учитываем scaleJitter для тени
   const sc = scaleJitterOf(d.obj.seed);
   const item = ITEM_BY_ID.get(d.obj.type);
-  const isTreeLike = item && (item.kind === 'tree' || item.kind === 'shrub' || item.kind === 'flower' || item.kind === 'micro');
-  const extraScale = isTreeLike ? 0.92 + (sc - 0.88) * 0.5 : sc;
+  const isTreeLike =
+    item && (item.kind === 'tree' || item.kind === 'shrub' || item.kind === 'flower' || item.kind === 'micro');
+  const extraScale =
+    item?.kind === 'bridge' || FURNITURE_IDS.has(d.obj.type) || SMALL_HOUSE_IDS.has(d.obj.type)
+      ? 1
+      : isTreeLike
+        ? 0.92 + (sc - 0.88) * 0.5
+        : sc;
   shadowUnder(d, spec.rx * extraScale, spec.ry * extraScale, spec.strength);
 }
 
@@ -166,16 +176,27 @@ export function drawObject(d: DrawCtx): void {
   ctx.globalAlpha = d.alpha;
 
   // Детерминированное разнообразие по сиду: зеркало и лёгкий масштаб.
+  // Мосты и мебель исключены: оси и размер должны совпадать с сеткой пола.
   // Тень уже нарисована до этого, зеркало на неё не влияет — тень от солнца, а не от формы.
   const mirror = mirrorOf(d.obj.seed);
   const sc = scaleJitterOf(d.obj.seed);
   const item = ITEM_BY_ID.get(d.obj.type);
-  const isTreeLike = item && (item.kind === 'tree' || item.kind === 'shrub' || item.kind === 'flower' || item.kind === 'micro');
-  const extraScale = isTreeLike ? 0.92 + (sc - 0.88) * 0.5 : sc;
+  const isTreeLike =
+    item && (item.kind === 'tree' || item.kind === 'shrub' || item.kind === 'flower' || item.kind === 'micro');
+  const extraScale =
+    item?.kind === 'bridge' || FURNITURE_IDS.has(d.obj.type) || SMALL_HOUSE_IDS.has(d.obj.type)
+      ? 1
+      : isTreeLike
+        ? 0.92 + (sc - 0.88) * 0.5
+        : sc;
 
   ctx.save();
   ctx.translate(d.x, d.y);
-  ctx.scale(mirror * extraScale, extraScale);
+  ctx.scale(
+    (item?.kind === 'bridge' || FURNITURE_IDS.has(d.obj.type) || SMALL_HOUSE_IDS.has(d.obj.type) ? 1 : mirror) *
+      extraScale,
+    extraScale,
+  );
   ctx.translate(-d.x, -d.y);
 
   fn(d);
@@ -193,6 +214,7 @@ export function drawObject(d: DrawCtx): void {
  * тоже не бесплатно, и дешёвую мелочь выгоднее рисовать заново.
  */
 export function drawCost(type: string): number {
+  if (FURNITURE_IDS.has(type)) return 150;
   const item = ITEM_BY_ID.get(type);
   if (!item) return 0;
   switch (item.kind) {
@@ -222,6 +244,14 @@ export function hasDrawer(type: string): boolean {
 /** Приблизительная высота объекта — для сортировки и превью. */
 export function objectHeight(type: string): number {
   switch (type) {
+    case 'bookshelf':
+    case 'shoji':
+    case 'fusuma':
+    case 'tokonoma':
+      return 76;
+    case 'byobu':
+    case 'irori':
+      return 64;
     case 'sakura':
     case 'maple':
     case 'ginkgo':
@@ -236,7 +266,7 @@ export function objectHeight(type: string): number {
     case 'tiny_house':
       return 96;
     case 'shed':
-      return 52;
+      return 94;
     default:
       return 40;
   }

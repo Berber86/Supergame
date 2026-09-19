@@ -185,7 +185,7 @@ export function drawMist(ctx: Ctx, w: number, h: number, atm: Atmosphere, time: 
   let strength = 0;
   if (t.dayT > 0.18 && t.dayT < 0.32) strength = 0.55;
   if (atm.season === 'winter') strength = Math.max(strength, 0.25);
-  if (atm.season === 'autumn') strength = Math.max(strength, 0.3);
+  if (atm.season === 'autumn') strength = Math.max(strength, 0.10);
   if (t.isNight) strength = Math.max(strength, 0.2);
   if (strength < 0.02) return;
 

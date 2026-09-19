@@ -34,6 +34,9 @@ export class RainRenderer {
   private h = 0;
   private rippleTimer = 0;
 
+  /** The same impacts drive drawn rings and distortion, not unrelated noise. */
+  get waterRipples(): readonly Ripple[] { return this.ripples; }
+
   resize(w: number, h: number): void {
     this.w = w;
     this.h = h;

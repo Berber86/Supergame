@@ -7,7 +7,7 @@ import { World } from '../world/world';
 import { Ctx, vignette } from './paint';
 import { drawGrowFog } from './growFog';
 import { TerrainLayer, TileRect, drawWaterAnimation, renderTerrain } from './terrain';
-import { drawHouseRoof, drawHouseWalls } from './building';
+import { drawHouseRoof, drawHouseWalls, drawHouseShade } from './building';
 import { Life } from '../world/life';
 import { drawFish } from './creatures';
 import { drawRipple } from './residents';
@@ -17,6 +17,7 @@ import { RainRenderer, drawFog, drawLightning, drawWetSheen } from './rain';
 import { WeatherState } from '../world/weatherState';
 import { WaterFlow } from '../world/waterFlow';
 import { drawCurrent, drawFalls, drawShoreRipple } from './water';
+import { makeWaterMotion, type WaterRing } from './waterMotion';
 import {
   drawSky,
   drawIslandShadow,
@@ -24,6 +25,7 @@ import {
   drawPathPreview,
   drawGhost,
   drawObjects,
+  drawAnimalReflections,
   drawPaperGrain,
   drawColorGrade,
   drawAerialPerspective,
@@ -197,13 +199,21 @@ export class Scene {
    * нечего. Поэтому там показываем не весь участок, а его обжитую середину —
    * дом с прудом, — и даём игроку отвести камеру самому.
    */
-  fitToView(): void {
+  fitToView(world?: World): void {
     const portrait = this.viewH > this.viewW;
     if (portrait) {
       // Впишем по ширине: по высоте место есть, а мельчить незачем
-      const w = GRID * TILE_W * 0.62;
+      const w = GRID * TILE_W * 0.48;
       this.camera.zoom = clamp(this.viewW / w, 0.16, 6);
-      this.centerOn(GRID / 2, GRID / 2 + 1);
+      const bridges = world?.objects.filter((o) => o.type === 'bridge' || o.type === 'plank_bridge') ?? [];
+      if (bridges.length) {
+        this.centerOn(
+          bridges.reduce((n, o) => n + o.tx + 0.5, 0) / bridges.length,
+          bridges.reduce((n, o) => n + o.ty + (o.type === 'bridge' ? 1.5 : 1), 0) / bridges.length,
+        );
+      } else this.centerOn(GRID / 2, GRID / 2 + 1);
+      // Keep the focal point above the bottom toolbar, rather than beneath it.
+      this.camera.y += (this.viewH * 0.04) / this.camera.zoom;
       this.clampCamera();
       return;
     }
@@ -304,17 +314,41 @@ export class Scene {
       ctx.drawImage(this.terrain.canvas, this.terrain.ox, this.terrain.oy);
     }
 
-    // анимированная вода: сначала общие блики, потом течение и водопады
+    // Pond bed is in terrain. Fish must be BELOW reflections, glare and ripples.
     spriteFrame();
     this.flow.ensure(world);
-    drawWaterAnimation(ctx, world, atm, time);
+    if (this.life) for (const f of this.life.fish) drawFish(ctx, f, world, atm, time);
+    const rings: WaterRing[] = (this.life?.residents.ripples ?? []).map((r) => ({
+      tx: r.x,
+      ty: r.y,
+      age: r.age,
+      life: 1600,
+      max: r.big ? 15 : 8,
+      start: r.big ? 3 : 2,
+      strength: r.big ? 1.5 : 1,
+    }));
+    if (this.particles && ws && ws.rain > 0.02) rings.push(...this.rain.waterRipples);
+    const waterMotion = makeWaterMotion(world, this.flow, time, this.wind, rings);
+    drawWaterAnimation(ctx, world, atm, time, this.wind, waterMotion);
+    drawAnimalReflections(ctx, world, atm, time, {
+      life: this.life,
+      waterMotion,
+      wind: this.wind,
+      zoom: this.camera.zoom,
+      camX: this.camera.x,
+      camY: this.camera.y,
+      viewW: this.viewW,
+      viewH: this.viewH,
+      movingId: this.movingId,
+      highlightId: this.highlightId,
+      useSpriteCache: this.useSpriteCache,
+      particles: this.particles,
+    });
     drawCurrent(ctx, world, this.flow, atm, time);
     drawShoreRipple(ctx, world, this.flow, atm, time);
     drawFalls(ctx, world, this.flow, atm, time);
 
-    // карпы — в толще воды, до наземных объектов
     if (this.life) {
-      for (const f of this.life.fish) drawFish(ctx, f, world, atm, time);
       // круги на воде: лягушка нырнула, птица выкупалась
       for (const r of this.life.residents.ripples) {
         const tile = world.at(Math.floor(r.x), Math.floor(r.y));
@@ -323,6 +357,12 @@ export class Scene {
         drawRipple(ctx, r, p.x, p.y, atm);
       }
     }
+
+    const want = this.roofVisible ? 1 : 0;
+    this.roofFade += (want - this.roofFade) * Math.min(1, dt * 0.009);
+    if (Math.abs(this.roofFade - want) < 0.004) this.roofFade = want;
+
+    drawHouseShade(ctx, world, atm, this.roofFade);
 
     // дальние стены дома — за объектами интерьера
     drawHouseWalls(ctx, world, atm);
@@ -340,6 +380,7 @@ export class Scene {
     // --- Объекты, отсортированные по глубине ---
     drawObjects(ctx, world, atm, time, {
       life: this.life,
+      waterMotion,
       wind: this.wind,
       zoom: this.camera.zoom,
       camX: this.camera.x,
@@ -354,17 +395,12 @@ export class Scene {
 
     // Кровля поверх интерьера.
     //
-    // Когда в комнатах что-то стоит, крыша становится полупрозрачной —
-    // дом и сад по замыслу одна сцена, и обстановку должно быть видно.
+    // При переключении вида крыша плавно исчезает, открывая интерьер.
     // Рисуем её на отдельном слое и накладываем разом: скаты перекрывают
     // друг друга, и прозрачность, заданная каждому по отдельности,
     // складывалась бы обратно в непрозрачную крышу.
     // Плавно догоняем нужное состояние: резкое исчезновение крыши
     // выглядит сбоем, а не выбором игрока.
-    const want = this.roofVisible ? 1 : 0;
-    this.roofFade += (want - this.roofFade) * Math.min(1, dt * 0.009);
-    if (Math.abs(this.roofFade - want) < 0.004) this.roofFade = want;
-
     const roofA = this.roofFade;
     if (roofA < 0.004) {
       // крыши нет вовсе — не тратим слой

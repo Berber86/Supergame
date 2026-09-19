@@ -1,313 +1,214 @@
-/** Малые дома — компактные постройки для мини-садов. */
-
-import { Drawer, WHITE, litc, shadowUnder } from './common';
-import { TILE_H, TILE_W } from '../../core/iso';
+/** Small buildings use the same joinery/isometric coordinates as the main house and furniture. */
+import type { Pt } from '../../core/iso';
+import { ITEM_BY_ID } from '../../world/catalog';
 import { css, mix, shade } from '../../world/palette';
-import { washBlob, granulate } from '../paint';
+import { hash2 } from '../../core/rng';
+import { type Drawer, type DrawCtx, litc, shadowUnder } from './common';
+import { workshop } from './furniture';
+import { paintRoofSnow, paintSnowRidge, roofSnow } from '../roofSnow';
 
-export const drawTeaHouse: Drawer = (d) => {
-  const { ctx, atm, obj } = d;
-  const w = TILE_W * 0.92;
-  const h = TILE_H * 0.92;
-  const postH = 38;
-  const wood = litc({ r: 142, g: 96, b: 68 }, atm);
-  const woodDark = litc({ r: 98, g: 64, b: 46 }, atm);
-  const paper = litc(
-    mix({ r: 244, g: 236, b: 214 }, { r: 255, g: 214, b: 156 }, atm.lampGlow * 0.45),
-    atm,
-    atm.lampGlow * 0.12,
-  );
-  const roof = litc({ r: 86, g: 80, b: 82 }, atm);
-  const roofLight = litc({ r: 156, g: 148, b: 142 }, atm);
-
-  shadowUnder(d, w * 0.58, h * 0.42, 1.4);
-
-  // основание — татами + веранда
-  ctx.fillStyle = css(litc({ r: 188, g: 172, b: 132 }, atm), 0.96);
-  ctx.beginPath();
-  ctx.moveTo(d.x, d.y - h * 0.5);
-  ctx.lineTo(d.x + w * 0.5, d.y);
-  ctx.lineTo(d.x, d.y + h * 0.5);
-  ctx.lineTo(d.x - w * 0.5, d.y);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = css(woodDark, 0.35);
-  ctx.lineWidth = 1.2;
-  ctx.stroke();
-
-  // стены — три стороны сёдзи, одна открыта
-  const walls: [number, number, number][] = [
-    [-w * 0.38, -h * 0.18, 0],
-    [w * 0.38, -h * 0.18, 0],
-    [0, -h * 0.38, 1],
-  ];
-  for (const [ox, oy, open] of walls) {
-    if (open) continue;
-    ctx.fillStyle = css(paper, 0.96);
-    ctx.fillRect(d.x + ox - 14, d.y + oy - postH, 28, postH * 0.72);
-    ctx.strokeStyle = css(wood, 0.55);
-    ctx.lineWidth = 1;
-    ctx.strokeRect(d.x + ox - 14, d.y + oy - postH, 28, postH * 0.72);
-    // решётка
-    ctx.lineWidth = 0.8;
-    ctx.beginPath();
-    ctx.moveTo(d.x + ox, d.y + oy - postH);
-    ctx.lineTo(d.x + ox, d.y + oy - postH * 0.28);
-    ctx.moveTo(d.x + ox - 7, d.y + oy - postH * 0.5);
-    ctx.lineTo(d.x + ox + 7, d.y + oy - postH * 0.5);
-    ctx.stroke();
-  }
-
-  // столбы
-  const posts: [number, number][] = [
-    [-w * 0.42, -h * 0.02],
-    [w * 0.42, -h * 0.02],
-    [-w * 0.02, -h * 0.42],
-    [w * 0.02, h * 0.38],
-  ];
-  for (const [ox, oy] of posts) {
-    ctx.fillStyle = css(wood, 0.96);
-    ctx.fillRect(d.x + ox - 2.5, d.y + oy - postH, 5, postH);
-    ctx.fillStyle = css(woodDark, 0.85);
-    ctx.fillRect(d.x + ox - 3.5, d.y + oy - postH, 7, 3);
-  }
-
-  // крыша — четырёхскатная маленькая, вогнутая
-  const ry = d.y - postH - 2;
-  ctx.fillStyle = css(roof, 0.96);
-  ctx.beginPath();
-  ctx.moveTo(d.x, ry - 22);
-  ctx.quadraticCurveTo(d.x + w * 0.38, ry - 12, d.x + w * 0.66, ry + 2);
-  ctx.quadraticCurveTo(d.x + w * 0.22, ry + 10, d.x, ry + 14);
-  ctx.quadraticCurveTo(d.x - w * 0.22, ry + 10, d.x - w * 0.66, ry + 2);
-  ctx.quadraticCurveTo(d.x - w * 0.38, ry - 12, d.x, ry - 22);
-  ctx.closePath();
-  ctx.fill();
-  // блик
-  ctx.fillStyle = css(roofLight, 0.24);
-  ctx.beginPath();
-  ctx.moveTo(d.x, ry - 20);
-  ctx.quadraticCurveTo(d.x - w * 0.3, ry - 10, d.x - w * 0.58, ry + 1);
-  ctx.quadraticCurveTo(d.x - w * 0.22, ry + 3, d.x, ry - 2);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = css(shade(roof, 0.7), 0.45);
-  ctx.lineWidth = 1.2;
-  ctx.stroke();
-
-  // норэн над входом
-  ctx.fillStyle = css(litc({ r: 196, g: 84, b: 68 }, atm), 0.82);
-  ctx.fillRect(d.x - 10, d.y - postH * 0.32, 20, 7);
-  ctx.fillStyle = css(WHITE, 0.85);
-  ctx.font = '600 6px \"Noto Serif JP\"';
-  ctx.textAlign = 'center';
-  ctx.fillText('茶', d.x, d.y - postH * 0.32 + 5.5);
-
-  granulate(ctx, d.x, ry, w * 0.42, 14, shade(roof, 0.7), obj.seed, 14, 0.07);
-
-  // тёплый свет изнутри
-  if (atm.lampGlow > 0.08) {
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = css({ r: 255, g: 196, b: 124 }, atm.lampGlow * 0.18);
-    ctx.beginPath();
-    ctx.ellipse(d.x, d.y - postH * 0.5, w * 0.22, h * 0.18, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-};
-
-export const drawShed: Drawer = (d) => {
-  const { ctx, atm, obj } = d;
-  const w = obj.rot % 2 === 0 ? TILE_W * 0.62 : TILE_W * 0.88;
-  const h = obj.rot % 2 === 0 ? TILE_H * 0.88 : TILE_H * 0.62;
-  const wallH = 28;
-  const wood = litc({ r: 138, g: 102, b: 72 }, atm);
-  const woodDark = litc({ r: 92, g: 66, b: 48 }, atm);
-  const thatch = litc({ r: 188, g: 168, b: 108 }, atm);
-  const thatchDark = litc({ r: 148, g: 128, b: 84 }, atm);
-
-  shadowUnder(d, w * 0.5, h * 0.38, 1.2);
-
-  // стены — простые доски
-  ctx.fillStyle = css(wood, 0.96);
-  ctx.beginPath();
-  ctx.moveTo(d.x - w * 0.42, d.y + h * 0.12);
-  ctx.lineTo(d.x + w * 0.42, d.y + h * 0.12);
-  ctx.lineTo(d.x + w * 0.42, d.y + h * 0.12 - wallH);
-  ctx.lineTo(d.x - w * 0.42, d.y + h * 0.12 - wallH);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = css(woodDark, 0.5);
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  // доски — горизонтальные линии
-  ctx.strokeStyle = css(woodDark, 0.28);
-  ctx.lineWidth = 0.8;
-  for (let i = 1; i < 3; i++) {
-    const yy = d.y + h * 0.12 - (wallH * i) / 3;
-    ctx.beginPath();
-    ctx.moveTo(d.x - w * 0.42, yy);
-    ctx.lineTo(d.x + w * 0.42, yy);
-    ctx.stroke();
-  }
-
-  // соломенная крыша — двускатная
-  const ry = d.y + h * 0.12 - wallH;
-  ctx.fillStyle = css(thatch, 0.97);
-  ctx.beginPath();
-  ctx.moveTo(d.x - w * 0.52, ry + 2);
-  ctx.lineTo(d.x, ry - 18);
-  ctx.lineTo(d.x + w * 0.52, ry + 2);
-  ctx.lineTo(d.x + w * 0.42, ry + 5);
-  ctx.lineTo(d.x, ry - 12);
-  ctx.lineTo(d.x - w * 0.42, ry + 5);
-  ctx.closePath();
-  ctx.fill();
-  // тёмный низ соломы
-  ctx.fillStyle = css(thatchDark, 0.32);
-  ctx.beginPath();
-  ctx.moveTo(d.x - w * 0.5, ry + 1);
-  ctx.lineTo(d.x + w * 0.5, ry + 1);
-  ctx.lineTo(d.x + w * 0.42, ry + 5);
-  ctx.lineTo(d.x - w * 0.42, ry + 5);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = css(thatchDark, 0.4);
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(d.x - w * 0.52, ry + 2);
-  ctx.lineTo(d.x, ry - 18);
-  ctx.lineTo(d.x + w * 0.52, ry + 2);
-  ctx.stroke();
-
-  // открытый проём с инструментами
-  ctx.fillStyle = css({ r: 48, g: 42, b: 36 }, 0.78);
-  ctx.fillRect(d.x - 6, d.y + h * 0.12 - wallH * 0.7, 12, wallH * 0.6);
-  // грабли внутри
-  ctx.strokeStyle = css(woodDark, 0.7);
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.moveTo(d.x - 3, d.y + h * 0.12 - wallH * 0.65);
-  ctx.lineTo(d.x - 3, d.y + h * 0.12 - wallH * 0.15);
-  ctx.stroke();
-
-  washBlob(ctx, d.x, ry - 6, w * 0.32, 8, thatchDark, obj.seed, { alpha: 0.18, edge: 0.2, wobble: 0.28 });
-};
-
-export const drawTinyHouse: Drawer = (d) => {
-  const { ctx, atm, obj } = d;
-  const rot = obj.rot % 2;
-  const w = rot === 0 ? TILE_W * 0.78 : TILE_W * 1.12;
-  const h = rot === 0 ? TILE_H * 1.12 : TILE_H * 0.78;
-  const wallH = 36;
-  const wood = litc({ r: 146, g: 100, b: 70 }, atm);
-  const woodDark = litc({ r: 102, g: 68, b: 48 }, atm);
-  const paper = litc({ r: 242, g: 234, b: 210 }, atm);
-  const roof = litc({ r: 88, g: 84, b: 86 }, atm);
-  const roofLight = litc({ r: 158, g: 150, b: 144 }, atm);
-
-  shadowUnder(d, w * 0.62, h * 0.48, 1.5);
-
-  // платформа
-  ctx.fillStyle = css(litc({ r: 176, g: 136, b: 96 }, atm), 0.95);
-  ctx.beginPath();
-  ctx.moveTo(d.x, d.y - h * 0.48);
-  ctx.lineTo(d.x + w * 0.5, d.y - h * 0.08);
-  ctx.lineTo(d.x, d.y + h * 0.48);
-  ctx.lineTo(d.x - w * 0.5, d.y - h * 0.08);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = css(woodDark, 0.32);
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  // коробка дома — 2 стены видны
-  ctx.fillStyle = css(paper, 0.97);
-  ctx.beginPath();
-  ctx.moveTo(d.x - w * 0.38, d.y - h * 0.02 - wallH);
-  ctx.lineTo(d.x + w * 0.22, d.y - h * 0.28 - wallH);
-  ctx.lineTo(d.x + w * 0.22, d.y - h * 0.28);
-  ctx.lineTo(d.x - w * 0.38, d.y - h * 0.02);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = css(shade(paper, 0.88), 0.97);
-  ctx.beginPath();
-  ctx.moveTo(d.x + w * 0.22, d.y - h * 0.28 - wallH);
-  ctx.lineTo(d.x + w * 0.44, d.y - h * 0.12 - wallH);
-  ctx.lineTo(d.x + w * 0.44, d.y - h * 0.12);
-  ctx.lineTo(d.x + w * 0.22, d.y - h * 0.28);
-  ctx.closePath();
-  ctx.fill();
-
-  // каркас
-  ctx.strokeStyle = css(wood, 0.7);
-  ctx.lineWidth = 1.4;
-  ctx.beginPath();
-  ctx.moveTo(d.x - w * 0.38, d.y - h * 0.02 - wallH);
-  ctx.lineTo(d.x + w * 0.22, d.y - h * 0.28 - wallH);
-  ctx.lineTo(d.x + w * 0.44, d.y - h * 0.12 - wallH);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(d.x - w * 0.38, d.y - h * 0.02);
-  ctx.lineTo(d.x + w * 0.22, d.y - h * 0.28);
-  ctx.lineTo(d.x + w * 0.44, d.y - h * 0.12);
-  ctx.stroke();
-  for (const [ox, oy] of [
-    [-w * 0.38, -h * 0.02],
-    [w * 0.22, -h * 0.28],
-    [w * 0.44, -h * 0.12],
-  ]) {
-    ctx.beginPath();
-    ctx.moveTo(d.x + ox, d.y + oy - wallH);
-    ctx.lineTo(d.x + ox, d.y + oy);
-    ctx.stroke();
-  }
-
-  // сёдзи решётка на длинной стене
-  ctx.strokeStyle = css(wood, 0.35);
-  ctx.lineWidth = 0.8;
-  ctx.beginPath();
-  ctx.moveTo(d.x - w * 0.12, d.y - h * 0.12 - wallH * 0.75);
-  ctx.lineTo(d.x - w * 0.12, d.y - h * 0.12 - wallH * 0.15);
-  ctx.moveTo(d.x + 0.02 * w, d.y - h * 0.18 - wallH * 0.75);
-  ctx.lineTo(d.x + 0.02 * w, d.y - h * 0.18 - wallH * 0.15);
-  ctx.stroke();
-
-  // крыша
-  const ry = d.y - h * 0.12 - wallH;
-  ctx.fillStyle = css(roof, 0.97);
-  ctx.beginPath();
-  ctx.moveTo(d.x - w * 0.52, ry + 4);
-  ctx.quadraticCurveTo(d.x + w * 0.05, ry - 22, d.x + w * 0.58, ry - 2);
-  ctx.lineTo(d.x + w * 0.46, ry + 3);
-  ctx.quadraticCurveTo(d.x + w * 0.05, ry - 12, d.x - w * 0.4, ry + 8);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = css(roofLight, 0.22);
-  ctx.beginPath();
-  ctx.moveTo(d.x - w * 0.46, ry + 3);
-  ctx.quadraticCurveTo(d.x + w * 0.02, ry - 18, d.x + w * 0.52, ry - 1);
-  ctx.quadraticCurveTo(d.x + w * 0.08, ry - 2, d.x - w * 0.34, ry + 6);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = css(shade(roof, 0.65), 0.45);
-  ctx.lineWidth = 1.1;
-  ctx.beginPath();
-  ctx.moveTo(d.x - w * 0.52, ry + 4);
-  ctx.quadraticCurveTo(d.x + w * 0.05, ry - 22, d.x + w * 0.58, ry - 2);
-  ctx.stroke();
-
-  granulate(ctx, d.x, ry - 4, w * 0.5, 12, shade(roof, 0.7), obj.seed + 7, 14, 0.06);
-
-  if (atm.lampGlow > 0.08) {
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = css({ r: 255, g: 196, b: 124 }, atm.lampGlow * 0.2);
-    ctx.beginPath();
-    ctx.ellipse(d.x - w * 0.08, d.y - h * 0.14 - wallH * 0.5, w * 0.18, 6, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-};
+/** Catalogue dimensions are deliberately swapped at rotation 0 (legacy placement convention). */
+export function smallHouseSize(type: string) {
+  const item = ITEM_BY_ID.get(type)!;
+  return { u: item.h * 0.94, v: item.w * 0.94 };
+}
+function drawHouse(d: DrawCtx) {
+  const kind = d.obj.type,
+    shed = kind === 'shed',
+    open = kind === 'pavilion',
+    tea = kind === 'tea_house';
+  const { u, v } = smallHouseSize(kind),
+    wallH = shed ? 49 : tea ? 61 : 68;
+  shadowUnder(d, (u + v) * 23, (u + v) * 10, 1.25);
+  workshop(d, ({ ctx, p, face, line, box, wood, dark, paper, light, grain }) => {
+    box(0, 0, u, v, 0, 5, wood);
+    grain(0, 0, u * 0.98, v * 0.98, 5);
+    const bu = u * 0.78,
+      bv = v * 0.72;
+    const corners = [
+      [-bu / 2, -bv / 2],
+      [bu / 2, -bv / 2],
+      [bu / 2, bv / 2],
+      [-bu / 2, bv / 2],
+    ];
+    if (!open) {
+      box(0, 0, bu, bv, 5, wallH, shed ? wood : shade(paper, 0.9));
+      // Front-facing walls only; detail remains attached to its wall in all four rotations.
+      for (let side = 0; side < 4; side++) {
+        const a = corners[side],
+          b = corners[(side + 1) % 4];
+        if (p((a[0] + b[0]) / 2, (a[1] + b[1]) / 2).y <= 0) continue;
+        const at = (t: number, z: number) => p(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, z);
+        face([at(0, 5), at(1, 5), at(1, 18), at(0, 18)], shade(wood, 0.84));
+        for (let i = 1; i < 9; i++) line([at(i / 9, 6), at(i / 9, shed ? wallH - 1 : 17)], dark, 0.65, 0.4);
+        line([at(0, 18), at(1, 18)], dark, 1.5, 0.65);
+        if (side === 2) {
+          face([at(0.28, 6), at(0.72, 6), at(0.72, wallH - 8), at(0.28, wallH - 8)], dark);
+          if (!shed) {
+            face(
+              [at(0.32, 10), at(0.68, 10), at(0.68, wallH - 12), at(0.32, wallH - 12)],
+              mix(paper, litc({ r: 247, g: 190, b: 113 }, d.atm), d.atm.lampGlow * 0.5),
+            );
+            for (let j = 1; j < 4; j++) line([at(0.32 + j * 0.09, 10), at(0.32 + j * 0.09, wallH - 12)], wood, 0.8);
+            for (let z = 20; z < wallH - 12; z += 10) line([at(0.32, z), at(0.68, z)], wood, 0.8);
+            if (tea)
+              for (let k = 0; k < 3; k++) {
+                const a = 0.24 + k * 0.175,
+                  b = a + 0.16;
+                face(
+                  [at(a, wallH - 22), at(b, wallH - 22), at(b, wallH - 7), at(a, wallH - 7)],
+                  litc({ r: 156, g: 77, b: 66 }, d.atm),
+                );
+                line([at((a + b) / 2, wallH - 18), at((a + b) / 2, wallH - 12)], paper, 1, 0.65);
+              }
+          } else {
+            line([at(0.43, 9), at(0.46, wallH - 14)], light, 1.7);
+            line([at(0.37, wallH - 13), at(0.56, wallH - 13)], light, 1.7);
+            for (let i = 0; i < 5; i++)
+              line([at(0.38 + i * 0.042, wallH - 13), at(0.38 + i * 0.042, wallH - 9)], light, 1);
+            line([at(0.63, 9), at(0.59, wallH - 18)], light, 1.5);
+          }
+          line([at(0.24, 6), at(0.76, 6)], light, 3);
+        } else if (!shed) {
+          face([at(0.18, 25), at(0.82, 25), at(0.82, wallH - 11), at(0.18, wallH - 11)], paper);
+          for (let j = 0; j <= 4; j++)
+            line([at(0.18 + j * 0.16, 25), at(0.18 + j * 0.16, wallH - 11)], wood, j % 4 ? 1 : 2);
+          for (const z of [25, wallH - 23, wallH - 11]) line([at(0.18, z), at(0.82, z)], wood, 1.4);
+        }
+        line([at(0, wallH - 2), at(1, wallH - 2)], dark, 4);
+      }
+    } else {
+      // A bench inside the open pavilion, behind the front columns.
+      for (const x of [-bu * 0.3, bu * 0.3]) box(x, -bv * 0.3, 0.1, 0.16, 5, 19, dark);
+      box(0, -bv * 0.3, bu * 0.8, 0.24, 18, 22, wood);
+    }
+    for (const [x, y] of corners) {
+      box(x, y, 0.06, 0.06, 5, wallH, dark);
+      line([p(x - 0.015, y, 8), p(x - 0.015, y, wallH - 3)], light, 0.8, 0.7);
+    }
+    // Small hip roof with coherent eaves and ridge; all pieces use rotated ground coordinates.
+    const eaves = [
+      p(-u / 2, -v / 2, wallH + 3),
+      p(u / 2, -v / 2, wallH + 3),
+      p(u / 2, v / 2, wallH + 3),
+      p(-u / 2, v / 2, wallH + 3),
+    ];
+    const rise = 20 + Math.min(u, v) * 12;
+    const a = u >= v ? p(-u * 0.24, 0, wallH + rise) : p(0, -v * 0.24, wallH + rise);
+    const b = u >= v ? p(u * 0.24, 0, wallH + rise) : p(0, v * 0.24, wallH + rise);
+    const ends =
+      u >= v
+        ? [
+            [a, b],
+            [b, b],
+            [b, a],
+            [a, a],
+          ]
+        : [
+            [a, a],
+            [a, b],
+            [b, b],
+            [b, a],
+          ];
+    const snow = roofSnow(d.atm, d.obj.seed),
+      roof = litc(shed ? { r: 168, g: 143, b: 92 } : { r: 100, g: 111, b: 121 }, d.atm);
+    const slopes = eaves.map((e, i) => ({ i, e, f: eaves[(i + 1) % 4], r: ends[i][0], s: ends[i][1] }));
+    slopes.sort((a, b) => a.e.y + a.f.y - (b.e.y + b.f.y));
+    for (const { i, e, f, r, s } of slopes) {
+      const point = (u: number, v: number): Pt => ({
+        x: (r.x + (s.x - r.x) * u) * (1 - v) + (e.x + (f.x - e.x) * u) * v,
+        y: (r.y + (s.y - r.y) * u) * (1 - v) + (e.y + (f.y - e.y) * u) * v + Math.sin(u * Math.PI) * 2 * v * v,
+      });
+      const edge = Array.from({ length: 17 }, (_, k) => point(k / 16, 1)),
+        outline = [r, s, ...edge.slice().reverse()];
+      // Fascia hangs beneath each eave. Rear edges are later occluded by the nearer roof slopes.
+      face(
+        [
+          ...edge,
+          ...edge
+            .slice()
+            .reverse()
+            .map((q) => ({ x: q.x, y: q.y + 5 })),
+        ],
+        dark,
+      );
+      face(outline, shade(roof, 0.86 + (i % 2) * 0.12));
+      ctx.save();
+      ctx.beginPath();
+      outline.forEach((q, j) => (j ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+      ctx.closePath();
+      ctx.clip();
+      const tiles = Math.ceil((i % 2 ? v : u) * 8);
+      for (let k = 1; k < tiles; k++) {
+        const t = k / tiles,
+          top = point(0.5, 0),
+          low = point(0.5, 1),
+          dx = (t - 0.5) * (f.x - e.x),
+          dy = (t - 0.5) * (f.y - e.y);
+        line(
+          [
+            { x: top.x + dx, y: top.y + dy },
+            { x: low.x + dx, y: low.y + dy },
+          ],
+          shade(roof, 0.66),
+          shed ? 1.2 : 0.7,
+          0.4,
+        );
+        if (shed && hash2(k, i, d.obj.seed) > 0.6) line([point(t, 0.65), point(t, 1)], light, 0.8, 0.5);
+      }
+      if (!shed)
+        for (let row = 1; row < 6; row++)
+          line(
+            Array.from({ length: 17 }, (_, k) => point(k / 16, row / 6)),
+            shade(roof, 0.62),
+            0.8,
+            0.45,
+          );
+      paintRoofSnow(ctx, d.atm, snow, outline, point, i);
+      ctx.restore();
+      line(edge, dark, 1.7, 0.9);
+      for (let k = 1; k < tiles; k += 3) {
+        const q = point(k / tiles, 1);
+        line(
+          [
+            { x: q.x, y: q.y + 2 },
+            { x: q.x, y: q.y + 4 },
+          ],
+          light,
+          1.5,
+          0.75,
+        );
+      }
+    }
+    for (let i = 0; i < 4; i++) line([eaves[i], ends[i][0]], shade(roof, 0.62), 2);
+    line([a, b], dark, 5);
+    line(
+      [
+        { x: a.x, y: a.y - 1.5 },
+        { x: b.x, y: b.y - 1.5 },
+      ],
+      shade(roof, 1.35),
+      2,
+    );
+    paintSnowRidge(ctx, d.atm, snow, a, b);
+    if (snow.amount > 0.7)
+      for (let i = 0; i < 4; i++) {
+        const q = ends[i][0];
+        line(
+          [
+            { x: q.x, y: q.y - 1.5 },
+            { x: q.x + (eaves[i].x - q.x) * 0.75, y: q.y + (eaves[i].y - q.y) * 0.75 - 1.5 },
+          ],
+          shade(mix(paper, { r: 219, g: 231, b: 242 }, 0.3), 1.03),
+          1.4,
+          0.7,
+        );
+      }
+    // No screen-space doors/windows or random silhouette mirroring.
+    ctx.fillStyle = css(wood);
+  });
+}
+export const drawTeaHouse: Drawer = drawHouse;
+export const drawShed: Drawer = drawHouse;
+export const drawTinyHouse: Drawer = drawHouse;
+export const drawPavilion: Drawer = drawHouse;

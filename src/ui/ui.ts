@@ -46,6 +46,8 @@ export interface UIHooks {
   onSit(): void;
   /** Открыть летопись сада. */
   onChronicle(): void;
+  /** Энциклопедия всех жителей и их анимаций. */
+  onAnimalGuide(): void;
   /** Растущий сад: открыть выбор, куда расти. */
   onGrowLine(): void;
   /** Повернуть призрак предмета (R). */
@@ -128,6 +130,13 @@ export class UI {
     this.els.btnRoof.style.display = 'none';
     this.els.btnGardens = mk('gardens', 'Усадьбы (U)');
     this.els.btnSettings = mk('settings', 'Настройки (S)');
+    const guideButton = this.el<HTMLButtonElement>('button', 'tool-btn wood');
+    guideButton.type = 'button';
+    guideButton.setAttribute('aria-label', 'Энциклопедия животных');
+    guideButton.title = 'Энциклопедия животных';
+    guideButton.innerHTML = `${svgIcon('book', 23)}<span class="label">Энциклопедия животных</span>`;
+    guideButton.addEventListener('click', () => this.hooks.onAnimalGuide());
+    tools.appendChild(guideButton);
     this.els.btnHelp = mk('scroll', 'Свиток (H)');
     layer.appendChild(tools);
 
@@ -323,11 +332,16 @@ export class UI {
       <dl>
         <dt>Вехи</dt><dd>Новые вкладки открываются от ваших же дел: выкопали пруд — пришли лотосы</dd>
       </dl>
+      <button class="guide-help-link">生 · Энциклопедия животных — все жители и их движения</button>
       <div class="scroll-chron" role="button" tabindex="0"><span lang="ja">記</span>Летопись сада — первые встречи и редкие события</div>
       <div class="scroll-sit" role="button" tabindex="0"><span lang="ja">坐</span>Сесть в тишине — практики и школа дзена</div>`;
     layer.appendChild(help);
     this.els.help = help;
     help.querySelector('.scroll-close')!.addEventListener('click', () => this.toggleHelp(false));
+    help.querySelector('.guide-help-link')!.addEventListener('click', () => {
+      this.toggleHelp(false);
+      this.hooks.onAnimalGuide();
+    });
     const sitBtn = help.querySelector<HTMLElement>('.scroll-sit')!;
     const goSit = (): void => {
       this.toggleHelp(false);
@@ -376,9 +390,7 @@ export class UI {
   // ---- Каталог ----
 
   private tabUnlocked(id: string): boolean {
-    const tab = TABS.find((t) => t.id === id);
-    if (!tab) return false;
-    return !tab.requires || this.world.milestones.has(tab.requires);
+    return this.world.tabAvailable(id);
   }
 
   /** Размер текущего сада роста: каталог показывает только то, что влезет */

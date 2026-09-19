@@ -8,6 +8,8 @@
  * голода и наказаний, только места, сезон, погода и друг друг.
  */
 
+import { CAT_STRIDE, catPosture, updateCatPosture, type CatPosture } from './creatureMotion';
+import { easePose } from './animalMotion';
 import { GRID } from '../core/iso';
 import { clamp, hash1, hash2, lerp, makeRng } from '../core/rng';
 import { ITEM_BY_ID } from './catalog';
@@ -55,6 +57,11 @@ interface Agent {
 }
 
 export interface Cat extends Agent {
+  posture?: CatPosture;
+  gait?: number;
+  actionTime?: number;
+  actionDuration?: number;
+  actionState?: CatState;
   id: number;
   state: CatState;
   /** Сколько мс осталось в текущем состоянии. */
@@ -373,7 +380,7 @@ export class Life {
       this.residents.ripple(x, y, true);
       this.scareFish(x, y);
     };
-    this.wildlife.update(h, inv, t, wx ?? null, dt, now, threats);
+    this.wildlife.update(h, inv, t, wx ?? null, dt, now, threats, world);
     for (const note of this.wildlife.takeNotes()) this.note(world, note.id, note.x, note.y);
 
     this.updateCats(world, t, dt);
@@ -444,6 +451,15 @@ export class Life {
     const cushions = findObjects(world, ['cushion']);
     const all = this.cats.concat(this.guests);
     for (const c of all) {
+      c.posture ??= catPosture(c.state);
+      if (c.actionState !== c.state) {
+        c.actionState = c.state;
+        c.actionTime = 0;
+        c.actionDuration = Math.max(1, c.timer);
+      }
+      c.actionTime = (c.actionTime ?? 0) + dt;
+      const oldX = c.tx;
+      const oldY = c.ty;
       c.timer -= dt;
       c.phase += dt * 0.001;
       if (c.greet > 0) c.greet -= dt;
@@ -457,11 +473,11 @@ export class Life {
           c.target = null;
           this.pickCatState(c, t);
         } else {
-          c.speed = lerp(c.speed, 1, 0.04);
-          const v = 0.0013 * dt * c.speed;
+          c.speed = easePose(c.speed, 1, dt, 400);
+          const v = Math.min(dist, 0.0013 * dt * c.speed);
           c.tx += (dx / dist) * v;
           c.ty += (dy / dist) * v;
-          if (Math.abs(dx) > 0.02) c.facing = dx > 0 ? 1 : -1;
+          if (Math.abs(dx - dy) > 0.02) c.facing = dx - dy > 0 ? 1 : -1;
           // не заходим в воду
           if (!tileWalkable(world, c.tx, c.ty)) {
             c.tx -= (dx / dist) * v;
@@ -471,9 +487,10 @@ export class Life {
           }
         }
       } else {
-        c.speed = lerp(c.speed, 0, 0.08);
+        c.speed = easePose(c.speed, 0, dt, 200);
       }
 
+      c.gait = (c.gait ?? 0) + (Math.hypot(c.tx - oldX, c.ty - oldY) / CAT_STRIDE) * Math.PI * 2;
       if (c.timer <= 0) this.pickCatState(c, t, world);
 
       // Кот наблюдает за птицей: это заметно со стороны и ни к чему не обязывает
@@ -559,6 +576,8 @@ export class Life {
         }
       }
     }
+
+    for (const c of all) updateCatPosture(c, dt);
 
     // Знакомство котов: сошлись близко — сели друг напротив друга
     for (const g of this.guests) {
@@ -725,6 +744,9 @@ export class Life {
       c.timer = 4000;
     }
     c.phase = 0;
+    c.actionTime = 0;
+    c.actionDuration = Math.max(1, c.timer);
+    c.actionState = c.state;
   }
 
   // ---------------- Второй кот ----------------
@@ -944,6 +966,8 @@ export class Life {
         const perchAlt = b.place === 'feeder' ? 26 : b.place === 'bath' ? 7 : 0;
         if (d < 0.25 && Math.abs(b.alt - perchAlt) < 3) {
           b.alt = perchAlt;
+          if (perchAlt <= 7 && world.at(Math.floor(b.tx), Math.floor(b.ty))?.water)
+            this.residents.ripple(b.tx, b.ty, false);
           if (b.place === 'feeder') {
             b.state = 'perch';
             b.timer = 1600 + rnd() * 2600;
