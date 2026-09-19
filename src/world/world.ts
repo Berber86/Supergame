@@ -711,11 +711,14 @@ export class World {
    */
   applyCascade(x0: number, y0: number, w: number, h: number): void {
     const steps = Math.max(2, Math.min(w, h));
-    // Ступени идут по диагонали на юго-восток: там низ экрана, и падающая
-    // вода обращена к зрителю.
+    // Unequal, bent terrace bands rather than identical diagonal stair treads.
+    const phase = hash2(x0, y0, 157) * Math.PI * 2;
     const bandOf = (x: number, y: number) => {
-      const k = (x - x0 + (y - y0)) / 2;
-      return Math.max(0, Math.min(steps - 1, Math.floor(k)));
+      const u = (x - x0) / Math.max(1, w - 1);
+      const v = (y - y0) / Math.max(1, h - 1);
+      const bend = Math.sin(Math.max(0, Math.min(1, v)) * Math.PI) * Math.sin(u * Math.PI + phase) * 0.12;
+      const progress = u * 0.68 + v * 0.32 + bend;
+      return Math.max(0, Math.min(steps - 1, Math.floor((progress + 0.08) * (steps - 0.2))));
     };
 
     // 1) Рельеф: каждая полоса ниже предыдущей, вокруг — покатый берег
@@ -731,17 +734,19 @@ export class World {
       }
     }
 
-    // 2) Русло: извилистая лента вниз по ступеням, а не весь квадрат.
-    // Делаем шире (2.8 вместо 2.1), чтобы каскад выглядел как поток,
-    // а не как тонкая нитка на кубичных ступенях.
+    // Winding banks with a guaranteed connected staircase through the centre.
+    // The narrow/wide pools deliberately do not repeat at each elevation.
+    const connector = Math.sin(phase) > 0 ? 1 : -1;
     for (let y = y0; y < y0 + h; y++) {
       for (let x = x0; x < x0 + w; x++) {
         const t = this.at(x, y);
         if (!t || t.indoor || t.veranda) continue;
         if (this.hasBlockingTree(x, y)) continue;
         const axis = x - x0 - (y - y0);
-        const wob = (fbm(x * 0.7, y * 0.7, 2, 53) - 0.5) * 1.2 + (fbm(x * 1.4, y * 1.4, 2, 71) - 0.5) * 0.6;
-        if (Math.abs(axis + wob) > 2.8) continue;
+        const v = (y - y0) / Math.max(1, h - 1);
+        const wob = Math.sin(v * 4.4 + phase) * 0.55;
+        const width = 1.05 + Math.sin(v * 5.3 + phase + 1) * 0.4;
+        if (Math.abs(axis + wob) > width && axis !== 0 && axis !== connector) continue;
         t.water = true;
         t.ground = 'water';
         this.touch(x, y);
@@ -773,9 +778,6 @@ export class World {
     // Сглаживаем окружение, чтобы каскад не выглядел кубично-ступенчатым
     // — без этого каждая полоса — отдельный куб с земляной стенкой.
     this.smoothTerrain();
-
-    // Делаем русло шире и мягче: раньше было 2.1 клетки, теперь 2.8,
-    // чтобы вода покрывала уступ полностью и не оставляла земляных кубов.
 
     this.checkMilestone('first_pond');
     this.checkMilestone('running_water');

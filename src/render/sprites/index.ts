@@ -154,7 +154,7 @@ export function drawObjectShadow(d: DrawCtx): void {
   const sc = scaleJitterOf(d.obj.seed);
   const item = ITEM_BY_ID.get(d.obj.type);
   const isTreeLike = item && (item.kind === 'tree' || item.kind === 'shrub' || item.kind === 'flower' || item.kind === 'micro');
-  const extraScale = isTreeLike ? 0.92 + (sc - 0.88) * 0.5 : sc;
+  const extraScale = item?.kind === 'bridge' ? 1 : isTreeLike ? 0.92 + (sc - 0.88) * 0.5 : sc;
   shadowUnder(d, spec.rx * extraScale, spec.ry * extraScale, spec.strength);
 }
 
@@ -166,16 +166,17 @@ export function drawObject(d: DrawCtx): void {
   ctx.globalAlpha = d.alpha;
 
   // Детерминированное разнообразие по сиду: зеркало и лёгкий масштаб.
+  // Мосты исключены: их ось и длина обязаны совпадать с отпечатком размещения.
   // Тень уже нарисована до этого, зеркало на неё не влияет — тень от солнца, а не от формы.
   const mirror = mirrorOf(d.obj.seed);
   const sc = scaleJitterOf(d.obj.seed);
   const item = ITEM_BY_ID.get(d.obj.type);
   const isTreeLike = item && (item.kind === 'tree' || item.kind === 'shrub' || item.kind === 'flower' || item.kind === 'micro');
-  const extraScale = isTreeLike ? 0.92 + (sc - 0.88) * 0.5 : sc;
+  const extraScale = item?.kind === 'bridge' ? 1 : isTreeLike ? 0.92 + (sc - 0.88) * 0.5 : sc;
 
   ctx.save();
   ctx.translate(d.x, d.y);
-  ctx.scale(mirror * extraScale, extraScale);
+  ctx.scale((item?.kind === 'bridge' ? 1 : mirror) * extraScale, extraScale);
   ctx.translate(-d.x, -d.y);
 
   fn(d);

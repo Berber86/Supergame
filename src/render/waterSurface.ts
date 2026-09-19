@@ -5,6 +5,8 @@ import { ITEM_BY_ID } from '../world/catalog';
 import { css, mix, shade, type Atmosphere } from '../world/palette';
 import type { World } from '../world/world';
 import type { Ctx } from './paint';
+import { WaterFlow } from '../world/waterFlow';
+import { cascadeRims, meetCascadeRims } from './cascadeRims';
 import { drawCachedReflection } from './spriteCache';
 
 export interface WaterCell {
@@ -38,6 +40,9 @@ export function prepareWaterSurface(world: World): WaterSurface[] {
       if (!levels.has(tile.level)) levels.set(tile.level, cells);
       cells.push({ x, y, seed: hash2(x, y, 181), shore: false });
     }
+  const flow = new WaterFlow();
+  flow.ensure(world);
+  const rims = cascadeRims(world, flow);
   const result: WaterSurface[] = [];
   for (const [level, allCells] of [...levels].sort((a, b) => a[0] - b[0])) {
     // Separate disconnected ponds even at the same elevation. Their clip masks
@@ -104,7 +109,7 @@ export function prepareWaterSurface(world: World): WaterSurface[] {
           const priority = (e: Edge) => [1, 0, 3, 2].indexOf((e.dir - dir + 4) % 4);
           edge = candidates.sort((a, b) => priority(a) - priority(b))[0];
         }
-        if (loop.length >= 4) loops.push(organicShore(loop, level));
+        if (loop.length >= 4) loops.push(meetCascadeRims(organicShore(loop, level), level, rims));
       }
       result.push({ level, loops, cells });
     }

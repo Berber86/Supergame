@@ -6,6 +6,7 @@ import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
 import { GroundId, Tile } from '../world/types';
 import { World } from '../world/world';
 import { Ctx, blobPath, granulate } from './paint';
+import { cascadeStone } from './cascadeStone';
 import { prepareWaterSurface, drawWaterSurface } from './waterSurface';
 export { drawWaterAnimation } from './waterSurface';
 
@@ -485,6 +486,17 @@ function tileColor(world: World, x: number, y: number, t: Tile, atm: Atmosphere,
   return mix(col, atm.lightTint, atm.lightAmount * 0.75);
 }
 
+/** Only elevated waterside stone: ordinary stone paths and level ponds stay unchanged. */
+function isCascadeBank(world: World, x: number, y: number, t: Tile): boolean {
+  if (t.ground !== 'stone' || t.water || t.indoor || t.veranda) return false;
+  for (let dy = -1; dy <= 1; dy++)
+    for (let dx = -1; dx <= 1; dx++) {
+      const n = world.at(x + dx, y + dy);
+      if (n?.water && Math.max(t.level, n.level) > 0) return true;
+    }
+  return false;
+}
+
 function drawTileFill(ctx: Ctx, world: World, x: number, y: number, t: Tile, atm: Atmosphere): void {
   if (t.water) {
     // Dry substrate only: rounded pond corners must not reveal blue tile diamonds.
@@ -494,10 +506,11 @@ function drawTileFill(ctx: Ctx, world: World, x: number, y: number, t: Tile, atm
     return;
   }
   tilePath(ctx, x, y, t.level, 0.025);
-  ctx.fillStyle = css(tileColor(world, x, y, t, atm), 1);
+  const bank = isCascadeBank(world, x, y, t);
+  ctx.fillStyle = css(tileColor(world, x, y, t, atm, bank ? 'moss' : undefined), 1);
   ctx.fill();
   // Дорожка поверх подстилающего грунта: лента к соседям, а не квадрат.
-  drawRoadRibbon(ctx, world, x, y, t, atm);
+  if (!bank) drawRoadRibbon(ctx, world, x, y, t, atm);
 }
 
 /** Конусная лента от c до m в цвет покрытия. */
@@ -776,7 +789,15 @@ function drawTileDetail(ctx: Ctx, world: World, x: number, y: number, t: Tile, a
       else drawGravel(ctx, c.x, c.y, col, x * 17 + y * 31);
       break;
     case 'stone':
-      if (sk) drawRibbonFlags(ctx, sk, col, x * 29 + y);
+      if (isCascadeBank(world, x, y, t)) {
+        const stone = shade(mix(atm.palette.stone, atm.palette.soil, 0.24), atm.exposure * 0.92);
+        const moss = shade(atm.palette.moss, atm.exposure);
+        for (let i = 0; i < 3; i++) {
+          const r = hash2(x + i, y, 353), q = hash2(x, y + i, 359);
+          cascadeStone(ctx, c.x + (i - 1) * 22 + (q - 0.5) * 9, c.y + (r - 0.5) * 18,
+            16 + r * 15, 9 + q * 9, stone, moss, x * 71 + y * 17 + i * 31);
+        }
+      } else if (sk) drawRibbonFlags(ctx, sk, col, x * 29 + y);
       else drawStoneSlab(ctx, world, x, y, t.level, col);
       break;
     case 'tatami':
@@ -963,6 +984,16 @@ function drawTileSides(ctx: Ctx, world: World, x: number, y: number, t: Tile, at
     // тёмная весь день: утром свет слева, к вечеру — справа.
     const shadeK = dir === 'south' ? 0.74 - atm.sunDir.x * 0.1 : 0.62 + atm.sunDir.x * 0.08;
     const col = shade(mix(baseCol, atm.palette.soil, 0.5), atm.exposure * shadeK);
+
+    if (isCascadeBank(world, x, y, t)) {
+      const rock = shade(mix(atm.palette.stone, atm.palette.soil, 0.32), atm.exposure * 0.88);
+      for (let i = 0; i < 3; i++) {
+        const u = (i + 0.5) / 3, r = hash2(x + i, y, 367);
+        cascadeStone(ctx, lerp(p0.x, p1.x, u), lerp(p0.y, p1.y, u) + hpx * 0.4,
+          17 + r * 9, hpx * 0.48 + 5, rock, shade(atm.palette.moss, atm.exposure), x * 73 + y * 37 + i * 19);
+      }
+      return;
+    }
 
     ctx.beginPath();
     ctx.moveTo(p0.x, p0.y);
