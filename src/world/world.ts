@@ -972,13 +972,11 @@ export class World {
    * усадьбу сменили), обратно не возвращается — иначе чужой предмет
    * появлялся бы в новом саду.
    */
-  moveObject(obj: PlacedObject, tx: number, ty: number, rot = obj.rot): boolean {
+  private moveObjectRaw(obj: PlacedObject, tx: number, ty: number, rot = obj.rot): boolean {
     const item = ITEM_BY_ID.get(obj.type);
     if (!item) return false;
     if (!this.objects.includes(obj)) return false;
-    // Перенести за туман нельзя: там земля ещё не открыта
     if (this.grow && !inGrowRect(this.grow.rect, Math.floor(tx), Math.floor(ty))) return false;
-    if (!this.growPay()) return false;
     const oldX = obj.tx;
     const oldY = obj.ty;
     const oldRot = obj.rot;
@@ -998,6 +996,17 @@ export class World {
     this.objects.sort((a, b) => a.id - b.id);
     this.noteObjectsChanged();
     return ok;
+  }
+
+  moveObject(obj: PlacedObject, tx: number, ty: number, rot = obj.rot): boolean {
+    if (this.grow && !inGrowRect(this.grow.rect, Math.floor(tx), Math.floor(ty))) return false;
+    if (!this.growPay()) return false;
+    return this.moveObjectRaw(obj, tx, ty, rot);
+  }
+
+  /** Перенос без списания действия — для перетаскивания мышью (плата берётся один раз в конце жеста). */
+  moveObjectFree(obj: PlacedObject, tx: number, ty: number, rot = obj.rot): boolean {
+    return this.moveObjectRaw(obj, tx, ty, rot);
   }
 
   /** Сезоны, которые игрок уже застал. */

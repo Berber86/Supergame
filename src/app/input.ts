@@ -137,6 +137,13 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       const p = scene.pickTile(e.clientX, e.clientY, world);
       const obj = world.pickObject(p.tx, p.ty);
       if (obj) {
+        if (world.grow && world.grow.bank <= 0) {
+          world.growRefused = true;
+          ui.toast('Нет действий роста');
+          dragging = true;
+          canvas.classList.add('dragging');
+          return;
+        }
         history.begin('перенос', null);
         moving.current = { obj, fromX: obj.tx, fromY: obj.ty };
         scene.movingId = obj.id;
@@ -188,7 +195,7 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
           item.step === 1
             ? { tx: Math.floor(p.tx - (item.w - 1) / 2), ty: Math.floor(p.ty - (item.h - 1) / 2) }
             : { tx: floorTo(p.tx, item.step), ty: floorTo(p.ty, item.step) };
-        world.moveObject(moving.current.obj, s2.tx, s2.ty);
+        world.moveObjectFree(moving.current.obj, s2.tx, s2.ty);
       }
     } else if (painting && selection().kind === 'brush') {
       actions.applyAt(e.clientX, e.clientY, false);
@@ -208,10 +215,18 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       scene.movingId = -1;
       if (m.obj.tx === m.fromX && m.obj.ty === m.fromY) {
         history.abort();
-      } else if (history.commit()) {
-        const item = ITEM_BY_ID.get(m.obj.type);
-        ui.toast(`${item?.name ?? 'Предмет'} переставлен`);
-        actions.syncHistoryUI();
+      } else {
+        // Стоимость переноса — одно действие, списываем при завершении жеста
+        if (!world.growPay()) {
+          // нет действий — возвращаем на исходное место
+          world.moveObjectFree(m.obj, m.fromX, m.fromY);
+          history.abort();
+          ui.toast('Нет действий роста');
+        } else if (history.commit()) {
+          const item = ITEM_BY_ID.get(m.obj.type);
+          ui.toast(`${item?.name ?? 'Предмет'} переставлен`);
+          actions.syncHistoryUI();
+        }
       }
     } else if (painting) {
       // мазок кистью закончен — следующий станет отдельным шагом отмены
@@ -390,6 +405,11 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
         ui.toast('Здесь нечего переносить');
         return;
       }
+      if (world.grow && world.grow.bank <= 0) {
+        world.growRefused = true;
+        ui.toast('Нет действий роста');
+        return;
+      }
       history.begin('перенос', null);
       moving.current = { obj, fromX: obj.tx, fromY: obj.ty };
       scene.movingId = obj.id;
@@ -399,19 +419,31 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
     }
 
     const item = ITEM_BY_ID.get(moving.current.obj.type);
+    let movedOk = false;
     if (item) {
       const s2 =
         item.step === 1
           ? { tx: Math.floor(p.tx - (item.w - 1) / 2), ty: Math.floor(p.ty - (item.h - 1) / 2) }
           : { tx: floorTo(p.tx, item.step), ty: floorTo(p.ty, item.step) };
-      world.moveObject(moving.current.obj, s2.tx, s2.ty);
+      movedOk = world.moveObjectFree(moving.current.obj, s2.tx, s2.ty);
     }
     const m = moving.current;
     moving.current = null;
     scene.movingId = -1;
-    if (m.obj.tx === m.fromX && m.obj.ty === m.fromY) {
+    if (!movedOk || (m.obj.tx === m.fromX && m.obj.ty === m.fromY)) {
       history.abort();
-    } else if (history.commit()) {
+      ui.setHint('Перенос — коснитесь предмета, затем места');
+      if (!movedOk) ui.toast('Сюда нельзя поставить');
+      return;
+    }
+    if (!world.growPay()) {
+      world.moveObjectFree(m.obj, m.fromX, m.fromY);
+      history.abort();
+      ui.toast('Нет действий роста');
+      ui.setHint('Перенос — коснитесь предмета, затем места');
+      return;
+    }
+    if (history.commit()) {
       ui.toast(`${item?.name ?? 'Предмет'} переставлен`);
       actions.syncHistoryUI();
     }
