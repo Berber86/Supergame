@@ -142,6 +142,21 @@ export class World {
       const straight = item.w <= r.w && item.h <= r.h;
       const turned = 'rotatable' in item && !!item.rotatable && item.h <= r.w && item.w <= r.h;
       if (!straight && !turned) return false;
+      // В растущем саду усадьбу не выдаём до появления самого здания:
+      // сначала игрок строит сад, потом дом. Тайл здания — tatami (indoor).
+      if (item.tab === 'house') {
+        let hasHouse = false;
+        for (let y = r.y; y < r.y + r.h && !hasHouse; y++) {
+          for (let x = r.x; x < r.x + r.w; x++) {
+            const t = this.at(x, y);
+            if (t?.indoor) {
+              hasHouse = true;
+              break;
+            }
+          }
+        }
+        if (!hasHouse) return false;
+      }
     }
     return true;
   }

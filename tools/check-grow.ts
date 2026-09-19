@@ -121,7 +121,7 @@ async function main(): Promise<void> {
     st.tick = 0;
     st.bank = GROW_BANK_CAP - 1;
     growTick(st, GROW_ACTION_MS * 100);
-    check('запас не выше шести', st.bank === GROW_BANK_CAP);
+    check('запас не выше трёх', st.bank === GROW_BANK_CAP);
   }
 
   console.log('плата за действия');
