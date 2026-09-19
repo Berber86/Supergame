@@ -47,8 +47,8 @@ async function main(): Promise<void> {
   console.log('геометрия и пороги');
   {
     const th = [0, 1, 2, 3, 4, 5, 6].map(growThreshold);
-    check('пороги удваиваются: 1,2,4,8,16,32,64', th.join(',') === '1,2,4,8,16,32,64', th.join(','));
-    // Обратная совместимость: первые 6 раньше были 2,4,8,16,32,64
+    check('пороги сбалансированы: 1,2,4,7,11,16,22', th.join(',') === '1,2,4,7,11,16,22', th.join(','));
+    // Обратная совместимость: первые 6 раньше были 2,4,8,16,32,64 — теперь мягче
     const thOld = th.slice(1, 7);
     const st = newGrowState(7, 1000);
     check(
@@ -121,7 +121,7 @@ async function main(): Promise<void> {
     st.tick = 0;
     st.bank = GROW_BANK_CAP - 1;
     growTick(st, GROW_ACTION_MS * 100);
-    check('запас не выше трёх', st.bank === GROW_BANK_CAP);
+    check('запас не выше шести', st.bank === GROW_BANK_CAP);
   }
 
   console.log('плата за действия');
