@@ -23,6 +23,8 @@ async function main() {
     setup?: (w: InstanceType<typeof World>) => void;
     act: (w: InstanceType<typeof World>) => void;
   }[] = [
+    { name: 'татами вместо веранды', hour: 13, act: (w) => w.setGround(10, 8, 'tatami') },
+    { name: 'проём в полу ночью', hour: 23, act: (w) => w.setGround(5, 5, 'moss') },
     { name: 'кисть мха 1×1', hour: 13, act: (w) => w.applyBrush(BRUSH_BY_ID.get('g_moss')!, 8, 20) },
     {
       name: 'кисть гравия 5×5',

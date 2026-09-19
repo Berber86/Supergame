@@ -390,9 +390,7 @@ export class UI {
   // ---- Каталог ----
 
   private tabUnlocked(id: string): boolean {
-    const tab = TABS.find((t) => t.id === id);
-    if (!tab) return false;
-    return !tab.requires || this.world.milestones.has(tab.requires);
+    return this.world.tabAvailable(id);
   }
 
   /** Размер текущего сада роста: каталог показывает только то, что влезет */

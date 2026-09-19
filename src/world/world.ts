@@ -4,6 +4,8 @@ import { GRID, inBounds } from '../core/iso';
 import { clamp, fbm, hash2 } from '../core/rng';
 import {
   BRUSH_BY_ID,
+  FURNITURE_IDS,
+  SMALL_HOUSE_IDS,
   CatalogItem,
   ITEMS,
   ITEM_BY_ID,
@@ -124,6 +126,7 @@ export class World {
     if (lenient) {
       for (const o of this.objects) if (ITEM_BY_ID.has(o.type)) this.unlocked.add(o.type);
       for (const b of TERRAIN_BRUSHES) this.unlocked.add(b.id);
+      this.unlockInteriorIfHoused();
       // Всегда открыты базовые приглашения дикой жизни
       for (const id of ['feeder', 'birdbath', 'beehive', 'squirrel_feeder', 'turtle_log']) {
         this.unlocked.add(id);
@@ -132,11 +135,30 @@ export class World {
     this.unlockRandomItem();
   }
 
+  /** Free established gardens should not hide the house tab behind painting one more floor tile. */
+  private unlockInteriorIfHoused(): void {
+    if (this.grow) return;
+    if (!this.tiles.some((t) => t.indoor) && !this.objects.some((o) => SMALL_HOUSE_IDS.has(o.type))) return;
+    for (const id of FURNITURE_IDS) this.unlocked.add(id);
+  }
+
+  /** A furnished free-garden preset can have a house without a recorded construction milestone. */
+  tabAvailable(id: string): boolean {
+    const tab = TAB_BY_ID.get(id);
+    if (!tab) return false;
+    if (!tab.requires || this.milestones.has(tab.requires)) return true;
+    return (
+      id === 'house' &&
+      !this.grow &&
+      (this.tiles.some((t) => t.indoor) || this.objects.some((o) => SMALL_HOUSE_IDS.has(o.type)))
+    );
+  }
+
   /** Запись каталога технически доступна: веха вкладки открыта, размер влезает. */
   itemAvailable(item: CatalogItem | TerrainBrush): boolean {
     const tab = TAB_BY_ID.get(item.tab);
     if (!tab) return false;
-    if (tab.requires && !this.milestones.has(tab.requires)) return false;
+    if (!this.tabAvailable(item.tab)) return false;
     if (this.grow) {
       const r = this.grow.rect;
       const straight = item.w <= r.w && item.h <= r.h;
@@ -332,7 +354,24 @@ export class World {
     this.place('table', 6.5, 5.5, 0, old);
     this.place('cushion', 5.5, 6.5, 0, old);
     this.place('cushion', 7.5, 6.5, 0, old);
-    this.place('cat', 8.5, 7.5, 0, old);
+    // New gardens only. Keep the tea area open; partition off a quiet sleeping nook.
+    const furnishings: [string, number, number, number][] = [
+      ['tokonoma', 3.5, 3, 0],
+      ['tansu', 6, 3, 0],
+      ['indoor_plant', 9, 3, 0],
+      ['futon', 3.5, 6.5, 1],
+      ['byobu', 5, 6, 1],
+      ['byobu', 5, 7, 1],
+      ['irori', 8.5, 7.5, 0],
+      ['bonsai', 8, 3, 0],
+      ['bookshelf', 4.5, 3, 0],
+      ['kotatsu', 3.5, 4.5, 0],
+      ['engawa_bench', 10, 5, 1],
+    ];
+    for (const [type, x, y, rot] of furnishings) {
+      if (this.canPlace(type, x, y, rot)) this.place(type, x, y, rot, old);
+    }
+    this.place('cat', 7.5, 7.5, 0, old);
     // Миска у кота: второму коту будет зачем остаться
     this.place('bowl', 9.5, 7.5, 0, old);
     this.place('wind_chime', 9.5, 8.5, 0, old);
@@ -1214,6 +1253,9 @@ export class World {
       // вольный оставляет себе то, что уже прожито
       this.initUnlocks(!p.grow);
     }
+    // Expose the interior kit in established free gardens, without moving/adding a single object.
+    // Growing gardens retain their existing discovery progression.
+    this.unlockInteriorIfHoused();
     this.noteObjectsChanged();
   }
 

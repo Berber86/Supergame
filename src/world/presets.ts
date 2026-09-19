@@ -73,6 +73,11 @@ function house(world: World, x0: number, y0: number, w: number, h: number): void
   }
 }
 
+/** Never use unchecked placement for the new interior fixtures. */
+function furnish(world: World, entries: [string, number, number, number][]): void {
+  for (const [type, x, y, rot] of entries) if (world.canPlace(type, x, y, rot)) world.place(type, x, y, rot, old);
+}
+
 function pond(world: World, x0: number, y0: number, w: number, h: number): void {
   world.applyWaterBlock(x0, y0, w, h);
 }
@@ -107,8 +112,13 @@ const tea: Preset = {
       if (t) t.ground = 'stone';
     }
     world.place('table', 5, 5, 0, old);
-    world.place('cushion', 4.5, 5.5, 0, old);
-    world.place('cushion', 5.5, 5.5, 0, old);
+    furnish(world, [
+      ['cushion', 4, 6, 0],
+      ['cushion', 6, 5.5, 0],
+      ['tokonoma', 4, 4, 0],
+      ['tansu', 5.5, 4, 0],
+      ['indoor_plant', 6, 6, 0],
+    ]);
     world.place('lantern_stone', 7.5, 8.5, 0, old);
     world.place('maple', 13.5, 6.5, 0, old);
     world.place('pine', 5.5, 12.5, 0, old);
@@ -225,6 +235,12 @@ const spring: Preset = {
     world.place('iris', 17.5, 20.5, 0, old);
     world.place('cat', 3.5, 3.5, 0, old);
     world.place('table', 3.5, 2.5, 0, old);
+    furnish(world, [
+      ['cushion', 4.5, 3.5, 0],
+      ['tansu', 4.5, 2, 0],
+      ['tokonoma', 2, 2, 0],
+      ['indoor_plant', 5, 4, 0],
+    ]);
     world.place('lotus', 10, 15, 0, old);
     world.place('lilypad', 11, 16, 0, old);
     world.place('lilypad', 13, 18, 0, old);
@@ -406,6 +422,12 @@ const path: Preset = {
     world.place('azalea', 9.5, 12.5, 0, old);
     world.place('cat', 3, 4, 0, old);
     world.place('table', 3.5, 3, 0, old);
+    furnish(world, [
+      ['cushion', 3.5, 4, 0],
+      ['tokonoma', 2, 2, 0],
+      ['tansu', 3.5, 2, 0],
+      ['indoor_plant', 2, 5, 0],
+    ]);
     pond(world, 14, 6, 4, 3);
     world.place('rock_mid', 15, 5, 0, old);
   },
@@ -463,10 +485,14 @@ const village: Preset = {
     world.place('lantern_path', 12.5, 14.5, 0, old);
     world.place('lantern_path', 15.5, 13.5, 0, old);
     // кот и мелочи
-    world.place('cat', 9, 9, 0, old);
-    world.place('cushion', 9.5, 9.5, 0, old);
-    world.place('bowl', 10, 9, 0, old);
-    world.place('table', 8.5, 8.5, 0, old);
+    // Outdoor tea area, not furniture placed inside an opaque miniature house.
+    world.place('cat', 9, 11, 0, old);
+    world.place('bowl', 9.5, 10.5, 0, old);
+    furnish(world, [
+      ['table', 8, 10.5, 0],
+      ['cushion', 8, 11.5, 0],
+      ['engawa_bench', 14.5, 10, 0],
+    ]);
     // маленький пруд
     pond(world, 17, 11, 3, 3);
     world.place('lotus', 18, 12, 0, old);

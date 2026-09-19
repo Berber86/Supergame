@@ -19,6 +19,8 @@
 
 import { DrawCtx, drawObject, hasDrawer, setSkipShadows } from './sprites';
 import { Ctx } from './paint';
+import { SMALL_HOUSE_IDS } from '../world/catalog';
+import { roofSnowKey } from './roofSnow';
 
 interface Entry {
   canvas: HTMLCanvasElement;
@@ -113,7 +115,8 @@ function getCachedSprite(d: DrawCtx): Entry | null {
   // перебация случается считаные разы за сутки, а не каждый кадр.
   const sunq = quantDown(atm.sunDir.x, 0.4);
   const goldq = quantDown(atm.golden, 0.34);
-  const key = `${obj.type}|${atm.season}|${gq}|${expq}|${lampq}|${sunq}|${goldq}|${obj.seed}|${obj.rot}`;
+  const snowKey = SMALL_HOUSE_IDS.has(obj.type) ? roofSnowKey(atm, obj.seed) : '';
+  const key = `${snowKey}|${obj.type}|${atm.season}|${gq}|${expq}|${lampq}|${sunq}|${goldq}|${obj.seed}|${obj.rot}`;
 
   let e = cache.get(key);
   if (!e) {
@@ -209,12 +212,20 @@ export function drawCachedReflection(d: DrawCtx, compression = 0.82): void {
   for (let y = 0; y < e.ay; y += 5) {
     const h = Math.min(5, e.ay - y);
     const depth = (e.ay - y) / Math.max(1, e.ay);
-    const wave = d.reflectionWarp?.(d.x, d.y + (e.ay-y)*compression);
-    const drift = wave?.dx ?? (
-      Math.sin(d.time * 0.0013 + y * 0.095 + d.obj.seed) * (0.3 + d.wind * .6));
+    const wave = d.reflectionWarp?.(d.x, d.y + (e.ay - y) * compression);
+    const drift = wave?.dx ?? Math.sin(d.time * 0.0013 + y * 0.095 + d.obj.seed) * (0.3 + d.wind * 0.6);
     ctx.globalAlpha = alpha * (0.9 - depth * 0.35) * (wave?.alpha ?? 1);
-    ctx.drawImage(e.canvas, 0, y, e.canvas.width, h,
-      -e.ax + drift, y - e.ay - (wave?.dy ?? 0) / compression, e.canvas.width, h + 0.12);
+    ctx.drawImage(
+      e.canvas,
+      0,
+      y,
+      e.canvas.width,
+      h,
+      -e.ax + drift,
+      y - e.ay - (wave?.dy ?? 0) / compression,
+      e.canvas.width,
+      h + 0.12,
+    );
   }
   ctx.restore();
 }
@@ -249,7 +260,8 @@ function measureBox(
   gq: number,
 ): { w: number; h: number; ax: number; ay: number } | null {
   // Размер зависит от сида из-за scaleJitter и зеркала, поэтому включаем seed
-  const key = `${obj.type}|${atm.season}|${gq}|${obj.rot}|${obj.seed}`;
+  const snowKey = SMALL_HOUSE_IDS.has(obj.type) ? roofSnowKey(atm, obj.seed) : '';
+  const key = `${snowKey}|${obj.type}|${atm.season}|${gq}|${obj.rot}|${obj.seed}`;
   const hit = boxes.get(key);
   if (hit !== undefined) return hit;
 

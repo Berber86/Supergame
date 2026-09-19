@@ -971,8 +971,8 @@ function drawTatami(ctx: Ctx, x: number, y: number, level: number, atm: Atmosphe
   const horiz = (x + y) % 2 === 0;
   ctx.strokeStyle = css(shade(base, 0.92), 0.28);
   ctx.lineWidth = 1;
-  for (let i = 1; i < 7; i++) {
-    const t = i / 7;
+  for (let i = 1; i < 15; i++) {
+    const t = i / 15;
     const p0 = horiz ? isoToScreen(x + t, y, level) : isoToScreen(x, y + t, level);
     const p1 = horiz ? isoToScreen(x + t, y + 1, level) : isoToScreen(x + 1, y + t, level);
     ctx.beginPath();
@@ -980,9 +980,9 @@ function drawTatami(ctx: Ctx, x: number, y: number, level: number, atm: Atmosphe
     ctx.lineTo(p1.x, p1.y);
     ctx.stroke();
   }
-  // тканевая кайма только по краю комнаты
+  // Тканевая кайма каждой циновки; локальна тайлу, без зависимости от соседних комнат.
   ctx.strokeStyle = css(shade({ r: 96, g: 80, b: 60 }, atm.exposure), 0.22);
-  ctx.lineWidth = 1.6;
+  ctx.lineWidth = 2.2;
   tilePath(ctx, x, y, level, -0.02);
   ctx.stroke();
 }

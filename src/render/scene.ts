@@ -7,7 +7,7 @@ import { World } from '../world/world';
 import { Ctx, vignette } from './paint';
 import { drawGrowFog } from './growFog';
 import { TerrainLayer, TileRect, drawWaterAnimation, renderTerrain } from './terrain';
-import { drawHouseRoof, drawHouseWalls } from './building';
+import { drawHouseRoof, drawHouseWalls, drawHouseShade } from './building';
 import { Life } from '../world/life';
 import { drawFish } from './creatures';
 import { drawRipple } from './residents';
@@ -358,6 +358,12 @@ export class Scene {
       }
     }
 
+    const want = this.roofVisible ? 1 : 0;
+    this.roofFade += (want - this.roofFade) * Math.min(1, dt * 0.009);
+    if (Math.abs(this.roofFade - want) < 0.004) this.roofFade = want;
+
+    drawHouseShade(ctx, world, atm, this.roofFade);
+
     // дальние стены дома — за объектами интерьера
     drawHouseWalls(ctx, world, atm);
 
@@ -389,17 +395,12 @@ export class Scene {
 
     // Кровля поверх интерьера.
     //
-    // Когда в комнатах что-то стоит, крыша становится полупрозрачной —
-    // дом и сад по замыслу одна сцена, и обстановку должно быть видно.
+    // При переключении вида крыша плавно исчезает, открывая интерьер.
     // Рисуем её на отдельном слое и накладываем разом: скаты перекрывают
     // друг друга, и прозрачность, заданная каждому по отдельности,
     // складывалась бы обратно в непрозрачную крышу.
     // Плавно догоняем нужное состояние: резкое исчезновение крыши
     // выглядит сбоем, а не выбором игрока.
-    const want = this.roofVisible ? 1 : 0;
-    this.roofFade += (want - this.roofFade) * Math.min(1, dt * 0.009);
-    if (Math.abs(this.roofFade - want) < 0.004) this.roofFade = want;
-
     const roofA = this.roofFade;
     if (roofA < 0.004) {
       // крыши нет вовсе — не тратим слой
