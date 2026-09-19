@@ -65,11 +65,14 @@ export function drawCurrent(ctx: Ctx, world: World, flow: WaterFlow, atm: Atmosp
  */
 export function drawFalls(ctx: Ctx, world: World, flow: WaterFlow, atm: Atmosphere, time: number): void {
   if (!flow.curtains.length) return;
-  const water = shade(mix(atm.palette.water, atm.lightTint, atm.lightAmount * 0.3), atm.exposure);
-  const foam = shade(mix(atm.palette.water, { r: 255, g: 255, b: 255 }, 0.86), atm.exposure);
-  // Заметно темнее поверхности пруда: без этого контраста падающая вода
-  // сливается с зеркалом над ней и читается как стекло.
-  const deep = shade(mix(atm.palette.waterDeep, { r: 34, g: 58, b: 74 }, 0.4), atm.exposure * 0.7);
+  const water = shade(mix(atm.palette.water, atm.lightTint, atm.lightAmount * 0.3), Math.max(atm.exposure, 0.75));
+  const foam = shade(mix(atm.palette.water, { r: 255, g: 255, b: 255 }, 0.86), Math.max(atm.exposure, 0.78));
+  // Раньше было слишком темно на рассвете — каскад выглядел кубично-чёрным.
+  // Делаем дно светлее и ближе к воде, чтобы занавес читался даже в 05:03.
+  const deep = shade(
+    mix(atm.palette.waterDeep, atm.palette.water, 0.55),
+    Math.max(atm.exposure, 0.72) * 0.86,
+  );
 
   for (const c of flow.curtains) {
     // Рисуем только те грани, что обращены к зрителю. В этой изометрии

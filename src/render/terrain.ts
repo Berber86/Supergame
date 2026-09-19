@@ -963,6 +963,9 @@ function drawTileSides(ctx: Ctx, world: World, x: number, y: number, t: Tile, at
     const nbLevel = nb ? nb.level : -1;
     const drop = t.level - nbLevel;
     if (drop <= 0) return;
+    // Вода на воду: не рисуем земляную стенку — её закроет занавес водопада.
+    // Иначе каскад выглядит кубично: земляные кубы с синей крышкой.
+    if (t.water && nb?.water) return;
     const hpx = drop * LEVEL_H;
     const p0 = dir === 'south' ? isoToScreen(x - 0.02, y + 1, t.level) : isoToScreen(x + 1, y - 0.02, t.level);
     const p1 = dir === 'south' ? isoToScreen(x + 1.02, y + 1, t.level) : isoToScreen(x + 1, y + 1.02, t.level);
@@ -1017,9 +1020,11 @@ function drawTileSides(ctx: Ctx, world: World, x: number, y: number, t: Tile, at
 }
 
 function drawWaterTop(ctx: Ctx, x: number, y: number, level: number, atm: Atmosphere): void {
-  const bottom = shade(mix(atm.palette.waterDeep, atm.palette.soil, 0.4), atm.exposure * 0.78);
-  const surfBase = mix(atm.palette.water, bottom, 0.26);
-  const surf = shade(mix(surfBase, atm.lightTint, atm.lightAmount * 0.5), atm.exposure);
+  // Вода не должна проваливаться в темноту на рассвете: держим дно светлее
+  // и ближе к палитре water, иначе пруд в 05:03 выглядит «в непонятно чём».
+  const bottom = shade(mix(atm.palette.waterDeep, atm.palette.water, 0.55), Math.max(atm.exposure, 0.72) * 0.88);
+  const surfBase = mix(atm.palette.water, bottom, 0.18);
+  const surf = shade(mix(surfBase, atm.lightTint, atm.lightAmount * 0.42), Math.max(atm.exposure, 0.78));
 
   // Центр тайла в экране
   const cDeep = isoToScreen(x + 0.5, y + 0.5, level - 0.34);
@@ -1028,30 +1033,30 @@ function drawWaterTop(ctx: Ctx, x: number, y: number, level: number, atm: Atmosp
   // Вариация глубины по шуму — вода не однотонная плита
   const deepVar = fbm(x * 0.6, y * 0.6, 2, 11);
   const surfVar = fbm(x * 0.9 + 5, y * 0.9 - 3, 2, 19);
-  const bottomCol = shade(bottom, 0.92 + deepVar * 0.16);
-  const surfCol = shade(surf, 0.94 + surfVar * 0.12);
+  const bottomCol = shade(bottom, 0.96 + deepVar * 0.1);
+  const surfCol = shade(surf, 0.98 + surfVar * 0.08);
 
-  // Неровный акварельный blob вместо ровного ромба.
-  // Размер больше тайла, чтобы соседние кляксы перекрывались и берег был рваным.
+  // Неровный акварельный blob — делаем крупнее, чтобы каскад не выглядел кубично:
+  // соседние кляксы должны перекрываться даже при перепаде уровня.
   const seed = x * 137 + y * 73;
-  const rx = TILE_W * (0.58 + hash2(x, y, 3) * 0.12);
-  const ry = TILE_H * (0.58 + hash2(x, y, 7) * 0.12);
+  const rx = TILE_W * (0.68 + hash2(x, y, 3) * 0.18);
+  const ry = TILE_H * (0.68 + hash2(x, y, 7) * 0.18);
 
-  // глубина
+  // глубина — чуть больше и мягче
   ctx.fillStyle = css(bottomCol, 1);
-  blobPath(ctx, cDeep.x, cDeep.y, rx * 1.06, ry * 1.06, seed, 0.32, 10);
+  blobPath(ctx, cDeep.x, cDeep.y, rx * 1.12, ry * 1.12, seed, 0.28, 11);
   ctx.fill();
 
-  // поверхность — чуть меньше, с рваным краем
+  // поверхность — почти во всю клетку, с рваным краем
   ctx.fillStyle = css(surfCol, 1);
-  blobPath(ctx, cSurf.x, cSurf.y, rx * 0.96, ry * 0.96, seed + 7, 0.34, 11);
+  blobPath(ctx, cSurf.x, cSurf.y, rx * 1.02, ry * 1.02, seed + 7, 0.3, 12);
   ctx.fill();
 
-  // лёгкая внутренняя тень у края — объём
+  // лёгкая внутренняя тень у края — объём, но слабее
   const edge = hash2(x, y, 13);
-  if (edge > 0.5) {
-    ctx.fillStyle = css(shade(bottomCol, 0.82), 0.12 + edge * 0.08);
-    blobPath(ctx, cSurf.x + (hash2(x, y, 17) - 0.5) * 8, cSurf.y + 2, rx * 0.45, ry * 0.38, seed + 13, 0.38, 8);
+  if (edge > 0.55) {
+    ctx.fillStyle = css(shade(bottomCol, 0.88), 0.08 + edge * 0.05);
+    blobPath(ctx, cSurf.x + (hash2(x, y, 17) - 0.5) * 8, cSurf.y + 2, rx * 0.42, ry * 0.36, seed + 13, 0.34, 8);
     ctx.fill();
   }
 }
