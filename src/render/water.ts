@@ -132,7 +132,7 @@ function edgeCorners(
   return [isoToScreen(x, y, lvl), isoToScreen(x + 1, y, lvl)];
 }
 
-/** Полотно воды на грани: тёмное у основания, светлое на переломе. */
+/** Полотно воды на грани: ломанные края, чтобы каскад не выглядел линейкой. */
 function drawSheet(
   ctx: Ctx,
   c0: { x: number; y: number },
@@ -144,30 +144,48 @@ function drawSheet(
   seed: number,
   time: number,
 ): void {
-  const wob = Math.sin(time * 0.0028 + seed * 0.001) * 1.4;
+  const span = Math.hypot(c1.x - c0.x, c1.y - c0.y);
+  const segs = Math.max(3, Math.round(span / 18));
+  const wobBase = Math.sin(time * 0.0028 + seed * 0.001) * 1.2;
 
   ctx.save();
   ctx.beginPath();
-  ctx.moveTo(c0.x, c0.y);
-  ctx.lineTo(c1.x, c1.y);
-  ctx.lineTo(c1.x + wob, c1.y + h);
-  ctx.lineTo(c0.x + wob, c0.y + h);
+  // верхняя кромка — ломаная с шумом
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    const x = c0.x + (c1.x - c0.x) * t + (hash2(i * 7, seed, 11) - 0.5) * 3.5;
+    const y = c0.y + (c1.y - c0.y) * t + (hash2(i * 13, seed + 5, 19) - 0.5) * 2.2;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  // правая боковина вниз — с изломом
+  for (let i = 1; i <= 3; i++) {
+    const t = i / 3;
+    const x = c1.x + wobBase + (hash2(99 + i, seed, 23) - 0.5) * 4;
+    const y = c1.y + h * t + (hash2(101 + i, seed + 2, 29) - 0.5) * 3;
+    ctx.lineTo(x, y);
+  }
+  // нижняя кромка — тоже ломаная, в обратную сторону
+  for (let i = segs; i >= 0; i--) {
+    const t = i / segs;
+    const x = c0.x + (c1.x - c0.x) * t + wobBase + (hash2(i * 11 + 50, seed + 3, 31) - 0.5) * 4.5;
+    const y = c0.y + (c1.y - c0.y) * t + h + (hash2(i * 17 + 60, seed + 7, 37) - 0.5) * 3.5;
+    ctx.lineTo(x, y);
+  }
   ctx.closePath();
 
-  // Тон полотна: сразу под переломом вода в тени самой себя, ниже
-  // разбивается в белую пену. Светлым сверху донизу его делать нельзя —
-  // получается матовое стекло, а не падающая вода.
-  // Тон полотна: под переломом вода в собственной тени, ниже разбивается
-  // в белую пену. Ровно светлое сверху донизу читается как матовое стекло,
-  // а не как падающая вода — нужен именно тёмный верх.
   const top = Math.min(c0.y, c1.y);
   const g = ctx.createLinearGradient(0, top, 0, Math.max(c0.y, c1.y) + h);
-  g.addColorStop(0, css(shade(deep, 0.52), 1));
-  g.addColorStop(0.3, css(mix(deep, water, 0.42), 1));
-  g.addColorStop(0.72, css(mix(water, foam, 0.4), 1));
-  g.addColorStop(1, css(mix(water, foam, 0.85), 1));
+  g.addColorStop(0, css(shade(deep, 0.58), 1));
+  g.addColorStop(0.28, css(mix(deep, water, 0.48), 1));
+  g.addColorStop(0.68, css(mix(water, foam, 0.45), 1));
+  g.addColorStop(1, css(mix(water, foam, 0.88), 1));
   ctx.fillStyle = g;
   ctx.fill();
+  // тонкая рваная кромка сверху — блик перелома
+  ctx.strokeStyle = css(foam, 0.18);
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
   ctx.restore();
 }
 

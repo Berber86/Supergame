@@ -1193,15 +1193,15 @@ function drawWaterEdge(ctx: Ctx, world: World, x: number, y: number, atm: Atmosp
   }
 }
 
-/** Анимированные блики — рисуются каждый кадр поверх кэшированного слоя. */
+/** Анимированные блики, рябь и отражения — вода живая даже в озере без течения. */
 export function drawWaterAnimation(ctx: Ctx, world: World, atm: Atmosphere, time: number): void {
-  // Блики отвечают настоящему свету: днём ярче, в золотой час вода
-  // ловит низкое солнце и теплеет, ночью остаётся еле заметный лунный отсвет.
   const hi = shade(
-    mix(mix(atm.palette.water, { r: 255, g: 255, b: 250 }, 0.7), { r: 255, g: 212, b: 148 }, atm.golden * 0.55),
-    atm.exposure,
+    mix(mix(atm.palette.water, { r: 255, g: 255, b: 250 }, 0.75), { r: 255, g: 212, b: 148 }, atm.golden * 0.55),
+    Math.max(atm.exposure, 0.78),
   );
-  const glintK = 0.75 + atm.time.daylight * 0.45 + atm.golden * 0.55;
+  const glintK = 0.85 + atm.time.daylight * 0.55 + atm.golden * 0.65;
+
+  // 1) Блики — ярче, крупнее, чтобы озеро не выглядело статично
   for (let y = 0; y < GRID; y++) {
     for (let x = 0; x < GRID; x++) {
       const t = world.at(x, y)!;
@@ -1209,22 +1209,70 @@ export function drawWaterAnimation(ctx: Ctx, world: World, atm: Atmosphere, time
       const c = isoToScreen(x + 0.5, y + 0.5, t.level - 0.26);
       const ph = hash2(x, y, 7) * Math.PI * 2;
       for (let i = 0; i < 2; i++) {
-        const s = Math.sin(time * 0.0009 + ph + i * 2.1);
-        const a = (0.05 + 0.07 * (s * 0.5 + 0.5)) * glintK;
-        const ox = Math.sin(time * 0.0006 + ph + i) * 11;
-        const oy = Math.cos(time * 0.0005 + ph * 1.3) * 3;
+        const s = Math.sin(time * 0.0011 + ph + i * 2.1);
+        const a = (0.07 + 0.1 * (s * 0.5 + 0.5)) * glintK;
+        const ox = Math.sin(time * 0.0007 + ph + i) * 12;
+        const oy = Math.cos(time * 0.0006 + ph * 1.3) * 3.5;
         ctx.strokeStyle = css(hi, a);
-        ctx.lineWidth = 1.7;
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(c.x - 17 + ox, c.y + oy + i * 8 - 5);
-        ctx.quadraticCurveTo(c.x + ox, c.y + oy + i * 8 - 1.5, c.x + 17 + ox, c.y + oy + i * 8 - 5);
+        ctx.moveTo(c.x - 19 + ox, c.y + oy + i * 8 - 5);
+        ctx.quadraticCurveTo(c.x + ox, c.y + oy + i * 8 - 1, c.x + 19 + ox, c.y + oy + i * 8 - 5);
         ctx.stroke();
       }
-      const rp = clamp01(Math.sin(time * 0.0012 + ph) * 0.5 + 0.5);
-      ctx.fillStyle = css(hi, 0.04 * rp * glintK);
+      const rp = clamp01(Math.sin(time * 0.0013 + ph) * 0.5 + 0.5);
+      ctx.fillStyle = css(hi, 0.055 * rp * glintK);
       ctx.beginPath();
-      ctx.ellipse(c.x, c.y, TILE_W * 0.3, TILE_H * 0.28, 0, 0, Math.PI * 2);
+      ctx.ellipse(c.x, c.y, TILE_W * 0.36, TILE_H * 0.32, 0, 0, Math.PI * 2);
       ctx.fill();
     }
   }
+
+  // 2) Медленная рябь по всему озеру — даже без течения
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < GRID; x++) {
+      const t = world.at(x, y)!;
+      if (!t.water) continue;
+      const seed = hash2(x * 3, y * 7, 91);
+      if (seed < 0.38) continue;
+      const ph = seed * 12 + time * 0.00055;
+      const c = isoToScreen(x + 0.5, y + 0.5, t.level - 0.26);
+      const r = 5 + Math.sin(ph) * 2.5 + seed * 7;
+      const a = 0.07 + Math.sin(ph * 1.7) * 0.035;
+      ctx.strokeStyle = css(hi, a * glintK * 0.65);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(
+        c.x + Math.sin(ph * 0.7) * 4,
+        c.y + Math.cos(ph * 0.5) * 2.5,
+        r,
+        r * 0.58,
+        0,
+        0,
+        Math.PI * 2,
+      );
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  // 3) Отражения — лёгкая пелена неба и листвы на воде (soft-light)
+  ctx.save();
+  ctx.globalCompositeOperation = 'soft-light';
+  for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < GRID; x++) {
+      const t = world.at(x, y)!;
+      if (!t.water) continue;
+      const c = isoToScreen(x + 0.5, y + 0.5, t.level - 0.26);
+      const refl = mix(atm.skyBottom, atm.palette.foliageDeep, 0.22);
+      const a = 0.08 + atm.time.daylight * 0.07;
+      ctx.fillStyle = css(refl, a);
+      ctx.beginPath();
+      ctx.ellipse(c.x, c.y + 5, TILE_W * 0.3, TILE_H * 0.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
 }

@@ -125,37 +125,57 @@ const tea: Preset = {
   },
 };
 
-/** Горный исток — маленький дом 4×3, исток + каскад в пруд */
+/** Горный исток — каскад прямо от границы карты, длинный ручей, озеро внизу */
 const spring: Preset = {
   id: 'spring',
   name: 'Горный исток',
-  hint: 'Исток наверху, каскад вниз, пруд внизу. Дом 4×3.',
+  hint: 'Каскад от самого края карты, ручей-река и озеро. Дом 4×3 сбоку.',
   build: (world) => {
     clearToMoss(world);
-    house(world, 3, 3, 4, 3);
-    // холм под исток
-    world.applyHill(16, 2, 4, 4, 1);
-    world.applyHill(17, 3, 2, 2, 1);
-    // исток и каскад
-    world.applySpring(17, 3, 3, 3);
-    world.applyCascade(14, 6, 5, 6);
-    pond(world, 12, 12, 6, 4);
-    // каменная кромка
-    scatterGround(world, 10, 10, 10, 2, 'stone');
-    world.place('bridge', 14, 11, 0, old);
-    world.place('rock_big', 13, 9, 0, old);
-    world.place('rock_mid', 11, 13, 1, old);
-    world.place('pine', 18, 3, 0, old);
-    world.place('pine', 20, 5, 0, old);
-    world.place('maple', 8, 10, 0, old);
-    world.place('bamboo', 20.5, 3.5, 0, old);
-    world.place('bamboo', 21, 4.5, 0, old);
+    house(world, 2, 2, 4, 3);
+    // --- Исток у самой границы: холм и исток на краю, чтобы вода будто приходит извне ---
+    // северная кромка (y=0) — исток
+    world.applyHill(15, 0, 5, 4, 1);
+    world.applyHill(16, 0, 3, 3, 1);
+    world.applySpring(16, 0, 3, 2);
+    // каскад начинается прямо от края (x0=13,y0=0) — 5×7, стекает на юго-восток
+    world.applyCascade(13, 0, 5, 7);
+    // длинный извилистый ручей от каскада к озеру — несколько блоков воды
+    pond(world, 12, 7, 3, 2);
+    pond(world, 11, 9, 3, 2);
+    pond(world, 10, 11, 4, 2);
+    // озеро внизу, куда впадает ручей
+    pond(world, 8, 14, 8, 6);
+    pond(world, 14, 16, 5, 4);
+    // каменная кромка вдоль всего русла
+    scatterGround(world, 10, 6, 8, 2, 'stone');
+    scatterGround(world, 9, 10, 6, 2, 'stone');
+    world.place('bridge', 11, 10, 0, old);
+    world.place('bridge', 9, 13, 0, old);
+    world.place('rock_big', 13, 5, 0, old);
+    world.place('rock_mid', 15, 8, 1, old);
+    world.place('rock_mid', 7, 13, 0, old);
+    world.place('rock_trio', 17, 12, 1, old);
+    // лес у истока
+    world.place('pine', 18, 0, 0, old);
+    world.place('pine', 20, 1, 0, old);
+    world.place('pine', 14, 1, 0, old);
+    world.place('maple', 8, 8, 0, old);
+    world.place('willow', 7.5, 14.5, 0, old);
+    world.place('willow', 16.5, 18.5, 0, old);
+    world.place('bamboo', 20.5, 0.5, 0, old);
+    world.place('bamboo', 21, 1.5, 0, old);
+    world.place('bamboo', 19, 2, 0, old);
     world.place('lantern_stone', 10.5, 9.5, 0, old);
-    world.place('lantern_path', 12.5, 10.5, 0, old);
-    world.place('fern', 15.5, 8.5, 0, old);
-    world.place('iris', 13.5, 13.5, 0, old);
-    world.place('cat', 4.5, 4.5, 0, old);
-    world.place('table', 4.5, 3.5, 0, old);
+    world.place('lantern_path', 12.5, 12.5, 0, old);
+    world.place('fern', 15.5, 6.5, 0, old);
+    world.place('iris', 9.5, 15.5, 0, old);
+    world.place('iris', 13.5, 17.5, 0, old);
+    world.place('cat', 3.5, 3.5, 0, old);
+    world.place('table', 3.5, 2.5, 0, old);
+    world.place('lotus', 10, 15, 0, old);
+    world.place('lilypad', 11, 16, 0, old);
+    world.place('lilypad', 13, 18, 0, old);
   },
 };
 
