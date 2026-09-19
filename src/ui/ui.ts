@@ -46,6 +46,8 @@ export interface UIHooks {
   onSit(): void;
   /** Открыть летопись сада. */
   onChronicle(): void;
+  /** Открыть энциклопедию живых соседей. */
+  onEncyclopedia(): void;
   /** Растущий сад: открыть выбор, куда расти. */
   onGrowLine(): void;
   /** Повернуть призрак предмета (R). */
@@ -129,6 +131,7 @@ export class UI {
     this.els.btnGardens = mk('gardens', 'Усадьбы (U)');
     this.els.btnSettings = mk('settings', 'Настройки (S)');
     this.els.btnHelp = mk('scroll', 'Свиток (H)');
+    this.els.btnEncyclopedia = mk('book', 'Энциклопедия (E)');
     layer.appendChild(tools);
 
     // Подсказка повернуть телефон: сад — широкая картина, и в книжной
@@ -163,6 +166,7 @@ export class UI {
     this.els.btnSettings.addEventListener('click', () => this.hooks.onSettings());
     this.els.btnGardens.addEventListener('click', () => this.hooks.onGardens());
     this.els.btnHelp.addEventListener('click', () => this.toggleHelp());
+    this.els.btnEncyclopedia.addEventListener('click', () => this.hooks.onEncyclopedia());
 
     // --- Инструменты строителя (видны только в режиме стройки) ---
     const bb = this.el('div', 'buildbar wood');
@@ -259,12 +263,14 @@ export class UI {
         <dt>Щипок</dt><dd>Приблизить или отдалить</dd>
         <dt>Глаз</dt><dd>Созерцание — интерфейс растворяется</dd>
         <dt>Камера</dt><dd>Снимок сада свитком</dd>
+        <dt>Книга</dt><dd>Энциклопедия: все жители и их движения</dd>
         <dt>Нота</dt><dd>Звук сада: листва, вода, цикады, дождь</dd>`
       : `
         <dt>Перетащить</dt><dd>Двигать камеру по усадьбе</dd>
         <dt>Колесо</dt><dd>Приблизить или отдалить</dd>
         <dt>Z</dt><dd>Созерцание — интерфейс растворяется</dd>
         <dt>P</dt><dd>Сохранить снимок сада</dd>
+        <dt>E</dt><dd>Энциклопедия: все жители и их движения</dd>
         <dt>M</dt><dd>Звук сада: листва, вода, цикады, дождь</dd>`;
 
     const build = touch

@@ -136,6 +136,7 @@ export const GLYPHS: Record<string, string> = {
     '<rect x="3" y="7" width="18" height="12" rx="2.5"/><circle cx="12" cy="13" r="3.4"/><path d="M8 7l1.5-2.5h5L16 7"/>',
   rotate: '<path d="M4 12a8 8 0 1 1 2.6 5.9"/><path d="M3 18.5l1.2-4.4 4.4 1.2"/>',
   scroll: '<path d="M6 4h12v16H6z"/><path d="M9 8h6M9 12h6M9 16h4"/>',
+  book: '<path d="M4 5.5c2.5-1.4 5.4-1.1 8 0v14c-2.6-1.1-5.5-1.4-8 0z"/><path d="M20 5.5c-2.5-1.4-5.4-1.1-8 0v14c2.6-1.1 5.5-1.4 8 0z"/><path d="M12 5.5v14"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   check: '<path d="M5.5 12.5l4.3 4.6L19 7.5"/>',
   'sound-on':

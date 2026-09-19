@@ -103,6 +103,8 @@ export interface Deer {
   timer: number;
   facing: 1 | -1;
   phase: number;
+  /** Ритм шага: отделён от progress пути, чтобы походка не ускорялась к цели. */
+  gait: number;
   seed: number;
   coat: DeerCoat;
   born: number;
@@ -643,6 +645,9 @@ export class Wildlife {
     for (let i = this.deer.length - 1; i >= 0; i--) {
       const d = this.deer[i];
       d.timer -= dt;
+      if (d.state === 'enter' || d.state === 'walk' || d.state === 'leave') {
+        d.gait += dt * (d.state === 'leave' ? 0.012 : 0.008);
+      }
       const shy = threats.some((c) => Math.hypot(c.x - d.tx, c.y - d.ty) < 2.6);
       if (shy && d.state !== 'leave') {
         d.state = 'leave';
@@ -661,10 +666,13 @@ export class Wildlife {
         case 'walk': {
           if (!d.target) break;
           d.from = d.from ?? { x: d.tx, y: d.ty };
-          const v = d.state === 'enter' ? 0.00022 : 0.00018;
+          const v = d.state === 'enter' ? 0.0002 : 0.00016;
           d.phase = Math.min(1, d.phase + dt * v);
-          d.tx = lerp(d.from.x, d.target.x, d.phase);
-          d.ty = lerp(d.from.y, d.target.y, d.phase);
+          // Небольшое ускорение в начале и мягкое торможение у поляны:
+          // олень не скользит по прямой, а действительно приходит.
+          const ease = d.phase * d.phase * (3 - 2 * d.phase);
+          d.tx = lerp(d.from.x, d.target.x, ease);
+          d.ty = lerp(d.from.y, d.target.y, ease);
           if (Math.abs(d.target.x - d.tx) > 0.05) d.facing = d.target.x > d.tx ? 1 : -1;
           if (d.phase >= 1) {
             d.state = 'graze';
@@ -697,9 +705,10 @@ export class Wildlife {
         case 'leave': {
           if (!d.target) break;
           d.from = d.from ?? { x: d.tx, y: d.ty };
-          d.phase = Math.min(1, d.phase + dt * 0.00024);
-          d.tx = lerp(d.from.x, d.target.x, d.phase);
-          d.ty = lerp(d.from.y, d.target.y, d.phase);
+          d.phase = Math.min(1, d.phase + dt * 0.00026);
+          const ease = d.phase * d.phase * (3 - 2 * d.phase);
+          d.tx = lerp(d.from.x, d.target.x, ease);
+          d.ty = lerp(d.from.y, d.target.y, ease);
           if (Math.abs(d.target.x - d.tx) > 0.05) d.facing = d.target.x > d.tx ? 1 : -1;
           if (d.phase >= 1 || d.tx < -4 || d.tx > GRID + 4 || d.ty < -4 || d.ty > GRID + 4) {
             this.deer.splice(i, 1);
@@ -729,6 +738,7 @@ export class Wildlife {
       timer: 0,
       facing: edge.x < g.x ? 1 : -1,
       phase: 0,
+      gait: rnd() * Math.PI * 2,
       seed: Math.floor(rnd() * 10000),
       coat: {
         spots: t.season === 'spring' || t.season === 'summer',
@@ -870,7 +880,7 @@ export class Wildlife {
       if (m.panic > 0) m.panic -= dt;
       const cat = threats.find((c) => Math.hypot(c.x - m.tx, c.y - m.ty) < 3.0);
       const owl = this.owls.find((o) => o.state === 'hunt' && Math.hypot(o.huntX - m.tx, o.huntY - m.ty) < 2.2);
-      const danger = cat ?? (owl ? { x: owl.huntX, y: owl.huntY, r: 2 } as Threat : null);
+      const danger = cat ?? (owl ? ({ x: owl.huntX, y: owl.huntY, r: 2 } as Threat) : null);
       if (danger && m.state !== 'flee' && m.state !== 'hide' && m.state !== 'leave') {
         const shelter = this.nearestMouseSpot(h, m.tx, m.ty);
         if (shelter) {
@@ -1158,7 +1168,14 @@ export class Wildlife {
 
   // ---------------- Белка ----------------
 
-  private updateSquirrels(h: Habitat, inv: Invitation, _t: TimeState, dt: number, now: number, threats: Threat[]): void {
+  private updateSquirrels(
+    h: Habitat,
+    inv: Invitation,
+    _t: TimeState,
+    dt: number,
+    now: number,
+    threats: Threat[],
+  ): void {
     for (let i = this.squirrels.length - 1; i >= 0; i--) {
       const s = this.squirrels[i];
       s.timer -= dt;
@@ -1340,10 +1357,12 @@ export class Wildlife {
         case 'walk': {
           if (!tu.target) break;
           tu.from = tu.from ?? { x: tu.tx, y: tu.ty };
-          const v = tu.state === 'enter' ? 0.00018 : 0.00014;
+          const v = tu.state === 'enter' ? 0.00016 : 0.00012;
           tu.phase = Math.min(1, tu.phase + dt * v);
-          tu.tx = lerp(tu.from.x, tu.target.x, tu.phase);
-          tu.ty = lerp(tu.from.y, tu.target.y, tu.phase);
+          const ease = tu.phase * tu.phase * (3 - 2 * tu.phase);
+          tu.tx = lerp(tu.from.x, tu.target.x, ease);
+          tu.ty = lerp(tu.from.y, tu.target.y, ease);
+          if (Math.abs(tu.target.x - tu.tx) > 0.05) tu.facing = tu.target.x > tu.tx ? 1 : -1;
           if (tu.phase >= 1) {
             tu.state = 'bask';
             tu.timer = 12000 + rnd() * 20000;
@@ -1354,7 +1373,18 @@ export class Wildlife {
         case 'bask': {
           if (tu.timer <= 0) {
             const r = rnd();
-            if (r < 0.4 && h.turtleSpots.length > 1) {
+            // Иногда черепаха сходит с камня прямо в воду. Это отдельный
+            // маршрут, а не мгновенная смена позы: плавание занимает время.
+            if (r < 0.28 && h.ponds.length > 0) {
+              const pond = h.ponds[Math.floor(rnd() * h.ponds.length)];
+              const shore = pond.shores[Math.floor(rnd() * pond.shores.length)];
+              if (shore) {
+                tu.from = { x: tu.tx, y: tu.ty };
+                tu.target = shore;
+                tu.phase = 0;
+                tu.state = 'swim';
+              }
+            } else if (r < 0.62 && h.turtleSpots.length > 1) {
               const g = h.turtleSpots[Math.floor(rnd() * h.turtleSpots.length)];
               if (Math.hypot(g.x - tu.tx, g.y - tu.ty) > 1.2) {
                 tu.from = { x: tu.tx, y: tu.ty };
@@ -1365,7 +1395,7 @@ export class Wildlife {
                 tu.state = 'look';
                 tu.timer = 4000 + rnd() * 6000;
               }
-            } else if (r < 0.7) {
+            } else if (r < 0.8) {
               tu.state = 'look';
               tu.timer = 3000 + rnd() * 5000;
             } else {
@@ -1400,8 +1430,10 @@ export class Wildlife {
           if (!tu.target) break;
           tu.from = tu.from ?? { x: tu.tx, y: tu.ty };
           tu.phase = Math.min(1, tu.phase + dt * 0.00012);
-          tu.tx = lerp(tu.from.x, tu.target.x, tu.phase);
-          tu.ty = lerp(tu.from.y, tu.target.y, tu.phase);
+          const ease = tu.phase * tu.phase * (3 - 2 * tu.phase);
+          tu.tx = lerp(tu.from.x, tu.target.x, ease);
+          tu.ty = lerp(tu.from.y, tu.target.y, ease);
+          if (Math.abs(tu.target.x - tu.tx) > 0.05) tu.facing = tu.target.x > tu.tx ? 1 : -1;
           if (tu.phase >= 1) {
             tu.state = 'bask';
             tu.timer = 10000 + rnd() * 15000;
@@ -1412,8 +1444,10 @@ export class Wildlife {
           if (!tu.target) break;
           tu.from = tu.from ?? { x: tu.tx, y: tu.ty };
           tu.phase = Math.min(1, tu.phase + dt * 0.00018);
-          tu.tx = lerp(tu.from.x, tu.target.x, tu.phase);
-          tu.ty = lerp(tu.from.y, tu.target.y, tu.phase);
+          const ease = tu.phase * tu.phase * (3 - 2 * tu.phase);
+          tu.tx = lerp(tu.from.x, tu.target.x, ease);
+          tu.ty = lerp(tu.from.y, tu.target.y, ease);
+          if (Math.abs(tu.target.x - tu.tx) > 0.05) tu.facing = tu.target.x > tu.tx ? 1 : -1;
           if (tu.phase >= 1 || tu.tx < -4 || tu.tx > GRID + 4 || tu.ty < -4 || tu.ty > GRID + 4) {
             this.turtles.splice(i, 1);
           }
@@ -1478,7 +1512,8 @@ export class Wildlife {
         const hive = hasHive && b.carrying ? h.beehives[Math.floor(rnd() * h.beehives.length)] : null;
         const flower = !b.carrying ? h.beeSpots[Math.floor(rnd() * h.beeSpots.length)] : null;
         // иногда даже без пыльцы залетает в улей — «проведать дом»
-        const visitHive = !b.carrying && hasHive && rnd() < 0.18 ? h.beehives[Math.floor(rnd() * h.beehives.length)] : null;
+        const visitHive =
+          !b.carrying && hasHive && rnd() < 0.18 ? h.beehives[Math.floor(rnd() * h.beehives.length)] : null;
         b.target = hive ?? visitHive ?? flower ?? h.beeSpots[Math.floor(rnd() * h.beeSpots.length)] ?? null;
         b.timer = 1800 + rnd() * 3500;
         if (b.target && Math.hypot(b.target.x - b.tx, b.target.y - b.ty) < 0.6) {
@@ -1542,7 +1577,8 @@ export class Wildlife {
       });
       if (this.bees.length === 1) this.pushNote('meet_bee', a.x, a.y);
     }
-    if (this.bees.length >= 4 && rnd() < (hasHive ? 0.0045 : 0.002)) this.pushNote('bee_swarm', this.bees[0]?.tx, this.bees[0]?.ty);
+    if (this.bees.length >= 4 && rnd() < (hasHive ? 0.0045 : 0.002))
+      this.pushNote('bee_swarm', this.bees[0]?.tx, this.bees[0]?.ty);
   }
 
   private exitFrom(x: number, y: number): Vec {
@@ -1736,6 +1772,7 @@ export class Wildlife {
       timer: 20_000,
       facing: 1,
       phase: 1,
+      gait: rnd() * Math.PI * 2,
       seed: 7,
       coat: {
         spots: t.season === 'spring' || t.season === 'summer',

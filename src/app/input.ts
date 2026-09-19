@@ -23,6 +23,7 @@ import type { GardensPanel } from '../ui/gardensPanel';
 import type { SettingsPanel } from '../ui/settings';
 import type { DevPanel } from '../ui/devPanel';
 import type { ChroniclePanel } from '../ui/chroniclePanel';
+import type { EncyclopediaPanel } from '../ui/encyclopediaPanel';
 
 /** Положение указателя для призрака — на пальце его нет. */
 export const pointer = { x: 0, y: 0, has: false };
@@ -70,6 +71,7 @@ export interface InputDeps {
   settingsPanel: SettingsPanel;
   devPanel: DevPanel;
   chronicle: ChroniclePanel;
+  encyclopedia: EncyclopediaPanel;
   selection(): Selection;
   isStartOpen(): boolean;
   isPracticeOpen(): boolean;
@@ -80,7 +82,20 @@ export interface InputDeps {
 }
 
 export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
-  const { canvas, scene, world, history, ui, audio, timeCtl, gardensPanel, settingsPanel, devPanel, chronicle } = deps;
+  const {
+    canvas,
+    scene,
+    world,
+    history,
+    ui,
+    audio,
+    timeCtl,
+    gardensPanel,
+    settingsPanel,
+    devPanel,
+    chronicle,
+    encyclopedia,
+  } = deps;
   const { selection, isStartOpen, isPracticeOpen, closePractice, paintMode, actions } = deps;
 
   // ---------------- Ввод ----------------
@@ -483,6 +498,8 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       ui.toggleBuild();
     } else if (k === 'h' || k === '?') {
       ui.toggleHelp();
+    } else if (k === 'e') {
+      encyclopedia.toggle();
     } else if (k === 'r') {
       actions.rotateGhost();
     } else if (k === 'x') {
@@ -498,6 +515,7 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       }
       if (gardensPanel.isOpen) gardensPanel.setOpen(false);
       else if (chronicle.isOpen) chronicle.setOpen(false);
+      else if (encyclopedia.isOpen) encyclopedia.setOpen(false);
       else if (ui.selection.kind !== 'none') ui.select({ kind: 'none' });
       else ui.toggleBuild(false);
       ui.toggleHelp(false);

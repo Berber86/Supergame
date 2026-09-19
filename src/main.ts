@@ -28,6 +28,7 @@ import { ChroniclePanel } from './ui/chroniclePanel';
 import { ChronicleToast } from './ui/chronicleToast';
 import { StartScreen } from './ui/startScreen';
 import { isoToScreen } from './core/iso';
+import { EncyclopediaPanel } from './ui/encyclopediaPanel';
 
 const app = document.getElementById('app')!;
 
@@ -170,6 +171,8 @@ let lastInteraction = performance.now();
 /** Масштаб, к которому камера возвращается после входа: 0 — входа не было. */
 let entryZoom = 0;
 
+const encyclopedia = new EncyclopediaPanel(app);
+
 const ui = new UI(app, world, {
   onSelect(sel) {
     // Смена инструмента убирает ждущий призрак бесплатно
@@ -261,6 +264,10 @@ const ui = new UI(app, world, {
   },
   onChronicle() {
     chronicle.toggle();
+    wake();
+  },
+  onEncyclopedia() {
+    encyclopedia.toggle();
     wake();
   },
 });
@@ -439,6 +446,7 @@ const input = setupInput({
   settingsPanel,
   devPanel,
   chronicle,
+  encyclopedia,
   selection: () => selection,
   isStartOpen: () => startOpen,
   isPracticeOpen: () => practice.isOpen,
