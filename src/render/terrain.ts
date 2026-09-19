@@ -486,9 +486,20 @@ function tileColor(world: World, x: number, y: number, t: Tile, atm: Atmosphere,
   return mix(col, atm.lightTint, atm.lightAmount * 0.75);
 }
 
+/** Local mountain skirt: no changes to indoor floors or constructed verandas. */
+function isRockySlope(world: World, x: number, y: number, t: Tile): boolean {
+  if (t.water || t.indoor || t.veranda || t.level <= 0 || !['moss','grass','stone'].includes(t.ground)) return false;
+  for (let dy=-3;dy<=3;dy++) for(let dx=-3;dx<=3;dx++) {
+    if (Math.abs(dx)+Math.abs(dy)>3) continue;
+    if (world.at(x+dx,y+dy)?.water) return true;
+  }
+  return false;
+}
+
 /** Only elevated waterside stone: ordinary stone paths and level ponds stay unchanged. */
 function isCascadeBank(world: World, x: number, y: number, t: Tile): boolean {
   if (t.ground !== 'stone' || t.water || t.indoor || t.veranda) return false;
+  if (isRockySlope(world,x,y,t)) return true;
   for (let dy = -1; dy <= 1; dy++)
     for (let dx = -1; dx <= 1; dx++) {
       const n = world.at(x + dx, y + dy);
@@ -780,6 +791,29 @@ function drawMaterialEdges(ctx: Ctx, world: World, x: number, y: number, atm: At
 
 function drawTileDetail(ctx: Ctx, world: World, x: number, y: number, t: Tile, atm: Atmosphere): void {
   if (t.water) return;
+  // Break the skyline of a grassy ledge as well as its face. Rounded stones
+  // overlap the tile edge, then water is clipped/drawn above them as usual.
+  if (t.ground !== 'stone' && isRockySlope(world, x, y, t)) {
+    for (const [dx, dy] of [
+      [1, 0],
+      [0, 1],
+    ]) {
+      const n = world.at(x + dx, y + dy);
+      if (!n || n.level >= t.level || n.water) continue;
+      const p = isoToScreen(x + 0.5 + dx * 0.48, y + 0.5 + dy * 0.48, t.level);
+      const r = hash2(x + dx, y + dy, 443);
+      cascadeStone(
+        ctx,
+        p.x,
+        p.y + 3,
+        19 + r * 10,
+        7 + r * 5,
+        shade(mix(atm.palette.stone, atm.palette.moss, 0.38), atm.exposure * 0.9),
+        shade(atm.palette.moss, atm.exposure),
+        x * 31 + y * 17 + dx,
+      );
+    }
+  }
   const sk = isRoad(t.ground) ? roadSkeleton(world, x, y, t) : null;
   const col = tileColor(world, x, y, t, atm, sk ? t.ground : undefined);
   const c = isoToScreen(x + 0.5, y + 0.5, t.level);
@@ -793,9 +827,18 @@ function drawTileDetail(ctx: Ctx, world: World, x: number, y: number, t: Tile, a
         const stone = shade(mix(atm.palette.stone, atm.palette.soil, 0.24), atm.exposure * 0.92);
         const moss = shade(atm.palette.moss, atm.exposure);
         for (let i = 0; i < 3; i++) {
-          const r = hash2(x + i, y, 353), q = hash2(x, y + i, 359);
-          cascadeStone(ctx, c.x + (i - 1) * 22 + (q - 0.5) * 9, c.y + (r - 0.5) * 18,
-            16 + r * 15, 9 + q * 9, stone, moss, x * 71 + y * 17 + i * 31);
+          const r = hash2(x + i, y, 353),
+            q = hash2(x, y + i, 359);
+          cascadeStone(
+            ctx,
+            c.x + (i - 1) * 22 + (q - 0.5) * 9,
+            c.y + (r - 0.5) * 18,
+            16 + r * 15,
+            9 + q * 9,
+            stone,
+            moss,
+            x * 71 + y * 17 + i * 31,
+          );
         }
       } else if (sk) drawRibbonFlags(ctx, sk, col, x * 29 + y);
       else drawStoneSlab(ctx, world, x, y, t.level, col);
@@ -985,12 +1028,21 @@ function drawTileSides(ctx: Ctx, world: World, x: number, y: number, t: Tile, at
     const shadeK = dir === 'south' ? 0.74 - atm.sunDir.x * 0.1 : 0.62 + atm.sunDir.x * 0.08;
     const col = shade(mix(baseCol, atm.palette.soil, 0.5), atm.exposure * shadeK);
 
-    if (isCascadeBank(world, x, y, t)) {
+    if (isCascadeBank(world, x, y, t) || isRockySlope(world, x, y, t)) {
       const rock = shade(mix(atm.palette.stone, atm.palette.soil, 0.32), atm.exposure * 0.88);
       for (let i = 0; i < 3; i++) {
-        const u = (i + 0.5) / 3, r = hash2(x + i, y, 367);
-        cascadeStone(ctx, lerp(p0.x, p1.x, u), lerp(p0.y, p1.y, u) + hpx * 0.4,
-          17 + r * 9, hpx * 0.48 + 5, rock, shade(atm.palette.moss, atm.exposure), x * 73 + y * 37 + i * 19);
+        const u = (i + 0.5) / 3,
+          r = hash2(x + i, y, 367);
+        cascadeStone(
+          ctx,
+          lerp(p0.x, p1.x, u),
+          lerp(p0.y, p1.y, u) + hpx * 0.4,
+          17 + r * 9,
+          hpx * 0.48 + 5,
+          rock,
+          shade(atm.palette.moss, atm.exposure),
+          x * 73 + y * 37 + i * 19,
+        );
       }
       return;
     }

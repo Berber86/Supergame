@@ -145,7 +145,7 @@ const scene = new Scene(canvas);
 // Начальный вид: на большом экране — привычный крупный план, на телефоне
 // сад целиком, иначе игрок видит только угол своего сада.
 if (isTouchDevice()) {
-  scene.fitToView();
+  scene.fitToView(world);
 } else {
   scene.centerOn(GRID / 2, GRID / 2 + 1.5);
   scene.camera.zoom = 0.85;
@@ -330,6 +330,7 @@ const gardensPanel = new GardensPanel(app, world, gardens, {
     input.cancelOngoingAction();
     scene.markTerrainDirty();
     life.reset();
+    if (isTouchDevice() && !world.grow) scene.fitToView(world);
     ui.select({ kind: 'none' });
     ui.renderTabs();
     ui.renderItems();

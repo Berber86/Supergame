@@ -17,6 +17,7 @@ import { RainRenderer, drawFog, drawLightning, drawWetSheen } from './rain';
 import { WeatherState } from '../world/weatherState';
 import { WaterFlow } from '../world/waterFlow';
 import { drawCurrent, drawFalls, drawShoreRipple } from './water';
+import { makeWaterMotion, type WaterRing } from './waterMotion';
 import {
   drawSky,
   drawIslandShadow,
@@ -24,6 +25,7 @@ import {
   drawPathPreview,
   drawGhost,
   drawObjects,
+  drawAnimalReflections,
   drawPaperGrain,
   drawColorGrade,
   drawAerialPerspective,
@@ -197,13 +199,21 @@ export class Scene {
    * нечего. Поэтому там показываем не весь участок, а его обжитую середину —
    * дом с прудом, — и даём игроку отвести камеру самому.
    */
-  fitToView(): void {
+  fitToView(world?: World): void {
     const portrait = this.viewH > this.viewW;
     if (portrait) {
       // Впишем по ширине: по высоте место есть, а мельчить незачем
-      const w = GRID * TILE_W * 0.62;
+      const w = GRID * TILE_W * 0.48;
       this.camera.zoom = clamp(this.viewW / w, 0.16, 6);
-      this.centerOn(GRID / 2, GRID / 2 + 1);
+      const bridges = world?.objects.filter((o) => o.type === 'bridge' || o.type === 'plank_bridge') ?? [];
+      if (bridges.length) {
+        this.centerOn(
+          bridges.reduce((n, o) => n + o.tx + 0.5, 0) / bridges.length,
+          bridges.reduce((n, o) => n + o.ty + (o.type === 'bridge' ? 1.5 : 1), 0) / bridges.length,
+        );
+      } else this.centerOn(GRID / 2, GRID / 2 + 1);
+      // Keep the focal point above the bottom toolbar, rather than beneath it.
+      this.camera.y += (this.viewH * 0.04) / this.camera.zoom;
       this.clampCamera();
       return;
     }
@@ -308,7 +318,32 @@ export class Scene {
     spriteFrame();
     this.flow.ensure(world);
     if (this.life) for (const f of this.life.fish) drawFish(ctx, f, world, atm, time);
-    drawWaterAnimation(ctx, world, atm, time, this.wind);
+    const rings: WaterRing[] = (this.life?.residents.ripples ?? []).map((r) => ({
+      tx: r.x,
+      ty: r.y,
+      age: r.age,
+      life: 1600,
+      max: r.big ? 15 : 8,
+      start: r.big ? 3 : 2,
+      strength: r.big ? 1.5 : 1,
+    }));
+    if (this.particles && ws && ws.rain > 0.02) rings.push(...this.rain.waterRipples);
+    const waterMotion = makeWaterMotion(world, this.flow, time, this.wind, rings);
+    drawWaterAnimation(ctx, world, atm, time, this.wind, waterMotion);
+    drawAnimalReflections(ctx, world, atm, time, {
+      life: this.life,
+      waterMotion,
+      wind: this.wind,
+      zoom: this.camera.zoom,
+      camX: this.camera.x,
+      camY: this.camera.y,
+      viewW: this.viewW,
+      viewH: this.viewH,
+      movingId: this.movingId,
+      highlightId: this.highlightId,
+      useSpriteCache: this.useSpriteCache,
+      particles: this.particles,
+    });
     drawCurrent(ctx, world, this.flow, atm, time);
     drawShoreRipple(ctx, world, this.flow, atm, time);
     drawFalls(ctx, world, this.flow, atm, time);
@@ -339,6 +374,7 @@ export class Scene {
     // --- Объекты, отсортированные по глубине ---
     drawObjects(ctx, world, atm, time, {
       life: this.life,
+      waterMotion,
       wind: this.wind,
       zoom: this.camera.zoom,
       camX: this.camera.x,

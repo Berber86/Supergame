@@ -6,22 +6,31 @@ import { css, shade, mix } from '../../world/palette';
 import { shape, stroke, limb, oval } from '../animalBrush';
 
 /** rot=0 spans world X (catalogue footprint 3×1), rot=1 spans Y. */
-export function bridgePoint(rot: number, t: number, side: number, rail = 0, plank = false): Pt {
+export function bridgePoint(rot: number, t: number, side: number, rail = 0, plank = false, reflection = false): Pt {
   const along = (t - 0.5) * (plank ? 2 : 3);
   const across = side * (plank ? 0.32 : 0.37);
   const p = rot % 2 === 0 ? isoToScreen(along, across) : isoToScreen(across, along);
-  return { x: p.x, y: p.y - 7 - 4 * (plank ? 2 : 20) * t * (1 - t) - rail };
+  return { x: p.x, y: p.y + (reflection ? 1 : -1) * (7 + 4 * (plank ? 2 : 20) * t * (1 - t) + rail) };
 }
 
 function bridge(d: Parameters<Drawer>[0], plank: boolean): void {
   const { ctx, atm, obj } = d;
+  const z = d.reflection ? -1 : 1;
   const wood = litc({ r: 166, g: 117, b: 76 }, atm);
   const dark = litc({ r: 93, g: 66, b: 49 }, atm);
   const light = litc({ r: 213, g: 169, b: 111 }, atm);
   const railColor = litc({ r: 128, g: 79, b: 54 }, atm);
   const stone = litc(mix(atm.palette.stone, { r: 136, g: 135, b: 119 }, 0.45), atm);
-  const at = (t: number, side: number, height = 0) => bridgePoint(obj.rot, t, side, height, plank);
-  shadowUnder(d, plank ? 49 : 72, plank ? 12 : 18, 0.38);
+  const at = (t: number, side: number, height = 0) => {
+    const p = bridgePoint(obj.rot, t, side, height, plank, d.reflection);
+    if (d.reflection && d.reflectionWarp) {
+      const wave = d.reflectionWarp(d.x + p.x, d.y + p.y);
+      p.x += wave.dx;
+      p.y += wave.dy;
+    }
+    return p;
+  };
+  if (!d.reflection) shadowUnder(d, plank ? 49 : 72, plank ? 12 : 18, 0.38);
   ctx.save();
   ctx.translate(d.x, d.y);
   const outline = (t0: number, t1: number, s0: number, s1: number, lower = 0) => {
@@ -29,10 +38,10 @@ function bridge(d: Parameters<Drawer>[0], plank: boolean): void {
       b = at(t1, s0),
       c = at(t1, s1),
       e = at(t0, s1);
-    ctx.moveTo(a.x, a.y + lower);
-    ctx.lineTo(b.x, b.y + lower);
-    ctx.lineTo(c.x, c.y + lower);
-    ctx.lineTo(e.x, e.y + lower);
+    ctx.moveTo(a.x, a.y + lower * z);
+    ctx.lineTo(b.x, b.y + lower * z);
+    ctx.lineTo(c.x, c.y + lower * z);
+    ctx.lineTo(e.x, e.y + lower * z);
   };
   const curve = (side: number, height: number) => {
     for (let i = 0; i <= 32; i++) {
@@ -47,16 +56,16 @@ function bridge(d: Parameters<Drawer>[0], plank: boolean): void {
     for (const side of [-1, 1]) {
       const p = at(t, side * 0.82);
       limb(ctx, css(dark), 3.1, [
-        [p.x, p.y + 9],
-        [p.x, p.y - 1],
+        [p.x, p.y + 9 * z],
+        [p.x, p.y - z],
       ]);
     }
     shape(ctx, css(stone), () => outline(t - 0.07, t + 0.07, -1.22, 1.22, 5));
     const a = at(t - 0.07, 1.22),
       b = at(t + 0.07, 1.22);
     limb(ctx, css(shade(stone, 1.16), 0.7), 0.8, [
-      [a.x, a.y + 5],
-      [b.x, b.y + 5],
+      [a.x, a.y + 5 * z],
+      [b.x, b.y + 5 * z],
     ]);
   }
   const railing = (side: number) => {
@@ -65,14 +74,14 @@ function bridge(d: Parameters<Drawer>[0], plank: boolean): void {
         p = at(t, side),
         top = at(t, side, 19);
       limb(ctx, css(dark), 3, [
-        [p.x, p.y + 1],
-        [top.x, top.y - 1],
+        [p.x, p.y + z],
+        [top.x, top.y - z],
       ]);
       limb(ctx, css(railColor), 1.8, [
         [p.x - 0.5, p.y],
-        [top.x - 0.5, top.y - 1],
+        [top.x - 0.5, top.y - z],
       ]);
-      oval(ctx, top.x, top.y - 1.5, 2.2, 1.0, css(light));
+      oval(ctx, top.x, top.y - 1.5 * z, 2.2, 1.0, css(light));
     }
     stroke(ctx, css(railColor), 2, () => curve(side, 8.5));
     stroke(ctx, css(dark), 3.3, () => curve(side, 19));
@@ -85,7 +94,7 @@ function bridge(d: Parameters<Drawer>[0], plank: boolean): void {
     curve(1, 0);
     for (let i = 32; i >= 0; i--) {
       const p = at(i / 32, 1);
-      ctx.lineTo(p.x, p.y + 5.5);
+      ctx.lineTo(p.x, p.y + 5.5 * z);
     }
   });
   shape(ctx, css(wood), () => {

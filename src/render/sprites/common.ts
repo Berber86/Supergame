@@ -4,6 +4,7 @@ import { clamp01, hash1, lerp } from '../../core/rng';
 import { Atmosphere, RGB, mix, shade } from '../../world/palette';
 import { PlacedObject } from '../../world/types';
 import { Ctx, softShadow } from '../paint';
+import type { ReflectionWarp } from '../waterMotion';
 
 export interface DrawCtx {
   ctx: Ctx;
@@ -19,6 +20,9 @@ export interface DrawCtx {
   wind: number;
   /** Прозрачность (для призрака при размещении). */
   alpha: number;
+  /** Bridge-only world-height reflection; never a flipped screen-space bitmap. */
+  reflection?: boolean;
+  reflectionWarp?: ReflectionWarp;
 }
 
 export type Drawer = (d: DrawCtx) => void;

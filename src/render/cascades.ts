@@ -2,7 +2,7 @@
 import type { World } from '../world/world';
 import type { WaterFlow } from '../world/waterFlow';
 import { css, mix, shade, type Atmosphere } from '../world/palette';
-import { hash2 } from '../core/rng';
+import { hash2, clamp01 } from '../core/rng';
 import type { Ctx } from './paint';
 import { shape, stroke, oval } from './animalBrush';
 import { cascadeRims, rimPoint } from './cascadeRims';
@@ -59,7 +59,7 @@ export function drawFalls(ctx: Ctx, world: World, flow: WaterFlow, atm: Atmosphe
         s = hash2(seed, t, 289);
       cascadeStone(ctx, p.x, p.y + 4, 9 + s * 8, 6 + s * 6, rock, moss, seed + Math.floor(t * 100));
     }
-    const streams = Math.max(1, Math.ceil(span / 105));
+    const streams = Math.max(1, Math.ceil(span / (85 + hash2(seed, 1, 379) * 65)));
     for (let i = 0; i < streams; i++) {
       const s = hash2(i, seed, 293),
         center = (i + 0.32 + s * 0.36) / streams;
@@ -69,7 +69,9 @@ export function drawFalls(ctx: Ctx, world: World, flow: WaterFlow, atm: Atmosphe
       const left = rimPoint(rim, lo),
         right = rimPoint(rim, hi),
         mid = rimPoint(rim, center);
-      const drift = Math.sin(time * 0.0018 + s * 9) * 1.0;
+      const force = clamp01(h / 40 + (1 - s) * 0.3);
+      const spread = 1 + force * (2 + s * 5);
+      const drift = Math.sin(time * (0.0013 + force * 0.001) + s * 9) * (0.5 + force);
       const gradient = ctx.createLinearGradient(mid.x, mid.y - 2, mid.x, mid.y + h + 3);
       gradient.addColorStop(0, css(water, 0.82));
       gradient.addColorStop(0.38, css(mix(water, foam, 0.2), 0.66));
@@ -82,14 +84,14 @@ export function drawFalls(ctx: Ctx, world: World, flow: WaterFlow, atm: Atmosphe
         right.y + h * 0.4,
         right.x + drift + 2,
         right.y + h * 0.8,
-        right.x + drift + 4,
+        right.x + drift + spread,
         right.y + h,
       );
-      ctx.quadraticCurveTo(mid.x, mid.y + h + 3, left.x - 2 + drift, left.y + h);
+      ctx.quadraticCurveTo(mid.x, mid.y + h + 3, left.x - spread * 0.6 + drift, left.y + h);
       ctx.bezierCurveTo(left.x + 3, left.y + h * 0.65, left.x + 1, left.y + h * 0.25, left.x, left.y - 1);
       ctx.closePath();
       ctx.fill();
-      const strands = 3 + Math.floor(s * 3);
+      const strands = 3 + Math.floor(s * 5);
       for (let j = 0; j < strands; j++) {
         const r = hash2(j, seed + i, 307),
           p = rimPoint(rim, lo + ((hi - lo) * (j + 0.25 + r * 0.5)) / strands);
@@ -99,7 +101,7 @@ export function drawFalls(ctx: Ctx, world: World, flow: WaterFlow, atm: Atmosphe
           ctx.moveTo(p.x, p.y + h * begin);
           ctx.quadraticCurveTo(p.x - 1 + drift, p.y + (h * (begin + end)) / 2, p.x + drift, p.y + h * end);
         });
-        const phase = (((time * (0.0009 + r * 0.0008) + r) % 1) + 1) % 1;
+        const phase = (((time * (0.0007 + r * 0.0008 + force * 0.0007) + r) % 1) + 1) % 1;
         const yy = p.y + phase * phase * h;
         stroke(ctx, css(foam, Math.sin(phase * Math.PI) * 0.36), 0.9, () => {
           ctx.moveTo(p.x + drift, yy);
@@ -107,7 +109,7 @@ export function drawFalls(ctx: Ctx, world: World, flow: WaterFlow, atm: Atmosphe
         });
       }
       // No opaque circles along the step: scattered tiny bubbles and open eddies.
-      for (let j = 0; j < 7; j++) {
+      for (let j = 0; j < 5; j++) {
         const r = hash2(j, seed + i, 311),
           q = hash2(j, seed + i, 313);
         const p = rimPoint(rim, lo + (hi - lo) * r);
@@ -120,6 +122,30 @@ export function drawFalls(ctx: Ctx, world: World, flow: WaterFlow, atm: Atmosphe
           0.4 + q * 0.55,
           css(foam, (1 - phase) * 0.42),
         );
+      }
+      // Broken foam trails carried out of the impact zone, never opaque discs.
+      for (let j = 0; j < 4; j++) {
+        const q = hash2(j, seed + i, 383),
+          p = rimPoint(rim, lo + (hi - lo) * q);
+        const age = (time * (0.00055 + force * 0.00025) + q) % 1;
+        stroke(ctx, css(foam, (1 - age) * (0.16 + force * 0.16)), 0.65 + q * 0.6, () => {
+          ctx.moveTo(p.x - 2, p.y + h + age * 7);
+          ctx.quadraticCurveTo(p.x + 1, p.y + h + age * 7 + 1, p.x + 2 + q * 5, p.y + h + age * 7 - 0.3);
+        });
+      }
+      // Small feathered spray above forceful drops. Radius/opacity stay local.
+      if (h >= 20 && force > 0.65) {
+        ctx.save();
+        ctx.translate(mid.x + drift, mid.y + h - 2);
+        ctx.scale(1, 0.48);
+        const radius = 9 + force * 10,
+          mist = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+        mist.addColorStop(0, css(foam, 0.07 * force));
+        mist.addColorStop(0.45, css(foam, 0.035 * force));
+        mist.addColorStop(1, css(foam, 0));
+        ctx.fillStyle = mist;
+        ctx.fillRect(-radius, -radius, radius * 2, radius * 2);
+        ctx.restore();
       }
       const phase = (((time * 0.00038 + s) % 1) + 1) % 1;
       stroke(ctx, css(foam, (1 - phase) * 0.2), 0.7, () =>

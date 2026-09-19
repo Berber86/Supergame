@@ -966,6 +966,8 @@ export class Life {
         const perchAlt = b.place === 'feeder' ? 26 : b.place === 'bath' ? 7 : 0;
         if (d < 0.25 && Math.abs(b.alt - perchAlt) < 3) {
           b.alt = perchAlt;
+          if (perchAlt <= 7 && world.at(Math.floor(b.tx), Math.floor(b.ty))?.water)
+            this.residents.ripple(b.tx, b.ty, false);
           if (b.place === 'feeder') {
             b.state = 'perch';
             b.timer = 1600 + rnd() * 2600;

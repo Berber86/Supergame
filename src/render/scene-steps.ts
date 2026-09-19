@@ -30,6 +30,8 @@ import {
   drawTurtle,
 } from './wildlife';
 import type { GhostPreview } from './scene';
+import type { WaterMotion } from './waterMotion';
+import { waterSurfaces, waterSurfacePath, waterSurfaceBounds } from './waterSurface';
 
 /** Наборка состояния сцены, нужная одному кадру сортированных объектов. */
 export interface ObjectsOpts {
@@ -44,6 +46,7 @@ export interface ObjectsOpts {
   highlightId: number;
   useSpriteCache: boolean;
   particles: boolean;
+  waterMotion?: WaterMotion;
 }
 
 /**
@@ -213,7 +216,7 @@ export function drawAerialPerspective(ctx: Ctx, atm: Atmosphere): void {
   const paper: RGB = { r: 247, g: 244, b: 234 };
   let hazeCol = mix(atm.skyBottom, paper, 0.55);
   hazeCol = mix(hazeCol, { r: 244, g: 208, b: 158 }, atm.golden * 0.5);
-  const maxA = Math.min(0.3, lerp(0.04, 0.12, atm.time.daylight) + atm.golden * 0.06 + atm.overcast * 0.1);
+  const maxA = Math.min(0.22, lerp(0.025, 0.065, atm.time.daylight) + atm.golden * 0.04 + atm.overcast * 0.1);
   if (maxA < 0.02) return;
 
   const g = ctx.createLinearGradient(0, yFar, 0, yNear);
@@ -522,25 +525,66 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
     });
   }
 
+  list.push(...animalEntries(ctx, world, atm, time, opts));
+
+  list.sort((a, b) => a.depth - b.depth);
+  for (const e of list) e.draw();
+
+  // Тёплое свечение окон дома изнутри
+  drawWindowGlow(ctx, world, atm);
+}
+
+interface AnimalEntry {
+  alt?: number;
+  tx: number;
+  ty: number;
+  level: number;
+  depth: number;
+  draw: () => void;
+}
+
+/** One source of poses/altitudes/visibility for the animal and its reflection. */
+function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, opts: ObjectsOpts): AnimalEntry[] {
+  const list: AnimalEntry[] = [];
   if (opts.life) {
     for (const c of opts.life.cats) {
       const tile = world.at(Math.floor(c.tx), Math.floor(c.ty));
       const lvl = tile ? tile.level : 0;
       const p = isoToScreen(c.tx, c.ty, lvl);
-      list.push({ depth: (c.tx + c.ty) * 100 + lvl * 20 + 4, draw: () => drawCat(ctx, c, p.x, p.y, atm, time) });
+      list.push({
+        tx: c.tx,
+        ty: c.ty,
+        level: lvl,
+        depth: (c.tx + c.ty) * 100 + lvl * 20 + 4,
+        draw: () => drawCat(ctx, c, p.x, p.y, atm, time),
+      });
     }
     for (const b of opts.life.birds) {
       const tile = world.at(Math.floor(b.tx), Math.floor(b.ty));
       const lvl = tile ? tile.level : 0;
       const p = isoToScreen(b.tx, b.ty, lvl);
-      list.push({ depth: (b.tx + b.ty) * 100 + lvl * 20 + 6, draw: () => drawBird(ctx, b, p.x, p.y, atm, time) });
+      list.push({
+        tx: b.tx,
+        ty: b.ty,
+        level: lvl,
+        depth: (b.tx + b.ty) * 100 + lvl * 20 + 6,
+        alt: b.alt,
+        draw: () => drawBird(ctx, b, p.x, p.y, atm, time),
+      });
     }
     // бабочки — тоже частицы
     for (const f of opts.particles ? opts.life.flutters : []) {
       const tile = world.at(Math.floor(f.tx), Math.floor(f.ty));
       const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
       const p = isoToScreen(f.tx, f.ty, lvl);
-      list.push({ depth: (f.tx + f.ty) * 100 + lvl * 20 + 8, draw: () => drawButterfly(ctx, f, p.x, p.y, atm, time) });
+      list.push({
+        tx: f.tx,
+        ty: f.ty,
+        level: lvl,
+        depth: (f.tx + f.ty) * 100 + lvl * 20 + 8,
+        alt: f.alt,
+        draw: () => drawButterfly(ctx, f, p.x, p.y, atm, time),
+      });
     }
     // Жители воды: на общем плане их не разглядеть, а рисовать всё равно
     // пришлось бы — поэтому на дальнем виде бережём кадр.
@@ -550,14 +594,24 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
         const tile = world.at(Math.floor(fr.tx), Math.floor(fr.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(fr.tx, fr.ty, lvl);
-        list.push({ depth: (fr.tx + fr.ty) * 100 + lvl * 20 + 5, draw: () => drawFrog(ctx, fr, p.x, p.y, atm, time) });
+        list.push({
+          tx: fr.tx,
+          ty: fr.ty,
+          level: lvl,
+          depth: (fr.tx + fr.ty) * 100 + lvl * 20 + 5,
+          draw: () => drawFrog(ctx, fr, p.x, p.y, atm, time),
+        });
       }
       for (const d of opts.particles ? opts.life.residents.dragonflies : []) {
         const tile = world.at(Math.floor(d.tx), Math.floor(d.ty));
         const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
         const p = isoToScreen(d.tx, d.ty, lvl);
         list.push({
+          tx: d.tx,
+          ty: d.ty,
+          level: lvl,
           depth: (d.tx + d.ty) * 100 + lvl * 20 + 9,
+          alt: d.alt,
           draw: () => drawDragonfly(ctx, d, p.x, p.y, atm, time),
         });
       }
@@ -567,7 +621,13 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
       const tile = world.at(Math.floor(c.tx), Math.floor(c.ty));
       const lvl = tile ? tile.level : 0;
       const p = isoToScreen(c.tx, c.ty, lvl);
-      list.push({ depth: (c.tx + c.ty) * 100 + lvl * 20 + 4, draw: () => drawCat(ctx, c, p.x, p.y, atm, time) });
+      list.push({
+        tx: c.tx,
+        ty: c.ty,
+        level: lvl,
+        depth: (c.tx + c.ty) * 100 + lvl * 20 + 4,
+        draw: () => drawCat(ctx, c, p.x, p.y, atm, time),
+      });
     }
     // Дикие соседи: цапля и олень крупные — видны и с общего плана
     const hr = opts.life.wildlife.heron;
@@ -575,13 +635,25 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
       const tile = world.at(Math.floor(hr.tx), Math.floor(hr.ty));
       const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
       const p = isoToScreen(hr.tx, hr.ty, lvl);
-      list.push({ depth: (hr.tx + hr.ty) * 100 + lvl * 20 + 6, draw: () => drawHeron(ctx, hr, p.x, p.y, atm, time) });
+      list.push({
+        tx: hr.tx,
+        ty: hr.ty,
+        level: lvl,
+        depth: (hr.tx + hr.ty) * 100 + lvl * 20 + 6,
+        draw: () => drawHeron(ctx, hr, p.x, p.y, atm, time),
+      });
     }
     for (const d of opts.life.wildlife.deer) {
       const tile = world.at(Math.floor(d.tx), Math.floor(d.ty));
       const lvl = tile ? tile.level : 0;
       const p = isoToScreen(d.tx, d.ty, lvl);
-      list.push({ depth: (d.tx + d.ty) * 100 + lvl * 20 + 5, draw: () => drawDeer(ctx, d, p.x, p.y, atm, time) });
+      list.push({
+        tx: d.tx,
+        ty: d.ty,
+        level: lvl,
+        depth: (d.tx + d.ty) * 100 + lvl * 20 + 5,
+        draw: () => drawDeer(ctx, d, p.x, p.y, atm, time),
+      });
     }
     // Ёжик и мышка — видны при приближении (0.5+), но и на общем плане как точки
     if (opts.zoom >= 0.42) {
@@ -589,32 +661,62 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
         const tile = world.at(Math.floor(e.tx), Math.floor(e.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(e.tx, e.ty, lvl);
-        list.push({ depth: (e.tx + e.ty) * 100 + lvl * 20 + 12, draw: () => drawHedgehog(ctx, e, p.x, p.y, atm, time) });
+        list.push({
+          tx: e.tx,
+          ty: e.ty,
+          level: lvl,
+          depth: (e.tx + e.ty) * 100 + lvl * 20 + 12,
+          draw: () => drawHedgehog(ctx, e, p.x, p.y, atm, time),
+        });
       }
       for (const m of opts.life.wildlife.mice) {
         const tile = world.at(Math.floor(m.tx), Math.floor(m.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(m.tx, m.ty, lvl);
-        list.push({ depth: (m.tx + m.ty) * 100 + lvl * 20 + 12, draw: () => drawMouse(ctx, m, p.x, p.y, atm, time) });
+        list.push({
+          tx: m.tx,
+          ty: m.ty,
+          level: lvl,
+          depth: (m.tx + m.ty) * 100 + lvl * 20 + 12,
+          draw: () => drawMouse(ctx, m, p.x, p.y, atm, time),
+        });
       }
       for (const o of opts.life.wildlife.owls) {
         const tile = world.at(Math.floor(o.tx), Math.floor(o.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(o.tx, o.ty, lvl);
         // Сова на ветке должна быть поверх кроны, иначе сидит ПОД деревом
-        list.push({ depth: (o.tx + o.ty) * 100 + lvl * 20 + 180, draw: () => drawOwl(ctx, o, p.x, p.y, atm, time) });
+        list.push({
+          tx: o.tx,
+          ty: o.ty,
+          level: lvl,
+          depth: (o.tx + o.ty) * 100 + lvl * 20 + 180,
+          draw: () => drawOwl(ctx, o, p.x, p.y, atm, time),
+        });
       }
       for (const sq of opts.life.wildlife.squirrels) {
         const tile = world.at(Math.floor(sq.tx), Math.floor(sq.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(sq.tx, sq.ty, lvl);
-        list.push({ depth: (sq.tx + sq.ty) * 100 + lvl * 20 + 12, draw: () => drawSquirrel(ctx, sq, p.x, p.y, atm, time) });
+        list.push({
+          tx: sq.tx,
+          ty: sq.ty,
+          level: lvl,
+          depth: (sq.tx + sq.ty) * 100 + lvl * 20 + 12,
+          draw: () => drawSquirrel(ctx, sq, p.x, p.y, atm, time),
+        });
       }
       for (const tu of opts.life.wildlife.turtles) {
         const tile = world.at(Math.floor(tu.tx), Math.floor(tu.ty));
         const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
         const p = isoToScreen(tu.tx, tu.ty, lvl);
-        list.push({ depth: (tu.tx + tu.ty) * 100 + lvl * 20 + 8, draw: () => drawTurtle(ctx, tu, p.x, p.y, atm, time) });
+        list.push({
+          tx: tu.tx,
+          ty: tu.ty,
+          level: lvl,
+          depth: (tu.tx + tu.ty) * 100 + lvl * 20 + 8,
+          draw: () => drawTurtle(ctx, tu, p.x, p.y, atm, time),
+        });
       }
     }
     // Светлячки, мотыльки и пчёлы — ночная и дневная мелочь: на дальнем плане бережём кадр
@@ -623,28 +725,78 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
         const tile = world.at(Math.floor(f.tx), Math.floor(f.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(f.tx, f.ty, lvl);
-        list.push({ depth: (f.tx + f.ty) * 100 + lvl * 20 + 200, draw: () => drawFirefly(ctx, f, p.x, p.y, atm, time) });
+        list.push({
+          tx: f.tx,
+          ty: f.ty,
+          level: lvl,
+          depth: (f.tx + f.ty) * 100 + lvl * 20 + 200,
+          draw: () => drawFirefly(ctx, f, p.x, p.y, atm, time),
+        });
       }
       for (const m of opts.life.wildlife.moths) {
         const tile = world.at(Math.floor(m.tx), Math.floor(m.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(m.tx, m.ty, lvl);
-        list.push({ depth: (m.tx + m.ty) * 100 + lvl * 20 + 210, draw: () => drawMoth(ctx, m, p.x, p.y, atm, time) });
+        list.push({
+          tx: m.tx,
+          ty: m.ty,
+          level: lvl,
+          depth: (m.tx + m.ty) * 100 + lvl * 20 + 210,
+          draw: () => drawMoth(ctx, m, p.x, p.y, atm, time),
+        });
       }
       for (const b of opts.life.wildlife.bees) {
         const tile = world.at(Math.floor(b.tx), Math.floor(b.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(b.tx, b.ty, lvl);
-        list.push({ depth: (b.tx + b.ty) * 100 + lvl * 20 + 220, draw: () => drawBee(ctx, b, p.x, p.y, atm, time) });
+        list.push({
+          tx: b.tx,
+          ty: b.ty,
+          level: lvl,
+          depth: (b.tx + b.ty) * 100 + lvl * 20 + 220,
+          alt: b.alt,
+          draw: () => drawBee(ctx, b, p.x, p.y, atm, time),
+        });
       }
     }
   }
 
-  list.sort((a, b) => a.depth - b.depth);
-  for (const e of list) e.draw();
+  return list;
+}
 
-  // Тёплое свечение окон дома изнутри
-  drawWindowGlow(ctx, world, atm);
+/** Reflect the actual animated pose, not a second agent or a frozen icon. */
+export function drawAnimalReflections(ctx: Ctx, world: World, atm: Atmosphere, time: number, opts: ObjectsOpts): void {
+  if (!opts.life) return;
+  // Shadows are lighting on the shore, not part of an animal's reflected body.
+  const entries = animalEntries(ctx, world, { ...atm, shadowAmount: 0 }, time, opts);
+  if (!entries.length) return;
+  entries.sort((a, b) => a.depth - b.depth);
+  for (const surface of waterSurfaces(world)) {
+    const { minX, maxX, minY, maxY } = waterSurfaceBounds(surface);
+    ctx.save();
+    waterSurfacePath(ctx, surface);
+    ctx.clip('evenodd');
+    for (const entry of entries) {
+      if (surface.level > entry.level + 0.3) continue;
+      const plane = isoToScreen(entry.tx, entry.ty, surface.level - 0.26);
+      const base = isoToScreen(entry.tx, entry.ty, entry.level);
+      const reflectedY = 2 * plane.y - base.y;
+      // Generous local bounds include flight/perching height; the exact shore
+      // mask clips dry land and islands. No per-agent offscreen canvases/cache.
+      if (plane.x + 80 < minX || plane.x - 80 > maxX || reflectedY - 35 > maxY || reflectedY + 220 < minY) continue;
+      const sx = (plane.x - opts.camX) * opts.zoom + opts.viewW / 2;
+      const sy = (reflectedY - opts.camY) * opts.zoom + opts.viewH / 2;
+      if (sx < -120 || sx > opts.viewW + 120 || sy < -240 || sy > opts.viewH + 80) continue;
+      const drift = Math.sin(time * 0.0013 + plane.y * 0.07) * 0.65;
+      const wave = opts.waterMotion?.(plane.x, reflectedY + (entry.alt ?? 12), surface.level);
+      ctx.save();
+      ctx.globalAlpha *= 0.32 * (wave?.alpha ?? 1);
+      ctx.transform(1, 0, 0, -1, wave?.dx ?? drift, 2 * plane.y + (wave?.dy ?? 0));
+      entry.draw();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
 }
 
 export function drawWindowGlow(ctx: Ctx, world: World, atm: Atmosphere): void {

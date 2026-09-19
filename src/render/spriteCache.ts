@@ -209,11 +209,12 @@ export function drawCachedReflection(d: DrawCtx, compression = 0.82): void {
   for (let y = 0; y < e.ay; y += 5) {
     const h = Math.min(5, e.ay - y);
     const depth = (e.ay - y) / Math.max(1, e.ay);
-    const drift =
-      Math.sin(d.time * 0.0013 + y * 0.095 + d.obj.seed) * (1.8 + d.wind * 2.5) +
-      Math.sin(d.time * 0.0007 + y * 0.24) * 0.8;
-    ctx.globalAlpha = alpha * (0.9 - depth * 0.35);
-    ctx.drawImage(e.canvas, 0, y, e.canvas.width, h, -e.ax + drift, y - e.ay, e.canvas.width, h + 0.12);
+    const wave = d.reflectionWarp?.(d.x, d.y + (e.ay-y)*compression);
+    const drift = wave?.dx ?? (
+      Math.sin(d.time * 0.0013 + y * 0.095 + d.obj.seed) * (0.3 + d.wind * .6));
+    ctx.globalAlpha = alpha * (0.9 - depth * 0.35) * (wave?.alpha ?? 1);
+    ctx.drawImage(e.canvas, 0, y, e.canvas.width, h,
+      -e.ax + drift, y - e.ay - (wave?.dy ?? 0) / compression, e.canvas.width, h + 0.12);
   }
   ctx.restore();
 }

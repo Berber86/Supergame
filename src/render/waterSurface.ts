@@ -8,6 +8,9 @@ import type { Ctx } from './paint';
 import { WaterFlow } from '../world/waterFlow';
 import { cascadeRims, meetCascadeRims } from './cascadeRims';
 import { drawCachedReflection } from './spriteCache';
+import { drawBridge, drawPlankBridge } from './sprites/bridges';
+import { prepareWaterDepth, waterDepth } from './waterDepth';
+import type { WaterMotion } from './waterMotion';
 
 export interface WaterCell {
   x: number;
@@ -31,6 +34,7 @@ const key = (p: Pt) => `${p.x},${p.y}`;
 
 /** Clockwise exposed edges, with right turns at diagonal contacts to keep islands separate. */
 export function prepareWaterSurface(world: World): WaterSurface[] {
+  prepareWaterDepth(world);
   const levels = new Map<number, WaterCell[]>();
   for (let y = 0; y < world.size; y++)
     for (let x = 0; x < world.size; x++) {
@@ -152,6 +156,23 @@ export function waterSurfaces(world: World): WaterSurface[] {
   return surfaces.get(world) ?? prepareWaterSurface(world);
 }
 
+const boundsCache = new WeakMap<WaterSurface, { minX: number; minY: number; maxX: number; maxY: number }>();
+export function waterSurfaceBounds(surface: WaterSurface) {
+  let bounds = boundsCache.get(surface);
+  if (!bounds) {
+    bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    for (const loop of surface.loops)
+      for (const p of loop) {
+        bounds.minX = Math.min(bounds.minX, p.x);
+        bounds.maxX = Math.max(bounds.maxX, p.x);
+        bounds.minY = Math.min(bounds.minY, p.y);
+        bounds.maxY = Math.max(bounds.maxY, p.y);
+      }
+    boundsCache.set(surface, bounds);
+  }
+  return bounds;
+}
+
 /** A single rounded shoreline, including dry islands (even-odd winding). */
 export function waterSurfacePath(ctx: Ctx, surface: WaterSurface): void {
   ctx.beginPath();
@@ -174,7 +195,7 @@ export function drawWaterSurface(ctx: Ctx, world: World, atm: Atmosphere): void 
   const deep = shade(mix(atm.palette.waterDeep, { r: 51, g: 119, b: 129 }, 0.22), light);
   const body = shade(mix(atm.palette.water, { r: 102, g: 179, b: 178 }, 0.24), light);
   const shallows = shade(mix({ r: 193, g: 190, b: 143 }, atm.palette.water, 0.28), light);
-  const sky = mix(body, atm.skyBottom, 0.2);
+  const sky = mix(body, atm.skyBottom, 0.1);
   const wet = shade(mix(atm.palette.soil, atm.palette.waterDeep, 0.6), light * 0.75);
   ctx.save();
   ctx.lineJoin = 'round';
@@ -216,17 +237,19 @@ export function drawWaterSurface(ctx: Ctx, world: World, atm: Atmosphere): void 
     // Broad translucent pools of depth, feathered to zero rather than tiled blobs.
     // Radius is local (< 3 tiles), so terrain's dirty-rectangle margin still covers it.
     for (const cell of surface.cells) {
-      if (cell.x % 3 !== 1 || cell.y % 3 !== 1) continue;
+      if (cell.x % 2 !== 1 || cell.y % 2 !== 1) continue;
+      const bed = waterDepth(world, cell.x + .5, cell.y + .5);
+      if (bed < .35) continue;
       const p = isoToScreen(cell.x + 0.5, cell.y + 0.5, surface.level - 0.26);
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.scale(1, 0.5);
-      const depth = ctx.createRadialGradient(0, 0, 8, 0, 0, 140);
-      depth.addColorStop(0, css(deep, 0.22));
-      depth.addColorStop(0.45, css(deep, 0.12));
+      const depth = ctx.createRadialGradient(0, 0, 6, 0, 0, 112);
+      depth.addColorStop(0, css(shade(deep, .83), (bed-.25)*.64));
+      depth.addColorStop(0.45, css(deep, (bed-.25)*.32));
       depth.addColorStop(1, css(deep, 0));
       ctx.fillStyle = depth;
-      ctx.fillRect(-140, -140, 280, 280);
+      ctx.fillRect(-112, -112, 224, 224);
       ctx.restore();
     }
     // Visible lake bed: groups of mineral stones and a few submerged stems,
@@ -251,7 +274,7 @@ export function drawWaterSurface(ctx: Ctx, world: World, atm: Atmosphere): void 
           ctx.beginPath();
           ctx.ellipse(px, py, size, size * 0.47, -0.2, 0, Math.PI * 2);
           ctx.fill();
-          ctx.fillStyle = css(shallows, 0.3);
+          ctx.fillStyle = css(shallows, 0.40);
           ctx.beginPath();
           ctx.ellipse(px - 0.6, py - 0.8, size * 0.76, size * 0.26, -0.2, 0, Math.PI * 2);
           ctx.fill();
@@ -295,7 +318,7 @@ export function drawWaterSurface(ctx: Ctx, world: World, atm: Atmosphere): void 
   ctx.restore();
 }
 
-/** Reflections belong to real nearby trees, broken into gently moving horizontal strips. */
+/** Nearby objects reflect at the water plane; bridges retain their isometric ground axis. */
 function drawReflections(
   ctx: Ctx,
   world: World,
@@ -303,10 +326,12 @@ function drawReflections(
   atm: Atmosphere,
   time: number,
   wind: number,
+  motion?: WaterMotion,
 ): void {
+  const reflectionWarp = motion ? (x: number, y: number) => motion(x, y, surface.level) : undefined;
   for (const o of world.objects) {
     const item = ITEM_BY_ID.get(o.type);
-    if (!item || !['tree', 'bridge', 'rock', 'pavilion'].includes(item.kind)) continue;
+    if (!item || item.kind === 'creature') continue;
     const cx = o.tx + item.w / 2,
       cy = o.ty + item.h / 2;
     let near = false;
@@ -325,8 +350,19 @@ function drawReflections(
     const base = world.at(Math.floor(cx), Math.floor(cy));
     const baseLevel = base?.level ?? surface.level;
     if (Math.abs(baseLevel - surface.level) > 1.2) continue;
-    const p = isoToScreen(cx, cy, surface.level - 0.26);
-    // Mirror the same seasonal crown/bridge, not generic green lines.
+    const plane = isoToScreen(cx, cy, surface.level - 0.26);
+    const objectLevel = base ? (base.water ? base.level - 0.28 : base.level) : 0;
+    const objectAnchor = isoToScreen(cx, cy, objectLevel);
+    const p = { x: plane.x, y: 2 * plane.y - objectAnchor.y };
+    if (item.kind === 'bridge') {
+      ctx.save();
+      ctx.globalAlpha *= 0.26;
+      const draw = o.type === 'plank_bridge' ? drawPlankBridge : drawBridge;
+      draw({ ctx, x: p.x, y: p.y, obj: o, atm, g: 1, time, wind: 0, alpha: 1, reflection: true, reflectionWarp });
+      ctx.restore();
+      continue;
+    }
+    // Mirror the same seasonal object at its actual growth stage, not a placeholder.
     drawCachedReflection(
       {
         ctx,
@@ -334,18 +370,19 @@ function drawReflections(
         y: p.y,
         atm,
         obj: o,
-        g: world.growth(o, time),
+        g: world.growth(o, Date.now()),
         time,
         wind,
         alpha: item.kind === 'tree' ? 0.61 : 0.4,
+        reflectionWarp,
       },
-      item.kind === 'tree' ? 0.85 : 0.6,
+      1,
     );
   }
 }
 
 /** Quiet surface: drifting sky streaks, fine wind-ripples and sparse sun/moon glints. */
-export function drawWaterAnimation(ctx: Ctx, world: World, atm: Atmosphere, time: number, wind = 0.5): void {
+export function drawWaterAnimation(ctx: Ctx, world: World, atm: Atmosphere, time: number, wind = 0.5, motion?: WaterMotion): void {
   const breeze = clamp01(Math.abs(wind));
   const sun = (0.3 + atm.time.daylight * 0.65 + atm.golden * 0.4) * (1 - atm.overcast * 0.85);
   const hi = shade(
@@ -361,7 +398,7 @@ export function drawWaterAnimation(ctx: Ctx, world: World, atm: Atmosphere, time
     ctx.clip('evenodd');
     ctx.fillStyle = css(mix(atm.palette.water, atm.skyBottom, 0.28), 0.09);
     ctx.fill('evenodd');
-    drawReflections(ctx, world, surface, atm, time, breeze);
+    drawReflections(ctx, world, surface, atm, time, breeze, motion);
     for (const cell of surface.cells) {
       const { x, y, seed } = cell;
       const p = isoToScreen(x + 0.24 + hash2(x, y, 187) * 0.5, y + 0.24 + hash2(x, y, 191) * 0.5, surface.level - 0.26);
