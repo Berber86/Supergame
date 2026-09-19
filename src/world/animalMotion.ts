@@ -1,6 +1,6 @@
 /** Continuous pose channels: independent of route progress and render frame rate. */
 import { lerp } from '../core/rng';
-import type { Deer, Turtle, Hedgehog, Heron, Squirrel } from './wildlife';
+import type { Deer, Turtle, Hedgehog, Heron, Squirrel, Mouse } from './wildlife';
 
 export function easePose(value: number, target: number, dt: number, duration: number): number {
   return lerp(value, target, 1 - Math.exp(-Math.max(0, dt) / duration));
@@ -8,7 +8,7 @@ export function easePose(value: number, target: number, dt: number, duration: nu
 
 /** Constant world speed, distance-driven feet and screen-space facing. */
 export function advanceAnimal(
-  a: Deer | Turtle | Hedgehog | Heron | Squirrel,
+  a: Deer | Turtle | Hedgehog | Heron | Squirrel | Mouse,
   dt: number,
   speed: number,
   stride: number,

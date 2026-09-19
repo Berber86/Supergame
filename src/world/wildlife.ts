@@ -26,6 +26,7 @@ import {
   squirrelStride,
   squirrelUpright,
 } from './wildlifeMotion';
+import { mouseSpeed, MOUSE_STRIDE, owlAltitude, owlFlight } from './creatureMotion';
 import { advanceAnimal, easePose } from './animalMotion';
 import { GRID } from '../core/iso';
 import { clamp, lerp, makeRng } from '../core/rng';
@@ -156,6 +157,8 @@ export interface Hedgehog {
 export type MouseState = 'enter' | 'forage' | 'walk' | 'hide' | 'flee' | 'leave';
 
 export interface Mouse {
+  gait?: number;
+  cover?: number;
   tx: number;
   ty: number;
   from: Vec | null;
@@ -177,6 +180,8 @@ export interface Mouse {
 export type OwlState = 'fly-in' | 'perch' | 'hoot' | 'look' | 'hunt' | 'fly-out';
 
 export interface Owl {
+  altitude?: number;
+  wingOpen?: number;
   tx: number;
   ty: number;
   from: Vec | null;
@@ -916,12 +921,7 @@ export class Wildlife {
         case 'enter':
         case 'walk': {
           if (!m.target) break;
-          m.from = m.from ?? { x: m.tx, y: m.ty };
-          const v = m.state === 'enter' ? 0.00055 : 0.00042;
-          m.phase = Math.min(1, m.phase + dt * v);
-          m.tx = lerp(m.from.x, m.target.x, m.phase);
-          m.ty = lerp(m.from.y, m.target.y, m.phase);
-          if (Math.abs(m.target.x - m.tx) > 0.05) m.facing = m.target.x > m.tx ? 1 : -1;
+          advanceAnimal(m, dt, mouseSpeed(m.state), MOUSE_STRIDE);
           if (m.phase >= 1) {
             m.state = rnd() < 0.6 ? 'forage' : 'hide';
             m.timer = m.state === 'forage' ? 3000 + rnd() * 6000 : 2000 + rnd() * 4000;
@@ -956,11 +956,7 @@ export class Wildlife {
         }
         case 'flee': {
           if (!m.target) break;
-          m.from = m.from ?? { x: m.tx, y: m.ty };
-          m.phase = Math.min(1, m.phase + dt * 0.0011);
-          m.tx = lerp(m.from.x, m.target.x, m.phase);
-          m.ty = lerp(m.from.y, m.target.y, m.phase);
-          if (Math.abs(m.target.x - m.tx) > 0.05) m.facing = m.target.x > m.tx ? 1 : -1;
+          advanceAnimal(m, dt, mouseSpeed(m.state), MOUSE_STRIDE);
           if (m.phase >= 1) {
             m.state = 'hide';
             m.timer = 3000 + rnd() * 7000;
@@ -970,19 +966,14 @@ export class Wildlife {
         }
         case 'leave': {
           if (!m.target) break;
-          m.from = m.from ?? { x: m.tx, y: m.ty };
-          m.phase = Math.min(1, m.phase + dt * 0.00052);
-          m.tx = lerp(m.from.x, m.target.x, m.phase);
-          m.ty = lerp(m.from.y, m.target.y, m.phase);
-          if (Math.abs(m.target.x - m.tx) > 0.05) m.facing = m.target.x > m.tx ? 1 : -1;
+          advanceAnimal(m, dt, mouseSpeed(m.state), MOUSE_STRIDE);
           if (m.phase >= 1 || m.tx < -4 || m.tx > GRID + 4 || m.ty < -4 || m.ty > GRID + 4) {
             this.mice.splice(i, 1);
           }
           break;
         }
       }
-      m.tx = clamp(m.tx, 0.5, GRID - 0.5);
-      m.ty = clamp(m.ty, 0.5, GRID - 0.5);
+      m.cover = easePose(m.cover ?? +(m.state === 'hide'), +(m.state === 'hide'), dt, 180);
     }
     if (this.mice.length >= inv.mice) return;
     this.mouseTimer -= dt;
@@ -1029,6 +1020,10 @@ export class Wildlife {
   private updateOwls(h: Habitat, inv: Invitation, _t: TimeState, dt: number, now: number, threats: Threat[]): void {
     for (let i = this.owls.length - 1; i >= 0; i--) {
       const o = this.owls[i];
+      o.altitude ??= owlAltitude(o);
+      o.wingOpen ??= +owlFlight(o);
+      const oldX = o.tx;
+      const oldY = o.ty;
       o.timer -= dt;
       if (o.hoot > 0) o.hoot -= dt;
 
@@ -1146,8 +1141,10 @@ export class Wildlife {
           break;
         }
       }
-      o.tx = clamp(o.tx, 0.5, GRID - 0.5);
-      o.ty = clamp(o.ty, 0.5, GRID - 0.5);
+      const screenDx = o.tx - oldX - (o.ty - oldY);
+      if (Math.abs(screenDx) > 0.00001) o.facing = screenDx > 0 ? 1 : -1;
+      o.altitude = easePose(o.altitude, owlAltitude(o), dt, 180);
+      o.wingOpen = easePose(o.wingOpen, +owlFlight(o), dt, 160);
     }
 
     if (this.owls.length >= inv.owl) return;
@@ -1504,7 +1501,6 @@ export class Wildlife {
 
   private updateBees(h: Habitat, inv: Invitation, _t: TimeState, wx: WeatherState | null, dt: number): void {
     const want = inv.bees;
-    const wind = 0; // ветер учитывается через life.windAt, здесь не нужен
     void wx;
 
     const hiveCount = h.beehives.length;
@@ -1524,42 +1520,48 @@ export class Wildlife {
       b.timer -= dt;
       b.phase += dt * 0.005;
 
+      // На цветке лапки остаются на месте. Пыльца появляется после сбора,
+      // а не до него; затем пчела действительно возвращается к улью.
+      if (b.state === 'gather') {
+        b.vx = b.vy = 0;
+        b.alt = easePose(b.alt, 2, dt, 180);
+        if (b.timer > 0) continue;
+        b.carrying = true;
+        b.state = 'return';
+        b.target = null;
+      }
       if (b.timer <= 0 || !b.target) {
-        // С мёдом — домой в улей, без — к цветам. Если есть улей, он приоритет.
         const hive = hasHive && b.carrying ? h.beehives[Math.floor(rnd() * h.beehives.length)] : null;
-        const flower = !b.carrying ? h.beeSpots[Math.floor(rnd() * h.beeSpots.length)] : null;
-        // иногда даже без пыльцы залетает в улей — «проведать дом»
-        const visitHive =
-          !b.carrying && hasHive && rnd() < 0.18 ? h.beehives[Math.floor(rnd() * h.beehives.length)] : null;
-        b.target = hive ?? visitHive ?? flower ?? h.beeSpots[Math.floor(rnd() * h.beeSpots.length)] ?? null;
-        b.timer = 1800 + rnd() * 3500;
-        if (b.target && Math.hypot(b.target.x - b.tx, b.target.y - b.ty) < 0.6) {
-          if (b.carrying) {
-            b.carrying = false;
-            b.state = 'gather';
-            // вернулась с мёдом — шанс на заметку
-            if (hasHive && rnd() < 0.08) this.pushNote('bee_return', b.tx, b.ty);
-          } else {
-            b.carrying = true;
-            b.state = 'return';
-          }
-          b.timer = 1100 + rnd() * 1800;
-        }
+        b.target = hive ?? h.beeSpots[Math.floor(rnd() * h.beeSpots.length)] ?? null;
+        b.state = b.carrying ? 'return' : 'fly';
+        b.timer = 12000;
       }
 
       if (b.target) {
         const dx = b.target.x - b.tx;
         const dy = b.target.y - b.ty;
-        const d = Math.hypot(dx, dy) || 1;
-        const wob = Math.sin(b.phase + b.seed) * 0.45;
-        // у улья пчёлы летают чуть быстрее и суетливее
-        const speedK = hasHive ? 1.25 : 1;
-        b.vx = (dx / d) * 0.00135 * speedK + wob * 0.00024;
-        b.vy = (dy / d) * 0.00135 * speedK;
-        b.tx += (b.vx + wind * 0.0003) * dt;
-        b.ty += b.vy * dt;
-        b.alt = 6 + Math.sin(b.phase * 2) * 2.2 + (b.carrying ? 2.4 : 0);
-        b.dir = Math.atan2(dy, dx);
+        const distance = Math.hypot(dx, dy);
+        if (distance < 0.12) {
+          b.vx = b.vy = 0;
+          if (b.carrying) {
+            b.carrying = false;
+            b.state = 'fly';
+            b.target = null;
+            b.timer = 0;
+            if (hasHive && rnd() < 0.08) this.pushNote('bee_return', b.tx, b.ty);
+          } else {
+            b.state = 'gather';
+            b.timer = 1100 + rnd() * 1800;
+          }
+        } else {
+          const step = Math.min(distance, 0.00135 * (hasHive ? 1.25 : 1) * dt);
+          b.vx = ((dx / distance) * step) / Math.max(1, dt);
+          b.vy = ((dy / distance) * step) / Math.max(1, dt);
+          b.tx += b.vx * dt;
+          b.ty += b.vy * dt;
+          b.alt = easePose(b.alt, 6 + Math.sin(b.phase * 2) * 2.2 + (b.carrying ? 2.4 : 0), dt, 180);
+          b.dir = Math.atan2(dy, dx);
+        }
       }
       b.tx = clamp(b.tx, 0.5, GRID - 0.5);
       b.ty = clamp(b.ty, 0.5, GRID - 0.5);

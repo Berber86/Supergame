@@ -1,3 +1,4 @@
+import { CAT_STRIDE, mouseSpeed, MOUSE_STRIDE } from '../world/creatureMotion';
 import { HERON_STRIKE_MS } from '../world/wildlifeMotion';
 /** The field guide uses isolated specimens, never live agents or the player's save. */
 import type { Cat, Bird, BirdSpecies, Fish, Flutter } from '../world/life';
@@ -89,7 +90,10 @@ function animal<T extends { state: string }>(
       // Small local trajectories keep flight, approach and retreat visible on the page.
       const travel = ['enter', 'leave', 'arrive', 'fly-in', 'fly-out', 'approach', 'return'].includes(state);
       const offset = travel ? Math.sin((p - 0.5) * Math.PI) * 9 : 0;
-      const zoom = state === 'fly-in' || state === 'fly-out' ? (meta.flightScale ?? 1) : 1;
+      const zoom =
+        state === 'fly-in' || state === 'fly-out' || (meta.id === 'owl' && (state === 'look' || state === 'hunt'))
+          ? (meta.flightScale ?? 1)
+          : 1;
       ctx.save();
       ctx.scale(zoom, zoom);
       render(ctx, specimen(state as T['state'], time, variant), offset, 0, atm, time);
@@ -117,6 +121,9 @@ const cat = animal<Cat>(
     id: 1,
     phase: phase(time, state),
     speed: 1,
+    gait: ((time * 0.0013) / CAT_STRIDE) * Math.PI * 2,
+    actionTime: time % animationDuration(state),
+    actionDuration: animationDuration(state),
     home: null,
     guest: false,
     coat: (['cream', 'grey', 'black', 'tortoise'] as const)[variant % 4],
@@ -306,6 +313,8 @@ const mouse = animal<Mouse>(
     ...base,
     state,
     phase: phase(time, state),
+    gait: ((time * mouseSpeed(state)) / MOUSE_STRIDE) * Math.PI * 2,
+    cover: state === 'hide' ? 1 : 0,
     panicX: 0,
     panicY: 0,
     panic: state === 'flee' ? 1 : 0,
@@ -319,8 +328,9 @@ const owl = animal<Owl>(
     name: 'Сова',
     latin: 'Strigiformes',
     group: 'Птицы',
-    scale: 2.85,
-    baseline: 0.88,
+    scale: 3.8,
+    baseline: 0.91,
+    flightScale: 0.8,
     description: 'Ночной дозорный. Поворачивает голову на насесте, ухает и бесшумно срывается на охоту.',
     habitat: 'Высокие деревья и насесты; активна по ночам.',
   },
@@ -328,7 +338,7 @@ const owl = animal<Owl>(
     perch: 'На насесте',
     'fly-in': 'Прилетает',
     hoot: 'Ухает',
-    look: 'Смотрит',
+    look: 'Перелетает',
     hunt: 'Охотится',
     'fly-out': 'Улетает',
   },
@@ -453,7 +463,8 @@ const koi = animal<Fish>(
     scale: 8,
     baseline: 0.51,
     water: true,
-    description: 'Цветное пятно под гладью пруда. Карп запоминает место кормления и постепенно становится смелее.',
+    description:
+      'Пятнистая чешуя и полупрозрачные плавники скользят под водой. Карп запоминает место кормления и постепенно становится смелее.',
     habitat: 'Вода пруда. Кормление привлекает карпов к поверхности.',
     variants: ['Красный', 'Белый с пятнами', 'Золотой'],
   },
@@ -487,7 +498,8 @@ const butterfly: GuideAnimal = {
   group: 'Насекомые',
   scale: 12,
   baseline: 0.6,
-  description: 'Лёгкое движение над цветами. Сад на мгновение становится похож на летающие лепестки.',
+  description:
+    'Узорчатые крылья с тонкими жилками порхают над цветами. На отдыхе бабочка складывает их, оставляя видны усики и тонкие лапки.',
   habitat: 'Цветущий сад в тёплое время года.',
   animations: [
     { id: 'fly', name: 'Летает', duration: 5000 },
@@ -530,7 +542,8 @@ const moth = animal<Moth>(
     scale: 12,
     baseline: 0.84,
     night: true,
-    description: 'Бледные крылья дрожат в вечернем воздухе. Незаметный спутник светлячков.',
+    description:
+      'Пушистое тельце, перистые усики и бледные узорчатые крылья. На отдыхе мотылёк складывает крылья крышей.',
     habitat: 'Тёплые сумерки и ночной сад.',
   },
   { fly: 'Порхает', rest: 'Отдыхает' },
