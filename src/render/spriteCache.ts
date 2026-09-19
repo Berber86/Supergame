@@ -98,7 +98,7 @@ export function spriteFrame(): void {
  * Рисует объект через кэш. Возвращает false, если кэш не подошёл
  * и объект надо рисовать обычным способом.
  */
-export function drawCached(d: DrawCtx): boolean {
+function getCachedSprite(d: DrawCtx): Entry | null {
   const { obj, atm } = d;
 
   // Огрубление ключа: без него кэш промахивался бы каждый кадр, потому
@@ -123,17 +123,17 @@ export function drawCached(d: DrawCtx): boolean {
     // обрезались: спрайт оказывался меньше настоящего рисунка.
     // Теперь один раз меряем, куда объект дотягивается на самом деле.
     const box = measureBox(obj, atm, gq);
-    if (!box) return false;
+    if (!box) return null;
 
     const w = box.w;
     const h = box.h;
-    if (w <= 0 || h <= 0 || w > 900 || h > 900) return false;
+    if (w <= 0 || h <= 0 || w > 900 || h > 900) return null;
 
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
     const cx = canvas.getContext('2d');
-    if (!cx) return false;
+    if (!cx) return null;
 
     // Рисуем без ветра и на нулевом времени: движение добавится при копии
     const ax = box.ax;
@@ -164,6 +164,12 @@ export function drawCached(d: DrawCtx): boolean {
 
   e.used = frame;
 
+  return e;
+}
+
+export function drawCached(d: DrawCtx): boolean {
+  const e = getCachedSprite(d);
+  if (!e) return false;
   const ctx = d.ctx as unknown as CanvasRenderingContext2D;
   const prev = ctx.globalAlpha;
   ctx.globalAlpha = d.alpha;
@@ -187,6 +193,29 @@ export function drawCached(d: DrawCtx): boolean {
   }
   ctx.globalAlpha = prev;
   return true;
+}
+
+/** The very same painted sprite, mirrored in broken horizontal strips; no shadow. */
+export function drawCachedReflection(d: DrawCtx, compression = 0.82): void {
+  const e = getCachedSprite(d);
+  if (!e) return;
+  const ctx = d.ctx;
+  ctx.save();
+  const alpha = ctx.globalAlpha * d.alpha;
+  ctx.translate(d.x, d.y);
+  ctx.scale(1, -compression);
+  // Only the part above the object's foot reflects. A fragment is 5 world pixels,
+  // not a screen-sized offscreen canvas; reused sprites also bound memory.
+  for (let y = 0; y < e.ay; y += 5) {
+    const h = Math.min(5, e.ay - y);
+    const depth = (e.ay - y) / Math.max(1, e.ay);
+    const drift =
+      Math.sin(d.time * 0.0013 + y * 0.095 + d.obj.seed) * (1.8 + d.wind * 2.5) +
+      Math.sin(d.time * 0.0007 + y * 0.24) * 0.8;
+    ctx.globalAlpha = alpha * (0.9 - depth * 0.35);
+    ctx.drawImage(e.canvas, 0, y, e.canvas.width, h, -e.ax + drift, y - e.ay, e.canvas.width, h + 0.12);
+  }
+  ctx.restore();
 }
 
 /**

@@ -5,6 +5,7 @@ import { ITEM_BY_ID } from '../world/catalog';
 import { css, mix, shade, type Atmosphere } from '../world/palette';
 import type { World } from '../world/world';
 import type { Ctx } from './paint';
+import { drawCachedReflection } from './spriteCache';
 
 export interface WaterCell {
   x: number;
@@ -38,53 +39,110 @@ export function prepareWaterSurface(world: World): WaterSurface[] {
       cells.push({ x, y, seed: hash2(x, y, 181), shore: false });
     }
   const result: WaterSurface[] = [];
-  for (const [level, cells] of [...levels].sort((a, b) => a[0] - b[0])) {
-    const edges: Edge[] = [];
-    const starts = new Map<string, Edge[]>();
-    const same = (x: number, y: number) => {
-      const t = world.at(x, y);
-      return !!t?.water && t.level === level;
-    };
-    const add = (a: Pt, b: Pt, dir: number) => {
-      const edge = { a, b, dir, used: false };
-      edges.push(edge);
-      const list = starts.get(key(a)) ?? [];
-      list.push(edge);
-      starts.set(key(a), list);
-    };
-    for (const c of cells) {
-      const { x, y } = c;
-      const before = edges.length;
-      if (!same(x, y - 1)) add({ x, y }, { x: x + 1, y }, 0);
-      if (!same(x + 1, y)) add({ x: x + 1, y }, { x: x + 1, y: y + 1 }, 1);
-      if (!same(x, y + 1)) add({ x: x + 1, y: y + 1 }, { x, y: y + 1 }, 2);
-      if (!same(x - 1, y)) add({ x, y: y + 1 }, { x, y }, 3);
-      c.shore = before !== edges.length;
-    }
-    const loops: Pt[][] = [];
-    for (const first of edges) {
-      if (first.used) continue;
-      const loop: Pt[] = [];
-      let edge: Edge | undefined = first;
-      while (edge && !edge.used) {
-        edge.used = true;
-        // Stable sub-tile irregularity breaks long ruler-straight banks.
-        const jx = (hash2(edge.a.x, edge.a.y, 887) - 0.5) * 0.34;
-        const jy = (hash2(edge.a.x, edge.a.y, 889) - 0.5) * 0.34;
-        loop.push(isoToScreen(edge.a.x + jx, edge.a.y + jy, level - 0.26));
-        if (key(edge.b) === key(first.a)) break;
-        const dir: number = edge.dir;
-        const candidates: Edge[] = (starts.get(key(edge.b)) ?? []).filter((e) => !e.used);
-        const priority = (e: Edge) => [1, 0, 3, 2].indexOf((e.dir - dir + 4) % 4);
-        edge = candidates.sort((a, b) => priority(a) - priority(b))[0];
+  for (const [level, allCells] of [...levels].sort((a, b) => a[0] - b[0])) {
+    // Separate disconnected ponds even at the same elevation. Their clip masks
+    // must not change (including edge rasterisation) when a distant pond is edited.
+    const remaining = new Map(allCells.map((c) => [key(c), c]));
+    const components: WaterCell[][] = [];
+    while (remaining.size) {
+      const first = remaining.values().next().value!;
+      const cells = [first];
+      remaining.delete(key(first));
+      for (let i = 0; i < cells.length; i++) {
+        const c = cells[i];
+        for (const [dx, dy] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ]) {
+          const id = `${c.x + dx},${c.y + dy}`,
+            next = remaining.get(id);
+          if (next) {
+            remaining.delete(id);
+            cells.push(next);
+          }
+        }
       }
-      if (loop.length >= 4) loops.push(loop);
+      cells.sort((a, b) => a.y - b.y || a.x - b.x);
+      components.push(cells);
     }
-    result.push({ level, loops, cells });
+    for (const cells of components) {
+      const edges: Edge[] = [];
+      const starts = new Map<string, Edge[]>();
+      const same = (x: number, y: number) => {
+        const t = world.at(x, y);
+        return !!t?.water && t.level === level;
+      };
+      const add = (a: Pt, b: Pt, dir: number) => {
+        const edge = { a, b, dir, used: false };
+        edges.push(edge);
+        const list = starts.get(key(a)) ?? [];
+        list.push(edge);
+        starts.set(key(a), list);
+      };
+      for (const c of cells) {
+        const { x, y } = c;
+        const before = edges.length;
+        if (!same(x, y - 1)) add({ x, y }, { x: x + 1, y }, 0);
+        if (!same(x + 1, y)) add({ x: x + 1, y }, { x: x + 1, y: y + 1 }, 1);
+        if (!same(x, y + 1)) add({ x: x + 1, y: y + 1 }, { x, y: y + 1 }, 2);
+        if (!same(x - 1, y)) add({ x, y: y + 1 }, { x, y }, 3);
+        c.shore = before !== edges.length;
+      }
+      const loops: Pt[][] = [];
+      for (const first of edges) {
+        if (first.used) continue;
+        const loop: Pt[] = [];
+        let edge: Edge | undefined = first;
+        while (edge && !edge.used) {
+          edge.used = true;
+          loop.push({ ...edge.a });
+          if (key(edge.b) === key(first.a)) break;
+          const dir: number = edge.dir;
+          const candidates: Edge[] = (starts.get(key(edge.b)) ?? []).filter((e) => !e.used);
+          const priority = (e: Edge) => [1, 0, 3, 2].indexOf((e.dir - dir + 4) % 4);
+          edge = candidates.sort((a, b) => priority(a) - priority(b))[0];
+        }
+        if (loop.length >= 4) loops.push(organicShore(loop, level));
+      }
+      result.push({ level, loops, cells });
+    }
   }
   surfaces.set(world, result);
   return result;
 }
+/** Sub-tile coves and headlands, followed by corner cutting, NOT a jittered tile polygon.
+ * The displacement is in tile space so both isometric axes get the same curvature.
+ * It is local and bounded: thin streams and dry islands retain their centres. */
+export function organicShore(vertices: Pt[], level: number): Pt[] {
+  let points: Pt[] = [];
+  for (let i = 0; i < vertices.length; i++) {
+    const a = vertices[i],
+      b = vertices[(i + 1) % vertices.length];
+    const dx = b.x - a.x,
+      dy = b.y - a.y;
+    for (const t of [0, 0.5]) {
+      const x = a.x + dx * t,
+        y = a.y + dy * t;
+      const bend = Math.sin(x * 1.87 + y * 1.31 + 0.7) * 0.24 + Math.sin(x * 3.1 - y * 2.2) * 0.075;
+      points.push({ x: x - dy * bend, y: y + dx * bend });
+    }
+  }
+  // Two local Chaikin passes round both the broad bays and the small scallops.
+  for (let pass = 0; pass < 2; pass++) {
+    const smooth: Pt[] = [];
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i],
+        b = points[(i + 1) % points.length];
+      smooth.push({ x: a.x * 0.75 + b.x * 0.25, y: a.y * 0.75 + b.y * 0.25 });
+      smooth.push({ x: a.x * 0.25 + b.x * 0.75, y: a.y * 0.25 + b.y * 0.75 });
+    }
+    points = smooth;
+  }
+  return points.map((p) => isoToScreen(p.x, p.y, level - 0.26));
+}
+
 export function waterSurfaces(world: World): WaterSurface[] {
   return surfaces.get(world) ?? prepareWaterSurface(world);
 }
@@ -110,7 +168,7 @@ export function drawWaterSurface(ctx: Ctx, world: World, atm: Atmosphere): void 
   const light = Math.max(0.46, atm.exposure);
   const deep = shade(mix(atm.palette.waterDeep, { r: 51, g: 119, b: 129 }, 0.22), light);
   const body = shade(mix(atm.palette.water, { r: 102, g: 179, b: 178 }, 0.24), light);
-  const shallows = shade(mix(atm.palette.water, { r: 192, g: 212, b: 177 }, 0.46), light);
+  const shallows = shade(mix({ r: 193, g: 190, b: 143 }, atm.palette.water, 0.28), light);
   const sky = mix(body, atm.skyBottom, 0.2);
   const wet = shade(mix(atm.palette.soil, atm.palette.waterDeep, 0.6), light * 0.75);
   ctx.save();
@@ -132,20 +190,24 @@ export function drawWaterSurface(ctx: Ctx, world: World, atm: Atmosphere): void 
     ctx.fill('evenodd');
     ctx.save();
     ctx.clip('evenodd');
-    // Nested low-opacity washes give the shallow shelf a soft, continuous falloff.
-    for (const [width, alpha] of [
-      [58, 0.04],
-      [44, 0.05],
-      [32, 0.07],
-      [22, 0.08],
-      [14, 0.09],
-      [7, 0.07],
-    ]) {
-      waterSurfacePath(ctx, surface);
-      ctx.strokeStyle = css(shallows, alpha);
-      ctx.lineWidth = width;
-      ctx.stroke();
-    }
+    // Feathered sand shelves of varying width, not nested contour-line strokes.
+    // The clipped radial washes expose a warm bed through the shallow water.
+    for (const loop of surface.loops)
+      for (let i = 0; i < loop.length; i += 8) {
+        const p = loop[i];
+        const radius = 62 + hash2(Math.round(p.x), Math.round(p.y), 733) * 36;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.scale(1, 0.68);
+        const shelf = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+        shelf.addColorStop(0, css(shallows, 0.62));
+        shelf.addColorStop(0.25, css(shallows, 0.38));
+        shelf.addColorStop(0.7, css(shallows, 0.08));
+        shelf.addColorStop(1, css(shallows, 0));
+        ctx.fillStyle = shelf;
+        ctx.fillRect(-radius, -radius, radius * 2, radius * 2);
+        ctx.restore();
+      }
     // Broad translucent pools of depth, feathered to zero rather than tiled blobs.
     // Radius is local (< 3 tiles), so terrain's dirty-rectangle margin still covers it.
     for (const cell of surface.cells) {
@@ -162,18 +224,44 @@ export function drawWaterSurface(ctx: Ctx, world: World, atm: Atmosphere): void 
       ctx.fillRect(-140, -140, 280, 280);
       ctx.restore();
     }
-    // A little submerged gravel at the shore; no grid of repeated bottom patches.
-    for (const cell of surface.cells) {
-      if (!cell.shore || cell.seed < 0.63) continue;
-      const p = isoToScreen(cell.x + 0.5, cell.y + 0.5, surface.level - 0.26);
-      for (let i = 0; i < 3; i++) {
-        const s = hash2(cell.x * 3 + i, cell.y, 719);
-        ctx.fillStyle = css(mix(shallows, deep, s), 0.16);
-        ctx.beginPath();
-        ctx.ellipse(p.x + (s - 0.5) * 22, p.y + i * 2 - 3, 1.6 + s * 2, 0.8 + s, s, 0, Math.PI * 2);
-        ctx.fill();
+    // Visible lake bed: groups of mineral stones and a few submerged stems,
+    // located by the curved bank rather than at repeating tile centres.
+    for (const loop of surface.loops)
+      for (let i = 0; i < loop.length; i += 8) {
+        const p = loop[i],
+          a = loop[(i + loop.length - 3) % loop.length],
+          b = loop[(i + 3) % loop.length];
+        const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        const nx = -(b.y - a.y) / len,
+          ny = (b.x - a.x) / len;
+        const seed = hash2(Math.round(p.x), Math.round(p.y), 751);
+        if (seed < 0.35) continue;
+        const x = p.x + nx * (9 + seed * 18),
+          y = p.y + ny * (9 + seed * 18);
+        for (let k = 0; k < 3; k++) {
+          const size = 2.2 + hash2(k, Math.round(x), 753) * 4.8;
+          const px = x + k * 5 - 4,
+            py = y + Math.sin(k * 2 + seed) * 4;
+          ctx.fillStyle = css(shade(mix(shallows, deep, 0.45), 0.78), 0.3);
+          ctx.beginPath();
+          ctx.ellipse(px, py, size, size * 0.47, -0.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = css(shallows, 0.3);
+          ctx.beginPath();
+          ctx.ellipse(px - 0.6, py - 0.8, size * 0.76, size * 0.26, -0.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (seed > 0.85) {
+          ctx.strokeStyle = css(shade(mix(atm.palette.moss, deep, 0.45), light * 0.8), 0.24);
+          ctx.lineWidth = 1.2;
+          for (let k = 0; k < 3; k++) {
+            ctx.beginPath();
+            ctx.moveTo(x, y + 4);
+            ctx.quadraticCurveTo(x + (k - 1) * 9, y - 3, x + (k - 1) * 5, y - 10 - k * 2);
+            ctx.stroke();
+          }
+        }
       }
-    }
     ctx.restore();
     waterSurfacePath(ctx, surface);
     ctx.strokeStyle = css(shallows, 0.13);
@@ -181,7 +269,7 @@ export function drawWaterSurface(ctx: Ctx, world: World, atm: Atmosphere): void 
     ctx.stroke();
     // A few wet pebbles break the clean contour without rebuilding a dark outline.
     for (const loop of surface.loops)
-      for (let i = 0; i < loop.length; i++) {
+      for (let i = 0; i < loop.length; i += 8) {
         const p = loop[i],
           prev = loop[(i + loop.length - 1) % loop.length],
           next = loop[(i + 1) % loop.length];
@@ -211,19 +299,17 @@ function drawReflections(
   time: number,
   wind: number,
 ): void {
-  const foliage = shade(mix(atm.palette.foliageDeep, atm.palette.waterDeep, 0.5), atm.exposure * 0.86);
-  ctx.lineCap = 'round';
   for (const o of world.objects) {
     const item = ITEM_BY_ID.get(o.type);
-    if (item?.kind !== 'tree') continue;
+    if (!item || !['tree', 'bridge', 'rock', 'pavilion'].includes(item.kind)) continue;
     const cx = o.tx + item.w / 2,
       cy = o.ty + item.h / 2;
-    // A vertical reflected trunk travels down-screen, i.e. +x,+y in tile coordinates.
     let near = false;
-    for (const off of [0.3, 0.8, 1.3]) {
-      for (const side of [-0.3, 0, 0.3]) {
-        const t = world.at(Math.floor(cx + off + side), Math.floor(cy + off - side));
-        if (t?.water && t.level === surface.level) {
+    // Test the crown's reflected footprint, not just a short line under the trunk.
+    for (const off of [0, 0.7, 1.5, 2.3, 3]) {
+      for (const side of [-0.8, 0, 0.8]) {
+        const tile = world.at(Math.floor(cx + off + side), Math.floor(cy + off - side));
+        if (tile?.water && tile.level === surface.level) {
           near = true;
           break;
         }
@@ -231,20 +317,25 @@ function drawReflections(
       if (near) break;
     }
     if (!near) continue;
+    const base = world.at(Math.floor(cx), Math.floor(cy));
+    const baseLevel = base?.level ?? surface.level;
+    if (Math.abs(baseLevel - surface.level) > 1.2) continue;
     const p = isoToScreen(cx, cy, surface.level - 0.26);
-    const conifer = o.type === 'pine' || o.type === 'bamboo';
-    const height = conifer ? 74 : 62;
-    ctx.strokeStyle = css(foliage, 0.23);
-    for (let i = 0; i < 11; i++) {
-      const yy = (i * height) / 11;
-      const sway = Math.sin(time * 0.0009 + yy * 0.15 + o.seed) * (1.1 + wind * 1.6);
-      const breadth = i < 3 ? 1.2 : conifer ? (11 - i) * 3.4 : Math.sin(((i - 2) / 10) * Math.PI) * 28;
-      ctx.lineWidth = i < 3 ? 2 : 3.0 + hash2(i, o.seed, 919) * 2;
-      ctx.beginPath();
-      ctx.moveTo(p.x - breadth + sway, p.y + yy);
-      ctx.quadraticCurveTo(p.x + sway, p.y + yy + 0.8, p.x + breadth + sway, p.y + yy);
-      ctx.stroke();
-    }
+    // Mirror the same seasonal crown/bridge, not generic green lines.
+    drawCachedReflection(
+      {
+        ctx,
+        x: p.x,
+        y: p.y,
+        atm,
+        obj: o,
+        g: world.growth(o, time),
+        time,
+        wind,
+        alpha: item.kind === 'tree' ? 0.61 : 0.4,
+      },
+      item.kind === 'tree' ? 0.85 : 0.6,
+    );
   }
 }
 
@@ -263,6 +354,8 @@ export function drawWaterAnimation(ctx: Ctx, world: World, atm: Atmosphere, time
     ctx.save();
     waterSurfacePath(ctx, surface);
     ctx.clip('evenodd');
+    ctx.fillStyle = css(mix(atm.palette.water, atm.skyBottom, 0.28), 0.09);
+    ctx.fill('evenodd');
     drawReflections(ctx, world, surface, atm, time, breeze);
     for (const cell of surface.cells) {
       const { x, y, seed } = cell;
@@ -290,13 +383,17 @@ export function drawWaterAnimation(ctx: Ctx, world: World, atm: Atmosphere, time
         ctx.stroke();
       }
       // Shifting, open caustic arcs in the shallows, not round opaque tile stamps.
-      if (cell.shore && seed > 0.58) {
-        const ripple = (((time / 6500 + seed * 3) % 1) + 1) % 1;
-        ctx.strokeStyle = css(hi, Math.sin(ripple * Math.PI) * 0.1 * (0.4 + sun));
-        ctx.lineWidth = 0.7;
-        ctx.beginPath();
-        ctx.ellipse(p.x, p.y, 4 + ripple * 15, 1.3 + ripple * 4, 0, 0.2, Math.PI * 1.3);
-        ctx.stroke();
+      if (cell.shore && seed > 0.44) {
+        const shimmer = (Math.sin(phase * 1.7) + 1) * 0.5;
+        ctx.strokeStyle = css(hi, (0.06 + shimmer * 0.12) * sun);
+        ctx.lineWidth = 1.2;
+        for (let k = 0; k < 2; k++) {
+          const yy = p.y + k * 8;
+          ctx.beginPath();
+          ctx.moveTo(p.x - 17 + drift, yy + 1);
+          ctx.bezierCurveTo(p.x - 7 + drift, yy - 5 - shimmer * 2, p.x + 3 + drift, yy + 7, p.x + 16 + drift, yy - 2);
+          ctx.stroke();
+        }
       }
       if (seed > 0.72) {
         const sparkle = Math.pow(Math.max(0, Math.sin(time * 0.0012 + seed * 65)), 10) * sun;

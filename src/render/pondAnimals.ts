@@ -1,7 +1,7 @@
 /** Лягушки и кои: работа суставов и плавников вместо движения цельного овала. */
 import type { Frog } from '../world/residents';
 import type { Fish } from '../world/life';
-import type { Atmosphere } from '../world/palette';
+import { mix, type RGB, type Atmosphere } from '../world/palette';
 import { clamp01, smoothstep } from '../core/rng';
 import { Ctx, softShadow } from './paint';
 import { oval, shape, stroke, limb, pigment, TAU } from './animalBrush';
@@ -109,18 +109,28 @@ export function drawFrog(ctx: Ctx, f: Frog, x: number, y: number, atm: Atmospher
   }
 }
 
-export function drawFishAt(ctx: Ctx, f: Fish, x: number, y: number, atm: Atmosphere, time: number): void {
+export function drawFishAt(
+  ctx: Ctx,
+  f: Fish,
+  x: number,
+  y: number,
+  atm: Atmosphere,
+  time: number,
+  submersion = 0,
+): void {
+  const waterPigment = (c: RGB, light: Atmosphere, alpha = 1) =>
+    pigment(mix(c, mix(atm.palette.waterDeep, atm.palette.water, 0.5), submersion * 0.48), light, alpha);
   const kind = ((Math.floor(f.seed) % 3) + 3) % 3;
   const bases = [
     { r: 221, g: 115, b: 67 },
     { r: 242, g: 236, b: 211 },
     { r: 226, g: 188, b: 90 },
   ];
-  const body = pigment(bases[kind], atm),
-    white = pigment({ r: 253, g: 239, b: 205 }, atm);
-  const red = pigment({ r: 195, g: 82, b: 59 }, atm),
-    dark = pigment({ r: 86, g: 100, b: 82 }, atm);
-  const ink = pigment({ r: 51, g: 66, b: 58 }, atm);
+  const body = waterPigment(bases[kind], atm),
+    white = waterPigment({ r: 253, g: 239, b: 205 }, atm);
+  const red = waterPigment({ r: 195, g: 82, b: 59 }, atm),
+    dark = waterPigment({ r: 86, g: 100, b: 82 }, atm);
+  const ink = waterPigment({ r: 51, g: 66, b: 58 }, atm);
   const feeding = f.state === 'feed',
     hiding = f.state === 'hide';
   const rate = hiding ? 0.014 : f.state === 'approach' ? 0.009 : feeding ? 0.004 : 0.006;
@@ -133,12 +143,12 @@ export function drawFishAt(ctx: Ctx, f: Fish, x: number, y: number, atm: Atmosph
   ctx.translate(x, y);
   ctx.rotate(angle);
   ctx.globalAlpha *= hiding ? 0.34 : 0.86;
-  oval(ctx, 0, 2.1, 9.2, 2.9, pigment({ r: 67, g: 111, b: 107 }, atm, 0.18));
+  oval(ctx, 0, 2.1, 9.2, 2.9, waterPigment({ r: 67, g: 111, b: 107 }, atm, 0.18));
   // Хвостовой стебель сгибается отдельно; две лопасти веером подхватывают воду.
   ctx.save();
   ctx.translate(-7, bend * 0.8);
   ctx.rotate(bend * 0.24);
-  shape(ctx, pigment(bases[kind], atm, 0.66), () => {
+  shape(ctx, waterPigment(bases[kind], atm, 0.66), () => {
     ctx.moveTo(1, -1);
     ctx.quadraticCurveTo(-3, -1.3, -8.7, -5.5);
     ctx.quadraticCurveTo(-8.4, -0.6, -5.7, 0);
@@ -147,7 +157,7 @@ export function drawFishAt(ctx: Ctx, f: Fish, x: number, y: number, atm: Atmosph
   });
   for (const side of [-1, 1])
     for (let i = 0; i < 3; i++)
-      limb(ctx, pigment({ r: 251, g: 236, b: 198 }, atm, 0.55), 0.25, [
+      limb(ctx, waterPigment({ r: 251, g: 236, b: 198 }, atm, 0.55), 0.25, [
         [-0.4, side * 0.5],
         [-7.3, side * (1.4 + i * 1.35)],
       ]);
@@ -156,7 +166,7 @@ export function drawFishAt(ctx: Ctx, f: Fish, x: number, y: number, atm: Atmosph
     ctx.save();
     ctx.translate(2.1, side * 2.1);
     ctx.rotate(side * (0.15 + wave * 0.3));
-    shape(ctx, pigment(bases[kind], atm, 0.55), () => {
+    shape(ctx, waterPigment(bases[kind], atm, 0.55), () => {
       ctx.moveTo(0, 0);
       ctx.quadraticCurveTo(-1, side * 5, -5, side * 3.2);
       ctx.lineTo(-3.2, 0);
@@ -180,7 +190,7 @@ export function drawFishAt(ctx: Ctx, f: Fish, x: number, y: number, atm: Atmosph
   ctx.beginPath();
   outline();
   ctx.clip();
-  oval(ctx, 0.4, 2.1, 7.9, 1.7, pigment({ r: 249, g: 229, b: 185 }, atm, 0.5));
+  oval(ctx, 0.4, 2.1, 7.9, 1.7, waterPigment({ r: 249, g: 229, b: 185 }, atm, 0.5));
   for (const [px, py, rx, ry] of [
     [3.6, -0.2, 2.6, 2.8],
     [-1.8, 0.3, 2.1, 2.0],
@@ -190,17 +200,17 @@ export function drawFishAt(ctx: Ctx, f: Fish, x: number, y: number, atm: Atmosph
   }
   for (let row = -1; row <= 1; row++)
     for (let col = 0; col < 6; col++)
-      stroke(ctx, pigment({ r: 125, g: 105, b: 74 }, atm, 0.18), 0.18, () => {
+      stroke(ctx, waterPigment({ r: 125, g: 105, b: 74 }, atm, 0.18), 0.18, () => {
         const xx = -4 + col * 1.6 + (row ? 0.4 : 0);
         ctx.moveTo(xx, row * 1.5 - 0.5);
         ctx.quadraticCurveTo(xx - 0.75, row * 1.5, xx, row * 1.5 + 0.5);
       });
-  stroke(ctx, pigment({ r: 255, g: 252, b: 229 }, atm, 0.6), 0.5, () => {
+  stroke(ctx, waterPigment({ r: 255, g: 252, b: 229 }, atm, 0.6), 0.5, () => {
     ctx.moveTo(-4, -1.6);
     ctx.quadraticCurveTo(1.3, -3.6, 5.9, -1.9);
   });
   ctx.restore();
-  shape(ctx, pigment(bases[kind], atm, 0.65), () => {
+  shape(ctx, waterPigment(bases[kind], atm, 0.65), () => {
     ctx.moveTo(1, -1.8);
     ctx.lineTo(-1.5, -3.6 - Math.abs(wave) * 0.4);
     ctx.lineTo(-4.1, -1.5);
@@ -222,7 +232,7 @@ export function drawFishAt(ctx: Ctx, f: Fish, x: number, y: number, atm: Atmosph
   if (feeding)
     for (let i = 0; i < 3; i++) {
       const p = (time / 1700 + i / 3) % 1;
-      stroke(ctx, pigment({ r: 230, g: 244, b: 216 }, atm, (1 - p) * 0.7), 0.27, () =>
+      stroke(ctx, waterPigment({ r: 230, g: 244, b: 216 }, atm, (1 - p) * 0.7), 0.27, () =>
         ctx.ellipse(9 + i * 0.5, -p * 4 - i * 0.6, 0.4 + p * 0.65, 0.4 + p * 0.65, 0, 0, TAU),
       );
     }

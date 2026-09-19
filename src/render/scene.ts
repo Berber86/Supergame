@@ -304,17 +304,16 @@ export class Scene {
       ctx.drawImage(this.terrain.canvas, this.terrain.ox, this.terrain.oy);
     }
 
-    // анимированная вода: сначала общие блики, потом течение и водопады
+    // Pond bed is in terrain. Fish must be BELOW reflections, glare and ripples.
     spriteFrame();
     this.flow.ensure(world);
+    if (this.life) for (const f of this.life.fish) drawFish(ctx, f, world, atm, time);
     drawWaterAnimation(ctx, world, atm, time, this.wind);
     drawCurrent(ctx, world, this.flow, atm, time);
     drawShoreRipple(ctx, world, this.flow, atm, time);
     drawFalls(ctx, world, this.flow, atm, time);
 
-    // карпы — в толще воды, до наземных объектов
     if (this.life) {
-      for (const f of this.life.fish) drawFish(ctx, f, world, atm, time);
       // круги на воде: лягушка нырнула, птица выкупалась
       for (const r of this.life.residents.ripples) {
         const tile = world.at(Math.floor(r.x), Math.floor(r.y));

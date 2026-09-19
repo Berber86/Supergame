@@ -2,11 +2,14 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createCanvas } from '@napi-rs/canvas';
+Object.assign(globalThis, { document: { createElement: () => createCanvas(8, 8) } });
 import { World } from '../src/world/world';
 import { History } from '../src/core/history';
 import { BRUSH_BY_ID } from '../src/world/catalog';
 import { WaterFlow } from '../src/world/waterFlow';
 import { computeTime } from '../src/core/clock';
+import { Life } from '../src/world/life';
+import { drawFish, drawFishAt } from '../src/render/creatures';
 import { isoToScreen } from '../src/core/iso';
 import { buildAtmosphere } from '../src/world/palette';
 import {
@@ -260,3 +263,41 @@ assert.ok(avg < 16, `water-only render budget exceeded: ${avg.toFixed(1)}ms`);
 console.log(
   `ок: ${frames} frames; full flooded garden: ${avg.toFixed(2)} ms/frame (native canvas, not a phone benchmark)`,
 );
+
+// Fish are clipped to the curved shoreline and receive depth colour only in the garden.
+const specimenWorld = new World();
+const life = new Life();
+life.sync(specimenWorld);
+const fish = { ...life.fish[0], tx: 12.5, ty: 12.5, state: 'wander' as const };
+assert.ok(life.fish.length > 0);
+empty();
+rect(10, 10, 6, 6);
+prepareWaterSurface(world);
+const point = isoToScreen(fish.tx, fish.ty, -0.26);
+const fishFrame = () => {
+  ctx.resetTransform();
+  ctx.clearRect(0, 0, W, H);
+  ctx.translate(W / 2 - point.x, H / 2 - point.y);
+};
+fishFrame();
+drawFishAt(dc, fish, point.x, point.y, day, 1200);
+const bookFish = digest();
+fishFrame();
+drawFish(dc, fish, world, day, 1200);
+const submergedFish = digest();
+assert.notEqual(submergedFish, bookFish, 'garden fish are depth tinted; guide retains the original coat');
+assert.ok(ctx.getImageData(0, 0, W, H).data.some((v, i) => i % 4 === 3 && v > 0));
+const serializedFish = JSON.stringify(fish);
+fishFrame();
+drawFish(dc, fish, world, day, 1200);
+assert.equal(digest(), submergedFish);
+assert.equal(JSON.stringify(fish), serializedFish);
+empty();
+prepareWaterSurface(world);
+fishFrame();
+drawFish(dc, fish, world, day, 1200);
+assert.ok(
+  ctx.getImageData(0, 0, W, H).data.every((v, i) => i % 4 !== 3 || v === 0),
+  'no koi on dry land',
+);
+console.log('ок: underwater koi tint, pure rendering and dry land rejection');
