@@ -15,6 +15,17 @@
  * Никаких нужд и наказаний; только сезон, час, погода и соседи.
  */
 
+import {
+  HERON_STRIKE_MS,
+  HERON_WADE_SPEED,
+  HERON_STRIDE,
+  HEDGEHOG_STRIDE,
+  heronFlight,
+  hedgehogSpeed,
+  squirrelSpeed,
+  squirrelStride,
+  squirrelUpright,
+} from './wildlifeMotion';
 import { advanceAnimal, easePose } from './animalMotion';
 import { GRID } from '../core/iso';
 import { clamp, lerp, makeRng } from '../core/rng';
@@ -70,6 +81,10 @@ export interface Moth {
 export type HeronState = 'fly-in' | 'stand' | 'stalk' | 'strike' | 'preen' | 'fly-out';
 
 export interface Heron {
+  gait?: number;
+  flightPose?: number;
+  preenPose?: number;
+  stalkPose?: number;
   tx: number;
   ty: number;
   from: Vec | null;
@@ -118,6 +133,10 @@ export interface Deer {
 export type HedgehogState = 'enter' | 'walk' | 'forage' | 'sniff' | 'curl' | 'leave';
 
 export interface Hedgehog {
+  /** Непрерывный шаг и плавное сворачивание, отдельно от таймера curl. */
+  gait?: number;
+  roll?: number;
+  motion?: number;
   tx: number;
   ty: number;
   from: Vec | null;
@@ -179,6 +198,11 @@ export interface Owl {
 export type SquirrelState = 'enter' | 'jump' | 'forage' | 'cache' | 'look' | 'flee' | 'leave';
 
 export interface Squirrel {
+  gait?: number;
+  motion?: number;
+  upright?: number;
+  actionTime?: number;
+  actionDuration?: number;
   tx: number;
   ty: number;
   from: Vec | null;
@@ -544,6 +568,8 @@ export class Wildlife {
         hr.phase = Math.min(1, hr.phase + dt * 0.00014);
         hr.tx = lerp(hr.from.x, hr.target.x, hr.phase);
         hr.ty = lerp(hr.from.y, hr.target.y, hr.phase);
+        const screenDx = hr.target.x - hr.from.x - (hr.target.y - hr.from.y);
+        if (Math.abs(screenDx) > 0.01) hr.facing = screenDx > 0 ? 1 : -1;
         if (hr.phase >= 1) {
           hr.state = 'stand';
           hr.timer = 16_000 + rnd() * 26_000;
@@ -567,16 +593,12 @@ export class Wildlife {
       }
       case 'stalk': {
         if (!hr.target) break;
-        hr.from = hr.from ?? { x: hr.tx, y: hr.ty };
-        hr.phase = Math.min(1, hr.phase + dt * 0.00016);
-        hr.tx = lerp(hr.from.x, hr.target.x, hr.phase);
-        hr.ty = lerp(hr.from.y, hr.target.y, hr.phase);
-        if (Math.abs(hr.target.x - hr.tx) > 0.05) hr.facing = hr.target.x > hr.tx ? 1 : -1;
+        advanceAnimal(hr, dt, HERON_WADE_SPEED, HERON_STRIDE);
         if (hr.phase >= 1) {
           const r = rnd();
           if (r < 0.5) {
             hr.state = 'strike';
-            hr.timer = 900;
+            hr.timer = HERON_STRIKE_MS;
             hr.struck = false;
           } else if (r < 0.8) {
             this.heronStep(hr, h, 0.35);
@@ -616,12 +638,17 @@ export class Wildlife {
         hr.phase = Math.min(1, hr.phase + dt * 0.00012);
         hr.tx = lerp(hr.from.x, hr.target.x, hr.phase);
         hr.ty = lerp(hr.from.y, hr.target.y, hr.phase);
+        const screenDx = hr.target.x - hr.from.x - (hr.target.y - hr.from.y);
+        if (Math.abs(screenDx) > 0.01) hr.facing = screenDx > 0 ? 1 : -1;
         if (hr.phase >= 1 || hr.tx < -4 || hr.tx > GRID + 4 || hr.ty < -4 || hr.ty > GRID + 4) {
           this.heron = null;
         }
         break;
       }
     }
+    hr.flightPose = easePose(hr.flightPose ?? heronFlight(hr), heronFlight(hr), dt, 130);
+    hr.preenPose = easePose(hr.preenPose ?? 0, hr.state === 'preen' ? 1 : 0, dt, 260);
+    hr.stalkPose = easePose(hr.stalkPose ?? 0, hr.state === 'stalk' ? 1 : 0, dt, 220);
   }
 
   private heronStep(hr: Heron, h: Habitat, strikeBias: number): void {
@@ -767,13 +794,8 @@ export class Wildlife {
       switch (e.state) {
         case 'enter':
         case 'walk': {
-          if (!e.target) break;
-          e.from = e.from ?? { x: e.tx, y: e.ty };
-          const v = e.state === 'enter' ? 0.00032 : 0.00022;
-          e.phase = Math.min(1, e.phase + dt * v);
-          e.tx = lerp(e.from.x, e.target.x, e.phase);
-          e.ty = lerp(e.from.y, e.target.y, e.phase);
-          if (Math.abs(e.target.x - e.tx) > 0.05) e.facing = e.target.x > e.tx ? 1 : -1;
+          if (!e.target || (e.roll ?? 0) > 0.08) break;
+          advanceAnimal(e, dt, hedgehogSpeed(e.state), HEDGEHOG_STRIDE);
           if (e.phase >= 1) {
             e.state = rnd() < 0.5 ? 'forage' : 'sniff';
             e.timer = 4000 + rnd() * 8000;
@@ -820,20 +842,17 @@ export class Wildlife {
           break;
         }
         case 'leave': {
-          if (!e.target) break;
-          e.from = e.from ?? { x: e.tx, y: e.ty };
-          e.phase = Math.min(1, e.phase + dt * 0.00028);
-          e.tx = lerp(e.from.x, e.target.x, e.phase);
-          e.ty = lerp(e.from.y, e.target.y, e.phase);
-          if (Math.abs(e.target.x - e.tx) > 0.05) e.facing = e.target.x > e.tx ? 1 : -1;
+          if (!e.target || (e.roll ?? 0) > 0.08) break;
+          advanceAnimal(e, dt, hedgehogSpeed(e.state), HEDGEHOG_STRIDE);
           if (e.phase >= 1 || e.tx < -4 || e.tx > GRID + 4 || e.ty < -4 || e.ty > GRID + 4) {
             this.hedgehogs.splice(i, 1);
           }
           break;
         }
       }
-      e.tx = clamp(e.tx, 0.5, GRID - 0.5);
-      e.ty = clamp(e.ty, 0.5, GRID - 0.5);
+      e.roll = easePose(e.roll ?? 0, e.state === 'curl' ? 1 : 0, dt, e.state === 'curl' ? 180 : 650);
+      const moving = e.state === 'enter' || e.state === 'walk' || e.state === 'leave';
+      e.motion = easePose(e.motion ?? 0, moving ? 1 : 0, dt, 140);
     }
     if (this.hedgehogs.length >= inv.hedgehog) return;
     this.hedgehogTimer -= dt;
@@ -1170,6 +1189,8 @@ export class Wildlife {
   ): void {
     for (let i = this.squirrels.length - 1; i >= 0; i--) {
       const s = this.squirrels[i];
+      const previousState = s.state;
+      s.actionTime = (s.actionTime ?? 0) + dt;
       s.timer -= dt;
       if (s.panic > 0) s.panic -= dt;
 
@@ -1197,15 +1218,7 @@ export class Wildlife {
         case 'enter':
         case 'jump': {
           if (!s.target) break;
-          s.from = s.from ?? { x: s.tx, y: s.ty };
-          const v = s.state === 'enter' ? 0.00055 : 0.00072;
-          s.phase = Math.min(1, s.phase + dt * v);
-          // Прыжок по дуге
-          const t = s.phase;
-          const jumpH = Math.sin(t * Math.PI) * 1.2;
-          s.tx = lerp(s.from.x, s.target.x, t);
-          s.ty = lerp(s.from.y, s.target.y, t) - jumpH * 0.15;
-          if (Math.abs(s.target.x - s.tx) > 0.05) s.facing = s.target.x > s.tx ? 1 : -1;
+          advanceAnimal(s, dt, squirrelSpeed(s.state), squirrelStride(s.state));
           if (s.phase >= 1) {
             s.state = rnd() < 0.5 ? 'forage' : 'look';
             s.timer = 2000 + rnd() * 4000;
@@ -1230,7 +1243,7 @@ export class Wildlife {
             } else if (r < 0.7) {
               s.state = 'cache';
               s.timer = 2000 + rnd() * 2500;
-              s.hasNut = rnd() < 0.6;
+              s.hasNut = s.hasNut || rnd() < 0.6;
               if (s.hasNut && rnd() < 0.4) this.pushNote('squirrel_cache', s.tx, s.ty);
             } else {
               s.state = 'look';
@@ -1256,10 +1269,7 @@ export class Wildlife {
         }
         case 'flee': {
           if (!s.target) break;
-          s.from = s.from ?? { x: s.tx, y: s.ty };
-          s.phase = Math.min(1, s.phase + dt * 0.001);
-          s.tx = lerp(s.from.x, s.target.x, s.phase);
-          s.ty = lerp(s.from.y, s.target.y, s.phase);
+          advanceAnimal(s, dt, squirrelSpeed(s.state), squirrelStride(s.state));
           if (s.phase >= 1) {
             s.state = 'look';
             s.timer = 3000 + rnd() * 5000;
@@ -1269,18 +1279,21 @@ export class Wildlife {
         }
         case 'leave': {
           if (!s.target) break;
-          s.from = s.from ?? { x: s.tx, y: s.ty };
-          s.phase = Math.min(1, s.phase + dt * 0.00055);
-          s.tx = lerp(s.from.x, s.target.x, s.phase);
-          s.ty = lerp(s.from.y, s.target.y, s.phase);
+          advanceAnimal(s, dt, squirrelSpeed(s.state), squirrelStride(s.state));
           if (s.phase >= 1 || s.tx < -4 || s.tx > GRID + 4 || s.ty < -4 || s.ty > GRID + 4) {
             this.squirrels.splice(i, 1);
           }
           break;
         }
       }
-      s.tx = clamp(s.tx, 0.5, GRID - 0.5);
-      s.ty = clamp(s.ty, 0.5, GRID - 0.5);
+      if (s.state !== previousState) {
+        s.actionTime = 0;
+        s.actionDuration = s.timer;
+        if (s.state === 'forage' && previousState !== 'cache' && !s.hasNut) s.hasNut = rnd() < 0.45;
+      }
+      const moving = s.state === 'enter' || s.state === 'jump' || s.state === 'flee' || s.state === 'leave';
+      s.motion = easePose(s.motion ?? 0, moving ? 1 : 0, dt, 100);
+      s.upright = easePose(s.upright ?? 0, squirrelUpright(s), dt, 190);
     }
 
     if (this.squirrels.length >= inv.squirrel) return;

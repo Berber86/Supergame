@@ -21,6 +21,9 @@ const expected: Record<string, string[]> = {
   deer: ['enter', 'walk', 'graze', 'look', 'leave'],
   turtle: ['enter', 'bask', 'walk', 'swim', 'hide', 'look', 'leave'],
   cat: ['sleep', 'sit', 'walk', 'wash', 'stretch', 'loaf'],
+  hedgehog: ['enter', 'walk', 'forage', 'sniff', 'curl', 'leave'],
+  squirrel: ['enter', 'jump', 'forage', 'cache', 'look', 'flee', 'leave'],
+  heron: ['fly-in', 'stand', 'stalk', 'strike', 'preen', 'fly-out'],
 };
 for (const [id, states] of Object.entries(expected)) {
   assert.deepEqual(
@@ -153,7 +156,11 @@ console.log('ок: заплыв только в настоящую воду, в�
 // Optional visual proof sheet; never part of the saved game or repository assets.
 const sheetAt = process.argv.indexOf('--sheet');
 if (sheetAt >= 0) {
-  const cells = GUIDE_ANIMALS.filter((a) => ['deer', 'turtle'].includes(a.id)).flatMap((animal) =>
+  const names = process.argv
+    .find((arg) => arg.startsWith('--animals='))
+    ?.slice(10)
+    .split(',') ?? ['deer', 'turtle'];
+  const cells = GUIDE_ANIMALS.filter((a) => names.includes(a.id)).flatMap((animal) =>
     animal.animations.map((animation) => ({ animal, animation })),
   );
   const sheet = createCanvas(1200, Math.ceil(cells.length / 3) * 330);
@@ -169,7 +176,7 @@ if (sheetAt >= 0) {
     c.save();
     c.translate(x + 200, y + 270);
     c.scale(animal.scale * 0.9, animal.scale * 0.9);
-    animal.draw(c as unknown as CanvasRenderingContext2D, day, animation.id, 1800, 0);
+    animal.draw(c as unknown as CanvasRenderingContext2D, day, animation.id, animation.duration * 0.45, 0);
     c.restore();
   });
   writeFileSync(process.argv[sheetAt + 1], sheet.toBuffer('image/png'));

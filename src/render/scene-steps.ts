@@ -608,7 +608,7 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
         const tile = world.at(Math.floor(sq.tx), Math.floor(sq.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(sq.tx, sq.ty, lvl);
-        list.push({ depth: (sq.tx + sq.ty) * 100 + lvl * 20 + 160, draw: () => drawSquirrel(ctx, sq, p.x, p.y, atm, time) });
+        list.push({ depth: (sq.tx + sq.ty) * 100 + lvl * 20 + 12, draw: () => drawSquirrel(ctx, sq, p.x, p.y, atm, time) });
       }
       for (const tu of opts.life.wildlife.turtles) {
         const tile = world.at(Math.floor(tu.tx), Math.floor(tu.ty));

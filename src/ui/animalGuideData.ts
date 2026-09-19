@@ -1,3 +1,4 @@
+import { HERON_STRIKE_MS } from '../world/wildlifeMotion';
 /** The field guide uses isolated specimens, never live agents or the player's save. */
 import type { Cat, Bird, BirdSpecies, Fish, Flutter } from '../world/life';
 import type { Frog, PondDragonfly } from '../world/residents';
@@ -33,6 +34,8 @@ export interface GuideAnimal {
   habitat: string;
   scale: number;
   baseline: number;
+  /** Камера отъезжает, чтобы распахнутые крылья помещались на странице. */
+  flightScale?: number;
   water?: boolean;
   night?: boolean;
   variants?: string[];
@@ -56,7 +59,8 @@ const base = {
 const durations: Record<string, number> = {
   hop: 1400,
   jump: 1800,
-  strike: 2000,
+  strike: HERON_STRIKE_MS,
+  cache: 3200,
   dive: 2200,
   emerge: 2200,
   stretch: 3500,
@@ -85,7 +89,11 @@ function animal<T extends { state: string }>(
       // Small local trajectories keep flight, approach and retreat visible on the page.
       const travel = ['enter', 'leave', 'arrive', 'fly-in', 'fly-out', 'approach', 'return'].includes(state);
       const offset = travel ? Math.sin((p - 0.5) * Math.PI) * 9 : 0;
+      const zoom = state === 'fly-in' || state === 'fly-out' ? (meta.flightScale ?? 1) : 1;
+      ctx.save();
+      ctx.scale(zoom, zoom);
       render(ctx, specimen(state as T['state'], time, variant), offset, 0, atm, time);
+      ctx.restore();
     },
   };
 }
@@ -225,9 +233,11 @@ const heron = animal<Heron>(
     name: 'Цапля',
     latin: 'Ardea',
     group: 'Птицы',
-    scale: 3.2,
-    baseline: 0.89,
-    description: 'Долгое неподвижное ожидание — и быстрый бросок к воде. В полёте широкие крылья несут её над садом.',
+    scale: 4.1,
+    baseline: 0.85,
+    flightScale: 0.6,
+    description:
+      'Поднимает длинные ноги над водой и замирает перед броском. S-образная шея распрямляется к добыче, а в полёте складывается между широкими перьевыми крыльями.',
     habitat: 'Выбирает большой пруд с тихим берегом.',
   },
   {
@@ -242,7 +252,8 @@ const heron = animal<Heron>(
     ...base,
     state,
     phase: phase(time, state),
-    fish: state === 'strike' && phase(time, state) > 0.6 ? 1 : 0,
+    timer: state === 'strike' ? HERON_STRIKE_MS * (1 - phase(time, state)) : 4000,
+    fish: state === 'strike' && phase(time, state) > 0.45 ? 1 : 0,
     struck: false,
   }),
   drawHeron,
@@ -256,7 +267,8 @@ const hedgehog = animal<Hedgehog>(
     group: 'Звери',
     scale: 9,
     baseline: 0.66,
-    description: 'Шуршит в укромных уголках, нюхает землю и ищет корм. Если рядом кот — превращается в колючий клубок.',
+    description:
+      'Тихо семенит на коротких лапах, шевелит носом и разгребает листву. При опасности прячет мордочку и лапы в плотную шубку из коротких иголок.',
     habitat: 'Кусты и тихие места, преимущественно ночью.',
   },
   {
@@ -264,10 +276,16 @@ const hedgehog = animal<Hedgehog>(
     enter: 'Приходит',
     walk: 'Идёт',
     forage: 'Ищет корм',
-    curl: 'Сворачивается',
+    curl: 'Сворачивается и раскрывается',
     leave: 'Уходит',
   },
-  (state, time) => ({ ...base, state, phase: phase(time, state), curl: state === 'curl' ? 4000 : 0 }),
+  (state, time) => ({
+    ...base,
+    state,
+    phase: phase(time, state),
+    curl: state === 'curl' ? 4000 : 0,
+    roll: state === 'curl' ? Math.min(1, Math.max(0, Math.sin(phase(time, state) * Math.PI) * 1.6)) : 0,
+  }),
   drawHedgehog,
 );
 
@@ -331,10 +349,10 @@ const squirrel = animal<Squirrel>(
     name: 'Белка',
     latin: 'Sciurus',
     group: 'Звери',
-    scale: 4,
-    baseline: 0.84,
+    scale: 6.3,
+    baseline: 0.8,
     description:
-      'Пушистый хвост помогает держать равновесие в прыжке. Найденный орешек можно съесть или спрятать про запас.',
+      'Пышный хвост выгибается следом за прыжком. На земле белка встаёт столбиком, держит орешек в передних лапах или закапывает его быстрыми движениями.',
     habitat: 'Деревья и бельчатники; чаще приходит днём.',
   },
   {
@@ -351,6 +369,8 @@ const squirrel = animal<Squirrel>(
     state,
     phase: phase(time, state),
     hasNut: state === 'cache' || state === 'forage',
+    actionTime: time % animationDuration(state),
+    actionDuration: animationDuration(state),
     panic: state === 'flee' ? 1 : 0,
   }),
   drawSquirrel,
