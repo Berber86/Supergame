@@ -30,7 +30,10 @@ export type Drawer = (d: DrawCtx) => void;
 export const WHITE: RGB = { r: 255, g: 255, b: 255 };
 
 export function litc(c: RGB, atm: Atmosphere, boost = 0): RGB {
-  return shade(mix(c, atm.lightTint, atm.lightAmount), atm.exposure + boost);
+  return shade(
+    mix(c, atm.lightTint, atm.lightAmount),
+    (atm.exposure + boost) * (1 - (atm.materialWetness ?? 0) * 0.22),
+  );
 }
 
 /**

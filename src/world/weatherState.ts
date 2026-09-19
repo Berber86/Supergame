@@ -35,6 +35,8 @@ export interface WeatherState {
   flash: number;
   /** Мокрые поверхности 0..1 — блеск остаётся после дождя. */
   wetness: number;
+  /** Short-lived roof reservoir, separate from slowly drying ground. */
+  roofWetness?: number;
 }
 
 const rnd = makeRng(777);
@@ -58,6 +60,7 @@ export class WeatherSystem {
     overcast: 0,
     flash: 0,
     wetness: 0,
+    roofWetness: 0,
   };
 
   /** Обратный вызов для грома — звук ставится позже вспышки. */
@@ -102,6 +105,7 @@ export class WeatherSystem {
   }
 
   update(dt: number, t: TimeState): void {
+    dt = Number.isFinite(dt) ? Math.max(0, dt) : 0;
     // --- Выбор новой погоды ---
     if (this.forced === 'auto') {
       this.timer -= dt;
@@ -138,8 +142,17 @@ export class WeatherSystem {
     s.overcast = towards(s.overcast, wantOvercast);
 
     // Мокрые поверхности: быстро намокают, медленно сохнут
-    if (s.rain > 0.05) s.wetness = clamp01(s.wetness + dt / 6000);
-    else s.wetness = clamp01(s.wetness - dt / 40000);
+    if (t.season === 'winter') {
+      s.wetness = 0;
+      s.roofWetness = 0;
+    } else if (s.rain > 0.05) {
+      s.wetness = clamp01(s.wetness + dt / 6000);
+      s.roofWetness = clamp01((s.roofWetness ?? 0) + dt / 4000);
+    } else {
+      const drying = (0.35 + t.daylight * 0.65) * (1 - s.overcast * 0.55);
+      s.wetness = clamp01(s.wetness - (dt * drying) / 180000);
+      s.roofWetness = clamp01((s.roofWetness ?? 0) - (dt * (0.5 + t.daylight * 0.5)) / 22000);
+    }
 
     s.intensity = Math.max(s.rain, s.snow, s.fog);
     this.current = this.target;

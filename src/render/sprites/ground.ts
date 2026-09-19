@@ -63,6 +63,15 @@ export function makeRock(sizeScale: number, count: number): Drawer {
         ctx.quadraticCurveTo(cx + (t - 0.5) * rx, cy, cx - rx * 0.3 + t * rx * 1.2, cy + ry * 0.7);
         ctx.stroke();
       }
+      const wet = atm.materialWetness ?? 0;
+      if (wet > 0) {
+        ctx.strokeStyle = css(mix(atm.skyBottom, WHITE, 0.35), wet * 0.34 * Math.min(1, atm.exposure));
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(cx - rx * 0.38, cy - ry * 0.37);
+        ctx.quadraticCurveTo(cx - rx * 0.1, cy - ry * 0.54, cx + rx * 0.23, cy - ry * 0.42);
+        ctx.stroke();
+      }
       ctx.restore();
       granulate(ctx, cx, cy, rx * 0.8, ry * 0.8, dark, obj.seed + i, 10, 0.12);
 

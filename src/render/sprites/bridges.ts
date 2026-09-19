@@ -121,6 +121,14 @@ function bridge(d: Parameters<Drawer>[0], plank: boolean): void {
       [g0.x, g0.y],
       [g1.x, g1.y],
     ]);
+    if ((atm.materialWetness ?? 0) > 0 && i % 3 !== 0) {
+      const a = at((t0 + t1) / 2, -0.6),
+        b = at((t0 + t1) / 2, 0.25);
+      limb(ctx, css(mix(atm.skyBottom, { r: 231, g: 235, b: 219 }, 0.3), (atm.materialWetness ?? 0) * 0.33), 0.7, [
+        [a.x, a.y],
+        [b.x, b.y],
+      ]);
+    }
     if (i % 3 === 1)
       for (const side of [-0.8, 0.8]) {
         const p = at((t0 + t1) / 2, side);

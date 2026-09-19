@@ -1,6 +1,6 @@
 /** Отрисовка земли: непрерывные акварельные заливки, мягкие границы материалов, вода с берегом. */
 
-import { GRID, LEVEL_H, TILE_H, TILE_W, isoToScreen } from '../core/iso';
+import { GRID, LEVEL_H, TILE_H, TILE_W, isoToScreen, tileDiamond } from '../core/iso';
 import { clamp01, fbm, hash2, lerp } from '../core/rng';
 import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
 import { GroundId, Tile } from '../world/types';
@@ -525,19 +525,20 @@ function drawTileFill(ctx: Ctx, world: World, x: number, y: number, t: Tile, atm
 }
 
 /** Конусная лента от c до m в цвет покрытия. */
-function ribbonQuad(ctx: Ctx, c: { x: number; y: number }, m: { x: number; y: number }, w0: number, w1: number): void {
+function ribbonQuad(ctx: Ctx, c: { x: number; y: number }, m: { x: number; y: number }, w0: number, w1: number, fill = true): void {
   const dx = m.x - c.x;
   const dy = m.y - c.y;
   const len = Math.hypot(dx, dy) || 1;
   const px = -dy / len;
   const py = dx / len;
-  ctx.beginPath();
+  if(fill) ctx.beginPath();
   ctx.moveTo(c.x + px * w0, c.y + py * w0);
   ctx.lineTo(c.x - px * w0, c.y - py * w0);
   ctx.lineTo(m.x - px * w1, m.y - py * w1);
   ctx.lineTo(m.x + px * w1, m.y + py * w1);
   ctx.closePath();
-  ctx.fill();
+  ctx.closePath();
+  if(fill) ctx.fill();
 }
 
 /** Тропинка: узкая лента, обвивающая соседей; перекрёстки шире. */
@@ -564,6 +565,18 @@ function drawRoadRibbon(ctx: Ctx, world: World, x: number, y: number, t: Tile, a
   const seed = x * 41 + y * 97;
   blobPath(ctx, sk.c.x, sk.c.y, w * (sk.arms.length ? 1.5 : 1.7), w * 1.35, seed, 0.34, 11);
   ctx.fill();
+}
+
+/** Same organic road geometry for residual moisture; appends to a batched nonzero-winding path. */
+export function wetRoadPath(ctx:Ctx,world:World,x:number,y:number,t:Tile):void {
+  const sk=roadSkeleton(world,x,y,t);
+  if(!sk){const p=tileDiamond(x,y,t.level);p.forEach((q,i)=>i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y));ctx.closePath();return;}
+  const junc=sk.cardDeg>=2||sk.arms.length>=3,w=TILE_W*.15*(junc?1.35:1);
+  for(const arm of sk.arms){
+    ribbonQuad(ctx,sk.c,arm.m,w,w*(arm.corner?.8:1),false);
+    if(arm.corner)blobPath(ctx,arm.m.x,arm.m.y,w*1.15,w*1.05,x*67+y*13+5,.3,9,false);
+  }
+  blobPath(ctx,sk.c.x,sk.c.y,w*(sk.arms.length?1.5:1.7),w*1.35,x*41+y*97,.34,11,false);
 }
 
 /** Крупные размывы поверх земли. Режим multiply — краска ложится слоями, как акварель. */

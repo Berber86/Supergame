@@ -195,29 +195,5 @@ export function drawLightning(ctx: Ctx, w: number, h: number, weather: WeatherSt
   ctx.restore();
 }
 
-/** Мокрый блеск на земле после дождя. */
-export function drawWetSheen(ctx: Ctx, world: World, atm: Atmosphere, weather: WeatherState, time: number): void {
-  if (weather.wetness < 0.05) return;
-  const sheen = mix(atm.skyTop, { r: 255, g: 255, b: 255 }, 0.4);
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  for (let y = 0; y < GRID; y += 1) {
-    for (let x = 0; x < GRID; x += 1) {
-      const t = world.at(x, y)!;
-      if (t.water || t.indoor) continue;
-      // блестят преимущественно твёрдые поверхности
-      const hard = t.ground === 'stone' || t.ground === 'deck' || t.ground === 'gravel' || t.ground === 'sand';
-      if (!hard && hash2(x, y, 51) > 0.35) continue;
-      const p = isoToScreen(x + 0.5, y + 0.5, t.level);
-      const tw = 0.6 + 0.4 * Math.sin(time * 0.0008 + x * 0.7 + y * 1.1);
-      ctx.fillStyle = css(sheen, (hard ? 0.05 : 0.025) * weather.wetness * tw);
-      ctx.beginPath();
-      ctx.ellipse(p.x, p.y, 34, 16, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  ctx.restore();
-}
-
 export { shade };
 export type { RGB };

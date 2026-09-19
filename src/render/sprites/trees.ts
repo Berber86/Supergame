@@ -1,9 +1,11 @@
+import { plantYear, leafGroup, crownAnchorBlend } from '../../world/phenology';
+import { crownSites } from '../crownGeometry';
 /** Деревья и кусты: стволы, ветви, кроны — стартовый сад почти весь отсюда. */
 
 import { flowerOpenness, flowerHeadPath } from '../flowerCycle';
 import { DrawCtx, Drawer, WHITE, litc, shadowUnder } from './common';
-import { hash2, lerp } from '../../core/rng';
-import { Atmosphere, RGB, css, mix, shade } from '../../world/palette';
+import { hash2, lerp, smoothstep } from '../../core/rng';
+import { RGB, css, mix, shade } from '../../world/palette';
 import { blobPath, granulate, taperStroke, washBlob } from '../paint';
 
 // ---------------- Деревья ----------------
@@ -13,23 +15,18 @@ interface TreeStyle {
   crownSpring: RGB;
   crownSummer: RGB;
   crownAutumn: RGB;
-  crownWinter: RGB | null;
   blossom?: RGB;
   height: number;
   crownW: number;
   crownH: number;
   layers: number;
   droop?: number;
+  fruit?: RGB;
 }
 
-function crownColor(style: TreeStyle, atm: Atmosphere): { main: RGB; bare: boolean } {
-  const s = atm.season;
-  if (s === 'winter') {
-    if (!style.crownWinter) return { main: style.crownAutumn, bare: true };
-    return { main: style.crownWinter, bare: false };
-  }
-  const main = s === 'spring' ? style.crownSpring : s === 'summer' ? style.crownSummer : style.crownAutumn;
-  return { main, bare: false };
+function anchorColor(now: number, colors: RGB[]): RGB {
+  const b = crownAnchorBlend(now);
+  return mix(colors[b.from], colors[b.to], b.amount);
 }
 
 function drawTrunk(d: DrawCtx, h: number, w: number, col: RGB, bend: number): { tx: number; ty: number } {
@@ -153,300 +150,189 @@ function drawTreeCavity(d: DrawCtx, tx: number, ty: number, _h: number, w: numbe
   }
 }
 
-function drawBranches(d: DrawCtx, tx: number, ty: number, n: number, len: number, col: RGB, spread = 1): void {
-  const { ctx, obj } = d;
-  for (let i = 0; i < n; i++) {
-    const r = hash2(i, obj.seed, 3);
-    const side = i % 2 === 0 ? -1 : 1;
-    const ang = side * (0.55 + r * 0.55) * spread;
-    const l = len * (0.6 + r * 0.6);
-    const ex = tx + Math.sin(ang) * l;
-    const ey = ty - Math.cos(ang * 0.6) * l * 0.55 + (i / n) * len * 0.3;
-    taperStroke(ctx, tx + side * 2, ty + i * 3, ex, ey, 3.2, 1.1, col, 0.8, side * 6);
-  }
-}
-
-/** Голая зимняя крона: рекурсивное ветвление — читается как настоящее дерево. */
-/**
- * Голая крона зимой.
- *
- * Раньше все породы ветвились одинаково, и зимой сакура, клён, ива и гинкго
- * становились неотличимы — в каталоге стояли четыре одинаковые картинки.
- * Теперь силуэт берётся из тех же пропорций кроны, что и летом: широкая
- * и низкая у ивы, узкая и высокая у гинкго.
- */
-
-function drawBareCrown(
-  d: DrawCtx,
-  tx: number,
-  ty: number,
-  h: number,
-  cw: number,
-  ch: number,
-  col: RGB,
-  sway: number,
-  droop = 0,
-  extra = 0,
-): void {
-  const { ctx, obj } = d;
-  const spreadK = cw / Math.max(1, ch);
-  // Вариация толщины веток по сиду
-  const thickJ = 0.85 + hash2(obj.seed, 91, 7) * 0.3;
-  const branch = (x: number, y: number, ang: number, len: number, w: number, depth: number, seed: number) => {
-    if (depth > 3 || len < 4) return;
-    const sag = droop > 0 ? (droop / 100) * depth * 0.5 : 0;
-    const ex = x + Math.sin(ang) * len + sway * 0.15 * depth;
-    const ey = y - Math.cos(ang) * len + sag * len * 0.35;
-    taperStroke(ctx, x, y, ex, ey, w, w * 0.55, col, 0.88, Math.sin(ang) * len * 0.1);
-    const n = depth < 2 ? 3 : 2;
-    for (let i = 0; i < n; i++) {
-      const r = hash2(seed * 7 + i, obj.seed + depth, 53);
-      const spread = (0.34 + r * 0.46) * (i % 2 === 0 ? 1 : -1) * spreadK;
-      branch(ex, ey, ang + spread, len * (0.58 + r * 0.22), w * 0.6, depth + 1, seed * 3 + i + 1);
-    }
-  };
-  const main = (spreadK > 1.5 ? 5 : spreadK < 1.1 ? 3 : 4) + extra;
-  const fan = 0.5 + spreadK * 0.55 + hash2(obj.seed, 93, 11) * 0.15;
-  for (let i = 0; i < main; i++) {
-    const r = hash2(i, obj.seed, 71);
-    const ang = -fan + (i / Math.max(1, main - 1)) * fan * 2 + (r - 0.5) * 0.28;
-    const reach = h * 0.34 * (0.8 + r * 0.4) * (0.75 + (ch / Math.max(1, cw)) * 0.5);
-    branch(tx, ty + 4, ang, reach, 3.4 * thickJ, 0, i + 1);
-  }
-}
-
 function makeTree(style: TreeStyle): Drawer {
   return (d) => {
-    const { ctx, atm, g, obj } = d;
-    const scale = lerp(0.18, 1, Math.pow(g, 0.72));
-    const h = style.height * scale;
-    // Деревья одной породы не близнецы: пропорции кроны и её посадка
-    // дрожат по сиду. Кэш ключуется сидом, так что дрожь стабильна.
-    // Расширили диапазон: раньше 0.92..1.08, теперь 0.80..1.22 — заметнее.
-    const shapeJ = hash2(obj.seed, 5, 7);
-    const shapeJ2 = hash2(obj.seed, 6, 9);
-    const shapeJ3 = hash2(obj.seed, 7, 11);
-    const shapeJ4 = hash2(obj.seed, 12, 17);
-    const shapeJ5 = hash2(obj.seed, 14, 19);
-    const cw = style.crownW * scale * (0.8 + shapeJ * 0.42);
-    const ch = style.crownH * scale * (0.8 + shapeJ2 * 0.42);
-    const crownDx = (shapeJ - 0.5) * cw * 0.22;
+    const { ctx, atm, g, obj } = d,
+      state = plantYear(obj.type, obj.seed, atm.time.now);
+    const scale = lerp(0.18, 1, Math.pow(g, 0.72)),
+      h = style.height * scale;
+    const cw = style.crownW * scale * (0.8 + hash2(obj.seed, 5, 7) * 0.42);
+    const ch = style.crownH * scale * (0.8 + hash2(obj.seed, 6, 9) * 0.42);
     const sway = Math.sin(d.time * 0.0004 + obj.seed) * 3 * d.wind * scale;
-    // Дополнительная детерминированная вариация по сиду:
-    const leanJ = (shapeJ3 - 0.5) * 0.32; // наклон -0.16..0.16
-    const asymJ = (hash2(obj.seed, 8, 13) - 0.5) * 0.32;
-    const tallJ = 0.88 + shapeJ4 * 0.24; // высота кроны: приземистая vs вытянутая
-    const lushJ = 0.75 + shapeJ5 * 0.5; // пышность: редкая vs густая
-
+    const leanJ = (hash2(obj.seed, 7, 11) - 0.5) * 0.32;
+    const trunkCol = litc(style.trunk, atm),
+      branchCol = shade(trunkCol, 0.92);
+    const trunkW = Math.max(2.2, 7 * scale * (0.9 + hash2(obj.seed, 12, 17) * 0.2));
+    // Keep cast-shadow behaviour unchanged until the canopy-aware lighting stage.
     shadowUnder(d, cw * 0.62, cw * 0.26, 0.9);
-
-    const trunkCol = litc(style.trunk, atm);
-    const lean = sway * 0.35 + leanJ * h * 0.14;
-    const trunkW = Math.max(2.2, 7 * scale * (0.9 + shapeJ4 * 0.2));
-    const { tx, ty } = drawTrunk(d, h, trunkW, trunkCol, lean);
-    // гнёзда / дупла — после ствола, до кроны, чтобы не перекрывалось листвой полностью
+    const { tx, ty } = drawTrunk(d, h, trunkW, trunkCol, sway * 0.35 + leanJ * h * 0.14);
     drawTreeCavity(d, tx, ty, h, trunkW);
-
-    const { main, bare } = crownColor(style, atm);
-    const branchCol = shade(trunkCol, 0.92);
-
-    if (bare) {
-      // зимний силуэт: ветвистая крона + шапки снега
-      // Вариация: количество скелетных ветвей и их толщина зависят от сида
-      const bareBranchExtra = hash2(obj.seed, 33, 7) > 0.6 ? 1 : 0;
-      drawBareCrown(d, tx, ty, h, cw, ch, branchCol, sway, style.droop ?? 0, bareBranchExtra);
-      const snow = litc({ r: 247, g: 249, b: 252 }, atm);
-      for (let i = 0; i < 7 + bareBranchExtra * 2; i++) {
-        const r = hash2(i, obj.seed, 9);
-        const r2 = hash2(i, obj.seed, 4);
-        const up = 0.18 + r2 * 0.62;
-        const domeK = 1.05 - up * 0.75;
-        washBlob(
-          ctx,
-          tx + (r - 0.5) * cw * domeK + sway,
-          ty - ch * up,
-          cw * (0.09 + r * 0.13) * (1 - up * 0.35),
-          ch * (0.035 + r2 * 0.04),
-          snow,
-          obj.seed + i,
-          { layers: 2, alpha: 0.6, edge: 0.08, wobble: 0.3 },
-        );
-      }
-      return;
-    }
-
-    // Ветви: количество 4..7, длина и разброс зависят от сида
-    const branchCount = 4 + Math.floor(hash2(obj.seed, 23, 29) * 4);
-    const branchSpread = 0.85 + hash2(obj.seed, 25, 31) * 0.35;
-    const branchLenK = 0.85 + hash2(obj.seed, 27, 33) * 0.3;
-    drawBranches(d, tx, ty, branchCount, h * 0.35 * branchLenK, branchCol, branchSpread);
-
-    const cxx = tx + crownDx + asymJ * cw * 0.42;
-    // Лёгкий оттенок кроны по сиду — деревья одной породы не одинакового тона
-    const tintJ = hash2(obj.seed, 73, 11);
-    const tintedMain = mix(
-      main,
-      tintJ > 0.66 ? { r: 210, g: 190, b: 120 } : tintJ < 0.33 ? { r: 130, g: 160, b: 140 } : main,
-      0.12,
-    );
-    const crownMain = litc(tintedMain, atm);
-    const crownDeep = litc(shade(mix(tintedMain, atm.palette.foliageDeep, 0.55), 0.92), atm);
-    const crownLight = litc(mix(tintedMain, WHITE, 0.32), atm, 0.05);
-    const crownShade = litc(shade(mix(tintedMain, atm.palette.foliageDeep, 0.6), 0.8), atm);
-
-    // Крона — стопка акварельных клякс, количество зависит от пышности lushJ
-    const baseLayers = style.layers;
-    const layers = Math.max(3, Math.round(baseLayers * lushJ + hash2(obj.seed, 17, 23) * 1.5));
-    for (let i = 0; i < layers; i++) {
-      const r1 = hash2(i, obj.seed, 11);
-      const r2 = hash2(i, obj.seed, 19);
-      const spread = 1 - i / (layers + 1);
-      // tallJ растягивает крону по вертикали
-      const lx = cxx + (r1 - 0.5) * cw * 1.05 + sway * (1 + i * 0.15);
-      const ly = ty - ch * 0.15 * tallJ + (r2 - 0.5) * ch * 0.75 * tallJ - i * ch * 0.06 * tallJ;
-      const rx = cw * (0.42 + r1 * 0.3) * (0.7 + spread * 0.5) * (0.9 + lushJ * 0.15);
-      const ry = ch * (0.3 + r2 * 0.22) * tallJ;
-      washBlob(ctx, lx, ly + ry * 0.3, rx, ry, crownDeep, obj.seed + i * 7, {
-        layers: 2,
-        alpha: 0.4 * (0.85 + lushJ * 0.2),
-        edge: 0.16,
-        wobble: 0.28 + r1 * 0.12,
-      });
-      washBlob(ctx, lx, ly, rx * 0.96, ry * 0.94, crownMain, obj.seed + i * 13, {
-        layers: 3,
-        alpha: 0.4 * (0.85 + lushJ * 0.2),
-        edge: 0.19,
-        wobble: 0.28 + r2 * 0.1,
-      });
-    }
-
-    const shadeA = 0.34 * (0.35 + 0.65 * atm.time.daylight);
-    if (shadeA > 0.05) {
-      washBlob(
-        ctx,
-        cxx + atm.sunDir.x * cw * 0.3 + sway,
-        ty - ch * 0.02 * tallJ,
-        cw * 0.42 * (0.9 + lushJ * 0.15),
-        ch * 0.32 * tallJ,
-        crownShade,
-        obj.seed + 47,
-        { layers: 2, alpha: shadeA, edge: 0.1, wobble: 0.3 },
-      );
-    }
-
-    const sunX = cxx - atm.sunDir.x * cw * 0.32 + sway;
-    washBlob(ctx, sunX, ty - ch * 0.42 * tallJ, cw * 0.44, ch * 0.24 * tallJ, crownLight, obj.seed + 91, {
-      layers: 2,
-      alpha: 0.4,
-      edge: 0,
-      wobble: 0.28,
-    });
-
-    if (atm.golden > 0.08) {
-      const rim = litc(mix({ r: 255, g: 190, b: 110 }, WHITE, 0.25), atm, 0.06);
-      washBlob(ctx, sunX - atm.sunDir.x * cw * 0.1, ty - ch * 0.46 * tallJ, cw * 0.4, ch * 0.1, rim, obj.seed + 97, {
-        layers: 2,
-        alpha: 0.5 * atm.golden,
-        edge: 0,
-        wobble: 0.5,
-      });
-    }
-
-    // Кромка кроны — лопасти, количество зависит от пышности и масштаба
-    const rimN = Math.round((7 + lushJ * 3) * scale) + 3 + Math.floor(hash2(obj.seed, 51, 7) * 3);
-    for (let i = 0; i < rimN; i++) {
-      const a = (i / rimN) * Math.PI * 2 + hash2(i, obj.seed, 51) * 0.9;
-      const rw = 0.82 + hash2(i, obj.seed, 57) * 0.38;
-      const ex = cxx + Math.cos(a) * cw * 0.56 * rw + sway;
-      const ey = ty - ch * 0.12 * tallJ + Math.sin(a) * ch * 0.42 * rw * tallJ;
-      const top = Math.sin(a) < -0.35;
-      const col = top ? mix(crownMain, crownLight, 0.45) : mix(crownMain, crownDeep, 0.4);
-      washBlob(ctx, ex, ey, cw * (0.13 + hash2(i, obj.seed, 59) * 0.06), ch * 0.1, col, obj.seed + 61 + i * 3, {
-        layers: 2,
-        alpha: 0.42,
-        edge: 0.16,
-        wobble: 0.34 + hash2(i, obj.seed, 61) * 0.15,
-      });
-    }
-
-    granulate(
-      ctx,
-      cxx + sway,
-      ty - ch * 0.15 * tallJ,
-      cw * 0.5,
-      ch * 0.4 * tallJ,
-      crownDeep,
-      obj.seed,
-      Math.round((16 + lushJ * 6) * scale) + 4,
-      0.14,
-    );
-
-    // Ветви сквозь листву — количество и толщина по сиду
-    if (scale > 0.4) {
-      const nb = 2 + Math.floor(hash2(obj.seed, 67, 3) * 4); // 2..5
-      for (let i = 0; i < nb; i++) {
-        const r = hash2(i, obj.seed, 67);
-        const r2 = hash2(i, obj.seed, 71);
-        const bx = tx + (r - 0.5) * cw * 0.35 + sway * 0.5;
-        const ex = cxx + (r2 - 0.5) * cw * 0.9 + sway * 0.8;
-        const ey = ty - ch * (0.22 + r * 0.42) * tallJ;
+    const sites = crownSites(obj.seed, cw, ch, style.layers);
+    const point = (p: { x: number; y: number }) => ({ x: tx + p.x + sway, y: ty + p.y });
+    // Identical topology in January and July. Leaves reveal these branches rather than replacing them.
+    for (const site of sites) {
+      const end = point(site),
+        parent = point({ x: site.parentX, y: site.parentY });
+      if (site.index % 3 === 0)
         taperStroke(
           ctx,
-          bx,
-          ty + 6,
-          ex,
-          ey,
-          (1.6 + r * 0.6) * scale,
-          0.7 * scale,
+          tx,
+          ty + 9 * scale,
+          parent.x,
+          parent.y,
+          2.8 * scale,
+          0.95 * scale,
           branchCol,
-          0.28 + r * 0.12,
-          (r - 0.5) * cw * 0.22,
+          0.78,
+          site.x * 0.06,
         );
+      taperStroke(ctx, parent.x, parent.y, end.x, end.y, 1.15 * scale, 0.38 * scale, branchCol, 0.78, site.x * 0.025);
+      // Fine permanent forks reach into each leaf group, rather than appearing only in winter.
+      ctx.strokeStyle = css(branchCol, 0.7);
+      ctx.lineWidth = 0.58 * scale;
+      ctx.beginPath();
+      for (let k = 0; k < 2; k++) {
+        const dx = (k === 0 ? -1 : 1) * site.rx * (0.28 + hash2(site.index, obj.seed, 1471 + k) * 0.28);
+        const dy = -site.ry * (0.45 + hash2(site.index, obj.seed, 1481 + k) * 0.4);
+        ctx.moveTo(end.x, end.y);
+        ctx.quadraticCurveTo(end.x + dx * 0.7, end.y + dy * 0.3, end.x + dx, end.y + dy);
+      }
+      ctx.stroke();
+      if (style.droop) {
+        ctx.strokeStyle = css(branchCol, 0.42);
+        ctx.lineWidth = 0.65 * scale;
+        ctx.beginPath();
+        ctx.moveTo(end.x, end.y);
+        ctx.quadraticCurveTo(
+          end.x - 2,
+          end.y + style.droop * scale * 0.4,
+          end.x - 4,
+          end.y + style.droop * scale * 0.75,
+        );
+        ctx.stroke();
       }
     }
-
-    // Цветение
-    if (style.blossom && (atm.season === 'spring' || (atm.season === 'summer' && style.blossom))) {
-      const strength = atm.season === 'spring' ? 1 : 0.25;
-      const bl = litc(style.blossom, atm, 0.05);
-      const blossomJ = 0.8 + hash2(obj.seed, 29, 7) * 0.4;
-      const n = Math.round((10 * scale * strength + 3) * blossomJ * lushJ);
-      for (let i = 0; i < n; i++) {
-        const r1 = hash2(i, obj.seed, 23);
-        const r2 = hash2(i, obj.seed, 29);
-        const px = cxx + (r1 - 0.5) * cw * 1.15 + sway;
-        const py = ty - ch * 0.2 * tallJ + (r2 - 0.5) * ch * 0.95 * tallJ;
-        ctx.fillStyle = css(bl, 0.55 + r1 * 0.3);
+    const fresh = style.blossom ? mix(style.crownSummer, { r: 196, g: 210, b: 137 }, 0.35) : style.crownSpring;
+    const green = mix(fresh, style.crownSummer, state.maturity);
+    for (const site of sites) {
+      const p = point(site),
+        leaf = leafGroup(state, obj.seed, site.index);
+      const bud = state.bud * (1 - leaf.growth * 0.9);
+      if (bud > 0.005) {
+        ctx.fillStyle = css(litc(mix(style.trunk, fresh, 0.45), atm), bud * 0.92);
+        ctx.beginPath();
+        ctx.ellipse(
+          p.x,
+          p.y,
+          1.1 * scale + bud * 1.2 * scale,
+          1.5 * scale + bud * 1.7 * scale,
+          site.x * 0.02,
+          0,
+          Math.PI * 2,
+        );
+        ctx.fill();
+      }
+      const opacity = leaf.growth * leaf.retained;
+      if (opacity > 0.003) {
+        const tint = hash2(site.index, obj.seed, 1451);
+        const base = mix(
+          mix(green, style.crownAutumn, leaf.color),
+          { r: 163, g: 112, b: 70 },
+          leaf.color * state.leafFall * 0.12,
+        );
+        const main = litc(shade(base, 0.92 + tint * 0.14), atm),
+          deep = litc(shade(base, 0.74), atm);
+        const rx = site.rx * leaf.size,
+          ry = site.ry * leaf.size;
+        washBlob(ctx, p.x, p.y + ry * 0.25, rx, ry, deep, obj.seed + site.index * 17, {
+          layers: 1,
+          alpha: 0.27 * opacity,
+          edge: 0.055 * opacity,
+          wobble: 0.3,
+        });
+        washBlob(ctx, p.x, p.y, rx * 0.96, ry * 0.94, main, obj.seed + site.index * 17 + 3, {
+          layers: 2,
+          alpha: 0.4 * opacity,
+          edge: 0.09 * opacity,
+          wobble: 0.32,
+        });
+        const light = litc(mix(base, WHITE, 0.28), atm, 0.03);
+        washBlob(
+          ctx,
+          p.x - atm.sunDir.x * rx * 0.25,
+          p.y - ry * 0.35,
+          rx * 0.52,
+          ry * 0.33,
+          light,
+          obj.seed + site.index * 17 + 7,
+          { layers: 1, alpha: 0.26 * opacity, edge: 0, wobble: 0.3 },
+        );
+        if (style.droop) {
+          ctx.strokeStyle = css(main, 0.62 * opacity);
+          ctx.lineWidth = 1.8 * scale * leaf.size;
+          const len = style.droop * scale * leaf.size * (0.55 + tint * 0.5),
+            wob = Math.sin(d.time * 0.0007 + site.index) * 4 * d.wind;
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.quadraticCurveTo(p.x + wob, p.y + len * 0.6, p.x + wob - 3, p.y + len);
+          ctx.stroke();
+        }
+      }
+      // Sakura's pink crown is part of its canopy: blossom and leaf emergence overlap, not a season switch.
+      if (style.blossom && state.bloom > 0.003) {
+        const bloom = state.bloom * (0.85 + hash2(site.index, obj.seed, 1459) * 0.15);
+        const petal = litc(style.blossom, atm, 0.04);
+        washBlob(
+          ctx,
+          p.x,
+          p.y,
+          site.rx * lerp(0.34, 0.86, flowerOpenness(atm)) * Math.sqrt(bloom),
+          site.ry * lerp(0.2, 0.78, flowerOpenness(atm)) * Math.sqrt(bloom),
+          petal,
+          obj.seed + site.index * 31,
+          { layers: 2, alpha: 0.46 * bloom, edge: 0.1 * bloom, wobble: 0.34 },
+        );
+        ctx.fillStyle = css(petal, 0.88 * bloom);
         flowerHeadPath(
           ctx,
-          px,
-          py,
-          cw * 0.1 * (0.6 + r2 * 0.7),
-          ch * 0.07 * (0.6 + r1 * 0.7),
-          obj.seed + i,
+          p.x,
+          p.y,
+          4 * scale * Math.sqrt(bloom),
+          3 * scale * Math.sqrt(bloom),
+          obj.seed + site.index,
           flowerOpenness(atm),
         );
         ctx.fill();
       }
+      if (style.fruit && site.index % 2 === 0) {
+        // Fruit also stays attached to its twig when the surrounding leaves fall.
+        const q = state.phase < 0.3 ? state.phase + 1 : state.phase;
+        const autumn = smoothstep(0.6, 0.73, q),
+          remain = 1 - smoothstep(site.index % 6 === 0 ? 1.02 : 0.88, site.index % 6 === 0 ? 1.14 : 1.01, q);
+        const ripe = autumn * remain;
+        if (ripe > 0.003) {
+          ctx.fillStyle = css(litc(style.fruit, atm, 0.06), 0.92 * ripe);
+          ctx.beginPath();
+          ctx.ellipse(p.x, p.y + 5 * scale, 3.6 * scale, 3.2 * scale, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = css(litc({ r: 96, g: 112, b: 72 }, atm), 0.8 * ripe);
+          ctx.beginPath();
+          ctx.ellipse(p.x, p.y + 2.2 * scale, 1.7 * scale, 0.8 * scale, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
     }
-
-    // Ива: свисающие пряди — длина и количество по сиду
-    if (style.droop) {
-      const dropCol = litc(shade(tintedMain, 0.95), atm);
-      const droopCount = Math.round((9 + lushJ * 3) * scale) + 3;
-      const droopLenK = 0.8 + hash2(obj.seed, 37, 3) * 0.4;
-      for (let i = 0; i < droopCount; i++) {
-        const r = hash2(i, obj.seed, 37);
-        const sx = cxx + (r - 0.5) * cw * 1.1 + sway;
-        const sy = ty - ch * 0.1 * tallJ + (hash2(i, obj.seed, 41) - 0.5) * ch * 0.4 * tallJ;
-        const len = style.droop * scale * (0.6 + r * 0.8) * droopLenK;
-        const wob = Math.sin(d.time * 0.0007 + i) * 5 * d.wind;
-        ctx.strokeStyle = css(dropCol, 0.5);
-        ctx.lineWidth = 2.4;
-        ctx.beginPath();
-        ctx.moveTo(sx, sy);
-        ctx.quadraticCurveTo(sx + wob, sy + len * 0.6, sx + wob * 1.5 - 2, sy + len);
-        ctx.stroke();
+    // Deliberately retain the existing winter-only snow rule; gradual snow belongs to stage two.
+    if (atm.season === 'winter' && !style.fruit) {
+      const snow = litc({ r: 247, g: 249, b: 252 }, atm);
+      for (const site of sites.filter((s) => s.index % 3 === 0)) {
+        const p = point(site);
+        washBlob(ctx, p.x, p.y - 2, site.rx * 0.75, site.ry * 0.22, snow, obj.seed + site.index, {
+          layers: 2,
+          alpha: 0.6,
+          edge: 0.08,
+          wobble: 0.3,
+        });
       }
     }
   };
@@ -457,7 +343,6 @@ export const drawSakura = makeTree({
   crownSpring: { r: 244, g: 196, b: 210 },
   crownSummer: { r: 138, g: 172, b: 116 },
   crownAutumn: { r: 206, g: 150, b: 104 },
-  crownWinter: null,
   blossom: { r: 252, g: 226, b: 234 },
   height: 96,
   crownW: 98,
@@ -470,7 +355,6 @@ export const drawMaple = makeTree({
   crownSpring: { r: 150, g: 186, b: 116 },
   crownSummer: { r: 110, g: 158, b: 96 },
   crownAutumn: { r: 208, g: 104, b: 66 },
-  crownWinter: null,
   height: 92,
   crownW: 96,
   crownH: 72,
@@ -482,7 +366,6 @@ export const drawGinkgo = makeTree({
   crownSpring: { r: 164, g: 196, b: 122 },
   crownSummer: { r: 128, g: 172, b: 102 },
   crownAutumn: { r: 234, g: 194, b: 88 },
-  crownWinter: null,
   height: 98,
   crownW: 82,
   crownH: 78,
@@ -494,7 +377,6 @@ export const drawWillow = makeTree({
   crownSpring: { r: 172, g: 200, b: 130 },
   crownSummer: { r: 140, g: 178, b: 110 },
   crownAutumn: { r: 198, g: 186, b: 116 },
-  crownWinter: null,
   height: 94,
   crownW: 104,
   crownH: 58,
@@ -521,7 +403,11 @@ export const drawPine: Drawer = (d) => {
     sway * 0.3 + leanJ * h * 0.09,
   );
 
-  const needle = atm.season === 'winter' ? { r: 96, g: 124, b: 116 } : { r: 84, g: 130, b: 92 };
+  const needle = mix(
+    { r: 84, g: 130, b: 92 },
+    { r: 96, g: 124, b: 116 },
+    plantYear(obj.type, obj.seed, atm.time.now).winterTone,
+  );
   // Лёгкий оттенок хвои по сиду
   const tintP = hash2(obj.seed, 19, 23);
   const needleTinted = mix(
@@ -633,8 +519,14 @@ export const drawBamboo: Drawer = (d) => {
   const scale = lerp(0.3, 1, Math.pow(g, 0.6));
   const stalks = 2 + Math.floor(hash2(obj.seed, 21, 29) * 3); // 2..4 стебля
   shadowUnder(d, 16 * scale, 7 * scale, 0.6);
-  const stalkCol = litc(atm.season === 'winter' ? { r: 168, g: 176, b: 150 } : { r: 158, g: 186, b: 116 }, atm);
-  const leafCol = litc(atm.season === 'winter' ? { r: 150, g: 164, b: 148 } : { r: 122, g: 164, b: 100 }, atm);
+  const stalkCol = litc(
+    mix({ r: 158, g: 186, b: 116 }, { r: 168, g: 176, b: 150 }, plantYear(obj.type, obj.seed, atm.time.now).winterTone),
+    atm,
+  );
+  const leafCol = litc(
+    mix({ r: 122, g: 164, b: 100 }, { r: 150, g: 164, b: 148 }, plantYear(obj.type, obj.seed, atm.time.now).winterTone),
+    atm,
+  );
   for (let s = 0; s < stalks; s++) {
     const r = hash2(s, obj.seed, 13);
     const h = (82 + r * 54) * scale;
@@ -684,12 +576,12 @@ export const drawShrub: Drawer = (d) => {
   const rx = 33 * scale;
   const ry = 21 * scale;
   shadowUnder(d, rx * 0.9, ry * 0.5, 0.8);
-  const base =
-    atm.season === 'winter'
-      ? { r: 168, g: 178, b: 172 }
-      : atm.season === 'autumn'
-        ? { r: 176, g: 156, b: 104 }
-        : { r: 116, g: 160, b: 100 };
+  const base = anchorColor(atm.time.now, [
+    { r: 168, g: 178, b: 172 },
+    { r: 116, g: 160, b: 100 },
+    { r: 116, g: 160, b: 100 },
+    { r: 176, g: 156, b: 104 },
+  ]);
   const main = litc(base, atm);
   const deep = litc(shade(base, 0.8), atm);
   const sway = Math.sin(d.time * 0.0006 + obj.seed) * 2 * d.wind;
@@ -755,68 +647,82 @@ export const drawWisteria: Drawer = (d) => {
   ctx.lineTo(d.x + w * 0.92, d.y - h + 1);
   ctx.stroke();
 
-  const bare = atm.season === 'winter';
-  const leafBase = atm.season === 'autumn' ? { r: 186, g: 168, b: 96 } : { r: 104, g: 146, b: 92 };
-  const leaf = litc(leafBase, atm);
-
-  // Листва по перекладине: несколько пятен вместо одной плиты —
-  // сплошной прямоугольник читался как навес, а не как растение
-  if (!bare) {
-    const puffs = 4;
-    for (let i = 0; i < puffs; i++) {
-      const r1 = hash2(i, obj.seed, 13);
-      const px = d.x + (i / (puffs - 1) - 0.5) * w * 1.7;
+  const state = plantYear(obj.type, obj.seed, atm.time.now);
+  const green = mix({ r: 145, g: 177, b: 115 }, { r: 104, g: 146, b: 92 }, state.maturity);
+  const leafColor = (index: number) => mix(green, { r: 186, g: 168, b: 96 }, leafGroup(state, obj.seed, index).color);
+  const puffs = 6;
+  for (let i = 0; i < puffs; i++) {
+    const r = hash2(i, obj.seed, 13),
+      px = d.x + (i / (puffs - 1) - 0.5) * w * 1.7,
+      py = d.y - h + (2 + r * 5) * scale;
+    const leaf = leafGroup(state, obj.seed, i);
+    // Woody vine and attachment twigs stay in place under the leaves all year.
+    taperStroke(ctx, d.x - w * 0.8, d.y - h + 2, px, py, 1.2 * scale, 0.6 * scale, post, 0.65, 3 * scale);
+    if (state.bud > 0.003) {
+      ctx.fillStyle = css(litc({ r: 135, g: 158, b: 92 }, atm), state.bud);
+      ctx.beginPath();
+      ctx.ellipse(px, py, 1.6 * scale, 2 * scale, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (leaf.growth * leaf.retained > 0.003)
       washBlob(
         ctx,
         px,
-        d.y - h + (2 + r1 * 5) * scale,
-        w * (0.36 + r1 * 0.2),
-        (9 + r1 * 5) * scale,
-        i % 2 ? leaf : litc(shade(leafBase, 0.86), atm),
+        py,
+        w * (0.26 + r * 0.16) * leaf.size,
+        (9 + r * 5) * scale * leaf.size,
+        litc(leafColor(i), atm),
         obj.seed + i * 5,
-        { layers: 2, alpha: 0.46, edge: 0.14, wobble: 0.3 },
+        { layers: 2, alpha: 0.46 * leaf.growth * leaf.retained, edge: 0.14 * leaf.growth * leaf.retained, wobble: 0.3 },
       );
-    }
   }
-
-  // Свисающие грозди
-  const bunches = Math.round(6 + scale * 4);
-  const bloom = atm.season === 'spring';
-  const cluster = litc({ r: 158, g: 130, b: 202 }, atm, 0.04);
+  const bunches = Math.round(6 + scale * 4),
+    cluster = litc({ r: 158, g: 130, b: 202 }, atm, 0.04);
   for (let i = 0; i < bunches; i++) {
-    const r1 = hash2(i, obj.seed, 19);
-    const px = d.x + (i / (bunches - 1) - 0.5) * w * 1.6 + (r1 - 0.5) * 5;
-    // Весной грозди длинные — это главный силуэт глицинии
-    const len = (bloom ? 40 : 13) * scale * (0.65 + r1 * 0.7);
-    const sway = Math.sin(d.time * 0.0011 + i * 0.9 + obj.seed) * 2.4 * d.wind;
-
-    if (bare) {
-      // зимой только плети
-      ctx.strokeStyle = css(litc({ r: 116, g: 98, b: 84 }, atm), 0.7);
-      ctx.lineWidth = 1.1;
-      ctx.beginPath();
-      ctx.moveTo(px, d.y - h + 4 * scale);
-      ctx.quadraticCurveTo(px + sway, d.y - h + len * 0.6, px + sway * 1.6, d.y - h + len);
-      ctx.stroke();
-      continue;
+    const r = hash2(i, obj.seed, 19),
+      px = d.x + (i / (bunches - 1) - 0.5) * w * 1.6 + (r - 0.5) * 5;
+    const len = 13 * scale * (0.65 + r * 0.7),
+      sway = Math.sin(d.time * 0.0011 + i * 0.9 + obj.seed) * 2.4 * d.wind;
+    ctx.strokeStyle = css(litc({ r: 116, g: 98, b: 84 }, atm), 0.7);
+    ctx.lineWidth = 1.1 * scale;
+    ctx.beginPath();
+    ctx.moveTo(px, d.y - h + 4 * scale);
+    ctx.quadraticCurveTo(px + sway, d.y - h + len * 0.6, px + sway * 1.6, d.y - h + len);
+    ctx.stroke();
+    const leaf = leafGroup(state, obj.seed, i + 6);
+    if (leaf.growth * leaf.retained > 0.003) {
+      ctx.fillStyle = css(litc(leafColor(i + 6), atm), 0.5 * leaf.growth * leaf.retained);
+      blobPath(
+        ctx,
+        px + sway,
+        d.y - h + 8 * scale + len * 0.4,
+        5 * scale * leaf.size,
+        len * 0.42 * leaf.size,
+        obj.seed + i,
+        0.3,
+        7,
+      );
+      ctx.fill();
     }
-
-    if (bloom) {
-      // Гроздь сужается книзу — вытянутая капля из мелких цветков
-      const steps = Math.max(3, Math.round(len / 4));
+    if (state.bloom > 0.003) {
+      const flowerLen = 40 * scale * (0.65 + r * 0.7) * Math.sqrt(state.bloom);
+      // Fixed flower sites, expanding down the same pendant stem; no changing random sequence.
+      const steps = 12;
       for (let k = 0; k < steps; k++) {
-        const tt = k / steps;
-        const yy = d.y - h + 6 * scale + tt * len;
-        const xx = px + sway * tt * 1.4;
-        const rr = (4 - tt * 2.5) * scale;
-        ctx.fillStyle = css(mix(cluster, WHITE, tt * 0.35), 0.72 - tt * 0.18);
-        flowerHeadPath(ctx, xx, yy, rr, rr * 0.82, obj.seed + i * 7 + k, flowerOpenness(atm));
+        const t = k / steps,
+          rr = (4 - t * 2.5) * scale * Math.sqrt(state.bloom);
+        ctx.fillStyle = css(mix(cluster, WHITE, t * 0.35), (0.72 - t * 0.18) * state.bloom);
+        flowerHeadPath(
+          ctx,
+          px + sway * t * 1.4,
+          d.y - h + 6 * scale + t * flowerLen,
+          rr,
+          rr * 0.82,
+          obj.seed + i * 7 + k,
+          flowerOpenness(atm),
+        );
         ctx.fill();
       }
-    } else {
-      ctx.fillStyle = css(leaf, 0.5);
-      blobPath(ctx, px + sway, d.y - h + 8 * scale + len * 0.4, 5 * scale, len * 0.42, obj.seed + i, 0.3, 7);
-      ctx.fill();
     }
   }
   ctx.lineCap = 'butt';
@@ -824,87 +730,17 @@ export const drawWisteria: Drawer = (d) => {
 
 /** Хурма: осенью на голых ветках висят оранжевые фонарики. */
 
-export const drawPersimmon: Drawer = (d) => {
-  const { ctx, atm, g, obj } = d;
-  const scale = lerp(0.3, 1, Math.pow(g, 0.72));
-  const h = 74 * scale;
-  const rx = 30 * scale;
-  const ry = 24 * scale;
-  shadowUnder(d, rx * 0.95, ry * 0.42, 0.9);
-
-  const bend = Math.sin(d.time * 0.0005 + obj.seed) * 3 * d.wind;
-  const top = drawTrunk(d, h, 5.4 * scale, litc({ r: 112, g: 92, b: 76 }, atm), bend);
-
-  const autumn = atm.season === 'autumn';
-  const winter = atm.season === 'winter';
-  const leafBase = autumn ? { r: 208, g: 138, b: 72 } : { r: 96, g: 138, b: 88 };
-
-  if (!winter) {
-    const main = litc(leafBase, atm);
-    washBlob(ctx, top.tx, top.ty, rx, ry, litc(shade(leafBase, 0.82), atm), obj.seed, {
-      layers: 2,
-      alpha: 0.44,
-      edge: 0.16,
-      wobble: 0.24,
-    });
-    washBlob(ctx, top.tx, top.ty - ry * 0.2, rx * 0.86, ry * 0.86, main, obj.seed + 5, {
-      layers: 3,
-      alpha: 0.4,
-      edge: 0.15,
-      wobble: 0.22,
-    });
-  }
-
-  // Зимой — голые ветки, и плоды вешаем на их концы
-  const tips: { x: number; y: number }[] = [];
-  if (winter) {
-    const br = litc({ r: 104, g: 88, b: 76 }, atm);
-    for (let i = 0; i < 5; i++) {
-      const a = -Math.PI * 0.82 + (i / 4) * Math.PI * 0.64 + (hash2(i, obj.seed, 11) - 0.5) * 0.3;
-      const len = rx * (0.7 + hash2(i, obj.seed, 23) * 0.5);
-      const ex = top.tx + Math.cos(a) * len;
-      const ey = top.ty + Math.sin(a) * len;
-      taperStroke(ctx, top.tx, top.ty + ry * 0.2, ex, ey, 2.4 * scale, 0.8, br, 0.8, 0);
-      tips.push({ x: ex, y: ey });
-    }
-  }
-
-  // Плоды: осенью много в кроне, зимой несколько забытых на концах веток —
-  // именно этим хурма и красива в снегу
-  if (autumn || winter) {
-    const count = autumn ? Math.round(7 + scale * 4) : 3;
-    const fruit = litc({ r: 234, g: 122, b: 44 }, atm, 0.06);
-    for (let i = 0; i < count; i++) {
-      const r1 = hash2(i, obj.seed, 37);
-      const r2 = hash2(i, obj.seed, 53);
-      let px: number;
-      let py: number;
-      if (winter) {
-        // на конец ветки, чуть ниже — плод оттягивает её вниз
-        const tip = tips[(i * 2 + 1) % tips.length];
-        px = tip.x + (r1 - 0.5) * 3;
-        py = tip.y + 3 + r2 * 2;
-      } else {
-        px = top.tx + (r1 - 0.5) * rx * 1.5;
-        py = top.ty + (r2 - 0.4) * ry * 1.1;
-      }
-      const rr = (winter ? 4.4 : 3.6) * scale;
-      ctx.fillStyle = css(fruit, 0.92);
-      ctx.beginPath();
-      ctx.ellipse(px, py, rr, rr * 0.88, 0, 0, Math.PI * 2);
-      ctx.fill();
-      // блик и чашелистик
-      ctx.fillStyle = css(mix(fruit, WHITE, 0.45), 0.5);
-      ctx.beginPath();
-      ctx.ellipse(px - rr * 0.3, py - rr * 0.3, rr * 0.3, rr * 0.24, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = css(litc({ r: 96, g: 112, b: 72 }, atm), 0.8);
-      ctx.beginPath();
-      ctx.ellipse(px, py - rr * 0.85, rr * 0.5, rr * 0.24, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-};
+export const drawPersimmon = makeTree({
+  trunk: { r: 112, g: 92, b: 76 },
+  crownSpring: { r: 142, g: 174, b: 105 },
+  crownSummer: { r: 96, g: 138, b: 88 },
+  crownAutumn: { r: 208, g: 138, b: 72 },
+  height: 74,
+  crownW: 58,
+  crownH: 46,
+  layers: 3,
+  fruit: { r: 234, g: 122, b: 44 },
+});
 
 /** Камелия: плотный тёмный куст, цветёт зимой и ранней весной. */
 
@@ -916,7 +752,11 @@ export const drawCamellia: Drawer = (d) => {
   shadowUnder(d, rx * 0.9, ry * 0.42, 0.85);
 
   // Листва тёмная и глянцевая круглый год — этим камелия и ценна
-  const base = { r: 62, g: 104, b: 74 };
+  const base = mix(
+    { r: 62, g: 104, b: 74 },
+    { r: 67, g: 98, b: 80 },
+    plantYear(obj.type, obj.seed, atm.time.now).winterTone,
+  );
   const main = litc(base, atm);
   const sway = Math.sin(d.time * 0.0006 + obj.seed) * 1.8 * d.wind;
   washBlob(ctx, d.x + sway, d.y - ry * 0.7, rx, ry, litc(shade(base, 0.78), atm), obj.seed, {

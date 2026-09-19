@@ -238,15 +238,15 @@ export function drawWaterSurface(ctx: Ctx, world: World, atm: Atmosphere): void 
     // Radius is local (< 3 tiles), so terrain's dirty-rectangle margin still covers it.
     for (const cell of surface.cells) {
       if (cell.x % 2 !== 1 || cell.y % 2 !== 1) continue;
-      const bed = waterDepth(world, cell.x + .5, cell.y + .5);
-      if (bed < .35) continue;
+      const bed = waterDepth(world, cell.x + 0.5, cell.y + 0.5);
+      if (bed < 0.35) continue;
       const p = isoToScreen(cell.x + 0.5, cell.y + 0.5, surface.level - 0.26);
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.scale(1, 0.5);
       const depth = ctx.createRadialGradient(0, 0, 6, 0, 0, 112);
-      depth.addColorStop(0, css(shade(deep, .83), (bed-.25)*.64));
-      depth.addColorStop(0.45, css(deep, (bed-.25)*.32));
+      depth.addColorStop(0, css(shade(deep, 0.83), (bed - 0.25) * 0.64));
+      depth.addColorStop(0.45, css(deep, (bed - 0.25) * 0.32));
       depth.addColorStop(1, css(deep, 0));
       ctx.fillStyle = depth;
       ctx.fillRect(-112, -112, 224, 224);
@@ -274,7 +274,7 @@ export function drawWaterSurface(ctx: Ctx, world: World, atm: Atmosphere): void 
           ctx.beginPath();
           ctx.ellipse(px, py, size, size * 0.47, -0.2, 0, Math.PI * 2);
           ctx.fill();
-          ctx.fillStyle = css(shallows, 0.40);
+          ctx.fillStyle = css(shallows, 0.4);
           ctx.beginPath();
           ctx.ellipse(px - 0.6, py - 0.8, size * 0.76, size * 0.26, -0.2, 0, Math.PI * 2);
           ctx.fill();
@@ -327,6 +327,7 @@ function drawReflections(
   time: number,
   wind: number,
   motion?: WaterMotion,
+  material?: (type: string, x: number, y: number) => Atmosphere,
 ): void {
   const reflectionWarp = motion ? (x: number, y: number) => motion(x, y, surface.level) : undefined;
   for (const o of world.objects) {
@@ -354,11 +355,24 @@ function drawReflections(
     const objectLevel = base ? (base.water ? base.level - 0.28 : base.level) : 0;
     const objectAnchor = isoToScreen(cx, cy, objectLevel);
     const p = { x: plane.x, y: 2 * plane.y - objectAnchor.y };
+    const materialAtm = material?.(o.type, cx, cy) ?? atm;
     if (item.kind === 'bridge') {
       ctx.save();
       ctx.globalAlpha *= 0.26;
       const draw = o.type === 'plank_bridge' ? drawPlankBridge : drawBridge;
-      draw({ ctx, x: p.x, y: p.y, obj: o, atm, g: 1, time, wind: 0, alpha: 1, reflection: true, reflectionWarp });
+      draw({
+        ctx,
+        x: p.x,
+        y: p.y,
+        obj: o,
+        atm: materialAtm,
+        g: 1,
+        time,
+        wind: 0,
+        alpha: 1,
+        reflection: true,
+        reflectionWarp,
+      });
       ctx.restore();
       continue;
     }
@@ -368,7 +382,7 @@ function drawReflections(
         ctx,
         x: p.x,
         y: p.y,
-        atm,
+        atm: materialAtm,
         obj: o,
         g: world.growth(o, Date.now()),
         time,
@@ -382,7 +396,15 @@ function drawReflections(
 }
 
 /** Quiet surface: drifting sky streaks, fine wind-ripples and sparse sun/moon glints. */
-export function drawWaterAnimation(ctx: Ctx, world: World, atm: Atmosphere, time: number, wind = 0.5, motion?: WaterMotion): void {
+export function drawWaterAnimation(
+  ctx: Ctx,
+  world: World,
+  atm: Atmosphere,
+  time: number,
+  wind = 0.5,
+  motion?: WaterMotion,
+  material?: (type: string, x: number, y: number) => Atmosphere,
+): void {
   const breeze = clamp01(Math.abs(wind));
   const sun = (0.3 + atm.time.daylight * 0.65 + atm.golden * 0.4) * (1 - atm.overcast * 0.85);
   const hi = shade(
@@ -398,7 +420,7 @@ export function drawWaterAnimation(ctx: Ctx, world: World, atm: Atmosphere, time
     ctx.clip('evenodd');
     ctx.fillStyle = css(mix(atm.palette.water, atm.skyBottom, 0.28), 0.09);
     ctx.fill('evenodd');
-    drawReflections(ctx, world, surface, atm, time, breeze, motion);
+    drawReflections(ctx, world, surface, atm, time, breeze, motion, material);
     for (const cell of surface.cells) {
       const { x, y, seed } = cell;
       const p = isoToScreen(x + 0.24 + hash2(x, y, 187) * 0.5, y + 0.24 + hash2(x, y, 191) * 0.5, surface.level - 0.26);

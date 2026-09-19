@@ -1,3 +1,5 @@
+import { rainMaterial, drawSmallHouseDrips, type RainField } from './afterRain';
+import type { WeatherState } from '../world/weatherState';
 import { paintObjectLight } from './spriteCache';
 import { sampleLocalLight, receivesObjectLight, type LocalLightField } from './localLight';
 /**
@@ -50,6 +52,8 @@ export interface ObjectsOpts {
   particles: boolean;
   waterMotion?: WaterMotion;
   localLights?: LocalLightField;
+  rainReceivers?: RainField;
+  rainWeather?: WeatherState;
 }
 
 /**
@@ -460,6 +464,7 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
     const wind = opts.life ? opts.life.windAt(cx, cy) : opts.wind;
     const localHits =
       opts.localLights && receivesObjectLight(o.type) ? sampleLocalLight(opts.localLights, cx, cy, lvl, o.id) : [];
+    const materialAtm = rainMaterial(atm, opts.rainReceivers, opts.rainWeather, o.type, cx, cy);
     const isMoving = o.id === opts.movingId;
     const isHot = o.id === opts.highlightId;
     // Переносимое слегка всплывает над землёй — видно, что оно «в руке»
@@ -494,7 +499,7 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
             ctx,
             x: p.x,
             y: p.y,
-            atm,
+            atm: materialAtm,
             g: gq,
             obj: o,
             time,
@@ -505,7 +510,7 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
             ctx,
             x: p.x + sway,
             y: p.y - lift,
-            atm,
+            atm: materialAtm,
             g,
             obj: o,
             time,
@@ -514,9 +519,21 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
           });
           if (drawn) {
             paintObjectLight(
-              { ctx, x: p.x + sway, y: p.y - lift, atm, g, obj: o, time, wind, alpha: isMoving ? 0.72 : 1 },
+              {
+                ctx,
+                x: p.x + sway,
+                y: p.y - lift,
+                atm: materialAtm,
+                g,
+                obj: o,
+                time,
+                wind,
+                alpha: isMoving ? 0.72 : 1,
+              },
               localHits,
             );
+            if (opts.particles && !isMoving)
+              drawSmallHouseDrips({ ctx, x: p.x, y: p.y, atm, g, obj: o, time, wind, alpha: 1 }, opts.rainWeather);
             return;
           }
         }
@@ -525,7 +542,7 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
           ctx,
           x: p.x,
           y: p.y - lift,
-          atm,
+          atm: materialAtm,
           g,
           obj: o,
           time,
@@ -533,10 +550,12 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
           alpha: isMoving ? 0.72 : 1,
         });
         paintObjectLight(
-          { ctx, x: p.x, y: p.y - lift, atm, g, obj: o, time, wind, alpha: isMoving ? 0.72 : 1 },
+          { ctx, x: p.x, y: p.y - lift, atm: materialAtm, g, obj: o, time, wind, alpha: isMoving ? 0.72 : 1 },
           localHits,
           false,
         );
+        if (opts.particles && !isMoving)
+          drawSmallHouseDrips({ ctx, x: p.x, y: p.y, atm, g, obj: o, time, wind, alpha: 1 }, opts.rainWeather);
       },
     });
   }

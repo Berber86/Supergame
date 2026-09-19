@@ -30,6 +30,22 @@ export const DAY_MS = 24 * 60 * 60 * 1000;
 /** Месяцы (0-based), с которых начинается каждый сезон: март, июнь, сентябрь, декабрь. */
 const SEASON_START_MONTH = [2, 5, 8, 11];
 
+/** Названия календарных пресетов; сами растения развиваются непрерывно между ними. */
+export const MONTH_NAMES = [
+  'Январь',
+  'Февраль',
+  'Март',
+  'Апрель',
+  'Май',
+  'Июнь',
+  'Июль',
+  'Август',
+  'Сентябрь',
+  'Октябрь',
+  'Ноябрь',
+  'Декабрь',
+] as const;
+
 /** Год, с которого усадьба считает свои годы: её первая весна. */
 const EPOCH_YEAR = 2024;
 
@@ -114,8 +130,14 @@ export function computeTime(now: number): TimeState {
  * не убегая далеко от настоящей даты (посадки предметов меряются от now).
  */
 export function midSeasonMs(seasonIndex: number, refMs = Date.now()): number {
+  const start = SEASON_START_MONTH[((seasonIndex % 4) + 4) % 4];
+  return midMonthMs((start + 1) % 12, refMs);
+}
+
+/** 15-е число выбранного месяца, ближайшее к опорной дате, в местном часовом поясе. */
+export function midMonthMs(monthIndex: number, refMs = Date.now()): number {
   const ref = new Date(refMs);
-  const sm = SEASON_START_MONTH[((seasonIndex % 4) + 4) % 4];
+  const sm = ((Math.trunc(monthIndex) % 12) + 12) % 12;
   let best = Infinity;
   let bestMs = 0;
   for (let y = ref.getFullYear() - 1; y <= ref.getFullYear() + 1; y++) {
@@ -151,3 +173,27 @@ export function seasonBlend(t: TimeState): { from: SeasonId; to: SeasonId; k: nu
 }
 
 export { lerp };
+
+/** Continuous civil-year coordinate: Jan 15 = 0, Apr 15 = .25, Jul 15 = .5, Oct 15 = .75.
+ * Uses actual dated anchors, including leap days and timezone/DST offsets. No reset on January 1.
+ * The wrap at January 15 lies in dormancy; consumers must use periodic curves there.
+ */
+export function annualPhase(now: number): number {
+  if (!Number.isFinite(now)) return 0;
+  const year = new Date(now).getFullYear();
+  const anchors = [
+    new Date(year - 1, 9, 15).getTime(),
+    new Date(year, 0, 15).getTime(),
+    new Date(year, 3, 15).getTime(),
+    new Date(year, 6, 15).getTime(),
+    new Date(year, 9, 15).getTime(),
+    new Date(year + 1, 0, 15).getTime(),
+  ];
+  for (let i = 0; i < anchors.length - 1; i++) {
+    if (now < anchors[i + 1]) {
+      const phase = (i - 1) * 0.25 + ((now - anchors[i]) / (anchors[i + 1] - anchors[i])) * 0.25;
+      return (phase + 1) % 1;
+    }
+  }
+  return 0;
+}

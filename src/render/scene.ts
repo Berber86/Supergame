@@ -1,3 +1,4 @@
+import { rainField, rainMaterial, drawRainGround, drawHouseDrips } from './afterRain';
 import { drawGroundLife } from './groundLife';
 /** Сцена: камера, сортировка по глубине, пост-обработка «акварель на рисовой бумаге». */
 
@@ -14,7 +15,7 @@ import { drawFish } from './creatures';
 import { drawRipple } from './residents';
 import { spriteFrame } from './spriteCache';
 import { Weather, drawMist, drawSunShafts } from './weather';
-import { RainRenderer, drawFog, drawLightning, drawWetSheen } from './rain';
+import { RainRenderer, drawFog, drawLightning } from './rain';
 import { WeatherState } from '../world/weatherState';
 import { WaterFlow } from '../world/waterFlow';
 import { drawWinterIce } from './winterIce';
@@ -327,6 +328,15 @@ export class Scene {
       zoom: this.camera.zoom,
     });
 
+    drawRainGround(ctx, world, atm, ws ?? undefined, time, {
+      x: this.camera.x,
+      y: this.camera.y,
+      width: W,
+      height: H,
+      zoom: this.camera.zoom,
+    });
+    const rainReceivers = ws && ws.wetness > 0.015 && atm.season !== 'winter' ? rainField(world) : undefined;
+
     // Pond bed is in terrain. Fish must be BELOW reflections, glare and ripples.
     spriteFrame();
     this.flow.ensure(world);
@@ -342,7 +352,15 @@ export class Scene {
     }));
     if (this.particles && ws && ws.rain > 0.02) rings.push(...this.rain.waterRipples);
     const waterMotion = makeWaterMotion(world, this.flow, time, this.wind, rings);
-    drawWaterAnimation(ctx, world, atm, time, this.wind, waterMotion);
+    drawWaterAnimation(
+      ctx,
+      world,
+      atm,
+      time,
+      this.wind,
+      waterMotion,
+      rainReceivers ? (type, x, y) => rainMaterial(atm, rainReceivers, ws ?? undefined, type, x, y) : undefined,
+    );
     drawAnimalReflections(ctx, world, atm, time, {
       life: this.life,
       waterMotion,
@@ -399,6 +417,8 @@ export class Scene {
     // --- Объекты, отсортированные по глубине ---
     drawObjects(ctx, world, atm, time, {
       localLights,
+      rainReceivers,
+      rainWeather: ws ?? undefined,
       life: this.life,
       waterMotion,
       wind: this.wind,
@@ -447,7 +467,7 @@ export class Scene {
 
     // мокрый блеск и круги от капель
     if (ws) {
-      drawWetSheen(ctx, world, atm, ws, time);
+      if (this.particles) drawHouseDrips(ctx, world, atm, ws, time, roofA);
       if (this.particles) this.rain.drawWorldLayer(ctx, world, atm, ws);
     }
 

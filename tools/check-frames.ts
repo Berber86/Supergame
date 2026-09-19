@@ -11,6 +11,7 @@
 import { createCanvas } from '@napi-rs/canvas';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { setImmediate as yieldNative } from 'node:timers/promises';
 
 // --- Полифиллы браузерных API для модулей рендера ---
 const g = globalThis as Record<string, unknown>;
@@ -131,6 +132,10 @@ async function renderCase(c: FrameCase): Promise<string> {
     life.update(world, t, 16, ms, ws.state);
     ws.update(16, t);
     scene.render(world, atm, ms, 16, life, ws.state);
+    // Flush real raster work and let native canvas finalizers run between simulated frames.
+    // Otherwise the offscreen harness retains hundreds of frames before its first PNG readback.
+    scene.ctx.getImageData(0, 0, 1, 1);
+    if (i % 8 === 0) await yieldNative();
   }
 
   const buf = (canvas as unknown as { toBuffer(mime: string): Buffer }).toBuffer('image/png');

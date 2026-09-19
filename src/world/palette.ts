@@ -124,6 +124,8 @@ function mixPalette(a: SeasonPalette, b: SeasonPalette, t: number): SeasonPalett
 
 /** Освещение: ночь — холодный индиго, золотой час — тёплая охра, полдень — мягкий свет. */
 export interface Atmosphere {
+  /** Receiver-local material moisture, never changes the flower clock or global lighting. */
+  materialWetness?: number;
   palette: SeasonPalette;
   /** Цвет, которым тонируется всё под светом. */
   lightTint: RGB;

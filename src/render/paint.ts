@@ -22,8 +22,9 @@ export function blobPath(
   seed: number,
   wobble = 0.22,
   pts = 9,
+  begin = true,
 ): void {
-  ctx.beginPath();
+  if (begin) ctx.beginPath();
   const step = (Math.PI * 2) / pts;
   const prev: [number, number][] = [];
   for (let i = 0; i < pts; i++) {

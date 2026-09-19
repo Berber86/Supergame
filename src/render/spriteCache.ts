@@ -1,3 +1,4 @@
+import { crownCacheKey, crownCacheTime } from '../world/phenology';
 /**
  * Кэш готовых спрайтов.
  *
@@ -14,7 +15,8 @@
  * тип, сезон, стадия роста (огрублённая), освещение (огрублённое),
  * азимут солнца и золотой час (грубыми корзинами — светлая и теневая
  * стороны кроны выпекаются в спрайт), сид.
- * Ветер и время в ключ не входят — они применяются при копировании.
+ * Ветер и время покачивания в ключ не входят — они применяются при копировании.
+ * Годовое развитие кроны входит отдельной ограниченной ревизией (примерно 17 часов).
  */
 
 import { DrawCtx, drawObject, drawCost, hasDrawer, setSkipShadows } from './sprites';
@@ -34,7 +36,7 @@ interface Entry {
 }
 
 const cache = new Map<string, Entry>();
-/** Больше не держим: при 4 сезонах и десятке стадий этого с запасом. */
+/** Жёсткий предел: прошедшие годовые ревизии вытесняются, архив крон не накапливается. */
 const LIMIT = 420;
 let frame = 0;
 let hits = 0;
@@ -82,11 +84,18 @@ export function cacheable(type: string, cost: number): boolean {
   return !LIVE.has(type) && hasDrawer(type) && cost > 120;
 }
 
-export function spriteStats(): { size: number; hits: number; misses: number } {
-  return { size: cache.size, hits, misses };
+export function spriteStats(): { size: number; boxes: number; hits: number; misses: number } {
+  return { size: cache.size, boxes: boxes.size, hits, misses };
+}
+
+function releaseSprite(entry: Entry): void {
+  // Drop retired backing pixels immediately; rapid calendar scrubbing must not wait for canvas GC.
+  entry.canvas.width = 1;
+  entry.canvas.height = 1;
 }
 
 export function clearSprites(): void {
+  for (const entry of cache.values()) releaseSprite(entry);
   cache.clear();
   boxes.clear();
   hits = 0;
@@ -118,7 +127,7 @@ function getCachedSprite(d: DrawCtx, relit = false): Entry | null {
   const sunq = quantDown(atm.sunDir.x, 0.4);
   const goldq = quantDown(atm.golden, 0.34);
   const snowKey = SMALL_HOUSE_IDS.has(obj.type) ? roofSnowKey(atm, obj.seed) : '';
-  const key = `${flowerCycleKey(obj.type, atm)}|${relit ? 'lit' : 'base'}|${snowKey}|${obj.type}|${atm.season}|${gq}|${expq}|${lampq}|${sunq}|${goldq}|${obj.seed}|${obj.rot}`;
+  const key = `${crownCacheKey(obj.type, obj.seed, atm.time.now)}|${Math.round((atm.materialWetness ?? 0) * 12)}|${flowerCycleKey(obj.type, atm)}|${relit ? 'lit' : 'base'}|${snowKey}|${obj.type}|${atm.season}|${gq}|${expq}|${lampq}|${sunq}|${goldq}|${obj.seed}|${obj.rot}`;
 
   let e = cache.get(key);
   if (!e) {
@@ -127,7 +136,9 @@ function getCachedSprite(d: DrawCtx, relit = false): Entry | null {
     // Сначала я прикидывал высоту формулой от objectHeight — и кроны
     // обрезались: спрайт оказывался меньше настоящего рисунка.
     // Теперь один раз меряем, куда объект дотягивается на самом деле.
-    const box = measureBox(obj, atm, gq);
+    const annualNow = crownCacheTime(obj.type, obj.seed, atm.time.now);
+    const bakeAtm = annualNow === atm.time.now ? atm : { ...atm, time: { ...atm.time, now: annualNow } };
+    const box = measureBox(obj, bakeAtm, gq);
     if (!box) return null;
 
     const w = box.w;
@@ -150,7 +161,7 @@ function getCachedSprite(d: DrawCtx, relit = false): Entry | null {
       ctx: cx as unknown as Ctx,
       x: 0,
       y: 0,
-      atm,
+      atm: bakeAtm,
       g: gq <= 0 ? 0.02 : gq,
       obj,
       time: 0,
@@ -266,7 +277,7 @@ function measureBox(
 ): { w: number; h: number; ax: number; ay: number } | null {
   // Размер зависит от сида из-за scaleJitter и зеркала, поэтому включаем seed
   const snowKey = SMALL_HOUSE_IDS.has(obj.type) ? roofSnowKey(atm, obj.seed) : '';
-  const key = `${flowerCycleKey(obj.type, atm)}|${snowKey}|${obj.type}|${atm.season}|${gq}|${obj.rot}|${obj.seed}`;
+  const key = `${crownCacheKey(obj.type, obj.seed, atm.time.now)}|${flowerCycleKey(obj.type, atm)}|${snowKey}|${obj.type}|${atm.season}|${gq}|${obj.rot}|${obj.seed}`;
   const hit = boxes.get(key);
   if (hit !== undefined) return hit;
 
@@ -403,7 +414,10 @@ function evict(): void {
       victim = k;
     }
   }
-  if (victim) cache.delete(victim);
+  if (victim) {
+    releaseSprite(cache.get(victim)!);
+    cache.delete(victim);
+  }
 }
 
 /** Two reusable large-sprite masks (1.25 MiB total); no per-light/per-frame sprite variants. */
