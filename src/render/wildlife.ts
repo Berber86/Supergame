@@ -115,135 +115,226 @@ export function drawMoth(ctx: Ctx, m: Moth, x: number, y: number, atm: Atmospher
 
 export function drawHeron(ctx: Ctx, hr: Heron, x: number, y: number, atm: Atmosphere, time: number): void {
   const flying = hr.state === 'fly-in' || hr.state === 'fly-out';
-  const body = litc({ r: 148, g: 160, b: 170 }, atm);
-  const deep = litc({ r: 108, g: 122, b: 134 }, atm);
-  const pale = litc({ r: 226, g: 232, b: 234 }, atm);
-  const beak = litc({ r: 198, g: 156, b: 84 }, atm);
+  const bodyBase = { r: 152, g: 164, b: 174 };
+  const body = litc(bodyBase, atm);
+  const deep = litc({ r: 108, g: 122, b: 138 }, atm);
+  const deep2 = litc({ r: 88, g: 102, b: 118 }, atm);
+  const pale = litc({ r: 230, g: 236, b: 238 }, atm);
+  const beak = litc({ r: 202, g: 160, b: 88 }, atm);
+  const beakDeep = litc({ r: 168, g: 124, b: 62 }, atm);
   const leg = litc({ r: 96, g: 88, b: 74 }, atm);
 
   ctx.save();
   ctx.translate(x, y);
   ctx.save();
   ctx.globalCompositeOperation = 'multiply';
-  softShadow(ctx, 0, 0, flying ? 12 : 8, 3, atm.shadowTint, atm.shadowAmount * (flying ? 0.5 : 1.2));
+  softShadow(ctx, 0, 0, flying ? 13 : 9, 3.2, atm.shadowTint, atm.shadowAmount * (flying ? 0.52 : 1.25));
   ctx.restore();
 
-  const lift = flying ? -30 - Math.sin(time * 0.004) * 3 : 0;
+  const lift = flying ? -32 - Math.sin(time * 0.0035) * 3.5 : Math.sin(time * 0.0012 + hr.seed) * 0.4;
   ctx.translate(0, lift);
-  ctx.scale(hr.facing * 1.18, 1.18);
+  ctx.scale(hr.facing * 1.22, 1.22);
 
-  ctx.strokeStyle = css(leg, 0.9);
-  ctx.lineWidth = 1.4;
+  // ноги — длинные, тонкие, элегантные
+  ctx.strokeStyle = css(leg, 0.92);
+  ctx.lineWidth = 1.35;
+  ctx.lineCap = 'round';
   if (flying) {
     ctx.beginPath();
     ctx.moveTo(-4, -2);
-    ctx.lineTo(-13, 1.5);
+    ctx.lineTo(-13.5, 1.8);
     ctx.moveTo(-5, -1.5);
-    ctx.lineTo(-14, 2.5);
+    ctx.lineTo(-14.5, 2.8);
+    ctx.stroke();
+    // пальцы
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(-13.5, 1.8);
+    ctx.lineTo(-15.5, 2.2);
+    ctx.moveTo(-14.5, 2.8);
+    ctx.lineTo(-16.5, 3.2);
     ctx.stroke();
   } else {
-    const step = hr.state === 'stalk' ? Math.sin(hr.phase * Math.PI * 3) * 2.4 : 0;
+    const step = hr.state === 'stalk' ? Math.sin(hr.phase * Math.PI * 3) * 2.6 : 0;
     ctx.beginPath();
-    ctx.moveTo(-1, -12);
-    ctx.lineTo(-1 - step * 0.4, 0);
-    ctx.moveTo(2, -12);
-    ctx.lineTo(2 + step, hr.state === 'stalk' ? -Math.abs(step) * 0.7 : 0);
+    ctx.moveTo(-1.2, -12.5);
+    ctx.lineTo(-1.2 - step * 0.45, 0.2);
+    ctx.moveTo(2.0, -12.5);
+    ctx.lineTo(2.0 + step, hr.state === 'stalk' ? -Math.abs(step) * 0.75 : 0.2);
+    ctx.stroke();
+    // колени — лёгкий изгиб
+    ctx.strokeStyle = css(leg, 0.62);
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(-1.2, -6);
+    ctx.lineTo(-0.8, -5.5);
+    ctx.moveTo(2.0, -6);
+    ctx.lineTo(2.4, -5.5);
     ctx.stroke();
   }
 
-  washBlob(ctx, 0, -15, 10.5, 5.0, body, 41, { alpha: 0.62, edge: 0.3 });
-  ctx.fillStyle = css(deep, 0.4);
+  // тело — стройное, с перьями
+  washBlob(ctx, 0, -15.5, 11.0, 5.2, body, 41 + (hr.seed % 13), { alpha: 0.72, edge: 0.32 });
+  // грудка — пушистая
+  ctx.fillStyle = css(pale, 0.38);
   ctx.beginPath();
-  ctx.ellipse(-1, -15.6, 6.2, 2.6, -0.08, 0, Math.PI * 2);
+  ctx.ellipse(0, -12.8, 4.5, 3.8, -0.08, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = css(pale, 0.5);
+  // крыло — сложенное, с перьями
+  ctx.fillStyle = css(deep, 0.52);
   ctx.beginPath();
-  ctx.ellipse(1, -13.4, 5.4, 2.6, -0.1, 0, Math.PI * 2);
+  ctx.ellipse(-0.8, -16.0, 6.8, 2.8, -0.06, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = css(deep, 0.85);
+  ctx.strokeStyle = css(deep2, 0.22);
+  ctx.lineWidth = 0.5;
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * 1.4, -17.5);
+    ctx.lineTo(i * 1.4 + 0.4, -14.5);
+    ctx.stroke();
+  }
+  // хохолок на затылке
+  ctx.fillStyle = css(deep, 0.88);
   ctx.beginPath();
-  ctx.moveTo(-8, -16.4);
-  ctx.lineTo(-12.5, -14.6);
-  ctx.lineTo(-7.6, -13.6);
+  ctx.moveTo(-8.2, -16.8);
+  ctx.lineTo(-13.2, -15.2);
+  ctx.lineTo(-8.0, -14.2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = css(deep2, 0.72);
+  ctx.beginPath();
+  ctx.moveTo(-9.5, -17.0);
+  ctx.lineTo(-14.5, -15.8);
+  ctx.lineTo(-9.8, -15.0);
   ctx.closePath();
   ctx.fill();
 
   if (flying) {
-    const flap = Math.sin(time * 0.011) * 0.9;
+    const flap = Math.sin(time * 0.01) * 1.0;
     ctx.fillStyle = css(deep, 0.9);
     ctx.save();
-    ctx.translate(-1, -17);
-    ctx.rotate(-0.5 - flap);
+    ctx.translate(-1, -17.5);
+    ctx.rotate(-0.52 - flap);
     ctx.beginPath();
-    ctx.ellipse(-6, 0, 10.5, 3.4, 0.15, 0, Math.PI * 2);
+    ctx.ellipse(-6.5, 0, 11.5, 3.6, 0.14, 0, Math.PI * 2);
     ctx.fill();
+    // перья
+    ctx.strokeStyle = css(deep2, 0.28);
+    ctx.lineWidth = 0.6;
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo(-3 - i * 2.4, -1.2);
+      ctx.lineTo(-5 - i * 2.4, 1.2);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
+  // шея — длинная, изящная S-образная, как у цапли
   let hx = 7;
-  let hy = -34;
+  let hy = -35;
   if (hr.state === 'stand') {
-    hy = -37 + Math.sin(time * 0.0016) * 0.7;
+    hy = -38 + Math.sin(time * 0.0014) * 0.8;
+    hx = 7.5;
   } else if (hr.state === 'stalk') {
-    hx = 12;
-    hy = -22;
+    hx = 13;
+    hy = -23;
   } else if (hr.state === 'strike') {
     const k = Math.sin(Math.min(1, (900 - hr.timer) / 500) * Math.PI);
-    hx = 10 + k * 3;
-    hy = -30 + k * 27;
+    hx = 11 + k * 3.5;
+    hy = -31 + k * 28;
   } else if (hr.state === 'preen') {
-    hx = -2;
-    hy = -19;
-  } else if (flying) {
-    hx = 6.5;
+    hx = -1.5;
     hy = -20;
+  } else if (flying) {
+    hx = 7.0;
+    hy = -21;
   }
-  ctx.strokeStyle = css(body, 0.96);
-  ctx.lineWidth = 2.9;
+  ctx.strokeStyle = css(pale, 0.98);
+  ctx.lineWidth = 3.1;
   ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.moveTo(5, -17);
+  ctx.moveTo(5.2, -17.5);
   if (flying || hr.state === 'preen') {
-    ctx.bezierCurveTo(9, -22, 2, -26, hx, hy);
+    ctx.bezierCurveTo(9.5, -22.5, 2.5, -27, hx, hy);
   } else if (hr.state === 'strike') {
-    ctx.bezierCurveTo(9, -26, hx - 2, hy - 8, hx, hy);
+    ctx.bezierCurveTo(9.5, -27, hx - 2, hy - 9, hx, hy);
   } else {
-    ctx.bezierCurveTo(9.5, -24, 4.5, -30, hx, hy);
+    ctx.bezierCurveTo(10.0, -25, 4.8, -32, hx, hy);
   }
   ctx.stroke();
+  // тень на шее
+  ctx.strokeStyle = css(deep, 0.14);
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(5.2, -17.5);
+  if (flying || hr.state === 'preen') ctx.bezierCurveTo(9.5, -22.5, 2.5, -27, hx, hy);
+  else if (hr.state === 'strike') ctx.bezierCurveTo(9.5, -27, hx - 2, hy - 9, hx, hy);
+  else ctx.bezierCurveTo(10.0, -25, 4.8, -32, hx, hy);
+  ctx.stroke();
 
-  ctx.fillStyle = css(pale, 0.95);
+  // голова — с хохолком
+  ctx.fillStyle = css(pale, 0.97);
   ctx.beginPath();
-  ctx.ellipse(hx, hy, 2.6, 2.1, -0.15, 0, Math.PI * 2);
+  ctx.ellipse(hx, hy, 2.8, 2.2, -0.14, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = css(beak, 0.95);
+  // чёрная полоса от глаза к затылку — как у серой цапли
+  ctx.strokeStyle = css(deep2, 0.72);
+  ctx.lineWidth = 0.7;
   ctx.beginPath();
-  const bdir = hr.state === 'strike' ? 0.9 : hr.state === 'stalk' ? 0.35 : 0.12;
-  ctx.moveTo(hx + 1.6, hy - 0.9);
-  ctx.lineTo(hx + 10.5, hy + bdir * 8);
-  ctx.lineTo(hx + 1.6, hy + 1.1);
+  ctx.moveTo(hx - 1.5, hy - 0.4);
+  ctx.lineTo(hx - 6, hy - 0.8);
+  ctx.stroke();
+
+  // клюв — длинный, острый, желтоватый
+  ctx.fillStyle = css(beak, 0.97);
+  ctx.beginPath();
+  const bdir = hr.state === 'strike' ? 0.92 : hr.state === 'stalk' ? 0.36 : 0.14;
+  ctx.moveTo(hx + 1.7, hy - 1.0);
+  ctx.lineTo(hx + 11.2, hy + bdir * 8.5);
+  ctx.lineTo(hx + 1.7, hy + 1.2);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = css(deep, 0.8);
-  ctx.lineWidth = 0.9;
+  // кончик клюва темнее
+  ctx.fillStyle = css(beakDeep, 0.52);
   ctx.beginPath();
-  ctx.moveTo(hx - 2.2, hy - 1.2);
-  ctx.lineTo(hx + 1.4, hy - 1.1);
-  ctx.stroke();
-  ctx.fillStyle = css({ r: 40, g: 38, b: 34 }, 0.95);
-  ctx.beginPath();
-  ctx.arc(hx + 0.4, hy - 0.4, 0.55, 0, Math.PI * 2);
+  ctx.moveTo(hx + 9.5, hy + bdir * 7.2 - 0.3);
+  ctx.lineTo(hx + 11.2, hy + bdir * 8.5);
+  ctx.lineTo(hx + 9.5, hy + bdir * 7.2 + 0.5);
+  ctx.closePath();
   ctx.fill();
 
+  // глаз — янтарный, с чёрным зрачком
+  ctx.fillStyle = css({ r: 42, g: 38, b: 34 }, 0.96);
+  ctx.beginPath();
+  ctx.arc(hx + 0.5, hy - 0.4, 0.62, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = css({ r: 232, g: 188, b: 72 }, 0.88);
+  ctx.beginPath();
+  ctx.arc(hx + 0.5, hy - 0.4, 0.32, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = css({ r: 22, g: 20, b: 18 }, 0.92);
+  ctx.beginPath();
+  ctx.arc(hx + 0.5, hy - 0.4, 0.16, 0, Math.PI * 2);
+  ctx.fill();
+
+  // рыбка в клюве
   if (hr.fish > 0) {
-    const fx = hx + 6;
-    const fy = hy + bdir * 5 + 1.5;
-    ctx.fillStyle = css(litc({ r: 210, g: 214, b: 210 }, atm, 0.1), 0.9);
+    const fx = hx + 7;
+    const fy = hy + bdir * 5.5 + 1.6;
+    ctx.fillStyle = css(litc({ r: 214, g: 218, b: 214 }, atm, 0.12), 0.92);
     ctx.save();
     ctx.translate(fx, fy);
-    ctx.rotate(0.5 + Math.sin(time * 0.02) * 0.15);
+    ctx.rotate(0.52 + Math.sin(time * 0.018) * 0.16);
     ctx.beginPath();
-    ctx.ellipse(0, 0, 3.4, 1.2, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 3.6, 1.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // хвостик рыбки
+    ctx.beginPath();
+    ctx.moveTo(-3.2, 0);
+    ctx.lineTo(-4.8, -0.8);
+    ctx.lineTo(-4.8, 0.8);
+    ctx.closePath();
     ctx.fill();
     ctx.restore();
   }
@@ -255,132 +346,205 @@ export function drawHeron(ctx: Ctx, hr: Heron, x: number, y: number, atm: Atmosp
 
 export function drawDeer(ctx: Ctx, d: Deer, x: number, y: number, atm: Atmosphere, time: number): void {
   const coatBase = d.coat.winter
-    ? { r: 150, g: 128, b: 98 }
+    ? { r: 154, g: 132, b: 102 }
     : d.coat.spots
-      ? { r: 168, g: 126, b: 80 }
-      : { r: 138, g: 100, b: 62 };
-  const body = litc(coatBase, atm);
-  const deep = litc(shade(coatBase, 0.82), atm);
-  const pale = litc({ r: 232, g: 224, b: 204 }, atm);
-  const leg = litc(shade(coatBase, 0.7), atm);
+      ? { r: 172, g: 130, b: 84 }
+      : { r: 142, g: 104, b: 66 };
+  const boost = atm.lightAmount < 0.5 ? 0.06 : 0;
+  const body = litc(coatBase, atm, boost);
+  const deep = litc(shade(coatBase, 0.78), atm, boost);
+  const deep2 = litc(shade(coatBase, 0.62), atm, boost);
+  const pale = litc({ r: 236, g: 228, b: 208 }, atm, boost);
+  const leg = litc(shade(coatBase, 0.66), atm, boost);
 
   const moving = d.state === 'enter' || d.state === 'walk' || d.state === 'leave';
-  const trot = d.state === 'leave' ? Math.abs(Math.sin(d.phase * Math.PI * 5)) * 2.2 : 0;
+  const trot = d.state === 'leave' ? Math.abs(Math.sin(d.phase * Math.PI * 5)) * 2.4 : 0;
   const graze = d.state === 'graze';
 
   ctx.save();
   ctx.translate(x, y - trot);
-  ctx.scale(1.32, 1.32);
+  ctx.scale(1.36, 1.36);
 
   ctx.save();
   ctx.globalCompositeOperation = 'multiply';
-  softShadow(ctx, 0, trot / 1.32, 12, 3.4, atm.shadowTint, atm.shadowAmount * 1.15);
+  softShadow(ctx, 0, trot / 1.36, 13, 3.6, atm.shadowTint, atm.shadowAmount * 1.18);
   ctx.restore();
 
   ctx.scale(d.facing, 1);
 
+  // ноги — стройные, с суставами
   const gait = moving ? Math.sin(d.phase * Math.PI * 6) : 0;
-  ctx.strokeStyle = css(leg, 0.92);
+  ctx.strokeStyle = css(leg, 0.94);
   ctx.lineWidth = 1.5;
+  ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.moveTo(-7, -12);
-  ctx.lineTo(-7 - gait * 2.2, 0);
-  ctx.moveTo(-4.5, -12);
-  ctx.lineTo(-4.5 + gait * 2.2, 0);
-  ctx.moveTo(5, -12);
-  ctx.lineTo(5 + gait * 2.2, 0);
-  ctx.moveTo(7.5, -12);
-  ctx.lineTo(7.5 - gait * 2.2, 0);
+  ctx.moveTo(-7.2, -12.5);
+  ctx.lineTo(-7.2 - gait * 2.4, 0);
+  ctx.moveTo(-4.6, -12.5);
+  ctx.lineTo(-4.6 + gait * 2.4, 0);
+  ctx.moveTo(5.0, -12.5);
+  ctx.lineTo(5.0 + gait * 2.4, 0);
+  ctx.moveTo(7.6, -12.5);
+  ctx.lineTo(7.6 - gait * 2.4, 0);
   ctx.stroke();
+  // копытца
+  ctx.fillStyle = css(deep2, 0.88);
+  for (const sx of [-7.2 - gait * 2.4, -4.6 + gait * 2.4, 5.0 + gait * 2.4, 7.6 - gait * 2.4]) {
+    ctx.beginPath();
+    ctx.ellipse(sx, 0, 0.9, 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
-  washBlob(ctx, 0, -15.5, 10.5, 5.4, body, 57, { alpha: 0.62, edge: 0.3 });
-  ctx.fillStyle = css(pale, 0.4);
+  // тело — изящное, с градиентом
+  washBlob(ctx, 0, -16, 11.0, 5.6, body, 57 + (d.seed % 13), { alpha: 0.72, edge: 0.32 });
+  // светлый живот
+  ctx.fillStyle = css(pale, 0.44);
   ctx.beginPath();
-  ctx.ellipse(0, -12.6, 6.5, 2.2, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, -13.2, 6.8, 2.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // тёмная полоса вдоль спины
+  ctx.fillStyle = css(deep, 0.22);
+  ctx.beginPath();
+  ctx.ellipse(0, -18.5, 7.5, 1.2, 0, 0, Math.PI * 2);
   ctx.fill();
 
+  // пятна — как у бэмби, акварельные
   if (d.coat.spots) {
-    ctx.fillStyle = css(pale, 0.75);
-    for (let i = 0; i < 6; i++) {
-      const sx = -6 + ((i * 37 + d.seed) % 13);
-      const sy = -18 + ((i * 23 + d.seed) % 5);
+    ctx.fillStyle = css(pale, 0.82);
+    for (let i = 0; i < 8; i++) {
+      const sx = -6.5 + ((i * 37 + d.seed) % 14);
+      const sy = -18.5 + ((i * 23 + d.seed) % 6);
+      const r = 0.5 + ((i * 13 + d.seed) % 5) * 0.15;
       ctx.beginPath();
-      ctx.arc(sx, sy, 0.8, 0, Math.PI * 2);
+      ctx.arc(sx, sy, r, 0, Math.PI * 2);
       ctx.fill();
     }
   }
 
+  // хвост — с белым пятном
   const tailUp = d.state === 'look' || d.state === 'leave' ? 1 : 0;
-  ctx.fillStyle = css(deep, 0.9);
+  ctx.fillStyle = css(deep, 0.92);
   ctx.beginPath();
-  ctx.moveTo(-9.5, -17.5);
-  ctx.lineTo(-12, -16.5 - tailUp * 2.5);
-  ctx.lineTo(-9.2, -15);
+  ctx.moveTo(-10.0, -18.0);
+  ctx.lineTo(-13.0, -17.0 - tailUp * 2.8);
+  ctx.lineTo(-9.8, -15.5);
   ctx.closePath();
   ctx.fill();
-  if (tailUp) {
-    ctx.fillStyle = css(pale, 0.85);
-    ctx.beginPath();
-    ctx.ellipse(-10.6, -17.6, 1.5, 2.1, 0.4, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  ctx.fillStyle = css(pale, 0.88);
+  ctx.beginPath();
+  ctx.ellipse(-11.4, -18.0 - tailUp * 1.2, 1.6, 2.3, 0.38, 0, Math.PI * 2);
+  ctx.fill();
 
-  const nx = graze ? 10 : 9;
-  const ny = graze ? -11 : -26 + Math.sin(time * 0.0018 + d.seed) * 0.6;
-  ctx.strokeStyle = css(body, 0.96);
-  ctx.lineWidth = 3.6;
+  // шея — грациозная S-кривая
+  const nx = graze ? 10.5 : 9.2;
+  const ny = graze ? -11.5 : -27 + Math.sin(time * 0.0016 + d.seed) * 0.7;
+  ctx.strokeStyle = css(body, 0.97);
+  ctx.lineWidth = 3.8;
   ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.moveTo(7, -18);
+  ctx.moveTo(7.2, -18.5);
   if (graze) {
-    // Плавная дуга вниз-вперёд: шея не ломается через грудь, а уходит
-    // мягкой S-кривой к земле, голова чуть впереди тела
-    ctx.bezierCurveTo(8.5, -13, 9.5, -9, nx, ny);
+    ctx.bezierCurveTo(8.8, -13.5, 9.8, -9.5, nx, ny);
   } else {
-    ctx.bezierCurveTo(nx + 1.5, -24, nx + 0.5, -25, nx, ny);
+    ctx.bezierCurveTo(nx + 1.8, -24.5, nx + 0.6, -26, nx, ny);
   }
   ctx.stroke();
+  // грива — лёгкая тень вдоль шеи
+  ctx.strokeStyle = css(deep, 0.18);
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(7.2, -18.5);
+  if (graze) ctx.bezierCurveTo(8.8, -13.5, 9.8, -9.5, nx, ny);
+  else ctx.bezierCurveTo(nx + 1.8, -24.5, nx + 0.6, -26, nx, ny);
+  ctx.stroke();
 
-  ctx.fillStyle = css(body, 0.98);
+  // голова — благородная
+  ctx.fillStyle = css(body, 0.99);
   ctx.beginPath();
-  ctx.ellipse(nx + 1, ny, 3, 2.1, graze ? 0.5 : 0.1, 0, Math.PI * 2);
+  ctx.ellipse(nx + 1.1, ny, 3.2, 2.3, graze ? 0.52 : 0.12, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = css(deep, 0.9);
+  // носик — тёмный, с ноздрей
+  ctx.fillStyle = css(deep2, 0.9);
   ctx.beginPath();
-  ctx.ellipse(nx + 3.4, ny + (graze ? 1.2 : 0.5), 1.7, 1.1, graze ? 0.5 : 0.15, 0, Math.PI * 2);
+  ctx.ellipse(nx + 3.6, ny + (graze ? 1.3 : 0.6), 1.8, 1.2, graze ? 0.52 : 0.16, 0, Math.PI * 2);
   ctx.fill();
-  const ear = d.state === 'look' ? 0.5 : 0.15;
-  ctx.fillStyle = css(body, 0.95);
+  ctx.fillStyle = css({ r: 38, g: 36, b: 32 }, 0.72);
+  ctx.beginPath();
+  ctx.arc(nx + 4.4, ny + (graze ? 1.5 : 0.8), 0.22, 0, Math.PI * 2);
+  ctx.fill();
+
+  // уши — большие, чуткие
+  const ear = d.state === 'look' ? 0.62 : 0.18;
   for (const s of [-1, 1]) {
+    ctx.fillStyle = css(body, 0.96);
     ctx.save();
-    ctx.translate(nx - 0.5, ny - 1.6);
-    ctx.rotate(s * (0.7 + ear));
+    ctx.translate(nx - 0.4, ny - 1.7);
+    ctx.rotate(s * (0.72 + ear));
     ctx.beginPath();
-    ctx.ellipse(0, -2.2, 1.1, 2.6, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, -2.4, 1.15, 2.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // внутренняя часть розоватая
+    ctx.fillStyle = css(pale, 0.42);
+    ctx.beginPath();
+    ctx.ellipse(0, -2.4, 0.5, 1.4, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
-  ctx.fillStyle = css({ r: 38, g: 34, b: 30 }, 0.95);
-  ctx.beginPath();
-  ctx.arc(nx + 1.6, ny - 0.5, 0.5, 0, Math.PI * 2);
-  ctx.fill();
 
+  // глаз — большой, выразительный, с ресницами
+  ctx.fillStyle = css({ r: 40, g: 36, b: 32 }, 0.96);
+  ctx.beginPath();
+  ctx.arc(nx + 1.7, ny - 0.5, 0.58, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = css({ r: 255, g: 255, b: 255 }, 0.72);
+  ctx.beginPath();
+  ctx.arc(nx + 1.9, ny - 0.8, 0.2, 0, Math.PI * 2);
+  ctx.fill();
+  // реснички
+  ctx.strokeStyle = css(deep2, 0.42);
+  ctx.lineWidth = 0.4;
+  for (let i = -1; i <= 1; i++) {
+    ctx.beginPath();
+    ctx.moveTo(nx + 1.7 + i * 0.25, ny - 1.0);
+    ctx.lineTo(nx + 1.7 + i * 0.35, ny - 1.5);
+    ctx.stroke();
+  }
+
+  // рога — ветвистые, как у японского оленя
   if (d.coat.antlers) {
     const velvet = d.coat.spots;
-    ctx.strokeStyle = css(velvet ? litc({ r: 148, g: 116, b: 88 }, atm) : litc({ r: 118, g: 96, b: 72 }, atm), 0.95);
-    ctx.lineWidth = velvet ? 1.5 : 1.2;
+    const antCol = velvet ? litc({ r: 152, g: 120, b: 92 }, atm, boost) : litc({ r: 122, g: 100, b: 76 }, atm, boost);
+    ctx.strokeStyle = css(antCol, 0.96);
+    ctx.lineWidth = velvet ? 1.6 : 1.3;
+    ctx.lineCap = 'round';
     for (const s of [-1, 1]) {
       ctx.beginPath();
-      ctx.moveTo(nx - 0.5 + s * 0.8, ny - 2.4);
-      ctx.lineTo(nx - 1.5 + s * 2.2, ny - 6.5);
-      ctx.lineTo(nx - 0.5 + s * 1.6, ny - 8.5);
-      ctx.moveTo(nx - 1.5 + s * 2.2, ny - 6.5);
-      ctx.lineTo(nx - 3 + s * 3.4, ny - 8);
-      if (!velvet) {
-        ctx.moveTo(nx - 1 + s * 1.9, ny - 7.6);
-        ctx.lineTo(nx + 0.5 + s * 2.6, ny - 9.6);
-      }
+      ctx.moveTo(nx - 0.4 + s * 0.9, ny - 2.6);
+      ctx.bezierCurveTo(nx - 1.2 + s * 2.4, ny - 5.2, nx - 0.8 + s * 2.0, ny - 7.2, nx + 0.2 + s * 1.8, ny - 9.0);
       ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(nx - 0.8 + s * 2.0, ny - 6.0);
+      ctx.lineTo(nx - 2.8 + s * 3.6, ny - 8.2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(nx - 0.4 + s * 0.9, ny - 2.6);
+      ctx.lineTo(nx - 0.2 + s * 2.8, ny - 5.8);
+      ctx.stroke();
+      if (!velvet) {
+        ctx.beginPath();
+        ctx.moveTo(nx + 0.0 + s * 1.8, ny - 8.0);
+        ctx.lineTo(nx + 1.2 + s * 2.6, ny - 10.0);
+        ctx.stroke();
+      }
+    }
+    // бархат — мягкий, с точками
+    if (velvet) {
+      ctx.fillStyle = css(antCol, 0.32);
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.arc(nx + (i - 1.5) * 1.2, ny - 6 - i * 0.8, 0.35, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 
@@ -391,84 +555,136 @@ export function drawDeer(ctx: Ctx, d: Deer, x: number, y: number, atm: Atmospher
 
 export function drawHedgehog(ctx: Ctx, e: Hedgehog, x: number, y: number, atm: Atmosphere, time: number): void {
   const curl = e.state === 'curl';
-  const base = { r: 98, g: 86, b: 72 };
-  const body = litc(base, atm);
-  const spiky = litc({ r: 84, g: 72, b: 60 }, atm);
-  const light = litc({ r: 210, g: 198, b: 182 }, atm);
-  const nose = litc({ r: 48, g: 42, b: 38 }, atm);
+  const base = { r: 102, g: 88, b: 72 };
+  const boost = atm.lightAmount < 0.4 ? 0.12 : 0;
+  const body = litc(base, atm, boost);
+  const spiky = litc({ r: 78, g: 66, b: 54 }, atm, boost);
+  const spikyDeep = litc({ r: 62, g: 52, b: 42 }, atm, boost);
+  const light = litc({ r: 222, g: 210, b: 192 }, atm, boost);
+  const nose = litc({ r: 42, g: 36, b: 32 }, atm, 0);
+  const pink = litc({ r: 196, g: 162, b: 158 }, atm, boost);
 
   ctx.save();
   ctx.translate(x, y);
-  ctx.scale(0.95, 0.95);
+  ctx.scale(1.02, 1.02);
 
   ctx.save();
   ctx.globalCompositeOperation = 'multiply';
-  softShadow(ctx, 0, 0, curl ? 6 : 9, 2.6, atm.shadowTint, atm.shadowAmount * 1.1);
+  softShadow(ctx, 0, 0, curl ? 7 : 10, curl ? 2.8 : 3.0, atm.shadowTint, atm.shadowAmount * (curl ? 0.9 : 1.15));
   ctx.restore();
 
   ctx.scale(e.facing, 1);
 
   if (curl) {
-    const pulse = 0.9 + Math.sin(time * 0.003 + e.seed) * 0.1;
-    washBlob(ctx, 0, -6 * pulse, 8.5, 6.5, spiky, 81, { alpha: 0.7, edge: 0.35 });
-    ctx.strokeStyle = css(light, 0.85);
-    ctx.lineWidth = 1.1;
-    for (let i = 0; i < 16; i++) {
-      const a = (i / 16) * Math.PI * 2 + e.seed * 0.1;
-      const r0 = 5 + Math.sin(a * 2 + time * 0.001) * 0.5;
-      const r1 = 9.5 + Math.cos(a * 3) * 0.8;
+    const pulse = 0.92 + Math.sin(time * 0.0025 + e.seed) * 0.08;
+    // шар — акварельный blob
+    washBlob(ctx, 0, -5.5 * pulse, 8.8, 6.8, spiky, 81 + (e.seed % 11), { alpha: 0.78, edge: 0.38 });
+    // иголки по кругу — короткие штрихи, как у дзэн-ежа
+    ctx.strokeStyle = css(light, 0.72);
+    ctx.lineWidth = 1.0;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 20; i++) {
+      const a = (i / 20) * Math.PI * 2 + e.seed * 0.11;
+      const r0 = 5.2 + Math.sin(a * 2.3 + time * 0.001) * 0.4;
+      const r1 = 10.2 + Math.cos(a * 3.1) * 0.9;
+      const x0 = Math.cos(a) * r0;
+      const y0 = -5.5 + Math.sin(a) * r0 * 0.58;
+      const x1 = Math.cos(a) * r1;
+      const y1 = -5.5 + Math.sin(a) * r1 * 0.58;
       ctx.beginPath();
-      ctx.moveTo(Math.cos(a) * r0, -6 + Math.sin(a) * r0 * 0.6);
-      ctx.lineTo(Math.cos(a) * r1, -6 + Math.sin(a) * r1 * 0.6);
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
       ctx.stroke();
     }
-    ctx.fillStyle = css(nose, 0.9);
+    // носик выглядывает из клубка
+    ctx.fillStyle = css(nose, 0.92);
     ctx.beginPath();
-    ctx.ellipse(2, -5, 1.2, 0.9, 0, 0, Math.PI * 2);
+    ctx.ellipse(1.2, -4.2, 1.0, 0.75, 0.15, 0, Math.PI * 2);
+    ctx.fill();
+    // лапки поджаты — маленькие тени
+    ctx.fillStyle = css(spikyDeep, 0.35);
+    ctx.beginPath();
+    ctx.ellipse(-2, -1, 1.2, 0.6, 0, 0, Math.PI * 2);
+    ctx.ellipse(2, -1, 1.2, 0.6, 0, 0, Math.PI * 2);
     ctx.fill();
   } else {
-    const bob = Math.sin(time * 0.004 + e.seed) * 0.6;
-    const sniff = e.state === 'sniff' ? Math.sin(time * 0.02) * 1.2 : 0;
+    const bob = Math.sin(time * 0.0035 + e.seed) * 0.55;
+    const sniff = e.state === 'sniff' ? Math.sin(time * 0.018) * 1.4 : 0;
 
-    ctx.strokeStyle = css(spiky, 0.9);
-    ctx.lineWidth = 1.6;
+    // лапки — короткие, с когтями
+    ctx.strokeStyle = css(spikyDeep, 0.88);
+    ctx.lineWidth = 1.4;
+    ctx.lineCap = 'round';
     const gait = e.state === 'walk' || e.state === 'enter' ? Math.sin(e.phase * Math.PI * 6) : 0;
     ctx.beginPath();
-    ctx.moveTo(-4, -3);
-    ctx.lineTo(-4 - gait, 0);
-    ctx.moveTo(4, -3);
-    ctx.lineTo(4 + gait, 0);
+    ctx.moveTo(-4.2, -3.2);
+    ctx.lineTo(-4.2 - gait * 0.9, 0.2);
+    ctx.moveTo(4.2, -3.2);
+    ctx.lineTo(4.2 + gait * 0.9, 0.2);
+    ctx.moveTo(-1.2, -2.8);
+    ctx.lineTo(-1.2 - gait * 0.5, 0.4);
+    ctx.moveTo(1.2, -2.8);
+    ctx.lineTo(1.2 + gait * 0.5, 0.4);
     ctx.stroke();
 
-    washBlob(ctx, 0, -6 + bob, 8.2, 4.2, body, 33 + (e.seed % 10), { alpha: 0.68, edge: 0.3 });
-    ctx.fillStyle = css(spiky, 0.65);
+    // тело — пухлый овал
+    washBlob(ctx, 0, -5.8 + bob, 8.6, 4.6, body, 33 + (e.seed % 11), { alpha: 0.74, edge: 0.32 });
+
+    // спинка с иголками — тёмная шапка
+    ctx.fillStyle = css(spiky, 0.78);
     ctx.beginPath();
-    ctx.ellipse(-0.5, -9 + bob, 6.5, 3.2, -0.1, 0, Math.PI * 2);
+    ctx.ellipse(-0.3, -9.2 + bob, 6.8, 3.6, -0.08, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = css(light, 0.55);
-    for (let i = 0; i < 8; i++) {
-      const sx = -5 + ((i * 53 + e.seed) % 11);
-      const sy = -10 + ((i * 29 + e.seed) % 5) + bob;
+    // иголки — лёгкие светлые точки и штрихи
+    ctx.fillStyle = css(light, 0.42);
+    for (let i = 0; i < 10; i++) {
+      const sx = -5.2 + ((i * 53 + e.seed) % 11);
+      const sy = -10.2 + ((i * 29 + e.seed) % 6) + bob;
       ctx.beginPath();
-      ctx.arc(sx, sy, 0.5, 0, Math.PI * 2);
+      ctx.arc(sx, sy, 0.45, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.strokeStyle = css(light, 0.28);
+    ctx.lineWidth = 0.6;
+    for (let i = 0; i < 6; i++) {
+      const sx = -4 + i * 1.6;
+      ctx.beginPath();
+      ctx.moveTo(sx, -11 + bob);
+      ctx.lineTo(sx + 0.3, -7.5 + bob);
+      ctx.stroke();
+    }
 
-    ctx.fillStyle = css(light, 0.95);
+    // мордочка — светлая, вытянутая
+    ctx.fillStyle = css(light, 0.96);
     ctx.beginPath();
-    ctx.ellipse(6 + sniff * 0.3, -6 + bob, 3.2, 2.0, 0.15, 0, Math.PI * 2);
+    ctx.ellipse(6.2 + sniff * 0.35, -5.8 + bob, 3.6, 2.2, 0.18, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = css(nose, 0.95);
+    // носик — тёмный, блестящий
+    ctx.fillStyle = css(nose, 0.96);
     ctx.beginPath();
-    ctx.ellipse(8.5 + sniff * 0.4, -6 + bob, 1.1, 0.8, 0.2, 0, Math.PI * 2);
+    ctx.ellipse(8.8 + sniff * 0.45, -5.6 + bob, 1.15, 0.85, 0.22, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = css({ r: 30, g: 28, b: 26 }, 0.9);
+    ctx.fillStyle = css({ r: 255, g: 255, b: 255 }, 0.42);
     ctx.beginPath();
-    ctx.arc(5.2, -7.5 + bob, 0.6, 0, Math.PI * 2);
+    ctx.arc(9.1 + sniff * 0.45, -6.0 + bob, 0.22, 0, Math.PI * 2);
     ctx.fill();
+    // глаз — маленький, чёрный, с бликом
+    ctx.fillStyle = css({ r: 28, g: 24, b: 22 }, 0.92);
+    ctx.beginPath();
+    ctx.arc(5.4, -7.2 + bob, 0.62, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = css({ r: 255, g: 255, b: 255 }, 0.62);
+    ctx.beginPath();
+    ctx.arc(5.6, -7.5 + bob, 0.18, 0, Math.PI * 2);
+    ctx.fill();
+    // ушко — маленькое, розоватое внутри
     ctx.fillStyle = css(body, 0.9);
     ctx.beginPath();
-    ctx.ellipse(2, -8.5 + bob, 1.2, 1.5, -0.2, 0, Math.PI * 2);
+    ctx.ellipse(2.2, -8.2 + bob, 1.1, 1.4, -0.18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = css(pink, 0.55);
+    ctx.beginPath();
+    ctx.ellipse(2.2, -8.2 + bob, 0.5, 0.7, -0.18, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -478,91 +694,140 @@ export function drawHedgehog(ctx: Ctx, e: Hedgehog, x: number, y: number, atm: A
 // ---------------- Мышка ----------------
 
 export function drawMouse(ctx: Ctx, m: Mouse, x: number, y: number, atm: Atmosphere, time: number): void {
-  const bodyBase = { r: 148, g: 138, b: 128 };
-  const body = litc(bodyBase, atm);
-  const deep = litc(shade(bodyBase, 0.75), atm);
-  const belly = litc({ r: 230, g: 222, b: 210 }, atm);
-  const pink = litc({ r: 212, g: 168, b: 168 }, atm);
+  const bodyBase = { r: 142, g: 132, b: 122 };
+  const boost = atm.lightAmount < 0.4 ? 0.1 : 0;
+  const body = litc(bodyBase, atm, boost);
+  const deep = litc(shade(bodyBase, 0.72), atm, boost);
+  const deep2 = litc(shade(bodyBase, 0.58), atm, boost);
+  const belly = litc({ r: 234, g: 226, b: 214 }, atm, boost);
+  const pink = litc({ r: 212, g: 168, b: 168 }, atm, boost);
+  const pinkDeep = litc({ r: 188, g: 138, b: 138 }, atm, boost);
   const flee = m.state === 'flee';
   const hide = m.state === 'hide';
 
   ctx.save();
   ctx.translate(x, y);
-  ctx.scale(0.72, 0.72);
+  ctx.scale(0.78, 0.78);
 
   ctx.save();
   ctx.globalCompositeOperation = 'multiply';
-  softShadow(ctx, 0, 0, flee ? 5 : 7, 2.0, atm.shadowTint, atm.shadowAmount * 0.9);
+  softShadow(ctx, 0, 0, flee ? 5 : 8, flee ? 2.0 : 2.4, atm.shadowTint, atm.shadowAmount * 0.92);
   ctx.restore();
 
   ctx.scale(m.facing, 1);
 
   if (hide) {
-    ctx.fillStyle = css(body, 0.9);
+    // прячется — только ушки и спинка
+    ctx.fillStyle = css(body, 0.88);
     ctx.beginPath();
-    ctx.ellipse(0, -2, 3.5, 2.2, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, -1.8, 3.8, 2.4, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = css(pink, 0.85);
+    ctx.fillStyle = css(pink, 0.88);
+    for (const sx of [-1.3, 1.3]) {
+      ctx.beginPath();
+      ctx.ellipse(sx, -3.8, 1.1, 1.4, sx * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = css(body, 0.72);
     ctx.beginPath();
-    ctx.ellipse(-1.2, -4, 1.0, 1.3, -0.2, 0, Math.PI * 2);
-    ctx.ellipse(1.2, -4, 1.0, 1.3, 0.2, 0, Math.PI * 2);
+    ctx.ellipse(0, -0.8, 2.0, 0.8, 0, 0, Math.PI * 2);
     ctx.fill();
   } else {
-    const bob = flee ? Math.abs(Math.sin(m.phase * Math.PI * 8)) * 1.5 : Math.sin(time * 0.008 + m.seed) * 0.4;
-    const runStretch = flee ? 1.2 : 1;
-    const tailWag = flee ? Math.sin(m.phase * Math.PI * 10) * 2 : Math.sin(time * 0.01 + m.seed) * 0.8;
-    ctx.strokeStyle = css(deep, 0.85);
+    const bob = flee ? Math.abs(Math.sin(m.phase * Math.PI * 8)) * 1.4 : Math.sin(time * 0.007 + m.seed) * 0.45;
+    const runStretch = flee ? 1.22 : 1;
+    const tailWag = flee ? Math.sin(m.phase * Math.PI * 10) * 2.2 : Math.sin(time * 0.009 + m.seed) * 1.0;
+
+    // хвост — тонкий, изящный, с изгибом
+    ctx.strokeStyle = css(deep, 0.78);
+    ctx.lineWidth = 0.85;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-4.2, -3.2);
+    ctx.bezierCurveTo(-8.5, -4.2 + tailWag * 0.3, -12.8, -2.0 + tailWag * 0.5, -15.2, -3.0);
+    ctx.stroke();
+    // кончик хвоста светлее
+    ctx.strokeStyle = css(pinkDeep, 0.42);
+    ctx.lineWidth = 0.55;
+    ctx.beginPath();
+    ctx.moveTo(-12.8, -2.2);
+    ctx.lineTo(-15.2, -3.0);
+    ctx.stroke();
+
+    // лапки
+    ctx.strokeStyle = css(deep, 0.88);
     ctx.lineWidth = 0.9;
+    const gait = flee ? Math.sin(m.phase * Math.PI * 12) * 1.1 : Math.sin(time * 0.018 + m.seed) * 0.45;
     ctx.beginPath();
-    ctx.moveTo(-4, -3);
-    ctx.bezierCurveTo(-8, -4 + tailWag, -12, -2 + tailWag * 0.5, -14, -3);
+    ctx.moveTo(-2.2, -3.0);
+    ctx.lineTo(-2.2 - gait, 0.2);
+    ctx.moveTo(2.2, -3.0);
+    ctx.lineTo(2.2 + gait, 0.2);
     ctx.stroke();
 
-    ctx.strokeStyle = css(deep, 0.9);
-    ctx.lineWidth = 0.8;
-    const gait = flee ? Math.sin(m.phase * Math.PI * 12) : Math.sin(time * 0.02 + m.seed) * 0.5;
-    ctx.beginPath();
-    ctx.moveTo(-2, -3);
-    ctx.lineTo(-2 - gait, 0);
-    ctx.moveTo(2, -3);
-    ctx.lineTo(2 + gait, 0);
-    ctx.stroke();
-
+    // тело — акварельный blob, пухлое
     ctx.save();
     ctx.scale(runStretch, 1);
-    washBlob(ctx, 0, -4 + bob, 4.8, 2.6, body, 19 + (m.seed % 7), { alpha: 0.7, edge: 0.28 });
+    washBlob(ctx, 0, -4.2 + bob, 5.0, 2.8, body, 19 + (m.seed % 9), { alpha: 0.76, edge: 0.3 });
     ctx.restore();
 
-    ctx.fillStyle = css(belly, 0.6);
+    // брюшко — светлое
+    ctx.fillStyle = css(belly, 0.62);
     ctx.beginPath();
-    ctx.ellipse(0.5, -2.8 + bob, 2.2, 1.2, 0, 0, Math.PI * 2);
+    ctx.ellipse(0.3, -3.0 + bob, 2.4, 1.3, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = css(body, 0.96);
+    // голова — круглая, с большими ушами
+    ctx.fillStyle = css(body, 0.97);
     ctx.beginPath();
-    ctx.ellipse(4.2, -5 + bob, 2.4, 1.8, 0.2, 0, Math.PI * 2);
+    ctx.ellipse(4.4, -5.2 + bob, 2.6, 2.0, 0.18, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = css(body, 0.92);
+    // уши — большие, розовые внутри, главный признак мышки
     for (const s of [-1, 1]) {
+      ctx.fillStyle = css(body, 0.92);
       ctx.beginPath();
-      ctx.ellipse(3.2 + s * 0.3, -7 + bob, 1.8, 2.2, s * 0.3, 0, Math.PI * 2);
+      ctx.ellipse(3.4 + s * 0.35, -7.2 + bob, 2.0, 2.4, s * 0.28, 0, Math.PI * 2);
       ctx.fill();
-    }
-    ctx.fillStyle = css(pink, 0.9);
-    for (const s of [-1, 1]) {
+      ctx.fillStyle = css(pink, 0.88);
       ctx.beginPath();
-      ctx.ellipse(3.2 + s * 0.3, -7 + bob, 0.9, 1.2, s * 0.3, 0, Math.PI * 2);
+      ctx.ellipse(3.4 + s * 0.35, -7.2 + bob, 1.0, 1.4, s * 0.28, 0, Math.PI * 2);
       ctx.fill();
+      // кайма уха
+      ctx.strokeStyle = css(pinkDeep, 0.22);
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.ellipse(3.4 + s * 0.35, -7.2 + bob, 2.0, 2.4, s * 0.28, 0, Math.PI * 2);
+      ctx.stroke();
     }
 
-    ctx.fillStyle = css({ r: 48, g: 42, b: 40 }, 0.95);
+    // носик — розовый, с усами
+    ctx.fillStyle = css(pinkDeep, 0.9);
     ctx.beginPath();
-    ctx.arc(6.2, -5 + bob, 0.5, 0, Math.PI * 2);
+    ctx.ellipse(6.8, -5.0 + bob, 0.55, 0.45, 0.2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = css({ r: 32, g: 30, b: 28 }, 0.9);
+    // усы — тонкие линии
+    ctx.strokeStyle = css(deep2, 0.32);
+    ctx.lineWidth = 0.35;
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(6.5, -5.0 + bob + i * 0.35);
+      ctx.lineTo(8.0, -5.2 + bob + i * 0.5);
+      ctx.stroke();
+    }
+
+    // глаза — большие, чёрные, с бликом, как у полёвки
+    ctx.fillStyle = css({ r: 36, g: 30, b: 28 }, 0.94);
     ctx.beginPath();
-    ctx.arc(4.6, -6 + bob, 0.45, 0, Math.PI * 2);
+    ctx.arc(5.0, -5.8 + bob, 0.58, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = css({ r: 255, g: 255, b: 255 }, 0.68);
+    ctx.beginPath();
+    ctx.arc(5.2, -6.1 + bob, 0.18, 0, Math.PI * 2);
+    ctx.fill();
+    // второй глаз чуть виден
+    ctx.fillStyle = css({ r: 36, g: 30, b: 28 }, 0.42);
+    ctx.beginPath();
+    ctx.arc(3.6, -6.2 + bob, 0.38, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -804,118 +1069,144 @@ export function drawOwl(ctx: Ctx, o: Owl, x: number, y: number, atm: Atmosphere,
 // ---------------- Белка ----------------
 
 export function drawSquirrel(ctx: Ctx, s: Squirrel, x: number, y: number, atm: Atmosphere, time: number): void {
-  const base = { r: 168, g: 102, b: 58 };
-  const body = litc(base, atm);
-  const deep = litc(shade(base, 0.7), atm);
-  const pale = litc({ r: 232, g: 210, b: 186 }, atm);
-  const tail = litc({ r: 152, g: 92, b: 52 }, atm);
+  const base = { r: 172, g: 108, b: 62 };
+  const boost = atm.lightAmount < 0.45 ? 0.08 : 0;
+  const body = litc(base, atm, boost);
+  const deep = litc(shade(base, 0.68), atm, boost);
+  const deep2 = litc(shade(base, 0.52), atm, boost);
+  const pale = litc({ r: 234, g: 214, b: 190 }, atm, boost);
+  const tailCol = litc({ r: 158, g: 96, b: 56 }, atm, boost);
+  const tailLight = litc({ r: 210, g: 186, b: 162 }, atm, boost);
 
   const jumping = s.state === 'jump' || s.state === 'enter' || s.state === 'flee';
   const perched = s.state === 'forage' || s.state === 'cache' || s.state === 'look';
 
   ctx.save();
   ctx.translate(x, y);
-  ctx.scale(0.92, 0.92);
+  ctx.scale(0.98, 0.98);
 
   ctx.save();
   ctx.globalCompositeOperation = 'multiply';
-  softShadow(ctx, 0, 0, jumping ? 5 : perched ? 12 : 8, perched ? 3.6 : 2.4, atm.shadowTint, atm.shadowAmount * (perched ? 0.5 : 1.0));
+  softShadow(ctx, 0, 0, jumping ? 5 : perched ? 13 : 9, perched ? 3.8 : 2.6, atm.shadowTint, atm.shadowAmount * (perched ? 0.48 : 1.02));
   ctx.restore();
 
   ctx.scale(s.facing, 1);
 
-  const lift = perched ? -28 : jumping ? -4 : -6;
-  const bob = jumping ? 0 : Math.sin(time * 0.006 + s.seed) * 0.5;
+  const lift = perched ? -30 : jumping ? -5 : -7;
+  const bob = jumping ? 0 : Math.sin(time * 0.0055 + s.seed) * 0.6;
   ctx.translate(0, lift);
-  const tailWag = Math.sin(time * 0.012 + s.seed) * 0.8;
+  const tailWag = Math.sin(time * 0.01 + s.seed) * 0.9;
 
+  // хвост — пушистый, главный признак белки, акварельный
   ctx.save();
-  ctx.translate(-4, -10 + bob);
-  ctx.rotate(-0.6 + tailWag * 0.2);
-  ctx.fillStyle = css(tail, 0.92);
+  ctx.translate(-5.2, -11 + bob);
+  ctx.rotate(-0.58 + tailWag * 0.22);
+  ctx.fillStyle = css(tailCol, 0.94);
   ctx.beginPath();
-  ctx.ellipse(0, -5, 3.2, 7.5, 0.3, 0, Math.PI * 2);
+  ctx.ellipse(0, -4.5, 3.8, 8.2, 0.28, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = css(pale, 0.35);
-  for (let i = 0; i < 4; i++) {
+  // светлые прядки
+  ctx.fillStyle = css(tailLight, 0.32);
+  for (let i = 0; i < 5; i++) {
     ctx.beginPath();
-    ctx.arc((i - 1.5) * 0.8, -8 + i * 1.2, 0.6, 0, Math.PI * 2);
+    ctx.ellipse((i - 2) * 0.9, -7.5 + i * 1.4, 0.7, 1.8, 0.2, 0, Math.PI * 2);
     ctx.fill();
   }
+  // тёмный контур хвоста — акварельная кромка
+  ctx.strokeStyle = css(deep, 0.18);
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  ctx.ellipse(0, -4.5, 3.8, 8.2, 0.28, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.restore();
 
   if (perched) {
-    ctx.strokeStyle = css(deep, 0.45);
-    ctx.lineWidth = 1.0;
+    ctx.strokeStyle = css(deep, 0.48);
+    ctx.lineWidth = 1.2;
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(-5, -1);
-    ctx.quadraticCurveTo(0, -2, 5, -1);
+    ctx.moveTo(-6, -1.2);
+    ctx.quadraticCurveTo(0, -2.6, 6, -1.2);
     ctx.stroke();
   }
 
+  // лапки
   ctx.strokeStyle = css(deep, 0.9);
-  ctx.lineWidth = 1.4;
+  ctx.lineWidth = 1.3;
+  ctx.lineCap = 'round';
+  const gait = jumping ? Math.sin(s.phase * Math.PI * 4) * 2.2 : 0;
   ctx.beginPath();
-  const gait = jumping ? Math.sin(s.phase * Math.PI * 4) * 2 : 0;
-  ctx.moveTo(-2, -5);
-  ctx.lineTo(-3 - gait, 0);
-  ctx.moveTo(2, -5);
-  ctx.lineTo(3 + gait, 0);
+  ctx.moveTo(-2.4, -5.2);
+  ctx.lineTo(-3.4 - gait, -0.2);
+  ctx.moveTo(2.2, -5.2);
+  ctx.lineTo(3.2 + gait, -0.2);
   ctx.stroke();
 
-  washBlob(ctx, 0, -7 + bob, 5.2, 3.2, body, 41 + (s.seed % 11), { alpha: 0.72, edge: 0.3 });
-  ctx.fillStyle = css(pale, 0.5);
+  // тело — компактное
+  washBlob(ctx, 0, -7.5 + bob, 5.4, 3.4, body, 41 + (s.seed % 13), { alpha: 0.78, edge: 0.32 });
+  ctx.fillStyle = css(pale, 0.52);
   ctx.beginPath();
-  ctx.ellipse(0.5, -5.5 + bob, 2.6, 1.4, 0, 0, Math.PI * 2);
+  ctx.ellipse(0.4, -6.0 + bob, 2.8, 1.5, 0, 0, Math.PI * 2);
   ctx.fill();
 
+  // орешек в лапках
   if (s.hasNut) {
-    ctx.fillStyle = css(deep, 0.9);
+    ctx.fillStyle = css(deep, 0.88);
     ctx.beginPath();
-    ctx.ellipse(3, -7 + bob, 1.2, 1.0, 0.2, 0, Math.PI * 2);
+    ctx.ellipse(2.8, -7.2 + bob, 1.3, 1.1, 0.18, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = css(litc({ r: 110, g: 78, b: 52 }, atm), 0.95);
+    ctx.fillStyle = css(litc({ r: 112, g: 80, b: 54 }, atm, boost), 0.96);
     ctx.beginPath();
-    ctx.ellipse(4.2, -8 + bob, 1.1, 1.3, 0.3, 0, Math.PI * 2);
+    ctx.ellipse(4.0, -8.2 + bob, 1.2, 1.4, 0.28, 0, Math.PI * 2);
+    ctx.fill();
+    // блик на орешке
+    ctx.fillStyle = css({ r: 255, g: 255, b: 255 }, 0.28);
+    ctx.beginPath();
+    ctx.arc(4.2, -8.8 + bob, 0.22, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  ctx.fillStyle = css(body, 0.97);
+  // голова — круглая, с большими глазами
+  ctx.fillStyle = css(body, 0.98);
   ctx.beginPath();
-  ctx.ellipse(4.5, -10 + bob, 2.8, 2.4, 0.2, 0, Math.PI * 2);
+  ctx.ellipse(4.6, -10.6 + bob, 3.0, 2.6, 0.18, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = css(body, 0.95);
-  ctx.beginPath();
-  ctx.ellipse(3.8, -12.5 + bob, 1.0, 1.6, -0.2, 0, Math.PI * 2);
-  ctx.ellipse(5.6, -12.2 + bob, 1.0, 1.6, 0.2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = css(deep, 0.9);
-  ctx.beginPath();
-  ctx.moveTo(3.8, -13.8 + bob);
-  ctx.lineTo(3.5, -15 + bob);
-  ctx.lineTo(4.2, -14 + bob);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(5.6, -13.5 + bob);
-  ctx.lineTo(5.9, -14.7 + bob);
-  ctx.lineTo(5.2, -13.7 + bob);
-  ctx.closePath();
-  ctx.fill();
+  // ушки — с кисточками, как у настоящей белки
+  ctx.fillStyle = css(body, 0.96);
+  for (const sx of [3.6, 5.8]) {
+    ctx.beginPath();
+    ctx.ellipse(sx, -13.0 + bob, 1.0, 1.8, sx > 4.5 ? 0.18 : -0.18, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = css(deep2, 0.92);
+  for (const sx of [3.6, 5.8]) {
+    ctx.beginPath();
+    ctx.moveTo(sx, -14.2 + bob);
+    ctx.lineTo(sx + (sx > 4.5 ? 0.4 : -0.3), -15.8 + bob);
+    ctx.lineTo(sx + (sx > 4.5 ? -0.2 : 0.2), -14.0 + bob);
+    ctx.closePath();
+    ctx.fill();
+  }
 
-  ctx.fillStyle = css(pale, 0.9);
+  // мордочка — светлая
+  ctx.fillStyle = css(pale, 0.92);
   ctx.beginPath();
-  ctx.ellipse(6.2, -9.5 + bob, 1.2, 0.9, 0.2, 0, Math.PI * 2);
+  ctx.ellipse(6.3, -10.0 + bob, 1.3, 1.0, 0.18, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = css({ r: 48, g: 40, b: 36 }, 0.95);
+  // носик
+  ctx.fillStyle = css({ r: 48, g: 38, b: 34 }, 0.92);
   ctx.beginPath();
-  ctx.arc(6.8, -9.5 + bob, 0.4, 0, Math.PI * 2);
+  ctx.arc(7.0, -10.0 + bob, 0.42, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = css({ r: 36, g: 32, b: 28 }, 0.9);
+  // глаз — большой, чёрный, с бликом
+  ctx.fillStyle = css({ r: 38, g: 32, b: 28 }, 0.94);
   ctx.beginPath();
-  ctx.arc(4.8, -10.8 + bob, 0.45, 0, Math.PI * 2);
+  ctx.arc(5.0, -11.2 + bob, 0.55, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = css({ r: 255, g: 255, b: 255 }, 0.72);
+  ctx.beginPath();
+  ctx.arc(5.2, -11.5 + bob, 0.18, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
@@ -924,75 +1215,141 @@ export function drawSquirrel(ctx: Ctx, s: Squirrel, x: number, y: number, atm: A
 // ---------------- Черепаха ----------------
 
 export function drawTurtle(ctx: Ctx, t: Turtle, x: number, y: number, atm: Atmosphere, time: number): void {
-  const shellBase = { r: 84, g: 98, b: 72 };
-  const shell = litc(shellBase, atm);
-  const shellDeep = litc(shade(shellBase, 0.68), atm);
-  const skinBase = { r: 112, g: 124, b: 98 };
-  const skin = litc(skinBase, atm);
-  const belly = litc({ r: 188, g: 180, b: 152 }, atm);
+  const shellBase = { r: 88, g: 102, b: 76 };
+  const boost = atm.lightAmount < 0.5 ? 0.08 : 0;
+  const shell = litc(shellBase, atm, boost);
+  const shellDeep = litc(shade(shellBase, 0.62), atm, boost);
+  const shellLight = litc({ r: 132, g: 142, b: 108 }, atm, boost);
+  const skinBase = { r: 116, g: 128, b: 102 };
+  const skin = litc(skinBase, atm, boost);
+  const skinDeep = litc(shade(skinBase, 0.72), atm, boost);
+  const belly = litc({ r: 192, g: 184, b: 156 }, atm, boost);
 
   const hiding = t.state === 'hide';
   const basking = t.state === 'bask';
 
   ctx.save();
   ctx.translate(x, y);
-  ctx.scale(1.05, 1.05);
+  ctx.scale(1.12, 1.12);
 
   ctx.save();
   ctx.globalCompositeOperation = 'multiply';
-  softShadow(ctx, 0, 0, 10, 3.2, atm.shadowTint, atm.shadowAmount * 1.2);
+  softShadow(ctx, 0, 0, 11, 3.4, atm.shadowTint, atm.shadowAmount * 1.22);
   ctx.restore();
 
   ctx.scale(t.facing, 1);
 
-  const bob = basking ? Math.sin(time * 0.001 + t.seed) * 0.3 : 0;
+  const bob = basking ? Math.sin(time * 0.0009 + t.seed) * 0.35 : Math.sin(time * 0.0015 + t.seed) * 0.15;
 
+  // лапки — широкие, с коготками
   ctx.fillStyle = css(skin, 0.9);
-  for (const sx of [-3.5, 3.5]) {
+  for (const sx of [-4.2, 4.2]) {
     ctx.beginPath();
-    ctx.ellipse(sx, -1 + bob, 1.8, 1.2, 0, 0, Math.PI * 2);
+    ctx.ellipse(sx, -1.2 + bob, 2.0, 1.3, 0, 0, Math.PI * 2);
     ctx.fill();
+    // коготки
+    ctx.fillStyle = css(skinDeep, 0.62);
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.arc(sx + i * 0.6, -0.6 + bob, 0.28, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = css(skin, 0.9);
   }
 
-  washBlob(ctx, 0, -5 + bob, 7.5, 4.8, shell, 61 + (t.seed % 17), { alpha: 0.72, edge: 0.35 });
-  ctx.strokeStyle = css(shellDeep, 0.5);
-  ctx.lineWidth = 0.7;
+  // панцирь — купол, акварельный blob с объёмом
+  washBlob(ctx, 0, -5.8 + bob, 8.0, 5.2, shell, 61 + (t.seed % 19), { alpha: 0.82, edge: 0.38 });
+  // светлый блик сверху
+  ctx.fillStyle = css(shellLight, 0.28);
   ctx.beginPath();
-  ctx.moveTo(0, -9 + bob);
-  ctx.lineTo(0, -2 + bob);
-  ctx.moveTo(-3, -8 + bob);
-  ctx.lineTo(-2, -3 + bob);
-  ctx.moveTo(3, -8 + bob);
-  ctx.lineTo(2, -3 + bob);
+  ctx.ellipse(-0.8, -7.8 + bob, 3.2, 1.8, -0.12, 0, Math.PI * 2);
+  ctx.fill();
+
+  // щитки — более черепашьи, шестиугольные намёки
+  ctx.strokeStyle = css(shellDeep, 0.52);
+  ctx.lineWidth = 0.65;
+  ctx.lineCap = 'round';
+  // центральный ряд
+  ctx.beginPath();
+  ctx.moveTo(0, -9.5 + bob);
+  ctx.lineTo(0, -2.2 + bob);
   ctx.stroke();
-  ctx.strokeStyle = css(shellDeep, 0.35);
+  // боковые швы
+  for (const sx of [-3.2, 3.2]) {
+    ctx.beginPath();
+    ctx.moveTo(sx, -8.5 + bob);
+    ctx.lineTo(sx * 0.6, -3.0 + bob);
+    ctx.stroke();
+  }
+  // поперечные
+  for (let y = -8; y <= -4; y += 2) {
+    ctx.beginPath();
+    ctx.moveTo(-5.5, y + bob);
+    ctx.quadraticCurveTo(0, y + 0.3 + bob, 5.5, y + bob);
+    ctx.stroke();
+  }
+  // внешняя кайма панциря
+  ctx.strokeStyle = css(shellDeep, 0.38);
+  ctx.lineWidth = 0.8;
   ctx.beginPath();
-  ctx.ellipse(0, -5.5 + bob, 5.5, 2.8, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, -5.8 + bob, 6.8, 3.8, 0, 0, Math.PI * 2);
   ctx.stroke();
 
-  ctx.fillStyle = css(belly, 0.5);
+  // брюшко — светлое
+  ctx.fillStyle = css(belly, 0.52);
   ctx.beginPath();
-  ctx.ellipse(0, -2.5 + bob, 4.5, 1.2, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, -2.6 + bob, 4.8, 1.3, 0, 0, Math.PI * 2);
   ctx.fill();
 
   if (!hiding) {
-    const headX = 6.5;
-    const headY = -6 + bob;
-    ctx.fillStyle = css(skin, 0.96);
+    const headX = 7.2;
+    const headY = -6.2 + bob;
+    // шея — толстая, морщинистая
+    ctx.fillStyle = css(skin, 0.88);
     ctx.beginPath();
-    ctx.ellipse(headX, headY, 2.4, 1.6, 0.2, 0, Math.PI * 2);
+    ctx.ellipse(4.2, -5.4 + bob, 2.4, 1.2, 0.1, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = css(skin, 0.85);
+    ctx.strokeStyle = css(skinDeep, 0.18);
+    ctx.lineWidth = 0.4;
+    for (let i = 0; i < 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(3.0 + i * 0.8, -6.0 + bob);
+      ctx.lineTo(3.2 + i * 0.8, -4.8 + bob);
+      ctx.stroke();
+    }
+
+    // голова — с клювиком, как у черепахи
+    ctx.fillStyle = css(skin, 0.97);
     ctx.beginPath();
-    ctx.ellipse(3.5, -5 + bob, 2.0, 1.0, 0, 0, Math.PI * 2);
+    ctx.ellipse(headX, headY, 2.6, 1.8, 0.18, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = css({ r: 38, g: 36, b: 32 }, 0.9);
+    // клювик — слегка заострённый
+    ctx.fillStyle = css(shellDeep, 0.72);
     ctx.beginPath();
-    ctx.arc(headX + 0.6, headY - 0.3, 0.35, 0, Math.PI * 2);
+    ctx.moveTo(headX + 1.8, headY - 0.2);
+    ctx.lineTo(headX + 3.0, headY + 0.1);
+    ctx.lineTo(headX + 1.8, headY + 0.6);
+    ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = css(shellDeep, 0.7);
+    // ноздря
+    ctx.fillStyle = css({ r: 48, g: 52, b: 46 }, 0.62);
     ctx.beginPath();
-    ctx.arc(headX + 1.8, headY, 0.2, 0, Math.PI * 2);
+    ctx.arc(headX + 2.2, headY, 0.18, 0, Math.PI * 2);
+    ctx.fill();
+    // глаз — маленький, мудрый
+    ctx.fillStyle = css({ r: 38, g: 36, b: 32 }, 0.92);
+    ctx.beginPath();
+    ctx.arc(headX + 0.4, headY - 0.4, 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = css({ r: 255, g: 255, b: 255 }, 0.58);
+    ctx.beginPath();
+    ctx.arc(headX + 0.6, headY - 0.6, 0.15, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    // в прятках — только краешек головы
+    ctx.fillStyle = css(skin, 0.72);
+    ctx.beginPath();
+    ctx.ellipse(5.5, -5.5 + bob, 1.2, 0.8, 0.2, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -1003,47 +1360,96 @@ export function drawTurtle(ctx: Ctx, t: Turtle, x: number, y: number, atm: Atmos
 
 export function drawBee(ctx: Ctx, b: Bee, x: number, y: number, atm: Atmosphere, time: number): void {
   if (b.alpha <= 0.02) return;
-  const bodyBase = { r: 68, g: 62, b: 52 };
+  const bodyBase = { r: 72, g: 66, b: 56 };
   const body = litc(bodyBase, atm);
-  const yellow = litc({ r: 238, g: 198, b: 62 }, atm);
-  const wing = litc({ r: 210, g: 220, b: 228 }, atm);
+  const bodyDeep = litc(shade(bodyBase, 0.62), atm);
+  const yellow = litc({ r: 242, g: 202, b: 68 }, atm);
+  const yellowDeep = litc({ r: 210, g: 168, b: 48 }, atm);
+  const wing = litc({ r: 214, g: 224, b: 232 }, atm);
+  const wingEdge = litc({ r: 184, g: 196, b: 206 }, atm);
 
   ctx.save();
   ctx.translate(x, y - b.alt);
-  ctx.scale(0.65, 0.65);
+  ctx.scale(0.72, 0.72);
 
-  const flap = Math.sin(time * 0.06 + b.seed) * 0.9;
-  const hover = Math.sin(time * 0.004 + b.seed) * 1.2;
+  const flap = Math.sin(time * 0.058 + b.seed) * 1.1;
+  const hover = Math.sin(time * 0.0038 + b.seed) * 1.3;
 
   ctx.translate(0, hover);
 
-  ctx.fillStyle = css(wing, 0.45 * b.alpha);
-  ctx.save();
-  ctx.rotate(flap);
-  ctx.beginPath();
-  ctx.ellipse(-1.5, -1, 2.8, 1.2, -0.3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-  ctx.save();
-  ctx.rotate(-flap);
-  ctx.beginPath();
-  ctx.ellipse(1.5, -1, 2.8, 1.2, 0.3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  ctx.fillStyle = css(body, 0.95 * b.alpha);
-  ctx.beginPath();
-  ctx.ellipse(0, 0, 2.2, 1.6, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = css(yellow, 0.95 * b.alpha);
-  ctx.fillRect(-1.6, -0.8, 3.2, 0.6);
-  ctx.fillRect(-1.4, 0.2, 2.8, 0.5);
-
-  if (b.carrying) {
-    ctx.fillStyle = css(litc({ r: 238, g: 198, b: 102 }, atm), 0.8 * b.alpha);
+  // крылья — полупрозрачные, с жилками, трепещут
+  for (const s of [-1, 1]) {
+    ctx.save();
+    ctx.scale(s, 1);
+    ctx.rotate(s * flap * 0.35);
+    ctx.fillStyle = css(wing, 0.38 * b.alpha);
     ctx.beginPath();
-    ctx.arc(0, 1.2, 0.9, 0, Math.PI * 2);
+    ctx.ellipse(1.6, -1.2, 3.0, 1.35, 0.32, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = css(wingEdge, 0.28 * b.alpha);
+    ctx.lineWidth = 0.4;
+    ctx.beginPath();
+    ctx.ellipse(1.6, -1.2, 3.0, 1.35, 0.32, 0, Math.PI * 2);
+    ctx.stroke();
+    // жилка
+    ctx.beginPath();
+    ctx.moveTo(0.2, -0.8);
+    ctx.lineTo(3.2, -1.4);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // тело — мохнатое, полосатое
+  ctx.fillStyle = css(body, 0.96 * b.alpha);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 2.4, 1.8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // пушок — светлые точки
+  ctx.fillStyle = css({ r: 232, g: 220, b: 188 }, 0.18 * b.alpha);
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.arc(-0.8 + i * 0.8, -0.6 + (i % 2) * 0.4, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // полоски — жёлтые, с тёмной каймой
+  ctx.fillStyle = css(yellow, 0.96 * b.alpha);
+  ctx.beginPath();
+  ctx.ellipse(0, -0.4, 2.0, 0.55, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = css(yellowDeep, 0.92 * b.alpha);
+  ctx.beginPath();
+  ctx.ellipse(0, 0.5, 1.8, 0.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = css(bodyDeep, 0.32 * b.alpha);
+  ctx.lineWidth = 0.35;
+  ctx.beginPath();
+  ctx.moveTo(-1.9, -0.1);
+  ctx.lineTo(1.9, -0.1);
+  ctx.moveTo(-1.7, 0.8);
+  ctx.lineTo(1.7, 0.8);
+  ctx.stroke();
+
+  // голова — маленькая
+  ctx.fillStyle = css(bodyDeep, 0.92 * b.alpha);
+  ctx.beginPath();
+  ctx.arc(1.8, -0.2, 0.9, 0, Math.PI * 2);
+  ctx.fill();
+  // глаз
+  ctx.fillStyle = css({ r: 28, g: 24, b: 20 }, 0.88 * b.alpha);
+  ctx.beginPath();
+  ctx.arc(2.1, -0.3, 0.35, 0, Math.PI * 2);
+  ctx.fill();
+
+  // пыльца
+  if (b.carrying) {
+    ctx.fillStyle = css(litc({ r: 242, g: 202, b: 108 }, atm, 0.12), 0.88 * b.alpha);
+    ctx.beginPath();
+    ctx.arc(0, 1.4, 1.0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = css(litc({ r: 255, g: 232, b: 160 }, atm, 0.18), 0.52 * b.alpha);
+    ctx.beginPath();
+    ctx.arc(0.2, 1.2, 0.4, 0, Math.PI * 2);
     ctx.fill();
   }
 
