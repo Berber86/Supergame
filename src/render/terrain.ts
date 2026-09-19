@@ -1018,16 +1018,45 @@ function drawTileSides(ctx: Ctx, world: World, x: number, y: number, t: Tile, at
 
 function drawWaterTop(ctx: Ctx, x: number, y: number, level: number, atm: Atmosphere): void {
   const bottom = shade(mix(atm.palette.waterDeep, atm.palette.soil, 0.4), atm.exposure * 0.78);
-  tilePath(ctx, x, y, level - 0.34, 0.03);
-  ctx.fillStyle = css(bottom, 1);
+  const surfBase = mix(atm.palette.water, bottom, 0.26);
+  const surf = shade(mix(surfBase, atm.lightTint, atm.lightAmount * 0.5), atm.exposure);
+
+  // Центр тайла в экране
+  const cDeep = isoToScreen(x + 0.5, y + 0.5, level - 0.34);
+  const cSurf = isoToScreen(x + 0.5, y + 0.5, level - 0.26);
+
+  // Вариация глубины по шуму — вода не однотонная плита
+  const deepVar = fbm(x * 0.6, y * 0.6, 2, 11);
+  const surfVar = fbm(x * 0.9 + 5, y * 0.9 - 3, 2, 19);
+  const bottomCol = shade(bottom, 0.92 + deepVar * 0.16);
+  const surfCol = shade(surf, 0.94 + surfVar * 0.12);
+
+  // Неровный акварельный blob вместо ровного ромба.
+  // Размер больше тайла, чтобы соседние кляксы перекрывались и берег был рваным.
+  const seed = x * 137 + y * 73;
+  const rx = TILE_W * (0.58 + hash2(x, y, 3) * 0.12);
+  const ry = TILE_H * (0.58 + hash2(x, y, 7) * 0.12);
+
+  // глубина
+  ctx.fillStyle = css(bottomCol, 1);
+  blobPath(ctx, cDeep.x, cDeep.y, rx * 1.06, ry * 1.06, seed, 0.32, 10);
   ctx.fill();
-  const surf = shade(mix(mix(atm.palette.water, bottom, 0.26), atm.lightTint, atm.lightAmount * 0.5), atm.exposure);
-  tilePath(ctx, x, y, level - 0.26, 0.03);
-  ctx.fillStyle = css(surf, 1);
+
+  // поверхность — чуть меньше, с рваным краем
+  ctx.fillStyle = css(surfCol, 1);
+  blobPath(ctx, cSurf.x, cSurf.y, rx * 0.96, ry * 0.96, seed + 7, 0.34, 11);
   ctx.fill();
+
+  // лёгкая внутренняя тень у края — объём
+  const edge = hash2(x, y, 13);
+  if (edge > 0.5) {
+    ctx.fillStyle = css(shade(bottomCol, 0.82), 0.12 + edge * 0.08);
+    blobPath(ctx, cSurf.x + (hash2(x, y, 17) - 0.5) * 8, cSurf.y + 2, rx * 0.45, ry * 0.38, seed + 13, 0.38, 8);
+    ctx.fill();
+  }
 }
 
-/** Ступенчатый силуэт пруда сглаживается кляксами воды на выпуклых углах. */
+/** Ступенчатый силуэт пруда сглаживается кляксами воды на углах — без ровных ступеней. */
 function roundWaterCorners(ctx: Ctx, world: World, x: number, y: number, atm: Atmosphere): void {
   const t = world.at(x, y)!;
   const lv = t.level - 0.26;
@@ -1043,25 +1072,38 @@ function roundWaterCorners(ctx: Ctx, world: World, x: number, y: number, atm: At
     const a = world.at(x + dx, y);
     const b = world.at(x, y + dy);
     const c = world.at(x + dx, y + dy);
-    // внутренний угол: оба соседа — вода, диагональ — нет → заполняем плавно
-    if (a?.water && b?.water && !c?.water) {
+    // внутренний угол: оба соседа — вода, диагональ — суша → заполняем плавно рваной кляксой
+    if (a?.water && b?.water && c && !c.water && !c.indoor && !c.veranda) {
       const p = isoToScreen(x + 0.5 + dx * 0.62, y + 0.5 + dy * 0.62, lv);
-      if (c && !c.indoor && !c.veranda) {
-        ctx.fillStyle = css(surf, 0.9);
-        blobPath(ctx, p.x, p.y, TILE_W * 0.3, TILE_H * 0.3, x * 53 + y * 11 + dx * 3 + dy, 0.22, 9);
-        ctx.fill();
-      }
+      const seed = x * 53 + y * 11 + dx * 3 + dy;
+      const r = hash2(x + dx, y + dy, 19);
+      // более крупная и неровная, чем раньше
+      ctx.fillStyle = css(surf, 0.92);
+      blobPath(ctx, p.x, p.y, TILE_W * (0.34 + r * 0.18), TILE_H * (0.34 + r * 0.18), seed, 0.36, 10);
+      ctx.fill();
+    }
+    // внешний угол: вода граничит с сушей по диагонали — делаем выступ, чтобы берег не был 90°
+    if (a && !a.water && b && !b.water && !a.indoor && !a.veranda && !b.indoor && !b.veranda) {
+      // только если этот внешний угол действительно на берегу (есть вода рядом)
+      const hasWaterSide = world.at(x + dx, y)?.water || world.at(x, y + dy)?.water;
+      if (!hasWaterSide) continue;
+      const p = isoToScreen(x + 0.5 + dx * 0.38, y + 0.5 + dy * 0.38, lv);
+      const seed = x * 71 + y * 29 + dx * 7 + dy * 11;
+      ctx.fillStyle = css(surf, 0.42);
+      blobPath(ctx, p.x, p.y, TILE_W * 0.18, TILE_H * 0.16, seed, 0.42, 8);
+      ctx.fill();
     }
   }
 }
 
-/** Берег: влажный песок снаружи + светлая пена по кромке. */
+/** Берег: неровный акварельный край — влажная полоса и рваная пена, без прямых линий. */
 function drawWaterEdge(ctx: Ctx, world: World, x: number, y: number, atm: Atmosphere): void {
   const t = world.at(x, y)!;
   const level = t.level;
-  const sand = shade(mix(atm.palette.soil, { r: 238, g: 226, b: 198 }, 0.5), atm.exposure);
-  const wet = shade(mix(atm.palette.soil, atm.palette.waterDeep, 0.3), atm.exposure * 0.85);
-  const foam = shade(mix(atm.palette.water, { r: 255, g: 255, b: 255 }, 0.6), atm.exposure);
+  const wet = shade(mix(atm.palette.soil, atm.palette.waterDeep, 0.28), atm.exposure * 0.86);
+  const foam = shade(mix(atm.palette.water, { r: 255, g: 255, b: 255 }, 0.62), atm.exposure);
+  const sandCol = shade(mix(atm.palette.soil, { r: 238, g: 226, b: 198 }, 0.52), atm.exposure);
+
   const dirs: [number, number][] = [
     [0, -1],
     [1, 0],
@@ -1073,24 +1115,39 @@ function drawWaterEdge(ctx: Ctx, world: World, x: number, y: number, atm: Atmosp
     if (nb?.water) continue;
     if (nb && (nb.indoor || nb.veranda)) continue;
 
-    // Песчаная кромка — неровная полоса на берегу
     const seed = x * 41 + y * 17 + (dx + 2) * 5 + (dy + 2);
     const r = hash2(x * 13 + dx, y * 7 + dy, 61);
-    // узкая влажная кромка у самой воды, местами подсохшая
-    if (r > 0.28) {
-      const p = isoToScreen(x + 0.5 + dx * 0.56, y + 0.5 + dy * 0.56, nb ? nb.level : level);
+    const r2 = hash2(x * 23 + dx * 3, y * 37 + dy * 5, 97);
+
+    // 1) Влажная тёмная полоса на берегу — неровная клякса, заходящая на сушу
+    if (r > 0.18) {
+      const p = isoToScreen(x + 0.5 + dx * (0.52 + r * 0.18), y + 0.5 + dy * (0.52 + r * 0.18), nb ? nb.level : level);
       ctx.save();
       ctx.globalCompositeOperation = 'multiply';
-      ctx.fillStyle = css(mix({ r: 255, g: 255, b: 255 }, wet, 0.3 + r * 0.22), 1);
-      blobPath(ctx, p.x, p.y, TILE_W * (0.22 + r * 0.16), TILE_H * (0.2 + r * 0.16), seed, 0.36, 9);
+      // более крупная и рваная, чем раньше
+      ctx.fillStyle = css(mix({ r: 255, g: 255, b: 255 }, wet, 0.28 + r * 0.28), 1);
+      blobPath(ctx, p.x, p.y, TILE_W * (0.26 + r * 0.24), TILE_H * (0.22 + r * 0.2), seed, 0.44, 11);
       ctx.fill();
+      // вторая маленькая клякса рядом — рваность
+      if (r > 0.6) {
+        ctx.fillStyle = css(mix({ r: 255, g: 255, b: 255 }, wet, 0.22), 1);
+        blobPath(ctx, p.x + (r2 - 0.5) * 12, p.y + (r - 0.5) * 6, TILE_W * 0.14, TILE_H * 0.12, seed + 9, 0.48, 8);
+        ctx.fill();
+      }
       ctx.restore();
     }
-    void sand;
 
-    // Пена у самой воды — рваная, не по всей грани
-    let p0, p1;
+    // 2) Песчаная кромка на суше — светлый акварельный наплыв, не сплошной
+    if (nb && !nb.water && r > 0.32 && (nb.ground === 'sand' || hash2(x, y, 53) > 0.55)) {
+      const ps = isoToScreen(x + 0.5 + dx * 0.72, y + 0.5 + dy * 0.72, nb.level);
+      ctx.fillStyle = css(sandCol, 0.22 + r * 0.18);
+      blobPath(ctx, ps.x, ps.y, TILE_W * (0.18 + r * 0.14), TILE_H * (0.16 + r * 0.12), seed + 21, 0.38, 9);
+      ctx.fill();
+    }
+
+    // 3) Пена — рваная линия с волной + отдельные пузырьки
     const lv = level - 0.26;
+    let p0, p1;
     if (dx === 0 && dy === -1) {
       p0 = isoToScreen(x, y, lv);
       p1 = isoToScreen(x + 1, y, lv);
@@ -1104,20 +1161,29 @@ function drawWaterEdge(ctx: Ctx, world: World, x: number, y: number, atm: Atmosp
       p0 = isoToScreen(x, y, lv);
       p1 = isoToScreen(x, y + 1, lv);
     }
-    const fr = hash2(x * 23 + dx * 3, y * 37 + dy * 5, 97);
-    if (fr > 0.45) {
-      const t0 = fr * 0.4;
-      const t1 = 1 - hash2(x + dx, y + dy, 43) * 0.4;
+    if (r2 > 0.32) {
+      const t0 = r2 * 0.32;
+      const t1 = 1 - hash2(x + dx, y + dy, 43) * 0.38;
       const a0 = { x: lerp(p0.x, p1.x, t0), y: lerp(p0.y, p1.y, t0) };
       const a1 = { x: lerp(p0.x, p1.x, t1), y: lerp(p0.y, p1.y, t1) };
-      ctx.strokeStyle = css(foam, 0.16 + fr * 0.16);
-      ctx.lineWidth = 1.6 + fr;
+      // волнистая линия вместо прямой
+      const mx = (a0.x + a1.x) / 2 + (hash2(x, y, 71) - 0.5) * 8;
+      const my = (a0.y + a1.y) / 2 + 2.5 + (hash2(x, y, 73) - 0.5) * 4;
+      ctx.strokeStyle = css(foam, 0.14 + r2 * 0.18);
+      ctx.lineWidth = 1.4 + r2 * 1.2;
       ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(a0.x, a0.y);
-      ctx.quadraticCurveTo((a0.x + a1.x) / 2, (a0.y + a1.y) / 2 + 2.5, a1.x, a1.y);
+      ctx.quadraticCurveTo(mx, my, a1.x, a1.y);
       ctx.stroke();
       ctx.lineCap = 'butt';
+
+      // пузырьки пены — маленькие белые кляксы
+      if (r2 > 0.68) {
+        ctx.fillStyle = css(foam, 0.18);
+        blobPath(ctx, mx, my - 1, 3.5 + r2 * 2, 2.2, seed + 33, 0.5, 6);
+        ctx.fill();
+      }
     }
   }
 }

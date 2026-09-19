@@ -81,6 +81,7 @@ export interface Heron {
   struck: boolean;
   born: number;
   stay: number;
+  seed: number;
 }
 
 // ---------------- Олень ----------------
@@ -503,6 +504,7 @@ export class Wildlife {
         struck: false,
         born: now,
         stay: 150_000 + rnd() * 180_000,
+        seed: Math.floor(rnd() * 10000),
       };
       return;
     }
@@ -1581,6 +1583,7 @@ export class Wildlife {
         struck: false,
         born: 0,
         stay: 10_000_000,
+        seed: Math.floor(rnd() * 10000),
       };
       return;
     }

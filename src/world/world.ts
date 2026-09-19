@@ -441,6 +441,19 @@ export class World {
     this.smoothTerrain();
   }
 
+  /** Дерево или куст, который нельзя заливать — станет островком. */
+  private hasBlockingTree(x: number, y: number): boolean {
+    for (const o of this.objects) {
+      const item = ITEM_BY_ID.get(o.type);
+      if (!item) continue;
+      if (item.onWater) continue;
+      if (item.kind !== 'tree' && item.kind !== 'shrub') continue;
+      const r = footprintCells(item, o.tx, o.ty, o.rot);
+      if (x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1) return true;
+    }
+    return false;
+  }
+
   applyWaterBlock(x0: number, y0: number, w: number, h: number): void {
     const cx = x0 + (w - 1) / 2;
     const cy = y0 + (h - 1) / 2;
@@ -450,19 +463,24 @@ export class World {
       for (let x = x0 - 1; x < x0 + w + 1; x++) {
         const t = this.at(x, y);
         if (!t || t.indoor || t.veranda) continue;
+        if (this.hasBlockingTree(x, y)) continue;
         // мягкий природный силуэт вместо строгого прямоугольника
+        // добавляем второй шум для более рваного берега
         const nx = (x - cx) / rx;
         const ny = (y - cy) / ry;
-        const wob = (fbm(x * 0.55, y * 0.55, 2, 21) - 0.5) * 0.3;
+        const wob = (fbm(x * 0.55, y * 0.55, 2, 21) - 0.5) * 0.32 + (fbm(x * 1.1 + 7, y * 1.1 - 3, 2, 47) - 0.5) * 0.18;
         const d = Math.sqrt(nx * nx + ny * ny) + wob;
         if (d <= 1.02) {
           this.touch(x, y);
           t.water = true;
           t.ground = 'water';
           t.level = Math.min(t.level, 0);
-        } else if (d <= 1.35 && !t.water) {
-          this.touch(x, y);
-          t.ground = t.ground === 'tatami' || t.ground === 'deck' ? t.ground : 'sand';
+        } else if (d <= 1.45 && !t.water) {
+          // песок более рваный, не сплошным кольцом
+          if (hash2(x, y, 19) > 0.18) {
+            this.touch(x, y);
+            t.ground = t.ground === 'tatami' || t.ground === 'deck' ? t.ground : 'sand';
+          }
         }
       }
     }
@@ -665,18 +683,20 @@ export class World {
       for (let x = x0 - 1; x < x0 + w + 1; x++) {
         const t = this.at(x, y);
         if (!t || t.indoor || t.veranda) continue;
+        if (this.hasBlockingTree(x, y)) continue;
         const nx = (x - cx) / rx;
         const ny = (y - cy) / ry;
-        const wob = (fbm(x * 0.55, y * 0.55, 2, 37) - 0.5) * 0.3;
+        const wob = (fbm(x * 0.55, y * 0.55, 2, 37) - 0.5) * 0.32 + (fbm(x * 1.2, y * 1.2, 2, 57) - 0.5) * 0.15;
         const d = Math.sqrt(nx * nx + ny * ny) + wob;
         if (d <= 1.02) {
           t.water = true;
           t.ground = 'water';
           this.touch(x, y);
         } else if (d <= 1.5 && !t.water) {
-          // камень по кромке — источник выглядит обложенным
-          t.ground = 'stone';
-          this.touch(x, y);
+          if (hash2(x, y, 27) > 0.2) {
+            t.ground = 'stone';
+            this.touch(x, y);
+          }
         }
       }
     }
@@ -716,10 +736,11 @@ export class World {
       for (let x = x0; x < x0 + w; x++) {
         const t = this.at(x, y);
         if (!t || t.indoor || t.veranda) continue;
+        if (this.hasBlockingTree(x, y)) continue;
         // Отклонение от осевой линии русла. Русло должно быть шире ступени,
         // иначе на большинстве уступов воды не окажется и падать будет нечему.
         const axis = x - x0 - (y - y0);
-        const wob = (fbm(x * 0.7, y * 0.7, 2, 53) - 0.5) * 1.2;
+        const wob = (fbm(x * 0.7, y * 0.7, 2, 53) - 0.5) * 1.2 + (fbm(x * 1.4, y * 1.4, 2, 71) - 0.5) * 0.6;
         if (Math.abs(axis + wob) > 2.1) continue;
         t.water = true;
         t.ground = 'water';
