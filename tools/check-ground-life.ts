@@ -23,7 +23,7 @@ Math.random = makeRng(3281);
 const day = buildAtmosphere(computeTime(new Date(2026, 3, 19, 12).getTime()));
 const night = buildAtmosphere(computeTime(new Date(2026, 3, 19, 23).getTime()));
 const autumn = buildAtmosphere(computeTime(new Date(2026, 8, 19, 12).getTime()));
-const winter = buildAtmosphere(computeTime(new Date(2026, 11, 19, 12).getTime()));
+const winter = buildAtmosphere(computeTime(new Date(2026, 0, 15, 12).getTime()));
 const w = new World();
 w.objects = [];
 for (const t of w.tiles) Object.assign(t, { ground: 'moss', water: false, indoor: false, veranda: false, level: 0 });
@@ -110,17 +110,19 @@ for (const type of FLOWERING_TYPES) {
   clearSprites();
   reset();
   const obj = { id: 1, type, tx: 0, ty: 0, rot: 0, seed: 441, planted: 0 };
-  const d = { ctx: dc, x: 600, y: 420, atm: day, g: 1, obj, time: 1000, wind: 0, alpha: 1 };
+  const bloomDay = type === 'lotus' ? buildAtmosphere(computeTime(new Date(2026, 6, 15, 12).getTime())) : day;
+  const bloomNight = { ...bloomDay, time: computeTime(new Date(new Date(bloomDay.time.now).setHours(23)).getTime()) };
+  const d = { ctx: dc, x: 600, y: 420, atm: bloomDay, g: 1, obj, time: 1000, wind: 0, alpha: 1 };
   assert.notEqual(flowerCycleKey(type, day), flowerCycleKey(type, brightNight));
   drawCached(d);
   const opened = Buffer.from(pixels());
   reset();
-  drawCached({ ...d, atm: brightNight });
+  drawCached({ ...d, atm: bloomNight });
   assert.notDeepEqual(Buffer.from(pixels()), opened, `${type} folds with the same colours and exposure`);
   const n = spriteStats().size;
   reset();
   drawCached(d);
-  assert.deepEqual(Buffer.from(pixels()), opened, `${type} reopens after a cached night`);
+  assert.ok(Buffer.from(pixels()).equals(opened), `${type} reopens after a cached night`);
   assert.equal(spriteStats().size, n);
 }
 // Raster clipping against dry surfaces and the *curved* water contour (not only wet tiles).

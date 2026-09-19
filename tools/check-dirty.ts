@@ -20,6 +20,7 @@ async function main() {
   const cases: {
     name: string;
     hour: number;
+    date?: number;
     setup?: (w: InstanceType<typeof World>) => void;
     act: (w: InstanceType<typeof World>) => void;
   }[] = [
@@ -48,6 +49,18 @@ async function main() {
     { name: 'край сада', hour: 13, act: (w) => w.applyBrush(BRUSH_BY_ID.get('g_stone')!, 0, 25) },
     { name: 'зима, берег', hour: 13, act: (w) => w.setGround(14, 12, 'moss') },
     { name: 'зима, снег', hour: 16, act: (w) => w.applyBrush(BRUSH_BY_ID.get('g_soil')!, 9, 18) },
+    {
+      name: 'первые сугробы, правка берега',
+      hour: 13,
+      date: new Date(2026, 11, 12, 13).getTime(),
+      act: (w) => w.setGround(14, 12, 'moss'),
+    },
+    {
+      name: 'проталины, новая тропа',
+      hour: 13,
+      date: new Date(2026, 2, 1, 13).getTime(),
+      act: (w) => w.applyBrush(BRUSH_BY_ID.get('g_stone')!, 9, 18),
+    },
   ];
 
   // Порог заметности — на канал, а не на сумму каналов.
@@ -64,7 +77,7 @@ async function main() {
     const d = new Date();
     d.setHours(c.hour, 0, 0, 0);
     // последний случай проверяем зимой
-    const ms = c.name.includes('зима') ? new Date(2026, 11, 19, c.hour).getTime() : d.getTime();
+    const ms = c.date ?? (c.name.includes('зима') ? new Date(2026, 11, 19, c.hour).getTime() : d.getTime());
     const t = computeTime(ms);
     const atm = buildAtmosphere(t, 0);
 

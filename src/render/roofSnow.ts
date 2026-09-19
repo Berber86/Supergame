@@ -1,6 +1,7 @@
-/** Settled roof snow, not falling particles. Stable for three world days and across save/load. */
-import { DAY_MS } from '../core/clock';
-import { hash2 } from '../core/rng';
+/** Calendar-derived roof snow: permanent patch sites, gradual extent and thaw, stable across reload. */
+import { winterYear } from '../world/annualEnvironment';
+import { crownCacheKey } from '../world/phenology';
+import { hash2, smoothstep } from '../core/rng';
 import type { Pt } from '../core/iso';
 import { css, mix, shade, type Atmosphere } from '../world/palette';
 import { type Ctx, washBlob } from './paint';
@@ -8,16 +9,21 @@ import { type Ctx, washBlob } from './paint';
 export interface RoofSnow {
   amount: number;
   seed: number;
+  icicles?: number;
 }
 export function roofSnow(atm: Atmosphere, seed: number): RoofSnow {
-  if (atm.season !== 'winter') return { amount: 0, seed: 0 };
-  const period = Math.floor(atm.time.now / (3 * DAY_MS));
-  const roll = hash2(seed, period, 571);
-  return { amount: roll < 0.32 ? 0 : roll < 0.66 ? 0.48 : 0.9, seed: Math.floor(hash2(seed, period, 827) * 1000000) };
+  const winter = winterYear(atm.time.now),
+    r = hash2(seed, 19, 571);
+  const retention = r < 0.22 ? 0 : r < 0.56 ? 0.55 : 1;
+  return {
+    amount: winter.snow * retention,
+    seed: Math.floor(hash2(seed, 17, 827) * 1000000),
+    icicles: winter.icicles * retention,
+  };
 }
 export function roofSnowKey(atm: Atmosphere, seed: number): string {
   const s = roofSnow(atm, seed);
-  return s.amount ? `${s.amount}:${s.seed}` : 'dry';
+  return s.amount > 0 || s.icicles! > 0 ? `${crownCacheKey('__surface', seed, atm.time.now)}:${s.seed}` : 'dry';
 }
 export function snowColor(atm: Atmosphere) {
   return shade(mix({ r: 240, g: 244, b: 244 }, atm.lightTint, atm.lightAmount * 0.45), atm.exposure);
@@ -31,7 +37,7 @@ export function paintRoofSnow(
   point: (u: number, v: number) => Pt,
   side = 0,
 ): void {
-  if (!snow.amount) return;
+  if (snow.amount <= 0.0001) return;
   ctx.save();
   ctx.beginPath();
   outline.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
@@ -39,21 +45,19 @@ export function paintRoofSnow(
   ctx.clip();
   const white = shade(snowColor(atm), side % 2 ? 0.93 : 1),
     blue = shade(mix(white, shade({ r: 116, g: 147, b: 177 }, atm.exposure), 0.25), 0.94);
-  const spans =
-    snow.amount > 0.7
-      ? [[0, 1]]
-      : [
-          [0.02, 0.31],
-          [0.36, 0.68],
-          [0.73, 0.98],
-        ];
+  const presence = smoothstep(0, 0.08, snow.amount);
+  ctx.globalAlpha *= presence;
+  const half = (1 / 6) * smoothstep(0, 0.7, snow.amount);
+  const spans = [1 / 6, 0.5, 5 / 6].map((center) => [Math.max(0, center - half), Math.min(1, center + half)]);
   for (const [a, b] of spans) {
     const edge: Pt[] = [];
     for (let k = 0; k <= 96; k++) {
       const u = a + ((b - a) * k) / 96;
-      const ripple = 0.045 * Math.sin(u * 25 + side) + 0.025 * Math.sin(u * 57 + snow.seed);
-      const length = snow.amount > 0.7 ? 0.84 : 0.25 + hash2(side, Math.round(a * 100), snow.seed) * 0.28;
-      edge.push(point(u, Math.min(0.98, length + 0.09 * Math.sin(((u - a) / (b - a)) * Math.PI) + ripple)));
+      const ripple = snow.amount * (0.045 * Math.sin(u * 25 + side) + 0.025 * Math.sin(u * 57 + snow.seed));
+      const length = snow.amount * (0.82 + hash2(side, 7, snow.seed) * 0.1);
+      edge.push(
+        point(u, Math.min(0.98, length + 0.09 * snow.amount * Math.sin(((u - a) / (b - a)) * Math.PI) + ripple)),
+      );
     }
     const top = Array.from({ length: 25 }, (_, k) => point(a + ((b - a) * k) / 24, 0.005));
     const smoothEdge = (points: Pt[], move: boolean) => {
@@ -93,7 +97,7 @@ export function paintRoofSnow(
     ctx.beginPath();
     smoothEdge(edge, true);
     ctx.strokeStyle = css(blue, 0.6);
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 0.3 + 2.2 * snow.amount;
     ctx.stroke();
     // Wind-combed translucent marks, rather than a flat white replacement material.
     for (let i = 0; i < 12; i++) {
@@ -112,14 +116,14 @@ export function paintRoofSnow(
   ctx.restore();
 }
 export function paintSnowRidge(ctx: Ctx, atm: Atmosphere, snow: RoofSnow, a: Pt, b: Pt): void {
-  if (!snow.amount) return;
+  if (snow.amount <= 0.0001) return;
   ctx.save();
   ctx.beginPath();
   ctx.moveTo(a.x, a.y - 2.5);
   ctx.lineTo(b.x, b.y - 2.5);
-  ctx.strokeStyle = css(snowColor(atm), 0.95);
+  ctx.strokeStyle = css(snowColor(atm), 0.95 * smoothstep(0, 0.08, snow.amount));
   ctx.lineCap = 'round';
-  ctx.lineWidth = snow.amount > 0.7 ? 6 : 3;
+  ctx.lineWidth = 0.2 + 5.8 * snow.amount;
   ctx.stroke();
   ctx.restore();
 }
@@ -129,7 +133,9 @@ export function iciclesPresent(snow: RoofSnow): boolean {
   return snow.amount > 0 && hash2(snow.seed, 23, 941) > 0.46;
 }
 export function paintIcicles(ctx: Ctx, atm: Atmosphere, snow: RoofSnow, edge: Pt[], side = 0): void {
-  if (atm.season !== 'winter' || !iciclesPresent(snow)) return;
+  if (!iciclesPresent(snow)) return;
+  const amount = Math.min(snow.icicles ?? snow.amount, winterYear(atm.time.now).icicles);
+  if (amount <= 0.001) return;
   ctx.save();
   const ice = shade(mix({ r: 185, g: 219, b: 235 }, atm.lightTint, atm.lightAmount * 0.35), atm.exposure);
   const white = snowColor(atm);
@@ -137,19 +143,19 @@ export function paintIcicles(ctx: Ctx, atm: Atmosphere, snow: RoofSnow, edge: Pt
     const r = hash2(i, side, snow.seed);
     if (r < 0.67) continue;
     const p = edge[i],
-      length = 4 + hash2(i, 71, snow.seed) * 11,
-      width = 1 + hash2(i, 73, snow.seed) * 1.8;
+      length = (4 + hash2(i, 71, snow.seed) * 11) * Math.sqrt(amount),
+      width = (1 + hash2(i, 73, snow.seed) * 1.8) * Math.sqrt(amount);
     ctx.beginPath();
     ctx.moveTo(p.x - width, p.y + 2);
     ctx.quadraticCurveTo(p.x - 0.7, p.y + length * 0.7, p.x + 0.4, p.y + length + 2);
     ctx.lineTo(p.x + width, p.y + 2);
     ctx.closePath();
-    ctx.fillStyle = css(ice, 0.85);
+    ctx.fillStyle = css(ice, 0.85 * smoothstep(0, 0.15, amount));
     ctx.fill();
     ctx.beginPath();
     ctx.moveTo(p.x - 0.5, p.y + 3);
     ctx.lineTo(p.x + 0.2, p.y + length);
-    ctx.strokeStyle = css(white, 0.8);
+    ctx.strokeStyle = css(white, 0.8 * smoothstep(0, 0.15, amount));
     ctx.lineWidth = 0.65;
     ctx.stroke();
   }

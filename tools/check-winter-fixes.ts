@@ -80,17 +80,16 @@ flow.ensure(w);
 const surfaces = prepareWaterSurface(w),
   surface = surfaces.find((s) => s.cells.length > 10)!;
 assert.ok(iceEligible(w, flow, surface));
-const variants = Array.from({ length: 30 }, (_, i) => ({
+const variants = Array.from({ length: 45 }, (_, i) => ({
   ...winter,
   time: { ...winter.time, now: winter.time.now + i * 3 * DAY_MS },
 }));
 const iceAt = variants.find((a) => pondIceState(a, surface).amount > 0.7)!,
   clearAt = variants.find((a) => pondIceState(a, surface).amount === 0)!;
 assert.ok(iceAt && clearAt);
-assert.deepEqual(
-  pondIceState(iceAt, surface),
-  pondIceState({ ...iceAt, time: { ...iceAt.time, now: iceAt.time.now + 1000 } }, surface),
-);
+const iceNext = pondIceState({ ...iceAt, time: { ...iceAt.time, now: iceAt.time.now + 1000 } }, surface);
+assert.equal(iceNext.seed, pondIceState(iceAt, surface).seed);
+assert.ok(Math.abs(iceNext.amount - pondIceState(iceAt, surface).amount) < 1e-5);
 ctx.clearRect(0, 0, 900, 650);
 ctx.save();
 ctx.translate(360, -470);

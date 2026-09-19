@@ -1,7 +1,8 @@
+import { winterYear } from '../world/annualEnvironment';
 /** Отрисовка земли: непрерывные акварельные заливки, мягкие границы материалов, вода с берегом. */
 
 import { GRID, LEVEL_H, TILE_H, TILE_W, isoToScreen, tileDiamond } from '../core/iso';
-import { clamp01, fbm, hash2, lerp } from '../core/rng';
+import { clamp01, fbm, hash2, lerp, smoothstep } from '../core/rng';
 import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
 import { GroundId, Tile } from '../world/types';
 import { World } from '../world/world';
@@ -184,14 +185,28 @@ export function renderTerrain(
   // 4) Крупные акварельные разводы поверх — ломают ощущение сетки
   drawGlobalWash(ctx, world, atm, bounds);
 
-  // 4.5) Снежный покров
-  if (atm.season === 'winter') drawSnowCover(ctx, world, atm, bounds);
-
   // 5) Мягкие границы между разными материалами
   for (const { x, y } of order) drawMaterialEdges(ctx, world, x, y, atm);
 
   // 6) Фактура материалов
   for (const { x, y } of order) drawTileDetail(ctx, world, x, y, world.at(x, y)!, atm);
+
+  // Snow lies above ground washes/details; otherwise green material edges punch through every drift.
+  const snowAmount = winterYear(atm.time.now).snow;
+  if (snowAmount > 0.001) {
+    drawSnowCover(ctx, world, atm, bounds);
+    // A restrained trace of the existing paths stays readable beneath packed snow.
+    ctx.save();
+    ctx.globalAlpha *= snowAmount * 0.16;
+    for (const { x, y } of order) {
+      const t = world.at(x, y)!;
+      if (isRoad(t.ground) && !t.water && !t.indoor && !t.veranda) {
+        drawRoadRibbon(ctx, world, x, y, t, atm);
+        drawTileDetail(ctx, world, x, y, t, atm);
+      }
+    }
+    ctx.restore();
+  }
 
   // 7) Единая поверхность водоёмов поверх затёков земли, с мягкой отмелью.
   prepareWaterSurface(world);
@@ -488,18 +503,19 @@ function tileColor(world: World, x: number, y: number, t: Tile, atm: Atmosphere,
 
 /** Local mountain skirt: no changes to indoor floors or constructed verandas. */
 function isRockySlope(world: World, x: number, y: number, t: Tile): boolean {
-  if (t.water || t.indoor || t.veranda || t.level <= 0 || !['moss','grass','stone'].includes(t.ground)) return false;
-  for (let dy=-3;dy<=3;dy++) for(let dx=-3;dx<=3;dx++) {
-    if (Math.abs(dx)+Math.abs(dy)>3) continue;
-    if (world.at(x+dx,y+dy)?.water) return true;
-  }
+  if (t.water || t.indoor || t.veranda || t.level <= 0 || !['moss', 'grass', 'stone'].includes(t.ground)) return false;
+  for (let dy = -3; dy <= 3; dy++)
+    for (let dx = -3; dx <= 3; dx++) {
+      if (Math.abs(dx) + Math.abs(dy) > 3) continue;
+      if (world.at(x + dx, y + dy)?.water) return true;
+    }
   return false;
 }
 
 /** Only elevated waterside stone: ordinary stone paths and level ponds stay unchanged. */
 function isCascadeBank(world: World, x: number, y: number, t: Tile): boolean {
   if (t.ground !== 'stone' || t.water || t.indoor || t.veranda) return false;
-  if (isRockySlope(world,x,y,t)) return true;
+  if (isRockySlope(world, x, y, t)) return true;
   for (let dy = -1; dy <= 1; dy++)
     for (let dx = -1; dx <= 1; dx++) {
       const n = world.at(x + dx, y + dy);
@@ -525,20 +541,27 @@ function drawTileFill(ctx: Ctx, world: World, x: number, y: number, t: Tile, atm
 }
 
 /** Конусная лента от c до m в цвет покрытия. */
-function ribbonQuad(ctx: Ctx, c: { x: number; y: number }, m: { x: number; y: number }, w0: number, w1: number, fill = true): void {
+function ribbonQuad(
+  ctx: Ctx,
+  c: { x: number; y: number },
+  m: { x: number; y: number },
+  w0: number,
+  w1: number,
+  fill = true,
+): void {
   const dx = m.x - c.x;
   const dy = m.y - c.y;
   const len = Math.hypot(dx, dy) || 1;
   const px = -dy / len;
   const py = dx / len;
-  if(fill) ctx.beginPath();
+  if (fill) ctx.beginPath();
   ctx.moveTo(c.x + px * w0, c.y + py * w0);
   ctx.lineTo(c.x - px * w0, c.y - py * w0);
   ctx.lineTo(m.x - px * w1, m.y - py * w1);
   ctx.lineTo(m.x + px * w1, m.y + py * w1);
   ctx.closePath();
   ctx.closePath();
-  if(fill) ctx.fill();
+  if (fill) ctx.fill();
 }
 
 /** Тропинка: узкая лента, обвивающая соседей; перекрёстки шире. */
@@ -568,15 +591,21 @@ function drawRoadRibbon(ctx: Ctx, world: World, x: number, y: number, t: Tile, a
 }
 
 /** Same organic road geometry for residual moisture; appends to a batched nonzero-winding path. */
-export function wetRoadPath(ctx:Ctx,world:World,x:number,y:number,t:Tile):void {
-  const sk=roadSkeleton(world,x,y,t);
-  if(!sk){const p=tileDiamond(x,y,t.level);p.forEach((q,i)=>i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y));ctx.closePath();return;}
-  const junc=sk.cardDeg>=2||sk.arms.length>=3,w=TILE_W*.15*(junc?1.35:1);
-  for(const arm of sk.arms){
-    ribbonQuad(ctx,sk.c,arm.m,w,w*(arm.corner?.8:1),false);
-    if(arm.corner)blobPath(ctx,arm.m.x,arm.m.y,w*1.15,w*1.05,x*67+y*13+5,.3,9,false);
+export function wetRoadPath(ctx: Ctx, world: World, x: number, y: number, t: Tile): void {
+  const sk = roadSkeleton(world, x, y, t);
+  if (!sk) {
+    const p = tileDiamond(x, y, t.level);
+    p.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+    ctx.closePath();
+    return;
   }
-  blobPath(ctx,sk.c.x,sk.c.y,w*(sk.arms.length?1.5:1.7),w*1.35,x*41+y*97,.34,11,false);
+  const junc = sk.cardDeg >= 2 || sk.arms.length >= 3,
+    w = TILE_W * 0.15 * (junc ? 1.35 : 1);
+  for (const arm of sk.arms) {
+    ribbonQuad(ctx, sk.c, arm.m, w, w * (arm.corner ? 0.8 : 1), false);
+    if (arm.corner) blobPath(ctx, arm.m.x, arm.m.y, w * 1.15, w * 1.05, x * 67 + y * 13 + 5, 0.3, 9, false);
+  }
+  blobPath(ctx, sk.c.x, sk.c.y, w * (sk.arms.length ? 1.5 : 1.7), w * 1.35, x * 41 + y * 97, 0.34, 11, false);
 }
 
 /** Крупные размывы поверх земли. Режим multiply — краска ложится слоями, как акварель. */
@@ -669,6 +698,7 @@ function drawSnowCover(ctx: Ctx, world: World, atm: Atmosphere, b: Bounds): void
   // и если брать чистый белый за основу, лепка сугробов пропадает —
   // сад превращается в лист бумаги. Держим основу чуть голубее,
   // а на ярком свету дополнительно придерживаем.
+  const amount = winterYear(atm.time.now).snow;
   const bright = clamp01((atm.exposure - 1) * 1.2);
   // Ночью лепка сугробов должна слабеть вместе со светом. Без этого
   // тёмные пятна остаются во всю силу поверх потемневшего снега,
@@ -707,11 +737,42 @@ function drawSnowCover(ctx: Ctx, world: World, atm: Atmosphere, b: Bounds): void
       ctx.closePath();
     }
   }
-  ctx.fillStyle = css(snow, 1);
+  // The last gaps close near peak winter; before that fixed snowdrifts expand over bare ground.
+  ctx.fillStyle = css(snow, smoothstep(0.82, 1, amount));
   ctx.fill();
-
-  // 2) Внутри этой формы — мягкая лепка сугробов (клип не даёт вылезти за край)
   ctx.clip();
+  const drifts: { x: number; y: number; rx: number; ry: number; seed: number }[] = [];
+  for (let gy = phase(b.by0 - 2, -1, 1.1); gy <= b.by1 + 1; gy += 1.1) {
+    for (let gx = phase(b.bx0 - 2, -1, 1.1); gx <= b.bx1 + 1; gx += 1.1) {
+      const seed = Math.round(gx * 19 + gy * 7),
+        jx = hash2(seed, 9, 1543) - 0.5,
+        jy = hash2(seed, 7, 1543) - 0.5;
+      const t = world.at(Math.max(0, Math.floor(gx)), Math.max(0, Math.floor(gy)));
+      const n = fbm(gx * 0.43, gy * 0.43, 3, 1511),
+        cover = smoothstep(n * 0.62, 0.64 + n * 0.34, amount);
+      if (cover <= 0.001) continue;
+      const p = isoToScreen(gx + 0.5 + jx * 0.7, gy + 0.5 + jy * 0.7, t?.level ?? 0);
+      drifts.push({
+        ...p,
+        rx: TILE_W * (0.9 + jx * 0.4) * Math.sqrt(cover),
+        ry: TILE_H * (0.9 + jy * 0.4) * Math.sqrt(cover),
+        seed,
+      });
+    }
+  }
+  // A narrow watercolor fringe, not a hard white stamp or a grid of equal disks.
+  for (const [size, opacity] of [
+    [1.06, 0.15],
+    [1.02, 0.35],
+    [0.98, 0.94],
+  ]) {
+    ctx.beginPath();
+    for (const p of drifts) blobPath(ctx, p.x, p.y, p.rx * size, p.ry * size, p.seed, 0.4, 10, false);
+    ctx.fillStyle = css(snow, opacity);
+    ctx.fill();
+  }
+  ctx.clip();
+  // Relief, thaw holes and glints are restricted to the grown patches, not bare earth.
   for (let gy = phase(b.by0 - 1, -1, 1.1); gy <= b.by1; gy += 1.1) {
     for (let gx = phase(b.bx0 - 1, -1, 1.1); gx <= b.bx1; gx += 1.1) {
       const t = world.at(Math.max(0, Math.floor(gx)), Math.max(0, Math.floor(gy)));

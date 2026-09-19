@@ -80,14 +80,37 @@ export function leafGroup(
 /** Roughly 17-hour render revisions, staggered by seed. The model itself is not quantised.
  * Existing bounded sprite/measurement caches hold only recent revisions, never a year's worth of images.
  */
+// Annual revisions now also cover seasonal flowers and surfaces that collect snow.
+const ANNUAL_SPRITE_TYPES = new Set([
+  ...ANNUAL_CROWN_TYPES,
+  'iris',
+  'lily',
+  'lotus',
+  'lilypad',
+  'rock_mid',
+  'rock_big',
+  'rock_trio',
+  'moss_clump',
+  'grass_tuft',
+  'fern',
+  'reed',
+  'horsetail',
+  'feeder',
+  'beehive',
+  'tea_house',
+  'tiny_house',
+  'shed',
+  'pavilion',
+  '__surface',
+]);
 export function crownCacheKey(type: string, seed: number, now: number): string {
-  return ANNUAL_CROWN_TYPES.has(type) ? String(Math.floor(annualPhase(now) * 512 + hash2(seed, 7, 1381)) % 512) : '';
+  return ANNUAL_SPRITE_TYPES.has(type) ? String(Math.floor(annualPhase(now) * 512 + hash2(seed, 7, 1381)) % 512) : '';
 }
 /** Canonical date for a cached revision, independent of which instant first filled that bucket.
  * Only annual development uses this date: callers keep actual daylight/daily flower opening.
  */
 export function crownCacheTime(type: string, seed: number, now: number): number {
-  if (!ANNUAL_CROWN_TYPES.has(type)) return now;
+  if (!ANNUAL_SPRITE_TYPES.has(type)) return now;
   const stagger = hash2(seed, 7, 1381),
     phase = (Math.floor(annualPhase(now) * 512 + stagger) - stagger + 0.5) / 512;
   const year = new Date(now).getFullYear(),

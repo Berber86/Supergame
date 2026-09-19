@@ -1,3 +1,4 @@
+import { flowerYear, winterYear } from '../../world/annualEnvironment';
 /** Жители пруда и водяные растения. */
 
 import { flowerOpenness } from '../flowerCycle';
@@ -36,29 +37,31 @@ function drawDormantWaterPlant(d: Parameters<Drawer>[0], lotus: boolean): void {
 
 export const drawLilypad: Drawer = (d) => {
   const { ctx, atm, obj } = d;
-  if (atm.season === 'winter') {
-    drawDormantWaterPlant(d, false);
-    return;
-  }
+  const year = flowerYear('lilypad', obj.seed, atm.time.now);
+  ctx.save();
+  ctx.globalAlpha *= 1 - year.foliage;
+  drawDormantWaterPlant(d, false);
+  ctx.restore();
+  if (year.foliage <= 0.001) return;
   const bob = Math.sin(d.time * 0.0008 + obj.seed) * 1.5;
   for (let i = 0; i < 3; i++) {
     const r1 = hash2(i, obj.seed, 9);
     const r2 = hash2(i, obj.seed, 19);
     const px = d.x + (r1 - 0.5) * 22;
     const py = d.y + (r2 - 0.5) * 11 + bob;
-    const rx = 8 + r1 * 5;
+    const rx = (8 + r1 * 5) * Math.sqrt(year.foliage);
     const c = litc(mix({ r: 116, g: 156, b: 104 }, atm.palette.foliage, 0.4), atm);
-    ctx.fillStyle = css(shade(c, 0.7), 0.3);
+    ctx.fillStyle = css(shade(c, 0.7), 0.3 * year.foliage);
     ctx.beginPath();
     ctx.ellipse(px, py + 2, rx, rx * 0.55, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = css(c, 0.9);
+    ctx.fillStyle = css(c, 0.9 * year.foliage);
     ctx.beginPath();
     ctx.ellipse(px, py, rx, rx * 0.55, 0, 0.35, Math.PI * 2 - 0.35);
     ctx.lineTo(px, py);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = css(shade(c, 0.78), 0.4);
+    ctx.strokeStyle = css(shade(c, 0.78), 0.4 * year.foliage);
     ctx.lineWidth = 0.8;
     for (let k = 0; k < 4; k++) {
       const a = 0.6 + k * 1.2;
@@ -72,39 +75,45 @@ export const drawLilypad: Drawer = (d) => {
 
 export const drawLotus: Drawer = (d) => {
   const { ctx, atm, obj, g } = d;
-  if (atm.season === 'winter') {
-    drawDormantWaterPlant(d, true);
-    return;
-  }
+  const year = flowerYear('lotus', obj.seed, atm.time.now);
+  ctx.save();
+  ctx.globalAlpha *= 1 - year.foliage;
+  drawDormantWaterPlant(d, true);
+  ctx.restore();
+  if (year.foliage <= 0.001) return;
   const bob = Math.sin(d.time * 0.0007 + obj.seed) * 1.5;
   const open = flowerOpenness(atm);
-  const scale = lerp(0.5, 1, g);
+  let scale = lerp(0.5, 1, g) * Math.sqrt(year.foliage);
   const px = d.x;
   const py = d.y + bob;
   // лист
   const leaf = litc({ r: 108, g: 148, b: 100 }, atm);
-  ctx.fillStyle = css(leaf, 0.85);
+  ctx.fillStyle = css(leaf, 0.85 * year.foliage);
   ctx.beginPath();
   ctx.ellipse(px - 10, py + 3, 10 * scale, 5.5 * scale, 0, 0, Math.PI * 2);
   ctx.fill();
   // стебель
-  ctx.strokeStyle = css(litc({ r: 120, g: 154, b: 104 }, atm), 0.8);
+  ctx.strokeStyle = css(litc({ r: 120, g: 154, b: 104 }, atm), 0.8 * year.foliage);
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(px, py + 2);
   ctx.lineTo(px + 1, py - 12 * scale);
   ctx.stroke();
+  // Annual presence is independent of the day/night petal pose.
+  if (year.bloom <= 0.001) return;
+  const cy = py - 13 * scale;
+  scale *= Math.sqrt(year.bloom);
   // цветок
   const petal = litc({ r: 248, g: 204, b: 216 }, atm, 0.05);
   const petalDeep = litc({ r: 236, g: 166, b: 190 }, atm);
-  const cy = py - 13 * scale;
+
   const n = 7;
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2;
     const spread = 1.1 * open;
     const ex = px + Math.cos(a) * 6 * scale * spread;
     const ey = cy + Math.sin(a) * 3.4 * scale * spread - 2 - (1 - open) * 3 * scale;
-    ctx.fillStyle = css(i % 2 === 0 ? petal : petalDeep, 0.9);
+    ctx.fillStyle = css(i % 2 === 0 ? petal : petalDeep, 0.9 * year.bloom);
     ctx.save();
     ctx.translate(ex, ey);
     ctx.rotate(lerp(-Math.PI / 2, a, open));
@@ -113,7 +122,7 @@ export const drawLotus: Drawer = (d) => {
     ctx.fill();
     ctx.restore();
   }
-  ctx.fillStyle = css(litc({ r: 246, g: 226, b: 160 }, atm), 0.95 * Math.max(0, (open - 0.4) / 0.6));
+  ctx.fillStyle = css(litc({ r: 246, g: 226, b: 160 }, atm), 0.95 * year.bloom * Math.max(0, (open - 0.4) / 0.6));
   ctx.beginPath();
   ctx.arc(px, cy - 2, 2.4 * scale, 0, Math.PI * 2);
   ctx.fill();
@@ -173,7 +182,14 @@ export const drawReed: Drawer = (d) => {
   const { ctx, atm, g, obj } = d;
   const scale = lerp(0.45, 1, Math.pow(g, 0.7));
   const stalks = 5 + Math.round(scale * 3);
-  const stemCol = litc(atm.season === 'winter' ? { r: 176, g: 164, b: 130 } : { r: 116, g: 148, b: 92 }, atm);
+  const stemCol = litc(
+    mix(
+      { r: 116, g: 148, b: 92 },
+      { r: 176, g: 164, b: 130 },
+      1 - flowerYear('lilypad', obj.seed, atm.time.now).foliage,
+    ),
+    atm,
+  );
   const head = litc({ r: 132, g: 96, b: 66 }, atm);
 
   ctx.lineCap = 'round';
@@ -208,7 +224,7 @@ export const drawHorsetail: Drawer = (d) => {
   const { ctx, atm, g, obj } = d;
   const scale = lerp(0.45, 1, Math.pow(g, 0.7));
   const stalks = 6 + Math.round(scale * 4);
-  const col = litc(atm.season === 'winter' ? { r: 150, g: 158, b: 138 } : { r: 96, g: 142, b: 104 }, atm);
+  const col = litc(mix({ r: 96, g: 142, b: 104 }, { r: 150, g: 158, b: 138 }, winterYear(atm.time.now).snow), atm);
 
   for (let i = 0; i < stalks; i++) {
     const r1 = hash2(i, obj.seed, 23);

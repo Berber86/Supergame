@@ -1,3 +1,4 @@
+import { crownCacheKey, crownCacheTime } from '../world/phenology';
 import { rainField, rainMaterial, drawRainGround, drawHouseDrips } from './afterRain';
 import { drawGroundLife } from './groundLife';
 /** Сцена: камера, сортировка по глубине, пост-обработка «акварель на рисовой бумаге». */
@@ -266,7 +267,7 @@ export class Scene {
 
   private atmKey(atm: Atmosphere): string {
     // Перерисовываем ландшафт при заметном изменении освещения
-    return `${atm.season}|${Math.round(atm.exposure * 22)}|${Math.round(atm.lightAmount * 22)}|${Math.round(
+    return `${crownCacheKey('__surface', 0, atm.time.now)}|${atm.season}|${Math.round(atm.exposure * 22)}|${Math.round(atm.lightAmount * 22)}|${Math.round(
       atm.lightTint.r / 9,
     )}|${Math.round(atm.lightTint.b / 9)}|${Math.round(atm.sunDir.x / 0.34)}`;
   }
@@ -302,7 +303,14 @@ export class Scene {
     if (this.terrainDirty || key !== this.lastAtmKey || !this.terrain) {
       // Свет поменялся — обновлять частями нельзя, цвет плывёт по всему саду
       const full = !this.terrain || key !== this.lastAtmKey || !this.dirtyRect;
-      this.terrain = renderTerrain(world, atm, 1, full ? undefined : this.terrain!, full ? undefined : this.dirtyRect!);
+      const terrainAtm = { ...atm, time: { ...atm.time, now: crownCacheTime('__surface', 0, atm.time.now) } };
+      this.terrain = renderTerrain(
+        world,
+        terrainAtm,
+        1,
+        full ? undefined : this.terrain!,
+        full ? undefined : this.dirtyRect!,
+      );
       this.terrainDirty = false;
       this.dirtyRect = null;
       this.lastAtmKey = key;

@@ -1,6 +1,8 @@
+import { flowerYear, litterYear, winterYear } from '../world/annualEnvironment';
+import { crownCacheKey, crownCacheTime } from '../world/phenology';
 /** Sparse, persistent-looking ground ecology. Decoration only: never places objects or changes saves. */
 import { isoToScreen, tileDiamond } from '../core/iso';
-import { fbm, hash2, clamp01 } from '../core/rng';
+import { fbm, hash2, clamp01, smoothstep } from '../core/rng';
 import { ITEM_BY_ID, SMALL_HOUSE_IDS } from '../world/catalog';
 import type { World } from '../world/world';
 import type { Tile } from '../world/types';
@@ -180,15 +182,22 @@ export function groundDetailAlpha(kind: GroundLifeKind, zoom: number): number {
 }
 function litterColor(p: GroundPatch, atm: Atmosphere): RGB {
   if (p.treeType === 'pine') return { r: 131, g: 111, b: 65 };
-  if (atm.season === 'spring' && p.treeType === 'sakura') return { r: 224, g: 186, b: 183 };
-  if (atm.season === 'autumn') {
-    if (p.treeType === 'ginkgo') return { r: 214, g: 177, b: 66 };
-    if (p.treeType === 'maple') return { r: 180, g: 96, b: 59 };
-    return { r: 171, g: 139, b: 72 };
-  }
-  return { r: 133, g: 120, b: 76 };
+  const year = litterYear(p.treeType ?? 'maple', p.treeSeed ?? p.seed, atm.time.now);
+  const fresh =
+    p.treeType === 'ginkgo'
+      ? { r: 214, g: 177, b: 66 }
+      : p.treeType === 'maple'
+        ? { r: 180, g: 96, b: 59 }
+        : { r: 171, g: 139, b: 72 };
+  return mix(mix({ r: 133, g: 120, b: 76 }, fresh, year.fresh), { r: 224, g: 186, b: 183 }, year.petals);
 }
 function paintPatch(ctx: Ctx, p: GroundPatch, atm: Atmosphere, zoom: number): void {
+  const snow = winterYear(atm.time.now).snow;
+  const exposed = 1 - smoothstep(0.12 + hash2(p.seed, 3, 1523) * 0.35, 0.74 + hash2(p.seed, 5, 1523) * 0.24, snow);
+  ctx.globalAlpha *= exposed;
+  if (exposed <= 0.001) return;
+  const litterState = litterYear(p.treeType ?? 'maple', p.treeSeed ?? p.seed, atm.time.now);
+  const flowers = flowerYear('wildflowers', p.seed, atm.time.now);
   const q = isoToScreen(p.x, p.y, p.level),
     fine = groundDetailAlpha(p.kind, zoom);
   const lit = (c: RGB) => shade(mix(c, atm.lightTint, atm.lightAmount), atm.exposure);
@@ -206,7 +215,7 @@ function paintPatch(ctx: Ctx, p: GroundPatch, atm: Atmosphere, zoom: number): vo
             ? litter
             : earth;
     const a = groundDetailAlpha('soil', zoom) * (p.kind === 'roots' ? 0.22 : p.kind === 'soil' ? 0.21 : 0.11);
-    ctx.fillStyle = css(col, a);
+    ctx.fillStyle = css(col, a * (p.kind === 'leaves' ? litterState.amount : 1));
     blobPath(ctx, q.x, q.y, 20 + hash2(p.seed, 1, 3) * 12, 8 + hash2(p.seed, 2, 3) * 5, p.seed, 0.48, 9);
     ctx.fill();
   }
@@ -228,23 +237,14 @@ function paintPatch(ctx: Ctx, p: GroundPatch, atm: Atmosphere, zoom: number): vo
     return;
   }
   const count =
-    p.kind === 'mushrooms'
-      ? 3
-      : p.kind === 'flowers'
-        ? 5
-        : p.kind === 'leaves'
-          ? atm.season === 'autumn'
-            ? 13
-            : 6
-          : p.kind === 'needles'
-            ? 10
-            : 7;
+    p.kind === 'mushrooms' ? 3 : p.kind === 'flowers' ? 5 : p.kind === 'leaves' ? 13 : p.kind === 'needles' ? 10 : 7;
   for (let i = 0; i < count; i++) {
     const x = q.x + (hash2(i, p.seed, 17) - 0.5) * 34,
       y = q.y + (hash2(i, p.seed, 23) - 0.5) * 14;
     const r = hash2(i, p.seed, 47);
     if (p.kind === 'leaves' || p.kind === 'needles') {
       ctx.save();
+      if (p.kind === 'leaves') ctx.globalAlpha *= smoothstep(r * 0.72, r * 0.72 + 0.28, litterState.amount);
       ctx.translate(x, y);
       ctx.rotate(r * 6.28);
       ctx.fillStyle = css(litter, 0.68);
@@ -291,8 +291,10 @@ function paintPatch(ctx: Ctx, p: GroundPatch, atm: Atmosphere, zoom: number): vo
       ctx.closePath();
       ctx.fill();
     } else if (p.kind === 'flowers') {
-      // Wild flowers never invade winter snow, and are sparse late in autumn.
-      if (atm.season === 'autumn' && i > 1) continue;
+      const bloom = smoothstep(r * 0.3, 0.62 + r * 0.38, flowers.bloom);
+      if (bloom <= 0.001) continue;
+      ctx.save();
+      ctx.globalAlpha *= bloom;
       ctx.strokeStyle = css(grass, 0.8);
       ctx.lineWidth = 0.8;
       ctx.beginPath();
@@ -300,8 +302,17 @@ function paintPatch(ctx: Ctx, p: GroundPatch, atm: Atmosphere, zoom: number): vo
       ctx.lineTo(x + 1, y - 5);
       ctx.stroke();
       ctx.fillStyle = css(lit(i % 3 ? { r: 228, g: 222, b: 181 } : { r: 176, g: 169, b: 191 }), 0.9);
-      flowerHeadPath(ctx, x + 1, y - 5, 2.2, 1.6, p.seed + i, flowerOpenness(atm));
+      flowerHeadPath(
+        ctx,
+        x + 1,
+        y - 5,
+        2.2 * Math.sqrt(bloom),
+        1.6 * Math.sqrt(bloom),
+        p.seed + i,
+        flowerOpenness(atm),
+      );
       ctx.fill();
+      ctx.restore();
     } else if (p.kind === 'grass' || p.kind === 'moss') {
       ctx.strokeStyle = css(grass, p.kind === 'grass' ? 0.53 : 0.23);
       ctx.lineWidth = 1;
@@ -321,13 +332,15 @@ export interface GroundView {
 }
 /** Draw after the terrain but before fish, water animation, lighting and object shadows. */
 export function drawGroundLife(ctx: Ctx, world: World, atm: Atmosphere, view: GroundView): number {
-  if (atm.season === 'winter' || view.zoom <= 0.23) return 0;
+  if (winterYear(atm.time.now).snow >= 0.999 || view.zoom <= 0.23) return 0;
+  atm = { ...atm, time: { ...atm.time, now: crownCacheTime('__surface', 0, atm.time.now) } };
   const field = groundLifeField(world);
   // One current paint state, at most 400 tiny 100×56 stamps (~8.6 MiB worst case).
   // Local masks are rasterised only on edits/light-state/LOD changes, never once per blade per frame.
   const lod = view.zoom < 0.36 ? 0 : view.zoom < 0.64 ? 1 : 2,
     detailZoom = lod === 0 ? 0.3 : lod === 1 ? 0.55 : 1;
   const key = [
+    crownCacheKey('__surface', 0, atm.time.now),
     atm.season,
     Math.round(atm.exposure * 20),
     Math.round(atm.lightAmount * 20),
@@ -337,7 +350,13 @@ export function drawGroundLife(ctx: Ctx, world: World, atm: Atmosphere, view: Gr
     Math.round(flowerOpenness(atm) * 16),
     lod,
   ].join('|');
-  if (field.paint?.key !== key) field.paint = { key, images: new Map() };
+  if (field.paint?.key !== key) {
+    for (const stamp of field.paint?.images.values() ?? []) {
+      stamp.canvas.width = 1;
+      stamp.canvas.height = 1;
+    }
+    field.paint = { key, images: new Map() };
+  }
   const visible = field.patches.filter((p) => {
     if ((p.kind === 'flowers' || p.kind === 'mushrooms') && groundDetailAlpha(p.kind, detailZoom) === 0) return false;
     const q = isoToScreen(p.x, p.y, p.level);

@@ -1,3 +1,4 @@
+import { crownCacheTime } from '../world/phenology';
 /** Timber, paper and tiled hip roof. Furniture and architecture share the floor's isometry. */
 import { GRID, LEVEL_H, TILE_H, TILE_W, isoToScreen, type Pt } from '../core/iso';
 import { hash2, lerp } from '../core/rng';
@@ -427,7 +428,7 @@ function roofPaint(ctx: Ctx, world: World, h: HouseBox, atm: Atmosphere): void {
     );
   }
   if (snow.amount)
-    for (const f of g.faces) paintSnowRidge(ctx, atm, snow, f.r0, blend(f.r0, f.e0, snow.amount > 0.7 ? 0.74 : 0.2));
+    for (const f of g.faces) paintSnowRidge(ctx, atm, snow, f.r0, blend(f.r0, f.e0, 0.08 + 0.72 * snow.amount));
   paintSnowRidge(ctx, atm, snow, g.a, g.b);
   ctx.restore();
 }
@@ -445,6 +446,7 @@ let roofCache: {
 export function drawHouseRoof(ctx: Ctx, world: World, atm: Atmosphere, time: number): void {
   const h = findHouse(world);
   if (!h) return;
+  atm = { ...atm, time: { ...atm.time, now: crownCacheTime('__surface', mainRoofSnowSeed(h), atm.time.now) } };
   ctx.save();
   const T = tones(atm),
     g = houseRoofGeometry(h);

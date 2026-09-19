@@ -1,3 +1,5 @@
+import { winterYear, litterYear } from '../world/annualEnvironment';
+import { plantYear } from '../world/phenology';
 /** Частицы: лепестки сакуры, снег, светлячки, листья, дымка. */
 
 import { clamp01, hash2, makeRng } from '../core/rng';
@@ -78,10 +80,10 @@ export class Weather {
   }
 
   update(dt: number, atm: Atmosphere): void {
-    const season = atm.season;
-    const targetPetals = season === 'spring' ? 22 : season === 'summer' ? 4 : 0;
-    const targetSnow = season === 'winter' ? 90 : 0;
-    const targetLeaves = season === 'autumn' ? 16 : 0;
+    const litter = litterYear('maple', 17, atm.time.now);
+    const targetPetals = Math.round(22 * plantYear('sakura', 17, atm.time.now).bloom);
+    const targetSnow = Math.round(90 * winterYear(atm.time.now).snow);
+    const targetLeaves = Math.round(16 * litter.amount * litter.fresh);
     const targetFlies = Math.round(34 * atm.fireflies);
 
     this.fill(this.petals, targetPetals, 'petal');
@@ -121,9 +123,12 @@ export class Weather {
   }
 
   draw(ctx: Ctx, atm: Atmosphere): void {
+    const snowAmount = winterYear(atm.time.now).snow;
+    const petalAmount = plantYear('sakura', 17, atm.time.now).bloom;
+    const litter = litterYear('maple', 17, atm.time.now);
     // Лепестки
     const petalCol = mix({ r: 250, g: 214, b: 226 }, atm.lightTint, atm.lightAmount * 0.6);
-    for (const p of this.petals) this.drawPetal(ctx, p, petalCol, 0.75);
+    for (const p of this.petals) this.drawPetal(ctx, p, petalCol, 0.75 * petalAmount);
 
     // Осенние листья
     for (const p of this.leaves) {
@@ -133,14 +138,14 @@ export class Weather {
         atm.lightTint,
         atm.lightAmount * 0.5,
       );
-      this.drawPetal(ctx, p, c, 0.8, 1.35);
+      this.drawPetal(ctx, p, c, 0.8 * litter.amount * litter.fresh, 1.35);
     }
 
     // Снег
     const snowCol = mix({ r: 252, g: 252, b: 255 }, atm.lightTint, atm.lightAmount * 0.7);
     for (const p of this.snow) {
       const r = 1.1 + p.z * 2.3;
-      ctx.fillStyle = css(snowCol, 0.32 + p.z * 0.5);
+      ctx.fillStyle = css(snowCol, (0.32 + p.z * 0.5) * snowAmount);
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       ctx.fill();
@@ -185,7 +190,7 @@ export function drawMist(ctx: Ctx, w: number, h: number, atm: Atmosphere, time: 
   let strength = 0;
   if (t.dayT > 0.18 && t.dayT < 0.32) strength = 0.55;
   if (atm.season === 'winter') strength = Math.max(strength, 0.25);
-  if (atm.season === 'autumn') strength = Math.max(strength, 0.10);
+  if (atm.season === 'autumn') strength = Math.max(strength, 0.1);
   if (t.isNight) strength = Math.max(strength, 0.2);
   if (strength < 0.02) return;
 

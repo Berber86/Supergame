@@ -1,10 +1,17 @@
+import { crownAnchorBlend } from '../../world/phenology';
+import { flowerYear, winterYear } from '../../world/annualEnvironment';
 /** Камни и мелочь земли: валуны, шаговые камни, мох, цветы и папоротники. */
 
 import { flowerOpenness, flowerHeadPath } from '../flowerCycle';
 import { Drawer, WHITE, litc, shadowUnder } from './common';
-import { hash2, lerp } from '../../core/rng';
+import { hash2, lerp, smoothstep } from '../../core/rng';
 import { RGB, css, mix, shade } from '../../world/palette';
 import { blobPath, granulate, softShadow, washBlob } from '../paint';
+
+function annualColor(now: number, colors: RGB[]): RGB {
+  const b = crownAnchorBlend(now);
+  return mix(colors[b.from], colors[b.to], b.amount);
+}
 
 // ---------------- Камни ----------------
 
@@ -77,7 +84,10 @@ export function makeRock(sizeScale: number, count: number): Drawer {
 
       // Северный мох — растёт на северной (верхней) стороне камня, с лёгким разбросом по сиду
       const northBias = 0.55 + hash2(obj.seed, 37, 11) * 0.3; // 0.55..0.85 севернее
-      if (atm.season !== 'winter') {
+      const snow = winterYear(atm.time.now).snow;
+      ctx.save();
+      ctx.globalAlpha *= 1 - snow;
+      {
         // основной мох — север
         ctx.fillStyle = css(litc(atm.palette.moss, atm), 0.38);
         blobPath(
@@ -106,9 +116,20 @@ export function makeRock(sizeScale: number, count: number): Drawer {
           );
           ctx.fill();
         }
-      } else {
-        ctx.fillStyle = css(litc({ r: 246, g: 248, b: 250 }, atm), 0.6);
-        blobPath(ctx, cx, cy - ry * 0.55, rx * 0.8, ry * 0.3, obj.seed + i * 5, 0.3, 8);
+      }
+      ctx.restore();
+      if (snow > 0.001) {
+        ctx.fillStyle = css(litc({ r: 246, g: 248, b: 250 }, atm), 0.6 * snow);
+        blobPath(
+          ctx,
+          cx,
+          cy - ry * 0.55,
+          rx * 0.8 * Math.sqrt(snow),
+          ry * 0.3 * Math.sqrt(snow),
+          obj.seed + i * 5,
+          0.3,
+          8,
+        );
         ctx.fill();
       }
     }
@@ -134,7 +155,7 @@ export const drawStepStone: Drawer = (d) => {
 export const drawMossClump: Drawer = (d) => {
   const { ctx, atm, obj } = d;
   const szJ = 0.75 + hash2(obj.seed, 5, 7) * 0.5;
-  const c = litc(atm.season === 'winter' ? { r: 196, g: 204, b: 198 } : atm.palette.moss, atm);
+  const c = litc(mix(atm.palette.moss, { r: 196, g: 204, b: 198 }, winterYear(atm.time.now).snow), atm);
   const deep = litc(shade(atm.palette.moss, 0.78), atm);
   washBlob(ctx, d.x, d.y, 15 * szJ, 7.5 * szJ, deep, obj.seed, { layers: 1, alpha: 0.4, edge: 0.1, wobble: 0.3 });
   washBlob(ctx, d.x, d.y - 1.5, 13 * szJ, 6.5 * szJ, c, obj.seed + 3, {
@@ -167,12 +188,7 @@ export const drawPebbles: Drawer = (d) => {
 
 export const drawGrassTuft: Drawer = (d) => {
   const { ctx, atm, obj } = d;
-  const base =
-    atm.season === 'winter'
-      ? { r: 196, g: 200, b: 198 }
-      : atm.season === 'autumn'
-        ? { r: 188, g: 172, b: 112 }
-        : atm.palette.grassDeep;
+  const base = mix(atm.palette.grassDeep, { r: 196, g: 200, b: 198 }, winterYear(atm.time.now).snow);
   const c = litc(base, atm);
   const count = 6 + Math.floor(hash2(obj.seed, 19, 23) * 7); // 6..12
   for (let i = 0; i < count; i++) {
@@ -192,10 +208,10 @@ export const drawGrassTuft: Drawer = (d) => {
 export function makeFlower(petal: RGB, leaf: RGB, tall: boolean): Drawer {
   return (d) => {
     const { ctx, atm, obj, g } = d;
-    const winter = atm.season === 'winter';
-    const scale = lerp(0.4, 1, g) * (winter ? 0.7 : 1);
-    const lc = litc(winter ? { r: 176, g: 186, b: 180 } : leaf, atm);
-    const pc = litc(winter ? { r: 226, g: 230, b: 234 } : petal, atm, 0.04);
+    const year = flowerYear(obj.type, obj.seed, atm.time.now);
+    const scale = lerp(0.4, 1, g) * (0.35 + 0.65 * year.foliage);
+    const lc = litc(mix({ r: 158, g: 148, b: 118 }, leaf, year.foliage), atm);
+    const pc = litc(petal, atm, 0.04);
     // вариация количества стеблей по сиду
     const baseN = tall ? 5 : 7;
     const n = baseN + Math.floor(hash2(obj.seed, 31, 7) * 3) - 1;
@@ -210,14 +226,15 @@ export function makeFlower(petal: RGB, leaf: RGB, tall: boolean): Drawer {
       ctx.moveTo(d.x + ox, d.y);
       ctx.quadraticCurveTo(d.x + ox + sway * 0.5, d.y - h * 0.6, d.x + ox + sway, d.y - h);
       ctx.stroke();
-      if (!winter || !tall) {
-        ctx.fillStyle = css(pc, 0.85);
+      const bloom = smoothstep(r * 0.3, 0.6 + r * 0.4, year.bloom);
+      if (bloom > 0.001) {
+        ctx.fillStyle = css(pc, 0.85 * bloom);
         flowerHeadPath(
           ctx,
           d.x + ox + sway,
           d.y - h - 1.5,
-          3 * scale + r,
-          2.4 * scale + r * 0.8,
+          (3 * scale + r) * Math.sqrt(bloom),
+          (2.4 * scale + r * 0.8) * Math.sqrt(bloom),
           obj.seed + i,
           flowerOpenness(atm),
         );
@@ -229,12 +246,12 @@ export function makeFlower(petal: RGB, leaf: RGB, tall: boolean): Drawer {
 
 export const drawFern: Drawer = (d) => {
   const { ctx, atm, obj } = d;
-  const base =
-    atm.season === 'winter'
-      ? { r: 168, g: 176, b: 168 }
-      : atm.season === 'autumn'
-        ? { r: 170, g: 152, b: 96 }
-        : { r: 104, g: 146, b: 92 };
+  const base = annualColor(atm.time.now, [
+    { r: 168, g: 176, b: 168 },
+    { r: 104, g: 146, b: 92 },
+    { r: 104, g: 146, b: 92 },
+    { r: 170, g: 152, b: 96 },
+  ]);
   const c = litc(base, atm);
   const count = 5 + Math.floor(hash2(obj.seed, 43, 11) * 5);
   for (let i = 0; i < count; i++) {

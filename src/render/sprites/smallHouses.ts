@@ -192,17 +192,20 @@ function drawHouse(d: DrawCtx) {
       2,
     );
     paintSnowRidge(ctx, d.atm, snow, a, b);
-    if (snow.amount > 0.7)
+    if (snow.amount > 0)
       for (let i = 0; i < 4; i++) {
         const q = ends[i][0];
         line(
           [
             { x: q.x, y: q.y - 1.5 },
-            { x: q.x + (eaves[i].x - q.x) * 0.75, y: q.y + (eaves[i].y - q.y) * 0.75 - 1.5 },
+            {
+              x: q.x + (eaves[i].x - q.x) * (0.1 + 0.65 * snow.amount),
+              y: q.y + (eaves[i].y - q.y) * (0.1 + 0.65 * snow.amount) - 1.5,
+            },
           ],
           shade(mix(paper, { r: 219, g: 231, b: 242 }, 0.3), 1.03),
-          1.4,
-          0.7,
+          0.3 + 1.1 * snow.amount,
+          0.7 * snow.amount,
         );
       }
     // No screen-space doors/windows or random silhouette mirroring.

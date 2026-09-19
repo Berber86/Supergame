@@ -86,7 +86,7 @@ assert.ok(
   groups.some((g) => g.retained < 0.2) && groups.some((g) => g.retained > 0.5),
   'different branches lose leaves at different times',
 );
-assert.equal(crownCacheKey('rock_mid', 17, at(2)), '');
+assert.equal(crownCacheKey('bookshelf', 17, at(2)), '');
 assert.equal(crownCacheKey('house', 17, at(2)), '');
 assert.equal(crownCacheKey('maple', 17, at(3)), crownCacheKey('maple', 17, at(3) + 16), 'no frame-driven rebaking');
 const c = createCanvas(400, 340),

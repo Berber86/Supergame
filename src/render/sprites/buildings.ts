@@ -1,3 +1,4 @@
+import { winterYear } from '../../world/annualEnvironment';
 /** Постройки: беседка, тории, раздвижные панели дома. */
 
 import { Drawer, WHITE, litc, shadowUnder } from './common';
@@ -110,8 +111,9 @@ export const drawFeeder: Drawer = (d) => {
   ctx.stroke();
 
   // снежная шапка
-  if (atm.season === 'winter') {
-    ctx.fillStyle = css(litc({ r: 246, g: 248, b: 252 }, atm), 0.9);
+  const snowAmount = winterYear(atm.time.now).snow;
+  if (snowAmount > 0.001) {
+    ctx.fillStyle = css(litc({ r: 246, g: 248, b: 252 }, atm), 0.9 * snowAmount);
     ctx.beginPath();
     ctx.moveTo(d.x - 13.5, d.y - 33.4);
     ctx.quadraticCurveTo(d.x, d.y - 41.4, d.x + 13.5, d.y - 33.4);
@@ -278,8 +280,9 @@ export const drawBeehive: Drawer = (d) => {
   ctx.stroke();
 
   // Снег зимой
-  if (atm.season === 'winter') {
-    ctx.fillStyle = css(litc({ r: 246, g: 248, b: 252 }, atm), 0.92);
+  const snowAmount = winterYear(atm.time.now).snow;
+  if (snowAmount > 0.001) {
+    ctx.fillStyle = css(litc({ r: 246, g: 248, b: 252 }, atm), 0.92 * snowAmount);
     ctx.beginPath();
     ctx.ellipse(d.x, d.y - 21.2, 5.6, 2.2, 0, 0, Math.PI * 2);
     ctx.fill();

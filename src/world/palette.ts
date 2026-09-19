@@ -1,3 +1,4 @@
+import { crownAnchorBlend } from './phenology';
 /** Акварельная палитра: цвет мира зависит от сезона и от времени суток. */
 
 import { SeasonId, TimeState, seasonBlend } from '../core/clock';
@@ -90,8 +91,8 @@ export const SEASON_PALETTES: Record<SeasonId, SeasonPalette> = {
     accent: rgb(214, 118, 74),
   },
   winter: {
-    grass: rgb(220, 222, 222),
-    grassDeep: rgb(186, 194, 200),
+    grass: rgb(174, 178, 154),
+    grassDeep: rgb(139, 151, 134),
     moss: rgb(168, 182, 172),
     foliage: rgb(160, 170, 168),
     foliageDeep: rgb(122, 136, 140),
@@ -164,7 +165,9 @@ const DUSK_SKY: [RGB, RGB] = [rgb(146, 132, 168), rgb(244, 178, 128)];
 
 export function buildAtmosphere(t: TimeState, overcast = 0): Atmosphere {
   const blend = seasonBlend(t);
-  const palette = mixPalette(SEASON_PALETTES[blend.from], SEASON_PALETTES[blend.to], blend.k);
+  const annual = crownAnchorBlend(t.now),
+    anchors: SeasonId[] = ['winter', 'spring', 'summer', 'autumn'];
+  const palette = mixPalette(SEASON_PALETTES[anchors[annual.from]], SEASON_PALETTES[anchors[annual.to]], annual.amount);
 
   const d = t.daylight;
   // Тучи глушат золотой час и приглушают дневной свет

@@ -1,3 +1,4 @@
+import { flowerYear, winterYear } from '../../world/annualEnvironment';
 import { plantYear, leafGroup, crownAnchorBlend } from '../../world/phenology';
 import { crownSites } from '../crownGeometry';
 /** Деревья и кусты: стволы, ветви, кроны — стартовый сад почти весь отсюда. */
@@ -51,13 +52,13 @@ function drawTrunk(d: DrawCtx, h: number, w: number, col: RGB, bend: number): { 
   }
   // северный мох и лишайник на стволе — детерминирован по seed, больше в тени
   const mossChance = hash2(obj.seed, 101, 7);
-  if (mossChance > 0.48 && atm.season !== 'winter') {
+  if (mossChance > 0.48) {
     const mh = h * (0.22 + hash2(obj.seed, 107, 3) * 0.18);
     const my = lerp(d.y, topY, 0.18 + hash2(obj.seed, 109, 5) * 0.35);
     const side = hash2(obj.seed, 103, 13) > 0.5 ? 1 : -1;
     const mx = lerp(d.x, topX, 0.3) + side * w * 0.18;
     const mossCol = litc(atm.palette.moss, atm);
-    ctx.fillStyle = css(mossCol, 0.28 + mossChance * 0.12);
+    ctx.fillStyle = css(mossCol, (0.28 + mossChance * 0.12) * (1 - winterYear(atm.time.now).snow));
     blobPath(ctx, mx, my, w * 0.55, mh * 0.22, obj.seed + 101, 0.3, 7);
     ctx.fill();
     if (mossChance > 0.72) {
@@ -322,17 +323,26 @@ function makeTree(style: TreeStyle): Drawer {
         }
       }
     }
-    // Deliberately retain the existing winter-only snow rule; gradual snow belongs to stage two.
-    if (atm.season === 'winter' && !style.fruit) {
+    const snowAmount = winterYear(atm.time.now).snow;
+    if (snowAmount > 0.001 && !style.fruit) {
       const snow = litc({ r: 247, g: 249, b: 252 }, atm);
       for (const site of sites.filter((s) => s.index % 3 === 0)) {
         const p = point(site);
-        washBlob(ctx, p.x, p.y - 2, site.rx * 0.75, site.ry * 0.22, snow, obj.seed + site.index, {
-          layers: 2,
-          alpha: 0.6,
-          edge: 0.08,
-          wobble: 0.3,
-        });
+        washBlob(
+          ctx,
+          p.x,
+          p.y - 2,
+          site.rx * 0.75 * Math.sqrt(snowAmount),
+          site.ry * 0.22 * Math.sqrt(snowAmount),
+          snow,
+          obj.seed + site.index,
+          {
+            layers: 2,
+            alpha: 0.6 * snowAmount,
+            edge: 0.08 * snowAmount,
+            wobble: 0.3,
+          },
+        );
       }
     }
   };
@@ -480,12 +490,22 @@ export const drawPine: Drawer = (d) => {
         },
       );
     }
-    if (atm.season === 'winter') {
-      washBlob(ctx, cx, cy - ry * 0.5, rx * 0.7, ry * 0.3, litc({ r: 246, g: 247, b: 250 }, atm), obj.seed + i, {
-        layers: 2,
-        alpha: 0.45,
-        edge: 0.08,
-      });
+    const snowAmount = winterYear(atm.time.now).snow;
+    if (snowAmount > 0.001) {
+      washBlob(
+        ctx,
+        cx,
+        cy - ry * 0.5,
+        rx * 0.7 * Math.sqrt(snowAmount),
+        ry * 0.3 * Math.sqrt(snowAmount),
+        litc({ r: 246, g: 247, b: 250 }, atm),
+        obj.seed + i,
+        {
+          layers: 2,
+          alpha: 0.45 * snowAmount,
+          edge: 0.08 * snowAmount,
+        },
+      );
     }
   }
   // Верхушка — тоже с вариацией высоты и размера
@@ -612,15 +632,26 @@ export const drawShrub: Drawer = (d) => {
     },
   );
   granulate(ctx, d.x, d.y - ry * 0.7, rx * 0.8, ry * 0.7, deep, obj.seed, 12, 0.1);
-  if (isAzalea && (atm.season === 'spring' || atm.season === 'summer')) {
-    const fl = litc(atm.season === 'spring' ? { r: 236, g: 138, b: 162 } : { r: 240, g: 196, b: 206 }, atm, 0.04);
+  const bloom = flowerYear('azalea', obj.seed, atm.time.now).bloom;
+  if (isAzalea && bloom > 0.001) {
+    const fl = litc({ r: 236, g: 138, b: 162 }, atm, 0.04);
     for (let i = 0; i < Math.round(11 * scale) + 2; i++) {
       const r1 = hash2(i, obj.seed, 31);
       const r2 = hash2(i, obj.seed, 43);
-      ctx.fillStyle = css(fl, 0.75);
+      const amount = smoothstep(r1 * 0.3, 0.6 + r1 * 0.4, bloom);
+      if (amount <= 0.001) continue;
+      ctx.fillStyle = css(fl, 0.75 * amount);
       const px = d.x + (r1 - 0.5) * rx * 1.7 + sway;
       const py = d.y - ry * 0.75 + (r2 - 0.5) * ry * 1.5;
-      flowerHeadPath(ctx, px, py, 3.2 * scale + r1 * 2, 2.4 * scale + r2 * 1.6, obj.seed + i, flowerOpenness(atm));
+      flowerHeadPath(
+        ctx,
+        px,
+        py,
+        (3.2 * scale + r1 * 2) * Math.sqrt(amount),
+        (2.4 * scale + r2 * 1.6) * Math.sqrt(amount),
+        obj.seed + i,
+        flowerOpenness(atm),
+      );
       ctx.fill();
     }
   }
@@ -777,8 +808,8 @@ export const drawCamellia: Drawer = (d) => {
   ctx.fill();
 
   // Цветы — зимой и ранней весной
-  const blooms = atm.season === 'winter' || atm.season === 'spring';
-  if (blooms) {
+  const blooms = flowerYear('camellia', obj.seed, atm.time.now).bloom;
+  if (blooms > 0.001) {
     const count = Math.round(5 + scale * 4);
     const petal = litc({ r: 224, g: 78, b: 100 }, atm, 0.06);
     for (let i = 0; i < count; i++) {
@@ -786,12 +817,14 @@ export const drawCamellia: Drawer = (d) => {
       const r2 = hash2(i, obj.seed, 41);
       const px = d.x + (r1 - 0.5) * rx * 1.5 + sway;
       const py = d.y - ry * 0.9 + (r2 - 0.5) * ry * 1.2;
-      const rr = 5.6 * scale;
+      const amount = smoothstep(r1 * 0.3, 0.6 + r1 * 0.4, blooms);
+      if (amount <= 0.001) continue;
+      const rr = 5.6 * scale * Math.sqrt(amount);
       const open = flowerOpenness(atm);
       // пять лепестков вокруг жёлтой сердцевины
       for (let k = 0; k < 5; k++) {
         const a = (k / 5) * Math.PI * 2 + r1 * 2;
-        ctx.fillStyle = css(petal, 0.92);
+        ctx.fillStyle = css(petal, 0.92 * amount);
         ctx.beginPath();
         ctx.ellipse(
           px + Math.cos(a) * rr * 0.5 * open,
@@ -804,7 +837,7 @@ export const drawCamellia: Drawer = (d) => {
         );
         ctx.fill();
       }
-      ctx.fillStyle = css(litc({ r: 248, g: 218, b: 118 }, atm, 0.08), 0.96 * Math.max(0, (open - 0.4) / 0.6));
+      ctx.fillStyle = css(litc({ r: 248, g: 218, b: 118 }, atm, 0.08), 0.96 * amount * Math.max(0, (open - 0.4) / 0.6));
       ctx.beginPath();
       ctx.arc(px, py, rr * 0.28, 0, Math.PI * 2);
       ctx.fill();
@@ -812,9 +845,19 @@ export const drawCamellia: Drawer = (d) => {
   }
 
   // Зимой на кусте лежит снег
-  if (atm.season === 'winter') {
-    ctx.fillStyle = css(litc({ r: 248, g: 250, b: 255 }, atm, 0.05), 0.6);
-    blobPath(ctx, d.x + sway, d.y - ry * 1.3, rx * 0.68, ry * 0.3, obj.seed + 17, 0.3, 8);
+  const snowAmount = winterYear(atm.time.now).snow;
+  if (snowAmount > 0.001) {
+    ctx.fillStyle = css(litc({ r: 248, g: 250, b: 255 }, atm, 0.05), 0.6 * snowAmount);
+    blobPath(
+      ctx,
+      d.x + sway,
+      d.y - ry * 1.3,
+      rx * 0.68 * Math.sqrt(snowAmount),
+      ry * 0.3 * Math.sqrt(snowAmount),
+      obj.seed + 17,
+      0.3,
+      8,
+    );
     ctx.fill();
   }
 };

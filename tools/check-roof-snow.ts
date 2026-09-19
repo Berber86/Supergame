@@ -29,10 +29,13 @@ const amounts = new Set<number>();
 for (let seed = 0; seed < 80; seed++) {
   const state = roofSnow(winter, seed);
   amounts.add(state.amount);
-  assert.deepEqual(roofSnow({ ...winter, time: { ...winter.time, now: winter.time.now + 1000 } }, seed), state);
+  const next = roofSnow({ ...winter, time: { ...winter.time, now: winter.time.now + 1000 } }, seed);
+  assert.equal(next.seed, state.seed);
+  assert.ok(Math.abs(next.amount - state.amount) < 1e-5, 'snow moves continuously, not in three-day rolls');
   assert.equal(roofSnow(summer, seed).amount, 0);
 }
-assert.deepEqual([...amounts].sort(), [0, 0.48, 0.9]);
+assert.equal(amounts.size, 3, 'windswept, partially sheltered and retaining roofs');
+assert.ok(amounts.has(0) && Math.max(...amounts) > 0.6);
 const periods = new Set(
   Array.from({ length: 20 }, (_, i) =>
     roofSnowKey({ ...winter, time: { ...winter.time, now: winter.time.now + i * 3 * DAY_MS } }, 17),
