@@ -10,6 +10,7 @@ import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
 import { Curtain, WaterFlow } from '../world/waterFlow';
 import { World } from '../world/world';
 import { Ctx } from './paint';
+import { waterSurfaces, waterSurfacePath } from './waterSurface';
 
 /** Полосы, бегущие по течению — главный признак того, что вода живая. */
 export function drawCurrent(ctx: Ctx, world: World, flow: WaterFlow, atm: Atmosphere, time: number): void {
@@ -18,8 +19,11 @@ export function drawCurrent(ctx: Ctx, world: World, flow: WaterFlow, atm: Atmosp
 
   ctx.save();
   ctx.lineCap = 'round';
-  for (let y = 0; y < world.size; y++) {
-    for (let x = 0; x < world.size; x++) {
+  for (const surface of waterSurfaces(world)) {
+    ctx.save();
+    waterSurfacePath(ctx, surface);
+    ctx.clip('evenodd');
+    for (const { x, y } of surface.cells) {
       const t = world.at(x, y)!;
       if (!t.water) continue;
       const f = flow.at(x, y);
@@ -45,14 +49,15 @@ export function drawCurrent(ctx: Ctx, world: World, flow: WaterFlow, atm: Atmosp
 
         // гаснет у краёв клетки — стык клеток не должен быть виден
         const fade = Math.sin(phase * Math.PI);
-        ctx.strokeStyle = css(hi, 0.05 + f.speed * 0.15 * fade);
-        ctx.lineWidth = 1 + f.speed * 1.6;
+        ctx.strokeStyle = css(hi, (0.03 + f.speed * 0.14) * fade);
+        ctx.lineWidth = 0.7 + f.speed * 0.9;
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
         ctx.quadraticCurveTo(c.x, c.y + 1.5, b.x, b.y);
         ctx.stroke();
       }
     }
+    ctx.restore();
   }
   ctx.restore();
 }
@@ -69,10 +74,7 @@ export function drawFalls(ctx: Ctx, world: World, flow: WaterFlow, atm: Atmosphe
   const foam = shade(mix(atm.palette.water, { r: 255, g: 255, b: 255 }, 0.86), Math.max(atm.exposure, 0.78));
   // Раньше было слишком темно на рассвете — каскад выглядел кубично-чёрным.
   // Делаем дно светлее и ближе к воде, чтобы занавес читался даже в 05:03.
-  const deep = shade(
-    mix(atm.palette.waterDeep, atm.palette.water, 0.55),
-    Math.max(atm.exposure, 0.72) * 0.86,
-  );
+  const deep = shade(mix(atm.palette.waterDeep, atm.palette.water, 0.55), Math.max(atm.exposure, 0.72) * 0.86);
 
   for (const c of flow.curtains) {
     // Рисуем только те грани, что обращены к зрителю. В этой изометрии
@@ -304,8 +306,11 @@ export function drawShoreRipple(ctx: Ctx, world: World, flow: WaterFlow, atm: At
   const foam = shade(mix(atm.palette.water, { r: 255, g: 255, b: 255 }, 0.7), atm.exposure);
   ctx.save();
   ctx.lineCap = 'round';
-  for (let y = 0; y < world.size; y++) {
-    for (let x = 0; x < world.size; x++) {
+  for (const surface of waterSurfaces(world)) {
+    ctx.save();
+    waterSurfacePath(ctx, surface);
+    ctx.clip('evenodd');
+    for (const { x, y } of surface.cells) {
       const t = world.at(x, y)!;
       if (!t.water) continue;
       const f = flow.at(x, y);
@@ -316,9 +321,10 @@ export function drawShoreRipple(ctx: Ctx, world: World, flow: WaterFlow, atm: At
       ctx.strokeStyle = css(foam, (0.08 + f.speed * 0.14) * (0.6 + wob * 0.4));
       ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.arc(c.x, c.y, TILE_W * 0.2, 0, Math.PI * 2);
+      ctx.ellipse(c.x, c.y, TILE_W * 0.16, TILE_H * 0.1, 0, 0.2, Math.PI * 1.45);
       ctx.stroke();
     }
+    ctx.restore();
   }
   ctx.restore();
 }

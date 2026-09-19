@@ -307,7 +307,7 @@ export class Scene {
     // анимированная вода: сначала общие блики, потом течение и водопады
     spriteFrame();
     this.flow.ensure(world);
-    drawWaterAnimation(ctx, world, atm, time);
+    drawWaterAnimation(ctx, world, atm, time, this.wind);
     drawCurrent(ctx, world, this.flow, atm, time);
     drawShoreRipple(ctx, world, this.flow, atm, time);
     drawFalls(ctx, world, this.flow, atm, time);
