@@ -7,7 +7,7 @@ import './ui/style.css';
 import { GRID, floorTo, inBounds } from './core/iso';
 import { Scene } from './render/scene';
 import { World } from './world/world';
-import { GROW_BANK_CAP, growOfferReady, growThreshold, newGrowState, seedGrowWorld, GROW_ACTION_MS, inGrowRect } from './world/grow';
+import { GROW_BANK_CAP, growOfferReady, growThreshold, GROW_ACTION_MS, inGrowRect } from './world/grow';
 import { moving, pathStart, pointer, setupInput } from './app/input';
 import { UI, Selection } from './ui/ui';
 import { ITEM_BY_ID, TERRAIN_BRUSHES, footprintCells } from './world/catalog';
@@ -958,7 +958,6 @@ const practice = new PracticePanel(app, {
 
 // ---------------- Растущий сад ----------------
 
-const GROW_NAME = 'Растущий сад';
 let growAccum = 0;
 let growLineShown = false;
 /** Ключ текущего прямоугольника роста — чтобы не дёргать каталог каждый кадр. */
@@ -1057,22 +1056,28 @@ function growPick(tx: number, ty: number): boolean {
 
 /** Вторая дверь заставки: войти в растущий сад (создать или открыть свой). */
 function enterGrow(): void {
-  const meta = gardens.list.find((m) => m.name === GROW_NAME);
-  if (meta) {
-    if (meta.id === gardens.activeId) {
-      // уже в нём
-    } else if (!gardens.switchTo(world, meta.id)) {
-      return;
-    }
+  // если уже в растущем — ничего не пересоздаём
+  if (world.grow) {
+    // камера уже на месте, просто закрываем заставку
   } else {
-    gardens.create(world, GROW_NAME);
-    const seed = Math.floor(Math.random() * 1_000_000_000);
-    world.reset();
-    seedGrowWorld(world, seed);
-    world.grow = newGrowState(seed, Date.now());
-    // Стартовая усадьба стёрта: путь роста начинается с одного открытия
-    world.initUnlocks(false);
-    saveWorld();
+    // ищем любой растущий сад в списке (может быть несколько)
+    const growMeta = gardens.list.find((m) => {
+      // эвристика: имя начинается с «Растущий сад» или мир в слоте имеет grow
+      // но читать слоты тяжело — проверяем имя
+      return m.name.startsWith('Растущий сад');
+    });
+    if (growMeta) {
+      if (growMeta.id !== gardens.activeId) {
+        if (!gardens.switchTo(world, growMeta.id)) {
+          // не открылся — создаём новый
+          gardens.create(world, undefined, { mode: 'grow' });
+          saveWorld();
+        }
+      }
+    } else {
+      gardens.create(world, undefined, { mode: 'grow' });
+      saveWorld();
+    }
   }
   history.clear();
   input.cancelOngoingAction();
@@ -1094,7 +1099,6 @@ function enterGrow(): void {
   ui.setGrowBankVisible(false);
   syncRoofButton();
   syncGrowRect();
-  // Те же пороги, что и у обычного входа
   startOpen = false;
   wake();
   void toggleSound(true);

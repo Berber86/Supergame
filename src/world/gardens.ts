@@ -21,6 +21,8 @@
 import { parseSave, serializeSave } from './saveFormat';
 import { SaveData } from './types';
 import { World } from './world';
+import { newGrowState, seedGrowWorld } from './grow';
+import { PRESET_BY_ID, applyPreset } from './presets';
 
 const INDEX_KEY = 'usadba.gardens.v1';
 const SLOT_PREFIX = 'usadba.garden.';
@@ -266,25 +268,58 @@ export class GardenStore {
     return true;
   }
 
-  /** Завести новую пустую усадьбу и сразу перейти в неё. */
-  create(world: World, name?: string): GardenMeta {
+  /** Завести новую усадьбу и сразу перейти в неё. */
+  create(
+    world: World,
+    name?: string,
+    opts?: { mode?: 'free' | 'grow'; preset?: string; seed?: number },
+  ): GardenMeta {
     this.save(world);
     const id = newId();
     const m: GardenMeta = {
       id,
-      name: name || this.suggestName(),
+      name: name || this.suggestName(opts?.mode, opts?.preset),
       saved: Date.now(),
       objects: 0,
     };
     this.index.list.push(m);
     this.index.active = id;
-    world.reset();
+
+    if (opts?.mode === 'grow') {
+      const seed = opts.seed ?? Math.floor(Math.random() * 1_000_000_000);
+      world.reset();
+      seedGrowWorld(world, seed);
+      world.grow = newGrowState(seed, Date.now());
+      world.initUnlocks(false);
+    } else if (opts?.preset) {
+      world.reset();
+      applyPreset(world, opts.preset);
+    } else {
+      world.reset();
+    }
+
     this.save(world);
     this.saveIndex();
     return m;
   }
 
-  private suggestName(): string {
+  private suggestName(mode?: 'free' | 'grow', preset?: string): string {
+    if (mode === 'grow') {
+      const base = 'Растущий сад';
+      if (!this.index.list.some((g) => g.name === base)) return base;
+      let n = 2;
+      while (this.index.list.some((g) => g.name === `${base} ${n}`)) n++;
+      return `${base} ${n}`;
+    }
+    if (preset) {
+      const p = PRESET_BY_ID.get(preset);
+      if (p) {
+        if (!this.index.list.some((g) => g.name === p.name)) return p.name;
+        let n = 2;
+        while (this.index.list.some((g) => g.name === `${p.name} ${n}`)) n++;
+        return `${p.name} ${n}`;
+      }
+    }
     const poetic = ['Второй сад', 'Дальний двор', 'Северный склон', 'Тихая заводь', '新しい庭'];
     for (const n of poetic) if (!this.index.list.some((g) => g.name === n)) return n;
     return `Усадьба ${this.index.list.length + 1}`;
@@ -297,17 +332,28 @@ export class GardenStore {
     this.saveIndex();
   }
 
-  /** Удалить усадьбу со всеми копиями. Последнюю удалить нельзя. */
+  /** Удалить усадьбу со всеми копиями. Если это последняя — заводится новая чистая. */
   remove(world: World, id: string): boolean {
-    if (this.index.list.length <= 1) return false;
     const i = this.index.list.findIndex((g) => g.id === id);
     if (i < 0) return false;
+    const wasLast = this.index.list.length <= 1;
     this.index.list.splice(i, 1);
     const main = slotKey(id);
     this.removeQuiet(main);
     this.removeQuiet(main + TMP);
     this.removeQuiet(main + BAK);
     this.removeQuiet(main + BROKEN);
+    if (wasLast) {
+      // последнюю удалили — заводим новую усадьбу, чтобы не остаться без сада
+      const nid = newId();
+      const nm: GardenMeta = { id: nid, name: 'Усадьба', saved: Date.now(), objects: 0 };
+      this.index.list.push(nm);
+      this.index.active = nid;
+      world.reset();
+      this.save(world);
+      this.saveIndex();
+      return true;
+    }
     if (this.index.active === id) {
       this.index.active = this.index.list[Math.min(i, this.index.list.length - 1)].id;
       if (!this.load(world, this.index.active)) world.reset();

@@ -2,6 +2,7 @@
 
 import { GardenStore } from '../world/gardens';
 import { World } from '../world/world';
+import { PRESETS } from '../world/presets';
 import { svgIcon } from './icons';
 
 export interface GardensHooks {
@@ -49,6 +50,7 @@ export class GardensPanel {
         <div class="gp-btn" data-act="export">${svgIcon('file', 15)}<span>Выгрузить</span></div>
         <div class="gp-btn" data-act="import">${svgIcon('gardens', 15)}<span>Принять</span></div>
       </div>
+      <div class="gp-new-chooser" style="display:none"></div>
       <div class="gp-hint">Усадьбы хранятся в этом браузере. Выгрузите файл, чтобы перенести сад на другое устройство.</div>`;
     parent.appendChild(el);
     this.el = el;
@@ -83,12 +85,63 @@ export class GardensPanel {
     this.setOpen(!this.isOpen);
   }
 
+  private chooserEl(): HTMLElement {
+    return this.el.querySelector('.gp-new-chooser') as HTMLElement;
+  }
+
+  private showNewChooser(): void {
+    const c = this.chooserEl();
+    const classicBtn = `<button class="gp-choice" data-choice="classic"><b>Вольный сад</b><span>Классическая усадьба 7×6, пруд, холм</span></button>`;
+    const growBtn = `<button class="gp-choice gp-choice-grow" data-choice="grow"><b>Растущий сад</b><span>Клочок 2×2, действия раз в 10 мин, туман</span></button>`;
+    const presetBtns = PRESETS.map(
+      (p) =>
+        `<button class="gp-choice" data-choice="preset:${p.id}"><b>${p.name}</b><span>${p.hint}</span></button>`,
+    ).join('');
+    c.innerHTML = `
+      <div class="gp-chooser-head"><span>Новая усадьба</span><span class="gp-chooser-close">${svgIcon('close', 12)}</span></div>
+      <div class="gp-chooser-list">
+        ${classicBtn}
+        ${growBtn}
+        ${presetBtns}
+      </div>`;
+    c.style.display = 'block';
+    c.querySelector('.gp-chooser-close')!.addEventListener('click', () => this.hideNewChooser());
+    c.querySelectorAll<HTMLButtonElement>('.gp-choice').forEach((b) => {
+      b.addEventListener('click', () => {
+        const choice = b.dataset.choice!;
+        this.hideNewChooser();
+        this.createChoice(choice);
+      });
+    });
+  }
+
+  private hideNewChooser(): void {
+    const c = this.chooserEl();
+    c.style.display = 'none';
+    c.innerHTML = '';
+  }
+
+  private createChoice(choice: string): void {
+    let m;
+    if (choice === 'classic') {
+      m = this.store.create(this.world);
+    } else if (choice === 'grow') {
+      m = this.store.create(this.world, undefined, { mode: 'grow' });
+    } else if (choice.startsWith('preset:')) {
+      const id = choice.slice(7);
+      m = this.store.create(this.world, undefined, { preset: id });
+    } else {
+      m = this.store.create(this.world);
+    }
+    this.hooks.onSwitch();
+    this.refresh();
+    this.hooks.toast(`«${m.name}» — новая земля`);
+  }
+
   private action(act: string): void {
     if (act === 'new') {
-      const m = this.store.create(this.world);
-      this.hooks.onSwitch();
-      this.refresh();
-      this.hooks.toast(`«${m.name}» — чистая земля`);
+      this.showNewChooser();
+      return;
     } else if (act === 'export') {
       this.store.exportFile(this.world);
       this.hooks.toast('Сад выгружен файлом');
@@ -113,7 +166,6 @@ export class GardensPanel {
 
   refresh(): void {
     this.listEl.innerHTML = '';
-    const only = this.store.list.length <= 1;
     for (const g of this.store.list) {
       const row = document.createElement('div');
       row.className = `gp-row${g.id === this.store.activeId ? ' active' : ''}`;
@@ -122,7 +174,7 @@ export class GardensPanel {
           <div class="gp-name" title="Нажмите, чтобы переименовать">${g.name}</div>
           <div class="gp-meta">${g.objects ? `${g.objects} предметов` : 'пустая земля'} · ${ago(g.saved)}</div>
         </div>
-        <span class="gp-del${only ? ' off' : ''}" title="Удалить">${svgIcon('trash', 14)}</span>`;
+        <span class="gp-del" title="Удалить">${svgIcon('trash', 14)}</span>`;
 
       row.querySelector('.gp-info')!.addEventListener('click', () => {
         if (g.id === this.store.activeId) {
@@ -139,24 +191,21 @@ export class GardensPanel {
       });
 
       const del = row.querySelector('.gp-del')!;
-      if (!only) {
-        del.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (del.classList.contains('confirm')) {
-            const wasActive = g.id === this.store.activeId;
-            if (this.store.remove(this.world, g.id)) {
-              if (wasActive) this.hooks.onSwitch();
-              this.refresh();
-              this.hooks.toast(`«${g.name}» убрана`);
-            }
-          } else {
-            // двойное нажатие вместо окна подтверждения — тише и быстрее
-            this.listEl.querySelectorAll('.gp-del.confirm').forEach((o) => o.classList.remove('confirm'));
-            del.classList.add('confirm');
-            setTimeout(() => del.classList.remove('confirm'), 3000);
+      del.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (del.classList.contains('confirm')) {
+          const wasActive = g.id === this.store.activeId;
+          if (this.store.remove(this.world, g.id)) {
+            if (wasActive) this.hooks.onSwitch();
+            this.refresh();
+            this.hooks.toast(`«${g.name}» убрана`);
           }
-        });
-      }
+        } else {
+          this.listEl.querySelectorAll('.gp-del.confirm').forEach((o) => o.classList.remove('confirm'));
+          del.classList.add('confirm');
+          setTimeout(() => del.classList.remove('confirm'), 3000);
+        }
+      });
       this.listEl.appendChild(row);
     }
   }
