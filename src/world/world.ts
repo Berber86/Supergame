@@ -392,7 +392,7 @@ export class World {
     // Южная роща и дальний берег — чтобы кадр был наполнен во все стороны
     const more: [string, number, number][] = [
       ['maple', 2.5, 12.5],
-      ['pine', 3.5, 8.5],
+      ['pine', 1, 8.5],
       ['sakura', 2.5, 19],
       ['ginkgo', 11.5, 20.5],
       ['maple', 13.5, 22.5],
@@ -886,6 +886,7 @@ export class World {
       for (let x = r.x0; x <= r.x1; x++) {
         const t = this.at(x, y);
         if (!t) return false;
+        if (item.kind === 'tree' && (t.indoor || t.veranda)) return false;
         if (item.needsWater && !t.water) return false;
         if (!item.onWater && t.water) return false;
         if (t.water) anyWater = true;
@@ -1210,6 +1211,14 @@ export class World {
       veranda: t.veranda,
     }));
     this.objects = p.objects.map((o) => ({ ...o }));
+    // Repair only the identifiable original starter pine, not arbitrary player plantings.
+    const legacyPine = this.objects.find((o) => o.type === 'pine' && o.tx === 3.5 && o.ty === 8.5);
+    const starter =
+      this.objects.some((o) => o.type === 'torii' && o.tx === 22.5 && o.ty === 20.5) &&
+      this.objects.some((o) => o.type === 'table' && o.tx === 6.5 && o.ty === 5.5) &&
+      Array.from({ length: 42 }, (_, i) => this.at(3 + (i % 7), 3 + Math.floor(i / 7))?.indoor).every(Boolean);
+    if (legacyPine && starter && this.canPlace('pine', 1, 8.5, legacyPine.rot)) legacyPine.tx = 1;
+
     this.nextId = p.nextId;
     for (const o of this.objects) this.nextId = Math.max(this.nextId, o.id + 1);
     this.milestones = new Set(p.milestones);

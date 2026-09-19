@@ -123,3 +123,35 @@ export function paintSnowRidge(ctx: Ctx, atm: Atmosphere, snow: RoofSnow, a: Pt,
   ctx.stroke();
   ctx.restore();
 }
+
+/** Sparse refrozen meltwater, selected once per snowy period rather than per animation frame. */
+export function iciclesPresent(snow: RoofSnow): boolean {
+  return snow.amount > 0 && hash2(snow.seed, 23, 941) > 0.46;
+}
+export function paintIcicles(ctx: Ctx, atm: Atmosphere, snow: RoofSnow, edge: Pt[], side = 0): void {
+  if (atm.season !== 'winter' || !iciclesPresent(snow)) return;
+  ctx.save();
+  const ice = shade(mix({ r: 185, g: 219, b: 235 }, atm.lightTint, atm.lightAmount * 0.35), atm.exposure);
+  const white = snowColor(atm);
+  for (let i = 1; i < edge.length - 1; i++) {
+    const r = hash2(i, side, snow.seed);
+    if (r < 0.67) continue;
+    const p = edge[i],
+      length = 4 + hash2(i, 71, snow.seed) * 11,
+      width = 1 + hash2(i, 73, snow.seed) * 1.8;
+    ctx.beginPath();
+    ctx.moveTo(p.x - width, p.y + 2);
+    ctx.quadraticCurveTo(p.x - 0.7, p.y + length * 0.7, p.x + 0.4, p.y + length + 2);
+    ctx.lineTo(p.x + width, p.y + 2);
+    ctx.closePath();
+    ctx.fillStyle = css(ice, 0.85);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(p.x - 0.5, p.y + 3);
+    ctx.lineTo(p.x + 0.2, p.y + length);
+    ctx.strokeStyle = css(white, 0.8);
+    ctx.lineWidth = 0.65;
+    ctx.stroke();
+  }
+  ctx.restore();
+}

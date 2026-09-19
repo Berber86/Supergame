@@ -10,7 +10,7 @@ function lanternLight(d: DrawCtx, x: number, y: number, radius: number, warm: RG
   const flicker = 0.9 + Math.sin(d.time * 0.004 + d.obj.seed) * 0.06 + Math.sin(d.time * 0.011 + d.obj.seed * 2) * 0.04;
   d.ctx.save();
   d.ctx.globalCompositeOperation = 'lighter';
-  glow(d.ctx, x, y, radius * flicker, warm, strength * 0.85);
+  glow(d.ctx, x, y, radius * flicker * 0.58, warm, strength * 0.3);
   d.ctx.restore();
 }
 

@@ -680,7 +680,9 @@ function drawSnowCover(ctx: Ctx, world: World, atm: Atmosphere, b: Bounds): void
   for (let y = b.by0; y <= b.by1; y++) {
     for (let x = b.bx0; x <= b.bx1; x++) {
       const t = world.at(x, y)!;
-      if (t.water || t.indoor || t.veranda) continue;
+      // Paint snow beneath water cells too. The continuous water silhouette below
+      // is painted afterward, leaving curved snowy banks instead of square bare holes.
+      if (t.indoor || t.veranda) continue;
       const a = isoToScreen(x - 0.04, y - 0.04, t.level);
       const b = isoToScreen(x + 1.04, y - 0.04, t.level);
       const c = isoToScreen(x + 1.04, y + 1.04, t.level);
@@ -855,39 +857,11 @@ function drawTileDetail(ctx: Ctx, world: World, x: number, y: number, t: Tile, a
       break;
     case 'moss':
     case 'grass':
-      drawMossSpeckle(ctx, x, y, t.level, col, atm);
+      // Sparse habitat-driven detail is a view-dependent scene layer, not a repeated tile stamp.
       break;
     case 'soil':
       granulate(ctx, c.x, c.y, TILE_W * 0.4, TILE_H * 0.4, shade(col, 0.8), x * 19 + y * 3, 18, 0.13);
       break;
-  }
-}
-
-function drawMossSpeckle(ctx: Ctx, x: number, y: number, level: number, col: RGB, atm: Atmosphere): void {
-  const deep = mix(col, atm.palette.grassDeep, 0.5);
-  const light = mix(col, { r: 236, g: 240, b: 206 }, 0.3);
-  for (let i = 0; i < 6; i++) {
-    const r1 = hash2(x * 5 + i, y * 7 + i, 41);
-    const r2 = hash2(x * 3 + i, y * 11 + i, 53);
-    if (r1 < 0.35) continue;
-    const p = isoToScreen(x + 0.12 + r1 * 0.76, y + 0.12 + r2 * 0.76, level);
-    ctx.fillStyle = css(r2 > 0.72 ? light : deep, 0.14 + r1 * 0.13);
-    blobPath(ctx, p.x, p.y, 8 + r1 * 15, 4 + r2 * 7, x * 31 + y * 7 + i, 0.4, 7);
-    ctx.fill();
-  }
-  // редкие травинки для живости
-  if (hash2(x, y, 91) > 0.62) {
-    const g = shade(mix(col, atm.palette.grassDeep, 0.6), 0.95);
-    for (let i = 0; i < 3; i++) {
-      const r = hash2(x + i, y * 3, 17);
-      const p = isoToScreen(x + 0.2 + r * 0.6, y + 0.25 + hash2(x, y + i, 19) * 0.5, level);
-      ctx.strokeStyle = css(g, 0.3);
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.quadraticCurveTo(p.x + (r - 0.5) * 5, p.y - 5, p.x + (r - 0.5) * 9, p.y - 9);
-      ctx.stroke();
-    }
   }
 }
 

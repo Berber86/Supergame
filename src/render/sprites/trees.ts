@@ -1,5 +1,6 @@
 /** Деревья и кусты: стволы, ветви, кроны — стартовый сад почти весь отсюда. */
 
+import { flowerOpenness, flowerHeadPath } from '../flowerCycle';
 import { DrawCtx, Drawer, WHITE, litc, shadowUnder } from './common';
 import { hash2, lerp } from '../../core/rng';
 import { Atmosphere, RGB, css, mix, shade } from '../../world/palette';
@@ -227,8 +228,8 @@ function makeTree(style: TreeStyle): Drawer {
     const shapeJ3 = hash2(obj.seed, 7, 11);
     const shapeJ4 = hash2(obj.seed, 12, 17);
     const shapeJ5 = hash2(obj.seed, 14, 19);
-    const cw = style.crownW * scale * (0.80 + shapeJ * 0.42);
-    const ch = style.crownH * scale * (0.80 + shapeJ2 * 0.42);
+    const cw = style.crownW * scale * (0.8 + shapeJ * 0.42);
+    const ch = style.crownH * scale * (0.8 + shapeJ2 * 0.42);
     const crownDx = (shapeJ - 0.5) * cw * 0.22;
     const sway = Math.sin(d.time * 0.0004 + obj.seed) * 3 * d.wind * scale;
     // Дополнительная детерминированная вариация по сиду:
@@ -283,7 +284,11 @@ function makeTree(style: TreeStyle): Drawer {
     const cxx = tx + crownDx + asymJ * cw * 0.42;
     // Лёгкий оттенок кроны по сиду — деревья одной породы не одинакового тона
     const tintJ = hash2(obj.seed, 73, 11);
-    const tintedMain = mix(main, tintJ > 0.66 ? { r: 210, g: 190, b: 120 } : tintJ < 0.33 ? { r: 130, g: 160, b: 140 } : main, 0.12);
+    const tintedMain = mix(
+      main,
+      tintJ > 0.66 ? { r: 210, g: 190, b: 120 } : tintJ < 0.33 ? { r: 130, g: 160, b: 140 } : main,
+      0.12,
+    );
     const crownMain = litc(tintedMain, atm);
     const crownDeep = litc(shade(mix(tintedMain, atm.palette.foliageDeep, 0.55), 0.92), atm);
     const crownLight = litc(mix(tintedMain, WHITE, 0.32), atm, 0.05);
@@ -385,7 +390,18 @@ function makeTree(style: TreeStyle): Drawer {
         const bx = tx + (r - 0.5) * cw * 0.35 + sway * 0.5;
         const ex = cxx + (r2 - 0.5) * cw * 0.9 + sway * 0.8;
         const ey = ty - ch * (0.22 + r * 0.42) * tallJ;
-        taperStroke(ctx, bx, ty + 6, ex, ey, (1.6 + r * 0.6) * scale, 0.7 * scale, branchCol, 0.28 + r * 0.12, (r - 0.5) * cw * 0.22);
+        taperStroke(
+          ctx,
+          bx,
+          ty + 6,
+          ex,
+          ey,
+          (1.6 + r * 0.6) * scale,
+          0.7 * scale,
+          branchCol,
+          0.28 + r * 0.12,
+          (r - 0.5) * cw * 0.22,
+        );
       }
     }
 
@@ -401,7 +417,15 @@ function makeTree(style: TreeStyle): Drawer {
         const px = cxx + (r1 - 0.5) * cw * 1.15 + sway;
         const py = ty - ch * 0.2 * tallJ + (r2 - 0.5) * ch * 0.95 * tallJ;
         ctx.fillStyle = css(bl, 0.55 + r1 * 0.3);
-        blobPath(ctx, px, py, cw * 0.1 * (0.6 + r2 * 0.7), ch * 0.07 * (0.6 + r1 * 0.7), obj.seed + i, 0.35, 7);
+        flowerHeadPath(
+          ctx,
+          px,
+          py,
+          cw * 0.1 * (0.6 + r2 * 0.7),
+          ch * 0.07 * (0.6 + r1 * 0.7),
+          obj.seed + i,
+          flowerOpenness(atm),
+        );
         ctx.fill();
       }
     }
@@ -489,12 +513,22 @@ export const drawPine: Drawer = (d) => {
 
   const trunkCol = litc({ r: 108, g: 82, b: 66 }, atm);
   const leanJ = (hash2(obj.seed, 7, 11) - 0.5) * 0.22;
-  const { tx, ty } = drawTrunk(d, h, Math.max(2.6, 9.2 * scale * (0.9 + heightJ * 0.12)), trunkCol, sway * 0.3 + leanJ * h * 0.09);
+  const { tx, ty } = drawTrunk(
+    d,
+    h,
+    Math.max(2.6, 9.2 * scale * (0.9 + heightJ * 0.12)),
+    trunkCol,
+    sway * 0.3 + leanJ * h * 0.09,
+  );
 
   const needle = atm.season === 'winter' ? { r: 96, g: 124, b: 116 } : { r: 84, g: 130, b: 92 };
   // Лёгкий оттенок хвои по сиду
   const tintP = hash2(obj.seed, 19, 23);
-  const needleTinted = mix(needle, tintP > 0.66 ? { r: 72, g: 118, b: 88 } : tintP < 0.33 ? { r: 92, g: 136, b: 100 } : needle, 0.14);
+  const needleTinted = mix(
+    needle,
+    tintP > 0.66 ? { r: 72, g: 118, b: 88 } : tintP < 0.33 ? { r: 92, g: 136, b: 100 } : needle,
+    0.14,
+  );
   const main = litc(needleTinted, atm);
   const deep = litc(shade(needleTinted, 0.76), atm);
   const light = litc(mix(needleTinted, { r: 200, g: 226, b: 170 }, 0.3), atm, 0.03);
@@ -514,7 +548,17 @@ export const drawPine: Drawer = (d) => {
     const cy = ty + t * h * (0.58 + hash2(obj.seed, 43, 13) * 0.12);
     const rx = (46 - t * 7) * scale * sizeJ * (0.9 + hash2(i, obj.seed, 47) * 0.22);
     const ry = (18 + t * 5) * scale * (0.9 + hash2(i, obj.seed, 53) * 0.2);
-    taperStroke(ctx, tx, cy + 4, cx, cy + 2, (3.2 + hash2(i, obj.seed, 59) * 0.8) * scale, 1.4 * scale, shade(trunkCol, 0.92), 0.8);
+    taperStroke(
+      ctx,
+      tx,
+      cy + 4,
+      cx,
+      cy + 2,
+      (3.2 + hash2(i, obj.seed, 59) * 0.8) * scale,
+      1.4 * scale,
+      shade(trunkCol, 0.92),
+      0.8,
+    );
     washBlob(ctx, cx, cy + ry * 0.35, rx, ry, deep, obj.seed + i * 5, {
       layers: 2,
       alpha: 0.42,
@@ -534,12 +578,21 @@ export const drawPine: Drawer = (d) => {
     });
     // Доп. мелкая клякса для лохматости
     if (hash2(i, obj.seed, 71) > 0.55) {
-      washBlob(ctx, cx + (hash2(i, obj.seed, 73) - 0.5) * rx * 0.6, cy + ry * 0.15, rx * 0.32, ry * 0.55, main, obj.seed + i * 17, {
-        layers: 2,
-        alpha: 0.32,
-        edge: 0.18,
-        wobble: 0.35,
-      });
+      washBlob(
+        ctx,
+        cx + (hash2(i, obj.seed, 73) - 0.5) * rx * 0.6,
+        cy + ry * 0.15,
+        rx * 0.32,
+        ry * 0.55,
+        main,
+        obj.seed + i * 17,
+        {
+          layers: 2,
+          alpha: 0.32,
+          edge: 0.18,
+          wobble: 0.35,
+        },
+      );
     }
     if (atm.season === 'winter') {
       washBlob(ctx, cx, cy - ry * 0.5, rx * 0.7, ry * 0.3, litc({ r: 246, g: 247, b: 250 }, atm), obj.seed + i, {
@@ -558,11 +611,20 @@ export const drawPine: Drawer = (d) => {
   });
   // Иногда второй маленький ярус на самой верхушке — молодая макушка
   if (hash2(obj.seed, 83, 7) > 0.62) {
-    washBlob(ctx, tx + sway + (hash2(obj.seed, 89, 11) - 0.5) * 8, ty - 18 * scale * topJ, 14 * scale, 7 * scale, main, obj.seed + 97, {
-      layers: 2,
-      alpha: 0.36,
-      edge: 0.14,
-    });
+    washBlob(
+      ctx,
+      tx + sway + (hash2(obj.seed, 89, 11) - 0.5) * 8,
+      ty - 18 * scale * topJ,
+      14 * scale,
+      7 * scale,
+      main,
+      obj.seed + 97,
+      {
+        layers: 2,
+        alpha: 0.36,
+        edge: 0.14,
+      },
+    );
   }
 };
 
@@ -666,7 +728,7 @@ export const drawShrub: Drawer = (d) => {
       ctx.fillStyle = css(fl, 0.75);
       const px = d.x + (r1 - 0.5) * rx * 1.7 + sway;
       const py = d.y - ry * 0.75 + (r2 - 0.5) * ry * 1.5;
-      blobPath(ctx, px, py, 3.2 * scale + r1 * 2, 2.4 * scale + r2 * 1.6, obj.seed + i, 0.3, 6);
+      flowerHeadPath(ctx, px, py, 3.2 * scale + r1 * 2, 2.4 * scale + r2 * 1.6, obj.seed + i, flowerOpenness(atm));
       ctx.fill();
     }
   }
@@ -748,7 +810,7 @@ export const drawWisteria: Drawer = (d) => {
         const xx = px + sway * tt * 1.4;
         const rr = (4 - tt * 2.5) * scale;
         ctx.fillStyle = css(mix(cluster, WHITE, tt * 0.35), 0.72 - tt * 0.18);
-        blobPath(ctx, xx, yy, rr, rr * 0.82, obj.seed + i * 7 + k, 0.34, 6);
+        flowerHeadPath(ctx, xx, yy, rr, rr * 0.82, obj.seed + i * 7 + k, flowerOpenness(atm));
         ctx.fill();
       }
     } else {
@@ -885,15 +947,24 @@ export const drawCamellia: Drawer = (d) => {
       const px = d.x + (r1 - 0.5) * rx * 1.5 + sway;
       const py = d.y - ry * 0.9 + (r2 - 0.5) * ry * 1.2;
       const rr = 5.6 * scale;
+      const open = flowerOpenness(atm);
       // пять лепестков вокруг жёлтой сердцевины
       for (let k = 0; k < 5; k++) {
         const a = (k / 5) * Math.PI * 2 + r1 * 2;
         ctx.fillStyle = css(petal, 0.92);
         ctx.beginPath();
-        ctx.ellipse(px + Math.cos(a) * rr * 0.5, py + Math.sin(a) * rr * 0.4, rr * 0.52, rr * 0.42, a, 0, Math.PI * 2);
+        ctx.ellipse(
+          px + Math.cos(a) * rr * 0.5 * open,
+          py + Math.sin(a) * rr * 0.4 * open - (1 - open) * rr * 0.2,
+          rr * 0.52,
+          rr * lerp(0.15, 0.42, open),
+          lerp(-Math.PI / 2, a, open),
+          0,
+          Math.PI * 2,
+        );
         ctx.fill();
       }
-      ctx.fillStyle = css(litc({ r: 248, g: 218, b: 118 }, atm, 0.08), 0.96);
+      ctx.fillStyle = css(litc({ r: 248, g: 218, b: 118 }, atm, 0.08), 0.96 * Math.max(0, (open - 0.4) / 0.6));
       ctx.beginPath();
       ctx.arc(px, py, rr * 0.28, 0, Math.PI * 2);
       ctx.fill();

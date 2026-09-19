@@ -343,29 +343,49 @@ export const drawKotatsu: Drawer = (d) => {
 export const drawBookshelf: Drawer = (d) => {
   shadowUnder(d, 33, 12, 0.65);
   workshop(d, ({ ctx, p, box, face, line, wood, dark, paper, grain }) => {
-    box(0, 0, 0.88, 0.36, 0, 60, wood);
-    grain(0, 0, 0.85, 0.34, 60);
-    if (p(0, 1).y <= 0) return;
-    face([p(-0.38, 0.182, 5), p(0.38, 0.182, 5), p(0.38, 0.182, 55), p(-0.38, 0.182, 55)], shade(dark, 0.9));
-    const colors = [
-      { r: 144, g: 84, b: 70 },
-      { r: 100, g: 126, b: 137 },
-      { r: 169, g: 145, b: 91 },
-      { r: 148, g: 146, b: 119 },
-    ];
-    for (const z of [6, 30]) {
-      for (let i = 0; i < 6; i++) {
-        const u = -0.28 + i * 0.085,
-          height = 14 + hash2(i, z, d.obj.seed) * 7;
-        box(u, 0.085, 0.069, 0.16, z, z + height, litc(colors[(i + (z === 6 ? 0 : 2)) % 4], d.atm));
-        line([p(u - 0.027, 0.168, z + height - 4), p(u + 0.027, 0.168, z + height - 4)], paper, 0.7, 0.6);
-      }
-      const q = p(0.285, 0.1, z + 7);
-      oval(ctx, q.x, q.y, 4, 6, css(litc({ r: 143, g: 166, b: 157 }, d.atm)));
-      box(0, 0, 0.8, 0.36, z - 2, z, wood);
+    // Thin back panel, not a filled solid cupboard with its front painted over.
+    box(0, -0.115, 0.88, 0.055, 1, 61, shade(wood, 0.82));
+    const front = p(0, 1).y > 0;
+    if (!front) {
+      box(0, 0, 0.88, 0.28, 0, 61, wood);
+      grain(0, 0, 0.85, 0.27, 61);
+      return;
     }
-    // Front stiles mask the interior edges; no books can bleed through the cabinet sides.
-    for (const u of [-0.41, 0.41]) line([p(u, 0.185, 2), p(u, 0.185, 58)], wood, 3);
+    const colors = [
+      { r: 166, g: 97, b: 76 },
+      { r: 99, g: 135, b: 148 },
+      { r: 175, g: 155, b: 104 },
+      { r: 146, g: 152, b: 123 },
+    ];
+    // Bottom to top: each shelf supports the books ABOVE it, never overpaints them.
+    for (const z of [4, 31]) {
+      box(0, 0, 0.82, 0.27, z - 2, z, wood);
+      for (let i = 0; i < 7; i++) {
+        const u = -0.3 + i * 0.074,
+          height = 17 + hash2(i, z, d.obj.seed) * 5;
+        const col = litc(colors[(i + (z === 4 ? 0 : 2)) % 4], d.atm);
+        box(u, 0.04, 0.06, 0.13, z + 0.2, z + height, col);
+        // Bring spines to the front lip; rear books used to disappear behind a deep shelf.
+        face(
+          [
+            p(u - 0.03, 0.111, z + 0.3),
+            p(u + 0.03, 0.111, z + 0.3),
+            p(u + 0.03, 0.111, z + height),
+            p(u - 0.03, 0.111, z + height),
+          ],
+          col,
+        );
+        for (const dz of [4, height - 3])
+          line([p(u - 0.022, 0.113, z + dz), p(u + 0.022, 0.113, z + dz)], paper, 0.7, 0.7);
+      }
+      const q = p(0.27, 0.04, z + 7);
+      oval(ctx, q.x, q.y, 3.4, 5.5, css(litc({ r: 148, g: 168, b: 159 }, d.atm)));
+    }
+    // Slim side boards and cap, with no protruding slabs across the openings.
+    for (const u of [-0.425, 0.425]) box(u, 0, 0.045, 0.28, 0, 61, wood);
+    box(0, 0, 0.9, 0.29, 60, 63, wood);
+    grain(0, 0, 0.88, 0.27, 63);
+    line([p(-0.4, 0.15, 3), p(0.4, 0.15, 3)], dark, 0.7, 0.4);
   });
 };
 export const drawEngawaBench: Drawer = (d) => {

@@ -46,6 +46,7 @@ async function main() {
     { name: 'ложбина 3×3', hour: 17, act: (w) => w.applyBrush(BRUSH_BY_ID.get('h_low')!, 20, 8) },
     { name: 'заливка области', hour: 13, act: (w) => w.floodFill(2, 24, 'sand') },
     { name: 'край сада', hour: 13, act: (w) => w.applyBrush(BRUSH_BY_ID.get('g_stone')!, 0, 25) },
+    { name: 'зима, берег', hour: 13, act: (w) => w.setGround(14, 12, 'moss') },
     { name: 'зима, снег', hour: 16, act: (w) => w.applyBrush(BRUSH_BY_ID.get('g_soil')!, 9, 18) },
   ];
 
@@ -63,7 +64,7 @@ async function main() {
     const d = new Date();
     d.setHours(c.hour, 0, 0, 0);
     // последний случай проверяем зимой
-    const ms = c.name.includes('зима') ? d.getTime() + 9 * 86400e3 : d.getTime();
+    const ms = c.name.includes('зима') ? new Date(2026, 11, 19, c.hour).getTime() : d.getTime();
     const t = computeTime(ms);
     const atm = buildAtmosphere(t, 0);
 

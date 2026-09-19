@@ -17,8 +17,10 @@
  * Ветер и время в ключ не входят — они применяются при копировании.
  */
 
-import { DrawCtx, drawObject, hasDrawer, setSkipShadows } from './sprites';
+import { DrawCtx, drawObject, drawCost, hasDrawer, setSkipShadows } from './sprites';
 import { Ctx } from './paint';
+import { flowerCycleKey } from './flowerCycle';
+import { css } from '../world/palette';
 import { SMALL_HOUSE_IDS } from '../world/catalog';
 import { roofSnowKey } from './roofSnow';
 
@@ -100,7 +102,7 @@ export function spriteFrame(): void {
  * Рисует объект через кэш. Возвращает false, если кэш не подошёл
  * и объект надо рисовать обычным способом.
  */
-function getCachedSprite(d: DrawCtx): Entry | null {
+function getCachedSprite(d: DrawCtx, relit = false): Entry | null {
   const { obj, atm } = d;
 
   // Огрубление ключа: без него кэш промахивался бы каждый кадр, потому
@@ -116,7 +118,7 @@ function getCachedSprite(d: DrawCtx): Entry | null {
   const sunq = quantDown(atm.sunDir.x, 0.4);
   const goldq = quantDown(atm.golden, 0.34);
   const snowKey = SMALL_HOUSE_IDS.has(obj.type) ? roofSnowKey(atm, obj.seed) : '';
-  const key = `${snowKey}|${obj.type}|${atm.season}|${gq}|${expq}|${lampq}|${sunq}|${goldq}|${obj.seed}|${obj.rot}`;
+  const key = `${flowerCycleKey(obj.type, atm)}|${relit ? 'lit' : 'base'}|${snowKey}|${obj.type}|${atm.season}|${gq}|${expq}|${lampq}|${sunq}|${goldq}|${obj.seed}|${obj.rot}`;
 
   let e = cache.get(key);
   if (!e) {
@@ -173,6 +175,10 @@ function getCachedSprite(d: DrawCtx): Entry | null {
 export function drawCached(d: DrawCtx): boolean {
   const e = getCachedSprite(d);
   if (!e) return false;
+  drawEntry(d, e);
+  return true;
+}
+function drawEntry(d: DrawCtx, e: Entry): void {
   const ctx = d.ctx as unknown as CanvasRenderingContext2D;
   const prev = ctx.globalAlpha;
   ctx.globalAlpha = d.alpha;
@@ -195,7 +201,6 @@ export function drawCached(d: DrawCtx): boolean {
     ctx.drawImage(e.canvas, Math.round(dx), Math.round(dy));
   }
   ctx.globalAlpha = prev;
-  return true;
 }
 
 /** The very same painted sprite, mirrored in broken horizontal strips; no shadow. */
@@ -261,7 +266,7 @@ function measureBox(
 ): { w: number; h: number; ax: number; ay: number } | null {
   // Размер зависит от сида из-за scaleJitter и зеркала, поэтому включаем seed
   const snowKey = SMALL_HOUSE_IDS.has(obj.type) ? roofSnowKey(atm, obj.seed) : '';
-  const key = `${snowKey}|${obj.type}|${atm.season}|${gq}|${obj.rot}|${obj.seed}`;
+  const key = `${flowerCycleKey(obj.type, atm)}|${snowKey}|${obj.type}|${atm.season}|${gq}|${obj.rot}|${obj.seed}`;
   const hit = boxes.get(key);
   if (hit !== undefined) return hit;
 
@@ -399,4 +404,84 @@ function evict(): void {
     }
   }
   if (victim) cache.delete(victim);
+}
+
+/** Two reusable large-sprite masks (1.25 MiB total); no per-light/per-frame sprite variants. */
+const lightMasks = new Map<number, HTMLCanvasElement>();
+export function paintObjectLight(d: DrawCtx, hits: import('./localLight').LightSample[], useCache = true): void {
+  if (!hits.length) return;
+  // A real re-lit material, not a uniform orange silhouette: books, grain and dark faces retain contrast.
+  const litD = {
+    ...d,
+    atm: {
+      ...d.atm,
+      exposure: Math.min(1.08, d.atm.exposure + 0.58),
+      lightTint: hits[0].light.color,
+      lightAmount: 0.34,
+    },
+  };
+  const cached = useCache && cacheable(d.obj.type, drawCost(d.obj.type)) ? getCachedSprite(litD, true) : null;
+  const strength = Math.min(
+    0.65,
+    hits.reduce((s, h) => s + h.strength, 0),
+  );
+  // Tiny materials need only receiver-level falloff. Avoid a mutable bitmap copy per blade of grass.
+  // Large cached crowns retain the spatial gradient; live objects retain their exact animation.
+  if (!cached || Math.max(cached.canvas.width, cached.canvas.height) <= 160) {
+    const direct = { ...litD, alpha: d.alpha * strength * 0.56 };
+    if (cached) drawEntry(direct, cached);
+    else {
+      setSkipShadows(true);
+      try {
+        drawObject(direct);
+      } finally {
+        setSkipShadows(false);
+      }
+    }
+    return;
+  }
+  const measured = { w: cached.canvas.width, h: cached.canvas.height, ax: cached.ax, ay: cached.ay };
+  if (measured.w > 512 || measured.h > 512) return;
+  const size = [256, 512].find((s) => s >= Math.max(measured.w, measured.h))!;
+  let lightMask = lightMasks.get(size);
+  if (!lightMask) {
+    lightMask = document.createElement('canvas');
+    lightMask.width = size;
+    lightMask.height = size;
+    lightMasks.set(size, lightMask);
+  }
+  const c = lightMask.getContext('2d')!;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.save();
+  c.beginPath();
+  c.rect(0, 0, measured.w, measured.h);
+  c.clip();
+  c.clearRect(0, 0, measured.w, measured.h);
+  c.drawImage(cached.canvas, 0, 0);
+  c.globalCompositeOperation = 'destination-in';
+  const l = hits[0].light;
+  const x = l.screen.x - d.x + measured.ax,
+    y = l.screen.y - d.y + measured.ay,
+    r = l.radius * 66;
+  const g = c.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, css(l.color, strength * 0.76));
+  g.addColorStop(0.45, css(l.color, strength * 0.55));
+  g.addColorStop(1, css(l.color, 0));
+  c.fillStyle = g;
+  c.fillRect(0, 0, measured.w, measured.h);
+  c.restore();
+  let dx = d.x - measured.ax,
+    dy = d.y - measured.ay;
+  const m = d.ctx.getTransform();
+  if (cached && m.a && m.d) {
+    const sx = m.a * dx + m.c * dy + m.e,
+      sy = m.b * dx + m.d * dy + m.f;
+    dx += (Math.round(sx) - sx) / m.a;
+    dy += (Math.round(sy) - sy) / m.d;
+  }
+  d.ctx.save();
+  d.ctx.globalAlpha = d.alpha;
+  d.ctx.globalCompositeOperation = 'source-over';
+  d.ctx.drawImage(lightMask, 0, 0, measured.w, measured.h, dx, dy, measured.w, measured.h);
+  d.ctx.restore();
 }

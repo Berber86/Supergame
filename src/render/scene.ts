@@ -1,3 +1,4 @@
+import { drawGroundLife } from './groundLife';
 /** Сцена: камера, сортировка по глубине, пост-обработка «акварель на рисовой бумаге». */
 
 import { GRID, LEVEL_H, TILE_H, TILE_W, isoToScreen, screenToIso } from '../core/iso';
@@ -16,6 +17,8 @@ import { Weather, drawMist, drawSunShafts } from './weather';
 import { RainRenderer, drawFog, drawLightning, drawWetSheen } from './rain';
 import { WeatherState } from '../world/weatherState';
 import { WaterFlow } from '../world/waterFlow';
+import { drawWinterIce } from './winterIce';
+import { buildLocalLights, drawLocalSurfaceLight, drawLocalWallLight } from './localLight';
 import { drawCurrent, drawFalls, drawShoreRipple } from './water';
 import { makeWaterMotion, type WaterRing } from './waterMotion';
 import {
@@ -95,6 +98,8 @@ export class Scene {
   particles = true;
   /** Кэш спрайтов — можно выключить для сравнения «до и после». */
   useSpriteCache = true;
+  /** Diagnostic comparison; not saved in the garden. */
+  localLighting = true;
   /** Начало прокладываемой тропы. */
   pathFrom: { x: number; y: number } | null = null;
   /** Предпросмотр тропы — клетки, по которым она ляжет. */
@@ -314,6 +319,14 @@ export class Scene {
       ctx.drawImage(this.terrain.canvas, this.terrain.ox, this.terrain.oy);
     }
 
+    drawGroundLife(ctx, world, atm, {
+      x: this.camera.x,
+      y: this.camera.y,
+      width: W,
+      height: H,
+      zoom: this.camera.zoom,
+    });
+
     // Pond bed is in terrain. Fish must be BELOW reflections, glare and ripples.
     spriteFrame();
     this.flow.ensure(world);
@@ -363,9 +376,15 @@ export class Scene {
     if (Math.abs(this.roofFade - want) < 0.004) this.roofFade = want;
 
     drawHouseShade(ctx, world, atm, this.roofFade);
+    const localLights = this.localLighting
+      ? buildLocalLights(world, atm, time, { x: this.camera.x, y: this.camera.y }, this.movingId)
+      : { world, lights: [], barriers: [] };
+    drawLocalSurfaceLight(ctx, localLights, time);
+    drawWinterIce(ctx, world, atm, this.flow);
 
     // дальние стены дома — за объектами интерьера
     drawHouseWalls(ctx, world, atm);
+    drawLocalWallLight(ctx, localLights);
 
     // сетка в режиме строительства
     if (this.showGrid) drawGrid(ctx, world, atm, this.camera.zoom);
@@ -379,6 +398,7 @@ export class Scene {
 
     // --- Объекты, отсортированные по глубине ---
     drawObjects(ctx, world, atm, time, {
+      localLights,
       life: this.life,
       waterMotion,
       wind: this.wind,

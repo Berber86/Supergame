@@ -5,7 +5,7 @@ import { css, mix, shade } from '../../world/palette';
 import { hash2 } from '../../core/rng';
 import { type Drawer, type DrawCtx, litc, shadowUnder } from './common';
 import { workshop } from './furniture';
-import { paintRoofSnow, paintSnowRidge, roofSnow } from '../roofSnow';
+import { paintRoofSnow, paintSnowRidge, paintIcicles, roofSnow } from '../roofSnow';
 
 /** Catalogue dimensions are deliberately swapped at rotation 0 (legacy placement convention). */
 export function smallHouseSize(type: string) {
@@ -167,6 +167,7 @@ function drawHouse(d: DrawCtx) {
       paintRoofSnow(ctx, d.atm, snow, outline, point, i);
       ctx.restore();
       line(edge, dark, 1.7, 0.9);
+      if ((e.y + f.y) / 2 > p(0, 0, wallH + 3).y) paintIcicles(ctx, d.atm, snow, edge, i);
       for (let k = 1; k < tiles; k += 3) {
         const q = point(k / tiles, 1);
         line(

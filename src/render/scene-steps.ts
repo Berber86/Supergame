@@ -1,3 +1,5 @@
+import { paintObjectLight } from './spriteCache';
+import { sampleLocalLight, receivesObjectLight, type LocalLightField } from './localLight';
 /**
  * Шаги отрисовки сцены — чистые функции над контекстом холста.
  *
@@ -47,6 +49,7 @@ export interface ObjectsOpts {
   useSpriteCache: boolean;
   particles: boolean;
   waterMotion?: WaterMotion;
+  localLights?: LocalLightField;
 }
 
 /**
@@ -455,6 +458,8 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
     const g = world.growth(o, now);
     // ветер берём в точке дерева — порыв проходит волной
     const wind = opts.life ? opts.life.windAt(cx, cy) : opts.wind;
+    const localHits =
+      opts.localLights && receivesObjectLight(o.type) ? sampleLocalLight(opts.localLights, cx, cy, lvl, o.id) : [];
     const isMoving = o.id === opts.movingId;
     const isHot = o.id === opts.highlightId;
     // Переносимое слегка всплывает над землёй — видно, что оно «в руке»
@@ -507,7 +512,13 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
             wind,
             alpha: isMoving ? 0.72 : 1,
           });
-          if (drawn) return;
+          if (drawn) {
+            paintObjectLight(
+              { ctx, x: p.x + sway, y: p.y - lift, atm, g, obj: o, time, wind, alpha: isMoving ? 0.72 : 1 },
+              localHits,
+            );
+            return;
+          }
         }
 
         drawObject({
@@ -521,6 +532,11 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
           wind,
           alpha: isMoving ? 0.72 : 1,
         });
+        paintObjectLight(
+          { ctx, x: p.x, y: p.y - lift, atm, g, obj: o, time, wind, alpha: isMoving ? 0.72 : 1 },
+          localHits,
+          false,
+        );
       },
     });
   }
@@ -529,9 +545,6 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
 
   list.sort((a, b) => a.depth - b.depth);
   for (const e of list) e.draw();
-
-  // Тёплое свечение окон дома изнутри
-  drawWindowGlow(ctx, world, atm);
 }
 
 interface AnimalEntry {
@@ -797,25 +810,6 @@ export function drawAnimalReflections(ctx: Ctx, world: World, atm: Atmosphere, t
     }
     ctx.restore();
   }
-}
-
-export function drawWindowGlow(ctx: Ctx, world: World, atm: Atmosphere): void {
-  if (atm.lampGlow < 0.05) return;
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  const warm: RGB = { r: 255, g: 196, b: 122 };
-  for (let y = 0; y < GRID; y++) {
-    for (let x = 0; x < GRID; x++) {
-      const t = world.at(x, y)!;
-      if (!t.indoor) continue;
-      // светятся только клетки у кромки дома
-      const edge = !world.at(x, y + 1)?.indoor || !world.at(x + 1, y)?.indoor;
-      if (!edge) continue;
-      const p = isoToScreen(x + 0.5, y + 0.5, t.level);
-      glow(ctx, p.x, p.y - 10, 66, warm, atm.lampGlow * 0.28);
-    }
-  }
-  ctx.restore();
 }
 
 export function drawPaperGrain(

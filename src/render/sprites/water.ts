@@ -1,14 +1,45 @@
 /** Жители пруда и водяные растения. */
 
+import { flowerOpenness } from '../flowerCycle';
 import { Drawer, WHITE, litc } from './common';
-import { clamp01, hash2, lerp } from '../../core/rng';
+import { hash2, lerp } from '../../core/rng';
 import { css, mix, shade } from '../../world/palette';
 import { blobPath, washBlob } from '../paint';
 
 // ---------------- Вода ----------------
 
+/** Winter keeps the planted object, but rhizomes rest below the water; only old stems remain. */
+function drawDormantWaterPlant(d: Parameters<Drawer>[0], lotus: boolean): void {
+  const { ctx, x, y, atm } = d;
+  ctx.save();
+  const brown = litc({ r: 128, g: 119, b: 91 }, atm);
+  if (lotus) {
+    ctx.strokeStyle = css(brown, 0.65);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(x, y + 2);
+    ctx.quadraticCurveTo(x + 3, y - 5, x + 1, y - 10);
+    ctx.stroke();
+    ctx.fillStyle = css(brown, 0.8);
+    ctx.beginPath();
+    ctx.ellipse(x + 1, y - 10, 3.2, 1.7, -0.25, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = css(brown, 0.2);
+    ctx.beginPath();
+    ctx.ellipse(x - 3, y + 2, 6, 2.5, -0.15, 0, Math.PI * 1.65);
+    ctx.lineTo(x - 3, y + 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 export const drawLilypad: Drawer = (d) => {
   const { ctx, atm, obj } = d;
+  if (atm.season === 'winter') {
+    drawDormantWaterPlant(d, false);
+    return;
+  }
   const bob = Math.sin(d.time * 0.0008 + obj.seed) * 1.5;
   for (let i = 0; i < 3; i++) {
     const r1 = hash2(i, obj.seed, 9);
@@ -41,8 +72,12 @@ export const drawLilypad: Drawer = (d) => {
 
 export const drawLotus: Drawer = (d) => {
   const { ctx, atm, obj, g } = d;
+  if (atm.season === 'winter') {
+    drawDormantWaterPlant(d, true);
+    return;
+  }
   const bob = Math.sin(d.time * 0.0007 + obj.seed) * 1.5;
-  const open = clamp01(atm.time.daylight * 1.4);
+  const open = flowerOpenness(atm);
   const scale = lerp(0.5, 1, g);
   const px = d.x;
   const py = d.y + bob;
@@ -66,19 +101,19 @@ export const drawLotus: Drawer = (d) => {
   const n = 7;
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2;
-    const spread = lerp(0.3, 1.1, open);
+    const spread = 1.1 * open;
     const ex = px + Math.cos(a) * 6 * scale * spread;
-    const ey = cy + Math.sin(a) * 3.4 * scale * spread - 2;
+    const ey = cy + Math.sin(a) * 3.4 * scale * spread - 2 - (1 - open) * 3 * scale;
     ctx.fillStyle = css(i % 2 === 0 ? petal : petalDeep, 0.9);
     ctx.save();
     ctx.translate(ex, ey);
-    ctx.rotate(a);
+    ctx.rotate(lerp(-Math.PI / 2, a, open));
     ctx.beginPath();
-    ctx.ellipse(0, 0, 5.5 * scale, 2.6 * scale, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 5.5 * scale, lerp(1.2, 2.6, open) * scale, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
-  ctx.fillStyle = css(litc({ r: 246, g: 226, b: 160 }, atm), 0.95);
+  ctx.fillStyle = css(litc({ r: 246, g: 226, b: 160 }, atm), 0.95 * Math.max(0, (open - 0.4) / 0.6));
   ctx.beginPath();
   ctx.arc(px, cy - 2, 2.4 * scale, 0, Math.PI * 2);
   ctx.fill();

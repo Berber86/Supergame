@@ -1,5 +1,6 @@
 /** Камни и мелочь земли: валуны, шаговые камни, мох, цветы и папоротники. */
 
+import { flowerOpenness, flowerHeadPath } from '../flowerCycle';
 import { Drawer, WHITE, litc, shadowUnder } from './common';
 import { hash2, lerp } from '../../core/rng';
 import { RGB, css, mix, shade } from '../../world/palette';
@@ -127,7 +128,12 @@ export const drawMossClump: Drawer = (d) => {
   const c = litc(atm.season === 'winter' ? { r: 196, g: 204, b: 198 } : atm.palette.moss, atm);
   const deep = litc(shade(atm.palette.moss, 0.78), atm);
   washBlob(ctx, d.x, d.y, 15 * szJ, 7.5 * szJ, deep, obj.seed, { layers: 1, alpha: 0.4, edge: 0.1, wobble: 0.3 });
-  washBlob(ctx, d.x, d.y - 1.5, 13 * szJ, 6.5 * szJ, c, obj.seed + 3, { layers: 2, alpha: 0.45, edge: 0.12, wobble: 0.32 });
+  washBlob(ctx, d.x, d.y - 1.5, 13 * szJ, 6.5 * szJ, c, obj.seed + 3, {
+    layers: 2,
+    alpha: 0.45,
+    edge: 0.12,
+    wobble: 0.32,
+  });
   granulate(ctx, d.x, d.y - 1, 11 * szJ, 5 * szJ, deep, obj.seed, 10, 0.16);
 };
 
@@ -197,7 +203,15 @@ export function makeFlower(petal: RGB, leaf: RGB, tall: boolean): Drawer {
       ctx.stroke();
       if (!winter || !tall) {
         ctx.fillStyle = css(pc, 0.85);
-        blobPath(ctx, d.x + ox + sway, d.y - h - 1.5, 3 * scale + r, 2.4 * scale + r * 0.8, obj.seed + i, 0.3, 6);
+        flowerHeadPath(
+          ctx,
+          d.x + ox + sway,
+          d.y - h - 1.5,
+          3 * scale + r,
+          2.4 * scale + r * 0.8,
+          obj.seed + i,
+          flowerOpenness(atm),
+        );
         ctx.fill();
       }
     }

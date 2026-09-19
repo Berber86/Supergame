@@ -4,7 +4,7 @@ import { hash2, lerp } from '../core/rng';
 import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
 import { World } from '../world/world';
 import { Ctx, glow, washBlob } from './paint';
-import { roofSnow, roofSnowKey, paintRoofSnow, paintSnowRidge } from './roofSnow';
+import { roofSnow, roofSnowKey, paintRoofSnow, paintSnowRidge, paintIcicles } from './roofSnow';
 
 export interface HouseBox {
   x0: number;
@@ -405,6 +405,7 @@ function roofPaint(ctx: Ctx, world: World, h: HouseBox, atm: Atmosphere): void {
       0.65,
     );
   }
+  for (const i of [1, 2]) paintIcicles(ctx, atm, snow, course(g.faces[i], 1), i);
   for (const f of g.faces) {
     line(ctx, [f.e0, f.r0], T.roofDark, 4, 0.85);
     line(ctx, [down(f.e0, -1), down(f.r0, -1)], T.roofLight, 1.1, 0.5);
