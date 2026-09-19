@@ -744,6 +744,12 @@ export function drawFish(ctx: Ctx, fish: Fish, world: World, atm: Atmosphere, ti
   const t = world.at(Math.floor(fish.tx), Math.floor(fish.ty));
   if (!t?.water) return;
   const p = isoToScreen(fish.tx, fish.ty, t.level - 0.26);
+  drawFishAt(ctx, fish, p.x, p.y, atm, time);
+}
+
+/** Same koi renderer without a world lookup, for the encyclopedia. */
+export function drawFishAt(ctx: Ctx, fish: Fish, x: number, y: number, atm: Atmosphere, time: number): void {
+  const p = { x, y };
   const kind = fish.seed % 3;
   const smart = fish.memoryStrength > 0.3 || fish.boldness > 0.6;
   const bodyBase =

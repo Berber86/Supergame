@@ -24,6 +24,7 @@ import { SettingsPanel, applyView, loadView } from './ui/settings';
 import { isTouchDevice } from './ui/touch';
 import { startLoop } from './app/gameLoop';
 import { PracticePanel } from './ui/practicePanel';
+import { AnimalGuide } from './ui/animalGuide';
 import { ChroniclePanel } from './ui/chroniclePanel';
 import { ChronicleToast } from './ui/chronicleToast';
 import { StartScreen } from './ui/startScreen';
@@ -259,6 +260,10 @@ const ui = new UI(app, world, {
         : 'Касание: клик ставит один предмет, движение ведёт камеру',
     );
   },
+  onAnimalGuide() {
+    ui.toggleHelp(false);
+    animalGuide.toggle();
+  },
   onChronicle() {
     chronicle.toggle();
     wake();
@@ -267,6 +272,7 @@ const ui = new UI(app, world, {
 
 // Летопись сада: свиток с первыми встречами. Открывается тихо, без кнопки.
 const chronicle = new ChroniclePanel(app, world);
+const animalGuide = new AnimalGuide(app);
 
 /** Плавный перенос камеры к событию летописи */
 function smoothPanTo(tx: number, ty: number): void {
@@ -441,8 +447,8 @@ const input = setupInput({
   chronicle,
   selection: () => selection,
   isStartOpen: () => startOpen,
-  isPracticeOpen: () => practice.isOpen,
-  closePractice: () => practice.close(),
+  isPracticeOpen: () => practice.isOpen || animalGuide.isOpen,
+  closePractice: () => (animalGuide.isOpen ? animalGuide.setOpen(false) : practice.close()),
   paintMode: () => paintMode,
   actions: {
     applyAt,
@@ -1002,6 +1008,7 @@ function growFrame(dt: number): void {
     settingsPanel.setOpen(false);
     gardensPanel.setOpen(false);
     devPanel.setOpen(false);
+    animalGuide.setOpen(false);
     chronicle.setOpen(false);
     if (practice.isOpen) practice.close();
     clearPending();
@@ -1139,8 +1146,8 @@ startLoop({
   ui,
   devPanel,
   idleMs: IDLE_MS,
-  isPracticeActive: () => practiceActive,
-  isZenMode: () => zenMode,
+  isPracticeActive: () => practiceActive || animalGuide.isOpen,
+  isZenMode: () => zenMode || animalGuide.isOpen,
   igniteZen: () => setZen(true),
   lastInteractionMs: () => lastInteraction,
   getEntryZoom: () => entryZoom,

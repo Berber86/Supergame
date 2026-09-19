@@ -373,7 +373,7 @@ export class Life {
       this.residents.ripple(x, y, true);
       this.scareFish(x, y);
     };
-    this.wildlife.update(h, inv, t, wx ?? null, dt, now, threats);
+    this.wildlife.update(h, inv, t, wx ?? null, dt, now, threats, world);
     for (const note of this.wildlife.takeNotes()) this.note(world, note.id, note.x, note.y);
 
     this.updateCats(world, t, dt);
