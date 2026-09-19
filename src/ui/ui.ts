@@ -1,7 +1,9 @@
+import { crownCacheKey } from '../world/phenology';
+import { ecologyDescription } from '../world/ecology';
 /** Исчезающий интерфейс: каталог, часы, вехи, свиток помощи. */
 
 import { CatalogItem, ITEMS, MILESTONES, TABS, TERRAIN_BRUSHES, TerrainBrush } from '../world/catalog';
-import { SEASON_NAMES, SEASON_POEM, TimeState, partOfDay } from '../core/clock';
+import { MONTH_NAMES, TimeState, partOfDay } from '../core/clock';
 import { Atmosphere } from '../world/palette';
 import { GroundId } from '../world/types';
 import { World } from '../world/world';
@@ -697,14 +699,17 @@ export class UI {
   }
 
   /** Обновление часов и сезонной полоски. */
+  private iconYear = '';
   tick(t: TimeState, atm: Atmosphere): void {
     const prevSeason = this.iconSeason;
     this.atm = atm;
     this.els.clock.textContent = t.label;
     this.els.kanji.textContent = SEASON_KANJI[t.season];
-    this.els.sub.textContent = `${SEASON_NAMES[t.season].toLowerCase()} · ${partOfDay(t)} · ${SEASON_POEM[t.season]}`;
+    this.els.sub.textContent = `${MONTH_NAMES[new Date(t.now).getMonth()].toLowerCase()} · ${partOfDay(t)} · ${ecologyDescription(t.now)}`;
     (this.els.bar as HTMLElement).style.width = `${(t.seasonT * 100).toFixed(1)}%`;
-    if (prevSeason !== t.season) {
+    const iconYear = crownCacheKey('__surface', 424242, t.now);
+    if (prevSeason !== t.season || this.iconYear !== iconYear) {
+      this.iconYear = iconYear;
       this.iconSeason = t.season;
       if (prevSeason) this.renderItems();
       else this.renderItems();

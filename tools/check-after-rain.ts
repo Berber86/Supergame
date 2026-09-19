@@ -29,7 +29,7 @@ Object.assign(globalThis, {
 Math.random = makeRng(9102);
 const dayTime = computeTime(new Date(2026, 5, 19, 13).getTime()),
   nightTime = computeTime(new Date(2026, 5, 19, 23).getTime()),
-  winterTime = computeTime(new Date(2026, 11, 19, 13).getTime());
+  winterTime = computeTime(new Date(2026, 0, 15, 13).getTime());
 const day = buildAtmosphere(dayTime),
   night = buildAtmosphere(nightTime),
   winter = buildAtmosphere(winterTime);

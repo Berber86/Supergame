@@ -1,3 +1,4 @@
+import { liquidExposure } from '../world/ecology';
 /** Residual rain: receiver-aware drying, small temporary puddles and bounded roof drips. No save mutations. */
 import { isoToScreen, tileDiamond, type Pt } from '../core/iso';
 import { clamp01, hash2, lerp } from '../core/rng';
@@ -201,8 +202,8 @@ export function rainMaterial(
   x: number,
   y: number,
 ): Atmosphere {
-  if (!field || !weather || atm.season === 'winter' || !WET_MATERIALS.has(type)) return atm;
-  const wet = wetnessAt(field, weather, x, y, atm.time.now);
+  if (!field || !weather || !WET_MATERIALS.has(type)) return atm;
+  const wet = wetnessAt(field, weather, x, y, atm.time.now) * liquidExposure(atm.time.now);
   const q = Math.round(wet * 12) / 12;
   return q > 0 ? { ...atm, materialWetness: q } : atm;
 }
@@ -221,7 +222,10 @@ export function drawRainGround(
   time: number,
   view: RainView,
 ): number {
-  if (!weather || weather.wetness < 0.015 || atm.season === 'winter') return 0;
+  if (!weather || weather.wetness < 0.015) return 0;
+  const exposed = liquidExposure(atm.time.now);
+  if (exposed <= 0.001) return 0;
+  weather = { ...weather, wetness: weather.wetness * exposed };
   const f = rainField(world),
     annualShade = rainShade(f, atm.time.now),
     sky = mix(mix(atm.skyTop, atm.skyBottom, 0.65), atm.palette.water, 0.28);
@@ -383,8 +387,8 @@ export function drawHouseDrips(
   time: number,
   roofAlpha: number,
 ): void {
-  const wet = weather?.roofWetness ?? 0;
-  if (atm.season === 'winter' || wet < 0.04 || roofAlpha < 0.004) return;
+  const wet = (weather?.roofWetness ?? 0) * liquidExposure(atm.time.now);
+  if (wet < 0.04 || roofAlpha < 0.004) return;
   const h = findHouse(world);
   if (!h) return;
   const g = houseRoofGeometry(h);
@@ -406,8 +410,8 @@ export function drawHouseDrips(
 }
 /** Called in object depth order; hidden/back eaves cannot drip through the front wall. */
 export function drawSmallHouseDrips(d: DrawCtx, weather: WeatherState | undefined): void {
-  const wet = weather?.roofWetness ?? 0;
-  if (!SMALL_HOUSE_IDS.has(d.obj.type) || d.atm.season === 'winter' || wet < 0.04) return;
+  const wet = (weather?.roofWetness ?? 0) * liquidExposure(d.atm.time.now);
+  if (!SMALL_HOUSE_IDS.has(d.obj.type) || wet < 0.04) return;
   const { u, v } = smallHouseSize(d.obj.type),
     height = d.obj.type === 'shed' ? 52 : d.obj.type === 'tea_house' ? 64 : 71;
   const corners = [

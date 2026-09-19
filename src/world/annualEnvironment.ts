@@ -18,11 +18,11 @@ export function winterYear(now: number): { snow: number; ice: number; icicles: n
   };
 }
 const FLOWER_PROFILES: Record<string, [number, number, number, number]> = {
-  iris: [0.17, 0.27, 0.38, 0.51],
-  lily: [0.19, 0.29, 0.37, 0.47],
+  iris: [0.225, 0.29, 0.4, 0.52],
+  lily: [0.22, 0.29, 0.37, 0.47],
   lotus: [0.32, 0.44, 0.6, 0.72],
-  azalea: [0.15, 0.24, 0.34, 0.45],
-  wildflowers: [0.12, 0.23, 0.6, 0.77],
+  azalea: [0.225, 0.29, 0.37, 0.46],
+  wildflowers: [0.235, 0.3, 0.6, 0.77],
 };
 
 export function flowerYear(type: string, seed: number, now: number): { bloom: number; foliage: number } {
@@ -34,7 +34,7 @@ export function flowerYear(type: string, seed: number, now: number): { bloom: nu
   const foliage =
     type === 'azalea' || type === 'camellia'
       ? 1
-      : pulse(p, water ? 0.16 : 0.08, water ? 0.36 : 0.27, 0.74, water ? 0.92 : 0.95);
+      : pulse(p, water ? 0.25 : 0.19, water ? 0.4 : 0.29, 0.74, water ? 0.92 : 0.95);
   return { bloom, foliage };
 }
 export function litterYear(type: string, seed: number, now: number): { amount: number; fresh: number; petals: number } {

@@ -343,7 +343,7 @@ export class Scene {
       height: H,
       zoom: this.camera.zoom,
     });
-    const rainReceivers = ws && ws.wetness > 0.015 && atm.season !== 'winter' ? rainField(world) : undefined;
+    const rainReceivers = ws && ws.wetness > 0.015 ? rainField(world) : undefined;
 
     // Pond bed is in terrain. Fish must be BELOW reflections, glare and ripples.
     spriteFrame();
@@ -370,6 +370,7 @@ export class Scene {
       rainReceivers ? (type, x, y) => rainMaterial(atm, rainReceivers, ws ?? undefined, type, x, y) : undefined,
     );
     drawAnimalReflections(ctx, world, atm, time, {
+      rainWeather: ws ?? undefined,
       life: this.life,
       waterMotion,
       wind: this.wind,

@@ -1,3 +1,4 @@
+import { ecologyYear } from './ecology';
 import { crownAnchorBlend } from './phenology';
 /** Акварельная палитра: цвет мира зависит от сезона и от времени суток. */
 
@@ -169,6 +170,11 @@ export function buildAtmosphere(t: TimeState, overcast = 0): Atmosphere {
     anchors: SeasonId[] = ['winter', 'spring', 'summer', 'autumn'];
   const palette = mixPalette(SEASON_PALETTES[anchors[annual.from]], SEASON_PALETTES[anchors[annual.to]], annual.amount);
 
+  // Bare March soil is ochre/grey, not an almost-April lawn. Moss stays subdued olive.
+  const ecology = ecologyYear(t.now);
+  palette.grass = mix(rgb(176, 164, 139), palette.grass, ecology.green);
+  palette.grassDeep = mix(rgb(139, 130, 107), palette.grassDeep, ecology.green);
+  palette.moss = mix(rgb(147, 143, 126), palette.moss, 0.15 + 0.85 * ecology.green);
   const d = t.daylight;
   // Тучи глушат золотой час и приглушают дневной свет
   const g = t.golden * (1 - overcast * 0.85);
@@ -227,7 +233,7 @@ export function buildAtmosphere(t: TimeState, overcast = 0): Atmosphere {
     skyTop,
     skyBottom,
     lampGlow: clamp01(Math.max(1 - d * 1.35, overcast * 0.55 * (1 - d * 0.5))),
-    fireflies: clamp01(1 - d * 1.5) * (blend.from === 'summer' || blend.from === 'spring' ? 1 : 0.25),
+    fireflies: clamp01(1 - d * 1.5) * ecology.fireflies,
     sunDir,
     sunElev,
     season: blend.from,

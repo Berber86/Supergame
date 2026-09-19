@@ -1,3 +1,5 @@
+import { ecologyYear } from '../world/ecology';
+import { plantYear } from '../world/phenology';
 /**
  * Звук сада — целиком синтезируется через WebAudio, без единого файла.
  * Слои включаются и глушатся плавно, в зависимости от сезона, часа,
@@ -173,6 +175,8 @@ export class GardenAudio {
       hasShishi: boolean;
       catNear: boolean;
       trees: number;
+      /** Actual mean crown density, including evergreen trees. */
+      foliage?: number;
       /** Сколько лягушек сейчас у воды: хор слышно без глаз. */
       frogs?: number;
       /** Течение: 0 — стоячая вода, 1 — быстрый ручей. */
@@ -183,12 +187,12 @@ export class GardenAudio {
   ): void {
     if (!this.ctx || !this.enabled) return;
     const night = t.daylight < 0.28;
-    const season = t.season;
+    const ecology = ecologyYear(t.now);
     // Сеанс практики: сад слышен издали, дыхание и чаши — близко.
     const k = 1 - this.duck * 0.72;
 
     // --- Листва: зависит от ветра и количества деревьев, зимой почти нет ---
-    const foliage = season === 'winter' ? 0.18 : 1;
+    const foliage = ctxInfo.foliage ?? 0.18 + 0.82 * plantYear('maple', 17, t.now).foliage;
     const leafAmt = clamp01(ctxInfo.wind * 0.42) * clamp01(ctxInfo.trees / 10) * foliage;
     this.leaves?.slider.to(leafAmt * 0.16 * k, 1.4);
     if (this.leaves) this.leaves.filter.frequency.value = lerp(1500, 2700, clamp01(ctxInfo.wind * 0.5));
@@ -213,11 +217,8 @@ export class GardenAudio {
     this.rainHeavy?.slider.to(Math.pow(weather.rain, 1.6) * 0.16 * k, 1.1);
 
     // --- Насекомые: цикады днём летом, сверчки ночью ---
-    let insects = 0;
-    if (season === 'summer' && !night && t.daylight > 0.55) insects = 0.5;
-    else if ((season === 'summer' || season === 'autumn') && night) insects = 0.34;
-    else if (season === 'spring' && night) insects = 0.16;
-    insects *= 1 - weather.rain * 0.85; // в дождь замолкают
+    let insects = night ? 0.34 * ecology.moths : t.daylight > 0.55 ? 0.5 * ecology.dragonflies : 0;
+    insects *= (1 - weather.rain) * (1 - weather.snow);
     this.insectSlider?.to(insects * 0.1 * k, 2.2);
 
     // Стрекот: короткие всплески поверх ровного фона
@@ -258,7 +259,7 @@ export class GardenAudio {
 
     // --- Лягушки: хор у воды, громче в сырость и под вечер ---
     const frogs = ctxInfo.frogs ?? 0;
-    if (frogs > 0 && season !== 'winter') {
+    if (frogs > 0 && ecology.frogs * (1 - weather.snow) > 0.05) {
       this.frogTimer -= dt;
       if (this.frogTimer <= 0) {
         this.frogTimer = 1600 + rnd() * 5200;

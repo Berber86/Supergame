@@ -361,7 +361,7 @@ export class Wildlife {
     if (t.daylight > 0.4) this.danced = false;
     for (let i = this.fireflies.length - 1; i >= 0; i--) {
       const f = this.fireflies[i];
-      if (want === 0) {
+      if (i >= want) {
         f.alpha -= dt / 2600;
         if (f.alpha <= 0) {
           this.fireflies.splice(i, 1);
@@ -453,7 +453,7 @@ export class Wildlife {
     const want = inv.moths;
     for (let i = this.moths.length - 1; i >= 0; i--) {
       const m = this.moths[i];
-      if (want === 0) {
+      if (i >= want) {
         m.alpha -= dt / 2600;
         if (m.alpha <= 0) {
           this.moths.splice(i, 1);
@@ -1508,7 +1508,7 @@ export class Wildlife {
 
     for (let i = this.bees.length - 1; i >= 0; i--) {
       const b = this.bees[i];
-      if (want === 0) {
+      if (i >= want) {
         b.alpha -= dt / 2200;
         if (b.alpha <= 0) {
           this.bees.splice(i, 1);
@@ -1516,6 +1516,12 @@ export class Wildlife {
         }
       } else if (b.alpha < 1) {
         b.alpha = Math.min(1, b.alpha + dt / 1200);
+      }
+      // A date change or a flower finishing must not leave a pollen-gathering target on bare stems.
+      if (!b.carrying && b.target && !h.beeSpots.some((p) => p.x === b.target!.x && p.y === b.target!.y)) {
+        b.target = null;
+        b.state = 'fly';
+        b.timer = 0;
       }
       b.timer -= dt;
       b.phase += dt * 0.005;

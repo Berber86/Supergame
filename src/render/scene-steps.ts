@@ -1,3 +1,4 @@
+import { ecologyYear, wildlifeActivity } from '../world/ecology';
 import { spriteSway } from './spriteCache';
 import { rainMaterial, drawSmallHouseDrips, type RainField } from './afterRain';
 import type { WeatherState } from '../world/weatherState';
@@ -573,6 +574,13 @@ interface AnimalEntry {
 /** One source of poses/altitudes/visibility for the animal and its reflection. */
 function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, opts: ObjectsOpts): AnimalEntry[] {
   const list: AnimalEntry[] = [];
+  const activity = wildlifeActivity(atm.time, opts.rainWeather, opts.wind);
+  const seasonalDraw = (amount: number, paint: () => void) => {
+    ctx.save();
+    ctx.globalAlpha *= amount;
+    paint();
+    ctx.restore();
+  };
   if (opts.life) {
     for (const c of opts.life.cats) {
       const tile = world.at(Math.floor(c.tx), Math.floor(c.ty));
@@ -601,6 +609,7 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
     }
     // бабочки — тоже частицы
     for (const f of opts.particles ? opts.life.flutters : []) {
+      if (activity.butterflies <= 0.001) continue;
       const tile = world.at(Math.floor(f.tx), Math.floor(f.ty));
       const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
       const p = isoToScreen(f.tx, f.ty, lvl);
@@ -610,13 +619,14 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
         level: lvl,
         depth: (f.tx + f.ty) * 100 + lvl * 20 + 8,
         alt: f.alt,
-        draw: () => drawButterfly(ctx, f, p.x, p.y, atm, time),
+        draw: () => seasonalDraw(activity.butterflies, () => drawButterfly(ctx, f, p.x, p.y, atm, time)),
       });
     }
     // Жители воды: на общем плане их не разглядеть, а рисовать всё равно
     // пришлось бы — поэтому на дальнем виде бережём кадр.
     if (opts.zoom >= 0.42) {
       for (const fr of opts.life.residents.frogs) {
+        if (activity.frogs <= 0.001) continue;
         if (fr.hidden > 0) continue;
         const tile = world.at(Math.floor(fr.tx), Math.floor(fr.ty));
         const lvl = tile ? tile.level : 0;
@@ -626,10 +636,11 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
           ty: fr.ty,
           level: lvl,
           depth: (fr.tx + fr.ty) * 100 + lvl * 20 + 5,
-          draw: () => drawFrog(ctx, fr, p.x, p.y, atm, time),
+          draw: () => seasonalDraw(activity.frogs, () => drawFrog(ctx, fr, p.x, p.y, atm, time)),
         });
       }
       for (const d of opts.particles ? opts.life.residents.dragonflies : []) {
+        if (activity.dragonflies <= 0.001) continue;
         const tile = world.at(Math.floor(d.tx), Math.floor(d.ty));
         const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
         const p = isoToScreen(d.tx, d.ty, lvl);
@@ -639,7 +650,7 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
           level: lvl,
           depth: (d.tx + d.ty) * 100 + lvl * 20 + 9,
           alt: d.alt,
-          draw: () => drawDragonfly(ctx, d, p.x, p.y, atm, time),
+          draw: () => seasonalDraw(activity.dragonflies, () => drawDragonfly(ctx, d, p.x, p.y, atm, time)),
         });
       }
     }
@@ -685,6 +696,7 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
     // Ёжик и мышка — видны при приближении (0.5+), но и на общем плане как точки
     if (opts.zoom >= 0.42) {
       for (const e of opts.life.wildlife.hedgehogs) {
+        if (activity.hedgehog <= 0.001) continue;
         const tile = world.at(Math.floor(e.tx), Math.floor(e.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(e.tx, e.ty, lvl);
@@ -693,7 +705,7 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
           ty: e.ty,
           level: lvl,
           depth: (e.tx + e.ty) * 100 + lvl * 20 + 12,
-          draw: () => drawHedgehog(ctx, e, p.x, p.y, atm, time),
+          draw: () => seasonalDraw(activity.hedgehog, () => drawHedgehog(ctx, e, p.x, p.y, atm, time)),
         });
       }
       for (const m of opts.life.wildlife.mice) {
@@ -734,6 +746,7 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
         });
       }
       for (const tu of opts.life.wildlife.turtles) {
+        if (activity.turtle <= 0.001) continue;
         const tile = world.at(Math.floor(tu.tx), Math.floor(tu.ty));
         const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
         const p = isoToScreen(tu.tx, tu.ty, lvl);
@@ -742,13 +755,14 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
           ty: tu.ty,
           level: lvl,
           depth: (tu.tx + tu.ty) * 100 + lvl * 20 + 8,
-          draw: () => drawTurtle(ctx, tu, p.x, p.y, atm, time),
+          draw: () => seasonalDraw(activity.turtle, () => drawTurtle(ctx, tu, p.x, p.y, atm, time)),
         });
       }
     }
     // Светлячки, мотыльки и пчёлы — ночная и дневная мелочь: на дальнем плане бережём кадр
     if (opts.zoom >= 0.42 && opts.particles) {
       for (const f of opts.life.wildlife.fireflies) {
+        if (activity.fireflies <= 0.001) continue;
         const tile = world.at(Math.floor(f.tx), Math.floor(f.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(f.tx, f.ty, lvl);
@@ -757,10 +771,11 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
           ty: f.ty,
           level: lvl,
           depth: (f.tx + f.ty) * 100 + lvl * 20 + 200,
-          draw: () => drawFirefly(ctx, f, p.x, p.y, atm, time),
+          draw: () => seasonalDraw(activity.fireflies, () => drawFirefly(ctx, f, p.x, p.y, atm, time)),
         });
       }
       for (const m of opts.life.wildlife.moths) {
+        if (activity.moths <= 0.001) continue;
         const tile = world.at(Math.floor(m.tx), Math.floor(m.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(m.tx, m.ty, lvl);
@@ -769,10 +784,11 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
           ty: m.ty,
           level: lvl,
           depth: (m.tx + m.ty) * 100 + lvl * 20 + 210,
-          draw: () => drawMoth(ctx, m, p.x, p.y, atm, time),
+          draw: () => seasonalDraw(activity.moths, () => drawMoth(ctx, m, p.x, p.y, atm, time)),
         });
       }
       for (const b of opts.life.wildlife.bees) {
+        if (activity.bees <= 0.001) continue;
         const tile = world.at(Math.floor(b.tx), Math.floor(b.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(b.tx, b.ty, lvl);
@@ -782,7 +798,7 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
           level: lvl,
           depth: (b.tx + b.ty) * 100 + lvl * 20 + 220,
           alt: b.alt,
-          draw: () => drawBee(ctx, b, p.x, p.y, atm, time),
+          draw: () => seasonalDraw(activity.bees, () => drawBee(ctx, b, p.x, p.y, atm, time)),
         });
       }
     }
@@ -892,9 +908,10 @@ export function drawColorGrade(ctx: Ctx, W: number, H: number, atm: Atmosphere):
     ctx.fillStyle = css({ r: 70, g: 96, b: 176 }, (1 - t.daylight * 2) * 0.32);
     ctx.fillRect(0, 0, W, H);
   }
-  if (atm.season === 'winter') {
+  const cold = ecologyYear(t.now).cold;
+  if (cold > 0.001) {
     ctx.globalCompositeOperation = 'soft-light';
-    ctx.fillStyle = css({ r: 190, g: 214, b: 236 }, 0.14);
+    ctx.fillStyle = css({ r: 190, g: 214, b: 236 }, 0.14 * cold);
     ctx.fillRect(0, 0, W, H);
   }
 

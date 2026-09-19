@@ -1,3 +1,4 @@
+import { cachedCanopyDensity } from '../world/canopy';
 /**
  * Игровой цикл: время, погода, живность, звук и сам кадр рендера.
  * Всё, что меняется раз в кадр или раз в паузу, — здесь.
@@ -52,15 +53,19 @@ export function startLoop(deps: LoopDeps): void {
   let observeAccum = 1200;
 
   /** Что сейчас звучит вокруг: считаем по составу сада рядом с камерой. */
-  function gatherAudioContext() {
+  function gatherAudioContext(now: number) {
     let water = 0;
-    let trees = 0;
+    let trees = 0,
+      foliage = 0;
     let hasChime = false;
     let hasShishi = false;
     for (const o of world.objects) {
       const item = ITEM_BY_ID.get(o.type);
       if (!item) continue;
-      if (item.kind === 'tree') trees++;
+      if (item.kind === 'tree') {
+        trees++;
+        foliage += 0.18 + 0.82 * cachedCanopyDensity(o.type, o.seed, now);
+      }
       if (o.type === 'wind_chime') hasChime = true;
       if (o.type === 'shishi') hasShishi = true;
     }
@@ -77,6 +82,7 @@ export function startLoop(deps: LoopDeps): void {
       catNear: life.cats.length > 0,
       frogs: life.residents.frogs.filter((f) => f.hidden <= 0 && !f.gone).length,
       trees,
+      foliage: trees ? foliage / trees : 0,
     };
   }
 
@@ -163,7 +169,7 @@ export function startLoop(deps: LoopDeps): void {
     audioAccum -= dt;
     if (audioAccum <= 0) {
       audioAccum = 400;
-      audio.update(400, t, weatherSys.state, gatherAudioContext());
+      audio.update(400, t, weatherSys.state, gatherAudioContext(t.now));
     }
   }
 

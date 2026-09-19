@@ -1,3 +1,4 @@
+import { ecologyYear, wildlifeActivity, nectarBloom } from './ecology';
 /**
  * Среда обитания: что именно в саду приглашает жителей.
  *
@@ -65,7 +66,7 @@ export interface Habitat {
   /** Камни у воды, где греется черепаха. */
   turtleSpots: Vec[];
   /** Цветы и ульи — туда летят пчёлы. */
-  beeSpots: Vec[];
+  beeSpots: (Vec & { type?: string; seed?: number })[];
   /** Ульи — зовут пчёл. */
   beehives: Vec[];
   /** Бельчатники — зовут белок. */
@@ -199,7 +200,6 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
         break;
       case 'beehive':
         h.beehives.push(c);
-        h.beeSpots.push(c);
         break;
       case 'squirrel_feeder':
         h.squirrelFeeders.push(c);
@@ -219,7 +219,7 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
     }
     if (item.kind === 'shrub' || o.type === 'hedge') h.shrubs.push(c);
     if (['lily', 'iris', 'azalea', 'lotus', 'wisteria', 'camellia'].includes(o.type)) {
-      h.beeSpots.push(c);
+      h.beeSpots.push({ ...c, type: o.type, seed: o.seed });
     }
     if (['rock_mid', 'rock_big', 'water_stone'].includes(o.type)) {
       // Камень у воды — место для черепахи
@@ -280,7 +280,8 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
       const t = world.tiles[y * GRID + x];
       if (t.water || t.indoor) continue;
       if (t.ground !== 'moss' && t.ground !== 'grass' && t.ground !== 'gravel') continue;
-      if (world.objects.some((o) => Math.abs(o.tx + 0.5 - (x + 0.5)) < 0.8 && Math.abs(o.ty + 0.5 - (y + 0.5)) < 0.8)) continue;
+      if (world.objects.some((o) => Math.abs(o.tx + 0.5 - (x + 0.5)) < 0.8 && Math.abs(o.ty + 0.5 - (y + 0.5)) < 0.8))
+        continue;
       const nearShrub = h.shrubs.some((tr) => Math.hypot(tr.x - (x + 0.5), tr.y - (y + 0.5)) < 4);
       const nearTree = h.trees.some((tr) => Math.hypot(tr.x - (x + 0.5), tr.y - (y + 0.5)) < 4);
       if (!nearShrub && !nearTree) continue;
@@ -325,7 +326,8 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
     for (const tr of h.trees) h.squirrelSpots.push(tr);
   }
   // Добавим ещё немного точек у деревьев для прыжков
-  for (const g of h.glades) if (h.squirrelSpots.length < 24) h.squirrelSpots.push({ x: g.x + (Math.random() - 0.5), y: g.y });
+  for (const g of h.glades)
+    if (h.squirrelSpots.length < 24) h.squirrelSpots.push({ x: g.x + (Math.random() - 0.5), y: g.y });
 
   // --- Черепахи: камни у воды ---
   // Фильтруем камни, оставляем только те, что в 2.5 тайла от воды
@@ -335,7 +337,10 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
       let ok = false;
       for (const p of h.ponds) {
         for (const shore of p.shores) {
-          if (Math.hypot(shore.x - s.x, shore.y - s.y) < 3.2) { ok = true; break; }
+          if (Math.hypot(shore.x - s.x, shore.y - s.y) < 3.2) {
+            ok = true;
+            break;
+          }
         }
         if (ok) break;
       }
@@ -354,7 +359,7 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
   if (h.beeSpots.length === 0) {
     for (const g of h.glades) if (h.beeSpots.length < 12) h.beeSpots.push(g);
   }
-  // Ульи уже в beeSpots, но если их нет — всё равно есть цветы
+  // A hive is a home, not a source of nectar.
 
   // --- Веранда: место кошачьих встреч и птижьих укоров ---
   for (let y = 0; y < GRID; y++)
@@ -411,12 +416,30 @@ export interface Invitation {
   moths: number;
 }
 
+const nectarCache = new WeakMap<Habitat, { key: number; habitat: Habitat }>();
+/** Filter existing sites by their actual bloom; no re-scan of the world per insect/frame. */
+export function floweringHabitat(h: Habitat, now: number): Habitat {
+  const key = Math.floor(now / 21_600_000),
+    old = nectarCache.get(h);
+  if (old?.key === key) return old.habitat;
+  const time = (key + 0.5) * 21_600_000;
+  const habitat = {
+    ...h,
+    beeSpots: h.beeSpots.filter((p) => nectarBloom(p.type ?? 'wildflowers', p.seed ?? 17, time) > 0.12),
+  };
+  nectarCache.set(h, { key, habitat });
+  return habitat;
+}
+
 /**
  * Правила приглашения. Числа подобраны так, чтобы жителей было заметно,
  * но немного: это дзен-песочница, а не ферма. Сезон и погода важнее
  * статистики — состав меняется сам, без единого счётчика у игрока.
  */
 export function invitations(h: Habitat, t: TimeState, wx: WeatherState | null, wind = 0.5): Invitation {
+  h = floweringHabitat(h, t.now);
+  const activity = wildlifeActivity(t, wx, wind),
+    year = ecologyYear(t.now);
   const season = t.season;
   const rain = wx ? Math.max(wx.rain, wx.snow * 0.6) : 0;
   const wet = wx ? wx.wetness : 0;
@@ -424,7 +447,7 @@ export function invitations(h: Habitat, t: TimeState, wx: WeatherState | null, w
 
   // ---- Лягушки: зимой спят в иле, в дождь выходят и заметнее всего ----
   let frogs = 0;
-  if (season !== 'winter') {
+  if (activity.frogs > 0) {
     for (const p of h.ponds) {
       if (p.area < 3) continue;
       frogs += p.area >= 12 ? 2 : 1;
@@ -441,7 +464,7 @@ export function invitations(h: Habitat, t: TimeState, wx: WeatherState | null, w
 
   // ---- Стрекозы: лето — их время, зимой их нет, в ливень прячутся ----
   let dragonflies = 0;
-  const base = season === 'summer' ? 5 : season === 'autumn' ? 3 : season === 'spring' ? 2 : 0;
+  const base = 5;
   if (base > 0 && h.water >= 4 && !stormy && rain < 0.2 && t.daylight > 0.35) {
     dragonflies = base;
     if (h.perches.length === 0) dragonflies -= 2; // сесть некуда — патруль без отдыха
@@ -467,7 +490,7 @@ export function invitations(h: Habitat, t: TimeState, wx: WeatherState | null, w
 
   // ---- Светлячки: гаснут днём, в дождь и зимой; любят воду и тень рощи ----
   let fireflies = 0;
-  if (season === 'summer' && t.daylight < 0.18 && rain < 0.15 && !stormy) {
+  if (activity.fireflies > 0 && t.daylight < 0.18 && rain < 0.15 && !stormy) {
     fireflies = 3 + Math.min(6, Math.floor(h.trees.length / 3));
     if (h.water > 0) fireflies += 3;
     fireflies = Math.max(0, Math.min(12, fireflies));
@@ -485,7 +508,7 @@ export function invitations(h: Habitat, t: TimeState, wx: WeatherState | null, w
 
   // ---- Ёжик: преимущественно ночной, любит кусты и тихие уголки, зимой спит ----
   let hedgehog = 0;
-  if (season !== 'winter' && h.hedgehogSpots.length > 0 && t.daylight < 0.32 && !stormy) {
+  if (activity.hedgehog > 0 && h.hedgehogSpots.length > 0 && t.daylight < 0.32 && !stormy) {
     // Чем больше кустов и полян, тем вероятнее
     const cover = h.shrubs.length + h.trees.length * 0.3;
     if (cover >= 2) {
@@ -535,38 +558,55 @@ export function invitations(h: Habitat, t: TimeState, wx: WeatherState | null, w
   // ---- Черепаха: греется на камне у воды днём, любит тепло ----
   let turtle = 0;
   if (h.turtleSpots.length > 0 && h.water >= 4 && t.daylight > 0.4 && !stormy) {
-    if (season === 'winter') turtle = 0;
-    else if (season === 'summer') turtle = h.water >= 8 ? 2 : 1;
-    else turtle = 1;
+    turtle = h.water >= 8 ? 2 : 1;
     if (rain > 0.35) turtle = 0;
   }
 
   // ---- Пчёлы: цветы и ульи, тёплый день, не дождь ----
   let bees = 0;
   if (h.beeSpots.length > 0 && t.daylight > 0.45 && !stormy && rain < 0.2) {
-    if (season === 'winter') bees = 0;
-    else {
-      const flowerK = h.beeSpots.length;
-      const hiveK = h.beehives.length * 4;
-      bees = Math.min(8, Math.floor((flowerK + hiveK) / 2) + 1);
-      if (season === 'spring' || season === 'summer') bees = Math.min(8, bees + 2);
-      if (h.beehives.length > 0) bees = Math.max(bees, 3);
-    }
+    const flowerK = h.beeSpots.length;
+    const hiveK = h.beehives.length * 4;
+    bees = Math.min(8, Math.floor((flowerK + hiveK) / 2) + 1);
   }
 
   // ---- Хор: поют вместе, когда сыро и не полдень ----
   let moths = 0;
-  if (season !== 'winter' && t.daylight < 0.3 && rain < 0.35 && !stormy) {
+  if (activity.moths > 0 && t.daylight < 0.3 && rain < 0.35 && !stormy) {
     // Мотыльки приходят к свету и цветам тёплой ночью, вместе со светлячками
     const lightK = h.shelters.length + h.baths.length;
     moths = 2 + Math.min(6, Math.floor((h.beeSpots.length + lightK) / 2));
     if (h.beeSpots.length === 0) moths = Math.max(0, moths - 2);
-    if (season === 'summer') moths += 2;
+    moths += Math.round(2 * year.warmth);
     moths = Math.max(0, Math.min(8, moths));
   }
 
+  // Population counts are discrete; seeded silhouettes fade with the same continuous activity in rendering.
+  frogs = Math.floor(frogs * activity.frogs + 0.01);
+  dragonflies = Math.floor(dragonflies * activity.dragonflies + 0.01);
+  fireflies = Math.floor(fireflies * activity.fireflies + 0.01);
+  hedgehog = Math.floor(hedgehog * activity.hedgehog + 0.01);
+  turtle = Math.floor(turtle * activity.turtle + 0.01);
+  bees = Math.floor(bees * activity.bees + 0.01);
+  moths = Math.floor(moths * activity.moths + 0.01);
   const choral = rain > 0.2 || wet > 0.4 || t.hours >= 18 || t.hours < 6;
-  const chorus = frogs >= 2 && choral && season !== 'winter' ? frogs : 0;
+  const chorus = frogs >= 2 && choral ? frogs : 0;
 
-  return { frogs, dragonflies, feederBirds, guestCat, chorus, fireflies, heron, deer, hedgehog, mice, owl, squirrel, turtle, bees, moths };
+  return {
+    frogs,
+    dragonflies,
+    feederBirds,
+    guestCat,
+    chorus,
+    fireflies,
+    heron,
+    deer,
+    hedgehog,
+    mice,
+    owl,
+    squirrel,
+    turtle,
+    bees,
+    moths,
+  };
 }

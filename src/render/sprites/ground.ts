@@ -1,3 +1,4 @@
+import { ecologyYear } from '../../world/ecology';
 import { crownAnchorBlend } from '../../world/phenology';
 import { flowerYear, winterYear } from '../../world/annualEnvironment';
 /** Камни и мелочь земли: валуны, шаговые камни, мох, цветы и папоротники. */
@@ -252,12 +253,13 @@ export const drawFern: Drawer = (d) => {
     { r: 104, g: 146, b: 92 },
     { r: 170, g: 152, b: 96 },
   ]);
-  const c = litc(base, atm);
+  const waking = ecologyYear(atm.time.now).green;
+  const c = litc(mix({ r: 155, g: 137, b: 107 }, base, waking), atm);
   const count = 5 + Math.floor(hash2(obj.seed, 43, 11) * 5);
   for (let i = 0; i < count; i++) {
     const r = hash2(i, obj.seed, 23);
     const ang = (i / count) * Math.PI - Math.PI / 2 + (r - 0.5) * 0.3;
-    const len = 16 + r * 10;
+    const len = (16 + r * 10) * (0.3 + 0.7 * waking);
     const sway = Math.sin(d.time * 0.0007 + obj.seed + i) * 2 * d.wind;
     const ex = d.x + Math.cos(ang) * len + sway;
     const ey = d.y - Math.abs(Math.sin(ang)) * len * 0.8 - 3;

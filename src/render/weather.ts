@@ -1,185 +1,88 @@
-import { winterYear, litterYear } from '../world/annualEnvironment';
-import { plantYear } from '../world/phenology';
-/** Частицы: лепестки сакуры, снег, светлячки, листья, дымка. */
-
+import { ecologyYear } from '../world/ecology';
+/** Windborne litter from actual trees. Rain/snow belong to RainRenderer;
+ * fireflies belong to habitat-driven wildlife, not a second screen-space population. */
+import { DAY_MS } from '../core/clock';
 import { clamp01, hash2, makeRng } from '../core/rng';
 import { Atmosphere, RGB, css, mix } from '../world/palette';
-import { Ctx, glow } from './paint';
+import { Ctx } from './paint';
 
 interface Particle {
   x: number;
   y: number;
-  z: number; // глубина 0..1 — влияет на размер и скорость
+  z: number;
   vx: number;
   vy: number;
   rot: number;
   vr: number;
-  life: number;
+  age: number;
   seed: number;
+  kind: 'petal' | 'leaf';
 }
-
 export class Weather {
-  private petals: Particle[] = [];
-  private snow: Particle[] = [];
-  private flies: Particle[] = [];
-  private leaves: Particle[] = [];
+  private particles: Particle[] = [];
   rnd = makeRng(4242);
   private w = 0;
   private h = 0;
-
+  private calendar: number | undefined;
   resize(w: number, h: number): void {
     this.w = w;
     this.h = h;
   }
-
-  private spawn(kind: 'petal' | 'snow' | 'fly' | 'leaf'): Particle {
+  /** The source tree has already checked its own seeded flowering/shedding phase. */
+  emitAt(x: number, y: number, kind: 'petal' | 'leaf', seed: number): void {
+    if (this.particles.length >= 96) this.particles.shift();
     const r = this.rnd;
-    const z = 0.35 + r() * 0.65;
-    if (kind === 'fly') {
-      return {
-        x: r() * this.w,
-        y: this.h * (0.25 + r() * 0.7),
-        z,
-        vx: (r() - 0.5) * 0.14,
-        vy: (r() - 0.5) * 0.1,
-        rot: r() * Math.PI * 2,
-        vr: (r() - 0.5) * 0.02,
-        life: 4 + r() * 14,
-        seed: r() * 1000,
-      };
-    }
-    return {
-      x: r() * (this.w + 200) - 100,
-      y: -30 - r() * this.h * 0.4,
-      z,
-      vx: kind === 'snow' ? (r() - 0.5) * 0.24 : 0.16 + r() * 0.3,
-      vy: kind === 'snow' ? 0.13 + r() * 0.16 : kind === 'leaf' ? 0.2 + r() * 0.2 : 0.16 + r() * 0.22,
-      rot: r() * Math.PI * 2,
-      vr: (r() - 0.5) * 0.04,
-      life: 1,
-      seed: r() * 1000,
-    };
-  }
-
-  /** Лепесток/лист, сорванный с конкретного дерева, — уже в экранных координатах. */
-  emitAt(sx: number, sy: number, kind: 'petal' | 'leaf', seed: number): void {
-    const r = this.rnd;
-    const p: Particle = {
-      x: sx,
-      y: sy,
+    this.particles.push({
+      x,
+      y,
+      kind,
+      seed,
       z: 0.55 + r() * 0.45,
       vx: 0.1 + r() * 0.3,
       vy: 0.12 + r() * 0.16,
       rot: r() * Math.PI * 2,
       vr: (r() - 0.5) * 0.05,
-      life: 1,
-      seed,
-    };
-    if (kind === 'petal') this.petals.push(p);
-    else this.leaves.push(p);
+      age: 0,
+    });
   }
-
   update(dt: number, atm: Atmosphere): void {
-    const litter = litterYear('maple', 17, atm.time.now);
-    const targetPetals = Math.round(22 * plantYear('sakura', 17, atm.time.now).bloom);
-    const targetSnow = Math.round(90 * winterYear(atm.time.now).snow);
-    const targetLeaves = Math.round(16 * litter.amount * litter.fresh);
-    const targetFlies = Math.round(34 * atm.fireflies);
-
-    this.fill(this.petals, targetPetals, 'petal');
-    this.fill(this.snow, targetSnow, 'snow');
-    this.fill(this.leaves, targetLeaves, 'leaf');
-    this.fill(this.flies, targetFlies, 'fly');
-
-    const step = (arr: Particle[], kind: 'petal' | 'snow' | 'fly' | 'leaf') => {
-      for (let i = arr.length - 1; i >= 0; i--) {
-        const p = arr[i];
-        if (kind === 'fly') {
-          p.vx += (Math.sin(p.seed + performance.now() * 0.0004) * 0.04 - p.vx) * 0.02;
-          p.vy += (Math.cos(p.seed * 1.3 + performance.now() * 0.0003) * 0.03 - p.vy) * 0.02;
-          p.x += p.vx * dt * 0.6;
-          p.y += p.vy * dt * 0.6;
-          p.life -= dt * 0.001;
-          if (p.life <= 0 || p.x < -50 || p.x > this.w + 50 || p.y < 0 || p.y > this.h) arr.splice(i, 1);
-          continue;
-        }
-        const drift = Math.sin(performance.now() * 0.0008 + p.seed) * (kind === 'snow' ? 0.22 : 0.34);
-        p.x += (p.vx + drift) * dt * 0.09 * p.z;
-        p.y += p.vy * dt * 0.09 * p.z;
-        p.rot += p.vr * dt * 0.06;
-        if (p.y > this.h + 40 || p.x > this.w + 120) arr.splice(i, 1);
-      }
-    };
-
-    step(this.petals, 'petal');
-    step(this.snow, 'snow');
-    step(this.leaves, 'leaf');
-    step(this.flies, 'fly');
+    if (this.calendar !== undefined && Math.abs(atm.time.now - this.calendar) > DAY_MS) this.particles = [];
+    this.calendar = atm.time.now;
+    const step = Number.isFinite(dt) ? Math.max(0, dt) : 0;
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.age += step;
+      const drift = Math.sin(performance.now() * 0.0008 + p.seed) * 0.34;
+      p.x += (p.vx + drift) * step * 0.09 * p.z;
+      p.y += p.vy * step * 0.09 * p.z;
+      p.rot += p.vr * step * 0.06;
+      if (p.age > 40000 || p.y > this.h + 40 || p.x > this.w + 120 || p.x < -120) this.particles.splice(i, 1);
+    }
   }
-
-  private fill(arr: Particle[], target: number, kind: 'petal' | 'snow' | 'fly' | 'leaf'): void {
-    while (arr.length < target) arr.push(this.spawn(kind));
-    while (arr.length > target + 40) arr.shift();
-  }
-
   draw(ctx: Ctx, atm: Atmosphere): void {
-    const snowAmount = winterYear(atm.time.now).snow;
-    const petalAmount = plantYear('sakura', 17, atm.time.now).bloom;
-    const litter = litterYear('maple', 17, atm.time.now);
-    // Лепестки
-    const petalCol = mix({ r: 250, g: 214, b: 226 }, atm.lightTint, atm.lightAmount * 0.6);
-    for (const p of this.petals) this.drawPetal(ctx, p, petalCol, 0.75 * petalAmount);
-
-    // Осенние листья
-    for (const p of this.leaves) {
+    for (const p of this.particles) {
       const warm = hash2(p.seed | 0, 1, 3);
-      const c = mix(
-        warm > 0.6 ? { r: 214, g: 110, b: 68 } : warm > 0.3 ? { r: 226, g: 168, b: 76 } : { r: 186, g: 96, b: 62 },
-        atm.lightTint,
-        atm.lightAmount * 0.5,
-      );
-      this.drawPetal(ctx, p, c, 0.8 * litter.amount * litter.fresh, 1.35);
-    }
-
-    // Снег
-    const snowCol = mix({ r: 252, g: 252, b: 255 }, atm.lightTint, atm.lightAmount * 0.7);
-    for (const p of this.snow) {
-      const r = 1.1 + p.z * 2.3;
-      ctx.fillStyle = css(snowCol, (0.32 + p.z * 0.5) * snowAmount);
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Светлячки
-    if (this.flies.length) {
+      const base: RGB =
+        p.kind === 'petal'
+          ? { r: 250, g: 214, b: 226 }
+          : warm > 0.6
+            ? { r: 214, g: 110, b: 68 }
+            : warm > 0.3
+              ? { r: 226, g: 168, b: 76 }
+              : { r: 186, g: 96, b: 62 };
+      const color = mix(base, atm.lightTint, atm.lightAmount * 0.6);
+      const size = (2.2 + p.z * 3.4) * (p.kind === 'leaf' ? 1.35 : 1);
       ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      for (const p of this.flies) {
-        const pulse = clamp01(0.35 + Math.sin(performance.now() * 0.003 + p.seed) * 0.65);
-        const fade = clamp01(Math.min(p.life, 1));
-        const col: RGB = { r: 210, g: 255, b: 170 };
-        glow(ctx, p.x, p.y, 16 + p.z * 12, col, pulse * fade * 0.55 * atm.fireflies);
-        ctx.fillStyle = css({ r: 240, g: 255, b: 210 }, pulse * fade * 0.85);
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 1.3 + p.z, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = css(color, 0.75 * clamp01((40000 - p.age) / 5000));
+      ctx.beginPath();
+      ctx.moveTo(0, -size);
+      ctx.bezierCurveTo(size * 0.9, -size * 0.5, size * 0.8, size * 0.6, 0, size);
+      ctx.bezierCurveTo(-size * 0.8, size * 0.6, -size * 0.9, -size * 0.5, 0, -size);
+      ctx.fill();
       ctx.restore();
     }
-  }
-
-  private drawPetal(ctx: Ctx, p: Particle, col: RGB, alpha: number, sizeK = 1): void {
-    const s = (2.2 + p.z * 3.4) * sizeK;
-    ctx.save();
-    ctx.translate(p.x, p.y);
-    ctx.rotate(p.rot);
-    ctx.scale(1, 0.55 + Math.abs(Math.sin(p.rot * 1.4)) * 0.6);
-    ctx.fillStyle = css(col, alpha * (0.4 + p.z * 0.6));
-    ctx.beginPath();
-    ctx.ellipse(0, 0, s, s * 0.62, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
   }
 }
 
@@ -189,8 +92,8 @@ export function drawMist(ctx: Ctx, w: number, h: number, atm: Atmosphere, time: 
   // дымка на рассвете и в холодные сезоны
   let strength = 0;
   if (t.dayT > 0.18 && t.dayT < 0.32) strength = 0.55;
-  if (atm.season === 'winter') strength = Math.max(strength, 0.25);
-  if (atm.season === 'autumn') strength = Math.max(strength, 0.1);
+  const year = ecologyYear(t.now);
+  strength = Math.max(strength, 0.25 * year.cold + 0.1 * (1 - year.green) * (1 - year.cold));
   if (t.isNight) strength = Math.max(strength, 0.2);
   if (strength < 0.02) return;
 

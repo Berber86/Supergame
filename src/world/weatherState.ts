@@ -1,10 +1,11 @@
+import { ecologyYear } from './ecology';
 /**
  * Погода как состояние мира: ясно, дождь, гроза, туман, снегопад.
  * Меняется сама, редко и плавно — резкие перемены разрушили бы покой.
  */
 
 import { clamp01, lerp, makeRng } from '../core/rng';
-import { SeasonId, TimeState } from '../core/clock';
+import { TimeState } from '../core/clock';
 
 export type WeatherKind = 'auto' | 'clear' | 'rain' | 'storm' | 'fog' | 'snow';
 
@@ -77,30 +78,14 @@ export class WeatherSystem {
     }
   }
 
-  /** Какая погода уместна в этом сезоне. */
-  private roll(season: SeasonId): ActiveWeather {
-    // Непогода — редкий гость: чем реже, тем ценнее
-    const r = rnd();
-    if (season === 'winter') {
-      if (r < 0.8) return 'clear';
-      if (r < 0.94) return 'snow';
-      return 'fog';
-    }
-    if (season === 'summer') {
-      if (r < 0.82) return 'clear';
-      if (r < 0.93) return 'rain';
-      if (r < 0.97) return 'storm';
-      return 'fog';
-    }
-    if (season === 'autumn') {
-      if (r < 0.8) return 'clear';
-      if (r < 0.92) return 'rain';
-      if (r < 0.98) return 'fog';
-      return 'storm';
-    }
-    // весна
-    if (r < 0.82) return 'clear';
+  /** Continuous probabilities: March thaw is not the same weather regime as late May. */
+  private roll(now: number): ActiveWeather {
+    const year = ecologyYear(now),
+      r = rnd();
+    if (r < 0.8) return 'clear';
+    if (r < 0.8 + 0.14 * year.cold) return 'snow';
     if (r < 0.94) return 'rain';
+    if (r < 0.94 + 0.035 * year.warmth) return 'storm';
     return 'fog';
   }
 
@@ -111,12 +96,20 @@ export class WeatherSystem {
       this.timer -= dt;
       if (this.timer <= 0) {
         // Ясная погода держится дольше — сад по умолчанию спокоен
-        this.target = this.roll(t.season);
+        this.target = this.roll(t.now);
         // Ясень держится подолгу, непогода приходит ненадолго и памятью
         this.timer = this.target === 'clear' ? 480_000 + rnd() * 480_000 : 40_000 + rnd() * 50_000;
       }
     }
 
+    const year = ecologyYear(t.now);
+    // Calendar jumps must not retain a summer thunderstorm or snow in July in AUTO mode.
+    // Explicit artistic weather overrides remain available.
+    if (this.forced === 'auto') {
+      if (this.target === 'snow' && year.cold < 0.08) this.target = 'rain';
+      if (this.target === 'storm' && year.warmth < 0.15) this.target = 'rain';
+      if (this.target === 'rain' && year.cold > 0.75) this.target = 'snow';
+    }
     // --- Плавный переход к цели ---
     const s = this.state;
     const speed = dt / 9000; // ~9 секунд на полную смену
@@ -142,10 +135,7 @@ export class WeatherSystem {
     s.overcast = towards(s.overcast, wantOvercast);
 
     // Мокрые поверхности: быстро намокают, медленно сохнут
-    if (t.season === 'winter') {
-      s.wetness = 0;
-      s.roofWetness = 0;
-    } else if (s.rain > 0.05) {
+    if (s.rain > 0.05) {
       s.wetness = clamp01(s.wetness + dt / 6000);
       s.roofWetness = clamp01((s.roofWetness ?? 0) + dt / 4000);
     } else {
@@ -153,6 +143,9 @@ export class WeatherSystem {
       s.wetness = clamp01(s.wetness - (dt * drying) / 180000);
       s.roofWetness = clamp01((s.roofWetness ?? 0) - (dt * (0.5 + t.daylight * 0.5)) / 22000);
     }
+
+    s.wetness = Math.min(s.wetness, 1 - year.cold);
+    s.roofWetness = Math.min(s.roofWetness ?? 0, 1 - year.cold);
 
     s.intensity = Math.max(s.rain, s.snow, s.fog);
     this.current = this.target;

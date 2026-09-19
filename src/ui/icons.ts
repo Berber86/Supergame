@@ -1,13 +1,15 @@
 /** Миниатюрные иконки предметов — рисуются тем же кодом, что и сад, но в маленьком канвасе. */
 
-import { Atmosphere } from '../world/palette';
+import { computeTime } from '../core/clock';
+import { crownCacheKey, crownCacheTime } from '../world/phenology';
+import { buildAtmosphere, Atmosphere } from '../world/palette';
 import { drawObject, hasDrawer } from '../render/sprites';
 import { PlacedObject } from '../world/types';
 
 const cache = new Map<string, string>();
 
 export function itemIcon(itemId: string, atm: Atmosphere, size = 56): string {
-  const key = `${itemId}|${atm.season}|${size}`;
+  const key = `${itemId}|${atm.season}|${crownCacheKey(itemId, 424242, atm.time.now)}|${size}`;
   const hit = cache.get(key);
   if (hit) return hit;
 
@@ -20,8 +22,17 @@ export function itemIcon(itemId: string, atm: Atmosphere, size = 56): string {
 
   if (hasDrawer(itemId)) {
     // Иконка рисуется при «дневном» свете — независимо от времени суток в саду
+    const iconTime = {
+      ...computeTime(crownCacheTime(itemId, 424242, atm.time.now)),
+      dayT: 0.5,
+      hours: 12,
+      minutes: 0,
+      daylight: 1,
+      isNight: false,
+      golden: 0,
+    };
     const iconAtm: Atmosphere = {
-      ...atm,
+      ...buildAtmosphere(iconTime),
       exposure: 1,
       lightAmount: 0.06,
       shadowAmount: 0.16,
@@ -59,6 +70,8 @@ export function itemIcon(itemId: string, atm: Atmosphere, size = 56): string {
 
   const url = c.toDataURL();
   cache.set(key, url);
+  if (cache.size > 300) cache.delete(cache.keys().next().value!);
+  c.width = c.height = 1;
   return url;
 }
 
@@ -66,7 +79,7 @@ export function itemIcon(itemId: string, atm: Atmosphere, size = 56): string {
 const boxCache = new Map<string, { w: number; h: number; cx: number; cy: number }>();
 
 function measure(itemId: string, atm: Atmosphere, obj: PlacedObject): { w: number; h: number; cx: number; cy: number } {
-  const key = `${itemId}|${atm.season}`;
+  const key = `${itemId}|${atm.season}|${crownCacheKey(itemId, obj.seed, atm.time.now)}`;
   const hit = boxCache.get(key);
   if (hit) return hit;
 
@@ -107,6 +120,8 @@ function measure(itemId: string, atm: Atmosphere, obj: PlacedObject): { w: numbe
           cy: (top + bottom) / 2 - S * 0.78,
         };
   boxCache.set(key, box);
+  if (boxCache.size > 300) boxCache.delete(boxCache.keys().next().value!);
+  probe.width = probe.height = 1;
   return box;
 }
 

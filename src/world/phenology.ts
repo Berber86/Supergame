@@ -43,7 +43,7 @@ export function plantYear(type: string, seed: number, now: number): PlantYear {
   const bud = smoothstep(...p.bud, phase) * (1 - smoothstep(p.out[0], p.out[1] + 0.025, phase));
   const bloom =
     type === 'sakura'
-      ? smoothstep(0.12, 0.225, phase) * (1 - smoothstep(0.265, 0.36, phase))
+      ? smoothstep(0.19, 0.245, phase) * (1 - smoothstep(0.265, 0.36, phase))
       : type === 'wisteria'
         ? smoothstep(0.17, 0.265, phase) * (1 - smoothstep(0.31, 0.43, phase))
         : 0;

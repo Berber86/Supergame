@@ -1,3 +1,4 @@
+import { ecologyYear, wildlifeActivity, treeFallActivity } from './ecology';
 /**
  * Живность сада: коты, птицы, бабочки, карпы — и приглашённые жители воды.
  * Агенты со своими намерениями — сад должен жить сам по себе, без участия игрока.
@@ -14,7 +15,7 @@ import { GRID } from '../core/iso';
 import { clamp, hash1, hash2, lerp, makeRng } from '../core/rng';
 import { ITEM_BY_ID } from './catalog';
 import { TimeState } from '../core/clock';
-import { Habitat, Invitation, invitations, scanHabitat } from './habitat';
+import { Habitat, Invitation, invitations, scanHabitat, floweringHabitat } from './habitat';
 import { Residents, Threat } from './residents';
 import { Wildlife } from './wildlife';
 import { WeatherState } from './weatherState';
@@ -362,7 +363,7 @@ export class Life {
       this.habitatTimer = 2000;
       this.habitat = scanHabitat(world, world.grow?.rect ?? null);
     }
-    const h = this.habitat;
+    const h = floweringHabitat(this.habitat, t.now);
     const inv = invitations(h, t, wx ?? null, this.windBase);
     this.invitation = inv;
 
@@ -386,7 +387,7 @@ export class Life {
     this.updateCats(world, t, dt);
     this.updateGuest(world, h, inv, t, dt, now);
     this.updateBirds(world, t, dt, h, inv, wx ?? null);
-    this.updateFlutters(world, t, dt, now);
+    this.updateFlutters(world, t, dt, now, wx);
     this.updateFish(world, dt);
     this.updateFalling(world, t, dt);
   }
@@ -408,7 +409,7 @@ export class Life {
   private updateWind(dt: number, t: TimeState): void {
     const now = performance.now();
     // ровное «дыхание» + сезонная поправка: осенью и зимой ветрено
-    const seasonK = t.season === 'autumn' ? 1.25 : t.season === 'winter' ? 1.15 : 1;
+    const seasonK = 1 + 0.2 * (1 - ecologyYear(t.now).green);
     this.windBase = (0.34 + Math.sin(now * 0.00011) * 0.16 + Math.sin(now * 0.00037) * 0.1) * seasonK;
 
     this.gustTimer -= dt;
@@ -946,12 +947,17 @@ export class Life {
     // Компания у кормушки — событие, которое замечают
     const atFeeder = this.birds.filter((b) => b.place === 'feeder' && b.state !== 'fly-out').length;
     if (atFeeder >= 3) {
-      const fb = this.birds.find(bb => bb.place === 'feeder');
+      const fb = this.birds.find((bb) => bb.place === 'feeder');
       this.note(world, 'flock', fb?.tx, fb?.ty);
     }
     if (t.season === 'winter' && atFeeder >= 2) {
       world.checkMilestone('winter_feeder');
-      this.note(world, 'winter_table', this.birds.find(bb => bb.place === 'feeder')?.tx, this.birds.find(bb => bb.place === 'feeder')?.ty);
+      this.note(
+        world,
+        'winter_table',
+        this.birds.find((bb) => bb.place === 'feeder')?.tx,
+        this.birds.find((bb) => bb.place === 'feeder')?.ty,
+      );
     }
 
     for (let i = this.birds.length - 1; i >= 0; i--) {
@@ -1062,12 +1068,10 @@ export class Life {
 
   // ---------------- Бабочки ----------------
 
-  private updateFlutters(world: World, t: TimeState, dt: number, now: number): void {
-    const season = t.season;
-    const day = t.daylight;
-    const wantButterflies = day > 0.4 && (season === 'spring' || season === 'summer') ? 5 : 0;
-
-    const flowers = findObjects(world, ['lily', 'iris', 'azalea', 'lotus', 'lilypad']);
+  private updateFlutters(world: World, t: TimeState, dt: number, now: number, wx?: WeatherState | null): void {
+    const active = wildlifeActivity(t, wx, this.windBase).butterflies;
+    const flowers = floweringHabitat(this.habitat!, t.now).beeSpots;
+    const wantButterflies = Math.floor(5 * active * (flowers.length ? 1 : 0.35));
 
     while (this.flutters.length < wantButterflies) {
       const spot = flowers.length ? flowers[Math.floor(rnd() * flowers.length)] : randomWalkable(world);
@@ -1151,10 +1155,14 @@ export class Life {
         const item = ITEM_BY_ID.get(o.type);
         if (!item) continue;
         const c = { x: o.tx + item.w / 2, y: o.ty + item.h / 2 };
-        for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
-          const t = world.at(Math.floor(c.x + dx), Math.floor(c.y + dy));
-          if (t?.water) { feedSpots.push({ x: c.x + dx * 0.3, y: c.y + dy * 0.3 }); break; }
-        }
+        for (let dy = -3; dy <= 3; dy++)
+          for (let dx = -3; dx <= 3; dx++) {
+            const t = world.at(Math.floor(c.x + dx), Math.floor(c.y + dy));
+            if (t?.water) {
+              feedSpots.push({ x: c.x + dx * 0.3, y: c.y + dy * 0.3 });
+              break;
+            }
+          }
       }
     }
     for (const f of this.fish) {
@@ -1202,7 +1210,10 @@ export class Life {
         let nd = Infinity;
         for (const sp of feedSpots) {
           const d = Math.hypot(sp.x - f.tx, sp.y - f.ty);
-          if (d < nd) { nd = d; nearest = sp; }
+          if (d < nd) {
+            nd = d;
+            nearest = sp;
+          }
         }
         if (nearest && nd < 2.5) {
           if (!f.feedMemory || nd < Math.hypot(f.feedMemory.x - f.tx, f.feedMemory.y - f.ty)) {
@@ -1231,31 +1242,25 @@ export class Life {
       const nx = f.tx + Math.cos(f.dir) * v;
       const ny = f.ty + Math.sin(f.dir) * v;
       const nt = world.at(Math.floor(nx), Math.floor(ny));
-      if (nt?.water) { f.tx = nx; f.ty = ny; } else f.dir += 0.9;
+      if (nt?.water) {
+        f.tx = nx;
+        f.ty = ny;
+      } else f.dir += 0.9;
     }
   }
 
   // ---------------- Опадание с деревьев ----------------
 
   private updateFalling(world: World, t: TimeState, dt: number): void {
-    const season = t.season;
-    const isPetal = season === 'spring';
-    const isLeaf = season === 'autumn';
-    if (!isPetal && !isLeaf) return;
-
-    // Чем сильнее ветер, тем чаще срывает
     const wind = this.windBase + this.gusts.reduce((a, g) => a + g.strength, 0) * 0.4;
-    const chance = (isPetal ? 0.004 : 0.003) * wind * dt;
-    if (rnd() > chance) return;
-
-    const trees = world.objects.filter((o) => {
-      const item = ITEM_BY_ID.get(o.type);
-      if (!item || item.kind !== 'tree') return false;
-      if (isPetal) return o.type === 'sakura';
-      return o.type === 'maple' || o.type === 'ginkgo' || o.type === 'sakura';
-    });
+    // First sample a real tree, then its shedding rate; dormant trees cannot emit petals.
+    if (rnd() > 0.004 * wind * dt) return;
+    const trees = world.objects.filter((o) => ITEM_BY_ID.get(o.type)?.kind === 'tree');
     if (!trees.length) return;
     const tree = trees[Math.floor(rnd() * trees.length)];
+    const fall = treeFallActivity(tree.type, tree.seed, t.now);
+    const isPetal = fall.petals > 0;
+    if (rnd() > (isPetal ? fall.petals : fall.leaves)) return;
     const item = ITEM_BY_ID.get(tree.type)!;
     if (this.emitted.length < Life.EMITTED_CAP) {
       this.emitted.push({
