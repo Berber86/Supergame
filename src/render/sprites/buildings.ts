@@ -472,42 +472,133 @@ export const drawBirdbath: Drawer = (d) => {
 
 export const drawBeehive: Drawer = (d) => {
   const { ctx, atm, obj } = d;
-  shadowUnder(d, 11, 5, 1);
-  const straw = litc({ r: 206, g: 182, b: 118 }, atm);
+  shadowUnder(d, 14, 6, 1.2);
+  const straw = litc({ r: 212, g: 186, b: 120 }, atm);
+  const strawLight = litc({ r: 232, g: 208, b: 152 }, atm);
   const strawDark = litc({ r: 168, g: 138, b: 84 }, atm);
+  const strawDeep = litc({ r: 138, g: 112, b: 68 }, atm);
   const wood = litc({ r: 132, g: 96, b: 68 }, atm);
+  const woodDark = litc({ r: 94, g: 66, b: 48 }, atm);
+  const honey = litc({ r: 238, g: 188, b: 72 }, atm);
 
-  // Ножки
-  ctx.fillStyle = css(wood, 0.9);
-  ctx.fillRect(d.x - 6, d.y - 2, 2, 6);
-  ctx.fillRect(d.x + 4, d.y - 2, 2, 6);
+  // Подставка — деревянная полочка на 4 ножках
+  ctx.fillStyle = css(wood, 0.96);
+  ctx.beginPath();
+  ctx.moveTo(d.x - 10, d.y - 3);
+  ctx.lineTo(d.x + 10, d.y - 3);
+  ctx.lineTo(d.x + 9, d.y - 1);
+  ctx.lineTo(d.x - 9, d.y - 1);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = css(woodDark, 0.6);
+  ctx.lineWidth = 0.9;
+  ctx.stroke();
+  ctx.fillStyle = css(woodDark, 0.92);
+  const legs: [number, number][] = [
+    [-8, -1],
+    [8, -1],
+    [-7, -2.2],
+    [7, -2.2],
+  ];
+  for (const [ox, oy] of legs) {
+    ctx.fillRect(d.x + ox - 1, d.y + oy, 2, 5);
+  }
 
-  // Корпус — плетёный купол
-  washBlob(ctx, d.x, d.y - 10, 8, 6.5, straw, obj.seed, { alpha: 0.85, edge: 0.3 });
-  // Полоски плетения
-  ctx.strokeStyle = css(strawDark, 0.45);
-  ctx.lineWidth = 0.8;
-  for (let i = 0; i < 4; i++) {
-    const yy = d.y - 14 + i * 3;
+  // Нижний ярус улья — широкий купол
+  washBlob(ctx, d.x, d.y - 8, 10, 7, straw, obj.seed, { layers: 3, alpha: 0.82, edge: 0.28, wobble: 0.22 });
+  washBlob(ctx, d.x - 1.2, d.y - 9, 6, 4, strawLight, obj.seed + 1, { layers: 2, alpha: 0.35, edge: 0.2, wobble: 0.3 });
+  // Верхний ярус — поменьше
+  washBlob(ctx, d.x, d.y - 15.5, 7.2, 5.8, straw, obj.seed + 3, { layers: 3, alpha: 0.86, edge: 0.26, wobble: 0.2 });
+  washBlob(ctx, d.x + 0.8, d.y - 16, 4.5, 3.2, strawLight, obj.seed + 4, { layers: 2, alpha: 0.32, edge: 0.18, wobble: 0.28 });
+
+  // Обвязка верёвкой — три кольца
+  ctx.strokeStyle = css(strawDeep, 0.52);
+  ctx.lineWidth = 1.1;
+  for (const yy of [d.y - 6, d.y - 11.5, d.y - 17]) {
+    const rw = yy < d.y - 14 ? 6.2 : 8.8;
     ctx.beginPath();
-    ctx.ellipse(d.x, yy, 7 - i * 0.5, 0.6, 0, 0, Math.PI * 2);
+    ctx.ellipse(d.x, yy, rw, 0.7, 0, 0, Math.PI * 2);
     ctx.stroke();
   }
-  // Леток
-  ctx.fillStyle = css({ r: 58, g: 48, b: 36 }, 0.9);
+  // вертикальные швы плетения
+  ctx.strokeStyle = css(strawDark, 0.22);
+  ctx.lineWidth = 0.6;
+  for (let a = -2; a <= 2; a++) {
+    ctx.beginPath();
+    ctx.moveTo(d.x + a * 2.6, d.y - 4);
+    ctx.quadraticCurveTo(d.x + a * 2.2, d.y - 10, d.x + a * 1.6, d.y - 20);
+    ctx.stroke();
+  }
+
+  // Леток — тёмная щель с деревянной прилётной доской
+  ctx.fillStyle = css(wood, 0.95);
+  ctx.fillRect(d.x - 4, d.y - 6.2, 8, 1.6);
+  ctx.fillStyle = css({ r: 58, g: 48, b: 36 }, 0.92);
   ctx.beginPath();
-  ctx.ellipse(d.x, d.y - 5, 2.2, 1.2, 0, 0, Math.PI * 2);
+  ctx.ellipse(d.x, d.y - 6, 2.8, 1.3, 0, 0, Math.PI * 2);
   ctx.fill();
-  // Пчёлы у летка — точки
-  if (atm.time.daylight > 0.4) {
-    ctx.fillStyle = css({ r: 48, g: 42, b: 36 }, 0.6);
-    for (let i = 0; i < 3; i++) {
-      const a = d.time * 0.01 + i + obj.seed * 0.1;
+  // мёдный подтёк
+  ctx.fillStyle = css(honey, 0.85);
+  ctx.beginPath();
+  ctx.moveTo(d.x + 0.5, d.y - 5.2);
+  ctx.quadraticCurveTo(d.x + 1.2, d.y - 3, d.x + 0.8, d.y - 1.2);
+  ctx.quadraticCurveTo(d.x + 0.2, d.y - 2.5, d.x + 0.5, d.y - 5.2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = css(mix(honey, { r: 255, g: 240, b: 180 }, 0.4), 0.7);
+  ctx.beginPath();
+  ctx.ellipse(d.x + 0.7, d.y - 2.2, 0.9, 0.9, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Крышечка сверху — глиняная плошка от дождя
+  ctx.fillStyle = css(litc({ r: 148, g: 136, b: 120 }, atm), 0.9);
+  ctx.beginPath();
+  ctx.ellipse(d.x, d.y - 21, 5.2, 1.8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = css(strawDeep, 0.35);
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+
+  // Снег зимой
+  if (atm.season === 'winter') {
+    ctx.fillStyle = css(litc({ r: 246, g: 248, b: 252 }, atm), 0.92);
+    ctx.beginPath();
+    ctx.ellipse(d.x, d.y - 21.2, 5.6, 2.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(d.x - 1, d.y - 8.5, 9.5, 2.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Рой у улья — видимый, тёплый
+  if (atm.time.daylight > 0.28) {
+    const beeCount = atm.time.daylight > 0.6 ? 7 : 4;
+    for (let i = 0; i < beeCount; i++) {
+      const t = d.time * 0.002 + i * 1.7 + obj.seed * 0.13;
+      const r = 4 + (i % 3) * 2.5 + Math.sin(t * 0.7) * 1.5;
+      const ang = t * (0.8 + (i % 2) * 0.4) + i;
+      const bx = d.x + Math.cos(ang) * r;
+      const by = d.y - 14 + Math.sin(ang * 1.3) * r * 0.6 + Math.sin(t * 1.1 + i) * 2;
+      // тельце
+      ctx.fillStyle = css({ r: 48, g: 42, b: 36 }, 0.78);
       ctx.beginPath();
-      ctx.arc(d.x + Math.cos(a) * 4, d.y - 8 + Math.sin(a * 1.3) * 2, 0.6, 0, Math.PI * 2);
+      ctx.ellipse(bx, by, 1.1, 0.7, ang, 0, Math.PI * 2);
+      ctx.fill();
+      // полоска
+      ctx.fillStyle = css(honey, 0.92);
+      ctx.fillRect(bx - 0.5, by - 0.25, 1, 0.5);
+      // крылышки — лёгкий блик
+      ctx.fillStyle = css({ r: 220, g: 230, b: 235 }, 0.55);
+      ctx.beginPath();
+      ctx.ellipse(bx - 0.6, by - 0.4, 0.9, 0.5, -0.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(bx + 0.6, by - 0.4, 0.9, 0.5, 0.4, 0, Math.PI * 2);
       ctx.fill();
     }
   }
+
+  granulate(ctx, d.x, d.y - 12, 7, 9, strawDeep, obj.seed + 11, 18, 0.06);
 };
 
 export const drawSquirrelFeeder: Drawer = (d) => {

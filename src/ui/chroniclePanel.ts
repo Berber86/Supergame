@@ -60,6 +60,7 @@ export const CHRONICLE_IMAGES: Record<string, string> = {
   // пчёлы
   meet_bee: './images/chronicle/meet_bee.webp',
   bee_swarm: './images/chronicle/bee_swarm.webp',
+  bee_return: './images/chronicle/bee_swarm.webp',
   // идеи (северный мох, гнёзда, умные кои) — отдельные иллюстрации
   koi_smart: './images/chronicle/koi_smart.webp',
   north_moss: './images/chronicle/north_moss.webp',

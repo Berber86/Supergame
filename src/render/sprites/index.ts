@@ -37,6 +37,7 @@ import {
   drawSquirrelFeeder,
   drawTurtleLog,
 } from './buildings';
+import { drawTeaHouse, drawShed, drawTinyHouse } from './smallHouses';
 import {
   drawTable,
   drawCushion,
@@ -85,6 +86,9 @@ const DRAWERS: Record<string, Drawer> = {
   lantern_path: drawPathLight,
   brazier: drawBrazier,
   pavilion: drawPavilion,
+  tea_house: drawTeaHouse,
+  shed: drawShed,
+  tiny_house: drawTinyHouse,
   torii: drawTorii,
   shoji: drawShoji,
   table: drawTable,
@@ -199,12 +203,14 @@ export function drawCost(type: string): number {
     case 'shrub':
       return 150;
     case 'pavilion':
-      return 120;
+      return 140;
     case 'bridge':
       return 116;
     case 'flower':
       return 91;
     default:
+      // чайный домик и сарай дороже мелочи — у них крыша и столбы
+      if (type === 'tea_house' || type === 'tiny_house' || type === 'shed') return 135;
       return 60;
   }
 }
@@ -226,7 +232,11 @@ export function objectHeight(type: string): number {
     case 'bamboo':
       return 100;
     case 'pavilion':
+    case 'tea_house':
+    case 'tiny_house':
       return 96;
+    case 'shed':
+      return 52;
     default:
       return 40;
   }

@@ -1456,6 +1456,9 @@ export class Wildlife {
     const wind = 0; // ветер учитывается через life.windAt, здесь не нужен
     void wx;
 
+    const hiveCount = h.beehives.length;
+    const hasHive = hiveCount > 0;
+
     for (let i = this.bees.length - 1; i >= 0; i--) {
       const b = this.bees[i];
       if (want === 0) {
@@ -1471,19 +1474,24 @@ export class Wildlife {
       b.phase += dt * 0.005;
 
       if (b.timer <= 0 || !b.target) {
-        const hive = h.beehives.length && b.carrying ? h.beehives[Math.floor(rnd() * h.beehives.length)] : null;
+        // С мёдом — домой в улей, без — к цветам. Если есть улей, он приоритет.
+        const hive = hasHive && b.carrying ? h.beehives[Math.floor(rnd() * h.beehives.length)] : null;
         const flower = !b.carrying ? h.beeSpots[Math.floor(rnd() * h.beeSpots.length)] : null;
-        b.target = hive ?? flower ?? h.beeSpots[Math.floor(rnd() * h.beeSpots.length)] ?? null;
-        b.timer = 2000 + rnd() * 4000;
-        if (b.target && Math.hypot(b.target.x - b.tx, b.target.y - b.ty) < 0.5) {
+        // иногда даже без пыльцы залетает в улей — «проведать дом»
+        const visitHive = !b.carrying && hasHive && rnd() < 0.18 ? h.beehives[Math.floor(rnd() * h.beehives.length)] : null;
+        b.target = hive ?? visitHive ?? flower ?? h.beeSpots[Math.floor(rnd() * h.beeSpots.length)] ?? null;
+        b.timer = 1800 + rnd() * 3500;
+        if (b.target && Math.hypot(b.target.x - b.tx, b.target.y - b.ty) < 0.6) {
           if (b.carrying) {
             b.carrying = false;
             b.state = 'gather';
+            // вернулась с мёдом — шанс на заметку
+            if (hasHive && rnd() < 0.08) this.pushNote('bee_return', b.tx, b.ty);
           } else {
             b.carrying = true;
             b.state = 'return';
           }
-          b.timer = 1200 + rnd() * 2000;
+          b.timer = 1100 + rnd() * 1800;
         }
       }
 
@@ -1491,13 +1499,14 @@ export class Wildlife {
         const dx = b.target.x - b.tx;
         const dy = b.target.y - b.ty;
         const d = Math.hypot(dx, dy) || 1;
-        const wob = Math.sin(b.phase + b.seed) * 0.4;
-        b.vx = (dx / d) * 0.0012 + wob * 0.0002;
-        b.vy = (dy / d) * 0.0012;
-        // Ветер сносит
+        const wob = Math.sin(b.phase + b.seed) * 0.45;
+        // у улья пчёлы летают чуть быстрее и суетливее
+        const speedK = hasHive ? 1.25 : 1;
+        b.vx = (dx / d) * 0.00135 * speedK + wob * 0.00024;
+        b.vy = (dy / d) * 0.00135 * speedK;
         b.tx += (b.vx + wind * 0.0003) * dt;
         b.ty += b.vy * dt;
-        b.alt = 6 + Math.sin(b.phase * 2) * 2 + (b.carrying ? 2 : 0);
+        b.alt = 6 + Math.sin(b.phase * 2) * 2.2 + (b.carrying ? 2.4 : 0);
         b.dir = Math.atan2(dy, dx);
       }
       b.tx = clamp(b.tx, 0.5, GRID - 0.5);
@@ -1505,9 +1514,14 @@ export class Wildlife {
     }
 
     this.beeTimer -= dt;
+    // с ульем рой появляется быстрее — улей «притягивает»
+    const spawnDelay = hasHive ? 110 + rnd() * 220 : 180 + rnd() * 350;
     while (this.bees.length < want && this.beeTimer <= 0) {
-      this.beeTimer = 180 + rnd() * 350;
-      const a = h.beeSpots[Math.floor(rnd() * h.beeSpots.length)] ?? h.glades[Math.floor(rnd() * h.glades.length)];
+      this.beeTimer = spawnDelay;
+      const a =
+        (hasHive && rnd() < 0.55 ? h.beehives[Math.floor(rnd() * h.beehives.length)] : null) ??
+        h.beeSpots[Math.floor(rnd() * h.beeSpots.length)] ??
+        h.glades[Math.floor(rnd() * h.glades.length)];
       if (!a) break;
       this.bees.push({
         tx: a.x + (rnd() - 0.5) * 1.5,
@@ -1528,7 +1542,7 @@ export class Wildlife {
       });
       if (this.bees.length === 1) this.pushNote('meet_bee', a.x, a.y);
     }
-    if (this.bees.length >= 5 && rnd() < 0.002) this.pushNote('bee_swarm', this.bees[0]?.tx, this.bees[0]?.ty);
+    if (this.bees.length >= 4 && rnd() < (hasHive ? 0.0045 : 0.002)) this.pushNote('bee_swarm', this.bees[0]?.tx, this.bees[0]?.ty);
   }
 
   private exitFrom(x: number, y: number): Vec {

@@ -298,7 +298,70 @@ const path: Preset = {
   },
 };
 
-export const PRESETS: Preset[] = [tea, spring, islet, moss, path];
+/** Маленькая деревня — три малых дома, улей и пчёлы */
+const village: Preset = {
+  id: 'village',
+  name: 'Маленькая деревня',
+  hint: 'Чайный домик, сарай, маленький дом и улей. Сад как деревенька.',
+  build: (world) => {
+    clearToMoss(world);
+    // центральная лужайка
+    scatterGround(world, 6, 6, 14, 12, 'grass');
+    scatterGround(world, 8, 8, 10, 8, 'moss');
+    // дорожка
+    for (const [x, y] of [
+      [10, 14],
+      [11, 14],
+      [12, 14],
+      [13, 14],
+      [14, 14],
+      [15, 13],
+      [16, 12],
+    ] as [number, number][]) {
+      const t = world.at(x, y);
+      if (t) t.ground = 'stone';
+    }
+    // малые дома
+    world.place('tea_house', 8, 8, 0, old);
+    world.place('tiny_house', 14, 7, 1, old);
+    world.place('shed', 12, 15, 0, old);
+    world.place('pavilion', 18, 15, 0, old);
+    // улей — сердце
+    world.place('beehive', 11.5, 11.5, 0, old);
+    world.place('feeder', 9.5, 13.5, 0, old);
+    world.place('birdbath', 16.5, 9.5, 0, old);
+    // цветы для пчёл
+    world.place('azalea', 10.5, 10.5, 0, old);
+    world.place('azalea', 12.5, 10.5, 0, old);
+    world.place('camellia', 9.5, 11.5, 0, old);
+    world.place('lily', 13.5, 12.5, 0, old);
+    world.place('lily', 14.5, 11.5, 0, old);
+    world.place('iris', 10.5, 12.5, 0, old);
+    world.place('grass_tuft', 11, 13, 0, old);
+    world.place('moss_clump', 15, 14, 0, old);
+    // деревья
+    world.place('sakura', 6.5, 9.5, 0, old);
+    world.place('maple', 19.5, 8.5, 0, old);
+    world.place('pine', 7.5, 16.5, 0, old);
+    world.place('ginkgo', 17.5, 16.5, 0, old);
+    world.place('bamboo', 5.5, 14.5, 0, old);
+    // свет
+    world.place('lantern_stone', 10.5, 8.5, 0, old);
+    world.place('lantern_path', 12.5, 14.5, 0, old);
+    world.place('lantern_path', 15.5, 13.5, 0, old);
+    // кот и мелочи
+    world.place('cat', 9, 9, 0, old);
+    world.place('cushion', 9.5, 9.5, 0, old);
+    world.place('bowl', 10, 9, 0, old);
+    world.place('table', 8.5, 8.5, 0, old);
+    // маленький пруд
+    pond(world, 17, 11, 3, 3);
+    world.place('lotus', 18, 12, 0, old);
+    world.place('rock_mid', 16, 11, 0, old);
+  },
+};
+
+export const PRESETS: Preset[] = [tea, spring, islet, moss, path, village];
 
 export const PRESET_BY_ID = new Map<string, Preset>(PRESETS.map((p) => [p.id, p]));
 
