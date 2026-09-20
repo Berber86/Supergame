@@ -1,13 +1,13 @@
 /**
  * Всплывающее уведомление летописи: картинка + текст на 20 секунд.
  * При клике переносит камеру к месту события, иначе плавно растворяется.
- * Очередь — если несколько событий подряд, показываются по очереди.
+ * Не чаще одного показа за три реальные минуты; в ожидании хранится только последнее событие.
  */
 
 import './chronicleToast.css';
 import { chronicleText } from '../world/chronicle';
 import { CHRONICLE_IMAGES } from './chroniclePanel';
-import { ChronicleToastNote } from '../world/world';
+import type { ChronicleToastNote } from '../world/world';
 
 interface Queued {
   id: string;
@@ -15,9 +15,17 @@ interface Queued {
   y: number;
 }
 
+export const CHRONICLE_TOAST_INTERVAL = 180_000;
+const LAST_SHOWN_KEY = 'usadba:chronicle-toast-shown';
+
 export class ChronicleToast {
   private root: HTMLElement;
-  private queue: Queued[] = [];
+  private pending: Queued | null = null;
+  private nextAllowed = 0;
+  private cooldownTimer = 0;
+  private onVisibility = () => {
+    if (!document.hidden) this.showNext();
+  };
   private currentEl: HTMLElement | null = null;
   private timer: number = 0;
   private fadeTimer: number = 0;
@@ -30,25 +38,55 @@ export class ChronicleToast {
     root.className = 'chronicle-toast-stack';
     parent.appendChild(root);
     this.root = root;
+    // UI preference only, not the accelerated garden clock or the world's save.
+    try {
+      const raw = window.sessionStorage.getItem(LAST_SHOWN_KEY);
+      if (raw !== null) {
+        const last = Number(raw),
+          age = Date.now() - last;
+        if (Number.isFinite(last) && last > 0)
+          this.nextAllowed = performance.now() + Math.max(0, CHRONICLE_TOAST_INTERVAL - Math.max(0, age));
+      }
+    } catch {
+      /* Private mode/storage failure must not disable the garden. */
+    }
+    document.addEventListener('visibilitychange', this.onVisibility);
   }
 
   push(note: ChronicleToastNote): void {
-    this.queue.push({ id: note.id, x: note.x, y: note.y });
-    if (!this.currentEl) this.showNext();
+    if (!chronicleText(note.id)) return;
+    this.pending = { id: note.id, x: note.x, y: note.y };
+    this.showNext();
   }
 
+  /** Switching gardens drops old destinations, but never bypasses the quiet interval. */
+  clear(): void {
+    window.clearTimeout(this.timer);
+    window.clearTimeout(this.fadeTimer);
+    window.clearTimeout(this.cooldownTimer);
+    this.timer = this.fadeTimer = this.cooldownTimer = 0;
+    this.pending = null;
+    this.currentEl?.remove();
+    this.currentEl = null;
+  }
+  dispose(): void {
+    this.clear();
+    document.removeEventListener('visibilitychange', this.onVisibility);
+    this.root.remove();
+  }
   private showNext(): void {
-    if (this.queue.length === 0) {
-      this.currentEl = null;
+    window.clearTimeout(this.cooldownTimer);
+    this.cooldownTimer = 0;
+    if (this.currentEl || !this.pending || document.hidden) return;
+    const remaining = this.nextAllowed - performance.now();
+    if (remaining > 0) {
+      this.cooldownTimer = window.setTimeout(() => this.showNext(), remaining);
       return;
     }
-    const item = this.queue.shift()!;
+    const item = this.pending;
+    this.pending = null;
     const info = chronicleText(item.id);
-    if (!info) {
-      // нет текста — пропускаем
-      this.showNext();
-      return;
-    }
+    if (!info) return;
     const imgSrc = CHRONICLE_IMAGES[item.id];
 
     const el = document.createElement('div');
@@ -66,24 +104,31 @@ export class ChronicleToast {
 
     // клик — телепорт и закрыть
     const go = () => {
+      if (el !== this.currentEl || el.classList.contains('out')) return;
       this.onTeleport(item.x, item.y);
-      this.dismiss(el, true);
+      this.dismiss(el);
     };
     el.addEventListener('click', go);
-    // крестик тоже закрывает, но без телепорта? делаем тоже телепорт? пусть закрывает без телепорта по крестику
+    // Крестик закрывает без перемещения камеры.
     const closeBtn = el.querySelector('.ct-close') as HTMLElement;
     closeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      this.dismiss(el, false);
+      this.dismiss(el);
     });
 
     this.root.appendChild(el);
     // триггер появления
     requestAnimationFrame(() => {
-      el.classList.add('show');
+      if (el === this.currentEl) el.classList.add('show');
     });
 
     this.currentEl = el;
+    this.nextAllowed = performance.now() + CHRONICLE_TOAST_INTERVAL;
+    try {
+      window.sessionStorage.setItem(LAST_SHOWN_KEY, String(Date.now()));
+    } catch {
+      /* optional UI state */
+    }
 
     // прогресс бар 20 сек
     const progress = el.querySelector('.ct-progress i') as HTMLElement;
@@ -97,25 +142,22 @@ export class ChronicleToast {
     });
 
     // авто-закрытие через 20 сек
-    clearTimeout(this.timer);
+    window.clearTimeout(this.timer);
     this.timer = window.setTimeout(() => {
-      this.dismiss(el, false);
+      this.dismiss(el);
     }, 20000);
   }
 
-  private dismiss(el: HTMLElement, _teleported: boolean): void {
-    if (this.fadeTimer) clearTimeout(this.fadeTimer);
-    clearTimeout(this.timer);
-    if (el !== this.currentEl) {
-      el.remove();
-      return;
-    }
+  private dismiss(el: HTMLElement): void {
+    if (el !== this.currentEl || el.classList.contains('out')) return;
+    if (this.fadeTimer) window.clearTimeout(this.fadeTimer);
+    window.clearTimeout(this.timer);
     el.classList.remove('show');
     el.classList.add('out');
     this.fadeTimer = window.setTimeout(() => {
       el.remove();
       this.currentEl = null;
       this.showNext();
-    }, 700) as unknown as number;
+    }, 700);
   }
 }

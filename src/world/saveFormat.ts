@@ -234,7 +234,9 @@ export function serializeSave(d: SaveData): string {
     e: d.seen,
     g: d.grow ?? null,
     b: d.born,
-    c: (d.chronicle ?? []).map((e) => (e as any).snap ? [e.id, Math.round(e.at), (e as any).snap] : [e.id, Math.round(e.at)]),
+    c: (d.chronicle ?? []).map((e) =>
+      (e as any).snap ? [e.id, Math.round(e.at), (e as any).snap] : [e.id, Math.round(e.at)],
+    ),
     u: d.unlocked ?? null,
     f: d.fresh ?? null,
   });
@@ -256,6 +258,24 @@ function parseGrow(raw: unknown): SaveData['grow'] {
   if (!r || !num(r.x) || !num(r.y) || !num(r.w) || !num(r.h)) return null;
   if (r.w < 1 || r.h < 1 || r.x < 0 || r.y < 0 || r.x + r.w > 64 || r.y + r.h > 64) return null;
   if (!num(g.seed) || !num(g.bank) || !num(g.tick) || !num(g.progress) || !num(g.stage)) return null;
+  let clock: NonNullable<SaveData['grow']>['clock'];
+  if (g.clock !== undefined) {
+    if (!g.clock || typeof g.clock !== 'object') return null;
+    const c = g.clock as Record<string, unknown>;
+    if (
+      !num(c.epoch) ||
+      c.epoch < 0 ||
+      c.epoch > 8.64e15 ||
+      !num(c.month) ||
+      c.month < 1200 ||
+      c.month > 1_200_000 ||
+      !num(c.solar) ||
+      c.solar < 0 ||
+      c.solar >= 1
+    )
+      return null;
+    clock = { epoch: c.epoch, month: c.month, solar: c.solar };
+  }
   return {
     rect: { x: Math.floor(r.x), y: Math.floor(r.y), w: Math.floor(r.w), h: Math.floor(r.h) },
     seed: Math.floor(g.seed),
@@ -264,6 +284,7 @@ function parseGrow(raw: unknown): SaveData['grow'] {
     progress: Math.max(0, Math.floor(g.progress)),
     stage: Math.max(0, Math.floor(g.stage)),
     choosing: Boolean(g.choosing),
+    ...(clock ? { clock } : {}),
   };
 }
 
@@ -307,8 +328,9 @@ export function parseSave(raw: unknown): SaveData | null {
   const chronicle = parseChronicle(d.c ?? d.chronicle);
   if (!milestones || !seasons || !seen || !chronicle) return null;
 
-  const grow = parseGrow(d.g);
-  if (d.g !== undefined && d.g !== null && !grow) return null;
+  const rawGrow = d.g !== undefined ? d.g : d.grow;
+  const grow = parseGrow(rawGrow);
+  if (rawGrow !== undefined && rawGrow !== null && !grow) return null;
 
   // Открытия каталога: отсутствие списка — старое сохранение (мигрирует мир)
   const hasUnlocks = d.u !== undefined || d.unlocked !== undefined;

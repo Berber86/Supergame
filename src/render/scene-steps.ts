@@ -1,3 +1,13 @@
+import { plantPose, windLag } from './plantWind';
+import { CALM, type WindSampler } from '../world/wind';
+import { drawFruitFall } from './fruitFall';
+import { drawLizard } from './lizard';
+import { ecologyYear, wildlifeActivity } from '../world/ecology';
+import { spriteSway } from './spriteCache';
+import { rainMaterial, drawSmallHouseDrips, type RainField } from './afterRain';
+import type { WeatherState } from '../world/weatherState';
+import { paintObjectLight } from './spriteCache';
+import { sampleLocalLight, receivesObjectLight, type LocalLightField } from './localLight';
 /**
  * Шаги отрисовки сцены — чистые функции над контекстом холста.
  *
@@ -30,6 +40,8 @@ import {
   drawTurtle,
 } from './wildlife';
 import type { GhostPreview } from './scene';
+import type { WaterMotion } from './waterMotion';
+import { waterSurfaces, waterSurfacePath, waterSurfaceBounds } from './waterSurface';
 
 /** Наборка состояния сцены, нужная одному кадру сортированных объектов. */
 export interface ObjectsOpts {
@@ -44,6 +56,13 @@ export interface ObjectsOpts {
   highlightId: number;
   useSpriteCache: boolean;
   particles: boolean;
+  motion?: boolean;
+  windField?: WindSampler;
+  simpleWind?: boolean;
+  waterMotion?: WaterMotion;
+  localLights?: LocalLightField;
+  rainReceivers?: RainField;
+  rainWeather?: WeatherState;
 }
 
 /**
@@ -213,7 +232,7 @@ export function drawAerialPerspective(ctx: Ctx, atm: Atmosphere): void {
   const paper: RGB = { r: 247, g: 244, b: 234 };
   let hazeCol = mix(atm.skyBottom, paper, 0.55);
   hazeCol = mix(hazeCol, { r: 244, g: 208, b: 158 }, atm.golden * 0.5);
-  const maxA = Math.min(0.3, lerp(0.04, 0.12, atm.time.daylight) + atm.golden * 0.06 + atm.overcast * 0.1);
+  const maxA = Math.min(0.22, lerp(0.025, 0.065, atm.time.daylight) + atm.golden * 0.04 + atm.overcast * 0.1);
   if (maxA < 0.02) return;
 
   const g = ctx.createLinearGradient(0, yFar, 0, yNear);
@@ -354,6 +373,8 @@ export function drawGhost(
   ghost: GhostPreview,
   wind: number,
   zoom: number,
+  windField?: WindSampler,
+  simpleWind = false,
 ): void {
   const gh = ghost;
   const pulse = 0.55 + Math.sin(time * 0.004) * 0.15;
@@ -409,6 +430,7 @@ export function drawGhost(
         rot: gh.rot,
         seed: 777,
       };
+      const vector = windField?.(gh.tx + item.w / 2, gh.ty + item.h / 2, windLag(gh.itemId));
       drawObject({
         ctx,
         x: p.x,
@@ -417,7 +439,9 @@ export function drawGhost(
         g: 1,
         obj: fake,
         time,
-        wind: wind,
+        wind: vector?.screenX ?? wind,
+        windVector: vector,
+        plantPose: vector ? plantPose(gh.itemId, 777, 1, time, vector, simpleWind) : undefined,
         alpha: gh.valid ? 0.62 : 0.3,
       });
     }
@@ -442,16 +466,30 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
     const lvl = tile ? (tile.water ? tile.level - 0.28 : tile.level) : 0;
     const p = isoToScreen(cx, cy, lvl);
     const s = { x: (p.x - opts.camX) * opts.zoom + opts.viewW / 2, y: (p.y - opts.camY) * opts.zoom + opts.viewH / 2 };
-    if (s.x < -240 || s.x > opts.viewW + 240 || s.y < -280 || s.y > opts.viewH + 240) continue;
+    const marginX = Math.max(240, 230 * opts.zoom),
+      marginY = Math.max(280, 320 * opts.zoom);
+    if (s.x < -marginX || s.x > opts.viewW + marginX || s.y < -marginY || s.y > opts.viewH + marginY) continue;
 
     // На общем плане мелочь не читается: подушка мха размером в три
     // пикселя стоит столько же, сколько вблизи, но её попросту не видно.
     // На телефоне сад по умолчанию показан целиком, так что это
     // основной режим просмотра, а не редкий случай.
-    if (opts.zoom < 0.42 && (item.kind === 'micro' || item.kind === 'flower')) continue;
+    if (
+      opts.zoom < 0.42 &&
+      o.id !== opts.movingId &&
+      o.id !== opts.highlightId &&
+      (item.kind === 'micro' || item.kind === 'flower')
+    )
+      continue;
     const g = world.growth(o, now);
     // ветер берём в точке дерева — порыв проходит волной
-    const wind = opts.life ? opts.life.windAt(cx, cy) : opts.wind;
+    const air = opts.windField?.(cx, cy, windLag(o.type));
+    const vector = opts.motion === false ? CALM : air;
+    const pose = vector ? plantPose(o.type, o.seed, cachedGrowth(g), time, vector, opts.simpleWind) : undefined;
+    const wind = opts.motion === false ? 0 : air ? air.screenX : opts.life ? opts.life.windAt(cx, cy) : opts.wind;
+    const localHits =
+      opts.localLights && receivesObjectLight(o.type) ? sampleLocalLight(opts.localLights, cx, cy, lvl, o.id) : [];
+    const materialAtm = rainMaterial(atm, opts.rainReceivers, opts.rainWeather, o.type, cx, cy);
     const isMoving = o.id === opts.movingId;
     const isHot = o.id === opts.highlightId;
     // Переносимое слегка всплывает над землёй — видно, что оно «в руке»
@@ -473,92 +511,193 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
           // Тот же огрублённый размер, что у спрайта в кэше: иначе тень
           // будет от дерева другой стадии роста, и края разойдутся.
           const gq = cachedGrowth(g);
-          const scale = 0.18 + 0.82 * Math.pow(gq, 0.72);
-          // Качается только живое: деревья, кусты и цветы. Камни и
-          // постройки спрайтом не двигаем — валун, дрейфующий на ветру
-          // вокруг собственной тени, выглядит сломанным.
-          const kind = ITEM_BY_ID.get(o.type)?.kind;
-          const windK = kind === 'tree' || kind === 'shrub' || kind === 'flower' ? 1 : 0;
-          const sway = Math.sin(time * 0.0004 + o.seed) * 3 * wind * scale * 0.7 * windK;
+          const sway = air ? 0 : spriteSway(o.type, o.seed, g, time, wind);
           // Тень рисуем прямо здесь: она идёт режимом multiply по земле,
           // и в прозрачном холсте кэша ей не на что умножаться.
           drawObjectShadow({
             ctx,
             x: p.x,
             y: p.y,
-            atm,
+            atm: materialAtm,
             g: gq,
             obj: o,
             time,
             wind,
+            plantPose: pose,
+            windVector: vector,
             alpha: isMoving ? 0.72 : 1,
           });
           const drawn = drawCached({
             ctx,
             x: p.x + sway,
             y: p.y - lift,
-            atm,
+            atm: materialAtm,
             g,
             obj: o,
             time,
             wind,
+            plantPose: pose,
+            windVector: vector,
             alpha: isMoving ? 0.72 : 1,
           });
-          if (drawn) return;
+          if (drawn) {
+            paintObjectLight(
+              {
+                ctx,
+                x: p.x + sway,
+                y: p.y - lift,
+                atm: materialAtm,
+                g,
+                obj: o,
+                time,
+                wind,
+                plantPose: pose,
+                windVector: vector,
+                alpha: isMoving ? 0.72 : 1,
+              },
+              localHits,
+            );
+            if (opts.particles && !isMoving)
+              drawSmallHouseDrips({ ctx, x: p.x, y: p.y, atm, g, obj: o, time, wind, alpha: 1 }, opts.rainWeather);
+            if (opts.particles && !isMoving)
+              drawFruitFall({ ctx, x: p.x, y: p.y, atm, g, obj: o, time, wind, plantPose: pose, alpha: 1 }, world);
+            return;
+          }
         }
 
         drawObject({
           ctx,
           x: p.x,
           y: p.y - lift,
-          atm,
+          atm: materialAtm,
           g,
           obj: o,
           time,
           wind,
+          plantPose: pose,
+          windVector: vector,
           alpha: isMoving ? 0.72 : 1,
         });
+        paintObjectLight(
+          {
+            ctx,
+            x: p.x,
+            y: p.y - lift,
+            atm: materialAtm,
+            g,
+            obj: o,
+            time,
+            wind,
+            plantPose: pose,
+            windVector: vector,
+            alpha: isMoving ? 0.72 : 1,
+          },
+          localHits,
+          false,
+        );
+        if (opts.particles && !isMoving)
+          drawSmallHouseDrips({ ctx, x: p.x, y: p.y, atm, g, obj: o, time, wind, alpha: 1 }, opts.rainWeather);
+        if (opts.particles && !isMoving)
+          drawFruitFall({ ctx, x: p.x, y: p.y, atm, g, obj: o, time, wind, plantPose: pose, alpha: 1 }, world);
       },
     });
   }
 
+  list.push(...animalEntries(ctx, world, atm, time, opts));
+
+  list.sort((a, b) => a.depth - b.depth);
+  for (const e of list) e.draw();
+}
+
+interface AnimalEntry {
+  alt?: number;
+  tx: number;
+  ty: number;
+  level: number;
+  depth: number;
+  draw: () => void;
+}
+
+/** One source of poses/altitudes/visibility for the animal and its reflection. */
+function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, opts: ObjectsOpts): AnimalEntry[] {
+  const list: AnimalEntry[] = [];
+  const activity = wildlifeActivity(atm.time, opts.rainWeather, opts.wind);
+  const seasonalDraw = (amount: number, paint: () => void) => {
+    ctx.save();
+    ctx.globalAlpha *= amount;
+    paint();
+    ctx.restore();
+  };
   if (opts.life) {
     for (const c of opts.life.cats) {
       const tile = world.at(Math.floor(c.tx), Math.floor(c.ty));
       const lvl = tile ? tile.level : 0;
       const p = isoToScreen(c.tx, c.ty, lvl);
-      list.push({ depth: (c.tx + c.ty) * 100 + lvl * 20 + 4, draw: () => drawCat(ctx, c, p.x, p.y, atm, time) });
+      list.push({
+        tx: c.tx,
+        ty: c.ty,
+        level: lvl,
+        depth: (c.tx + c.ty) * 100 + lvl * 20 + 4,
+        draw: () => drawCat(ctx, c, p.x, p.y, atm, time),
+      });
     }
     for (const b of opts.life.birds) {
       const tile = world.at(Math.floor(b.tx), Math.floor(b.ty));
       const lvl = tile ? tile.level : 0;
       const p = isoToScreen(b.tx, b.ty, lvl);
-      list.push({ depth: (b.tx + b.ty) * 100 + lvl * 20 + 6, draw: () => drawBird(ctx, b, p.x, p.y, atm, time) });
+      list.push({
+        tx: b.tx,
+        ty: b.ty,
+        level: lvl,
+        depth: (b.tx + b.ty) * 100 + lvl * 20 + 6,
+        alt: b.alt,
+        draw: () => drawBird(ctx, b, p.x, p.y, atm, time),
+      });
     }
     // бабочки — тоже частицы
     for (const f of opts.particles ? opts.life.flutters : []) {
+      if (activity.butterflies <= 0.001) continue;
       const tile = world.at(Math.floor(f.tx), Math.floor(f.ty));
       const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
       const p = isoToScreen(f.tx, f.ty, lvl);
-      list.push({ depth: (f.tx + f.ty) * 100 + lvl * 20 + 8, draw: () => drawButterfly(ctx, f, p.x, p.y, atm, time) });
+      list.push({
+        tx: f.tx,
+        ty: f.ty,
+        level: lvl,
+        depth: (f.tx + f.ty) * 100 + lvl * 20 + 8,
+        alt: f.alt,
+        draw: () => seasonalDraw(activity.butterflies, () => drawButterfly(ctx, f, p.x, p.y, atm, time)),
+      });
     }
     // Жители воды: на общем плане их не разглядеть, а рисовать всё равно
     // пришлось бы — поэтому на дальнем виде бережём кадр.
     if (opts.zoom >= 0.42) {
       for (const fr of opts.life.residents.frogs) {
+        if (activity.frogs <= 0.001) continue;
         if (fr.hidden > 0) continue;
         const tile = world.at(Math.floor(fr.tx), Math.floor(fr.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(fr.tx, fr.ty, lvl);
-        list.push({ depth: (fr.tx + fr.ty) * 100 + lvl * 20 + 5, draw: () => drawFrog(ctx, fr, p.x, p.y, atm, time) });
+        list.push({
+          tx: fr.tx,
+          ty: fr.ty,
+          level: lvl,
+          depth: (fr.tx + fr.ty) * 100 + lvl * 20 + 5,
+          draw: () => seasonalDraw(activity.frogs, () => drawFrog(ctx, fr, p.x, p.y, atm, time)),
+        });
       }
       for (const d of opts.particles ? opts.life.residents.dragonflies : []) {
+        if (activity.dragonflies <= 0.001) continue;
         const tile = world.at(Math.floor(d.tx), Math.floor(d.ty));
         const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
         const p = isoToScreen(d.tx, d.ty, lvl);
         list.push({
+          tx: d.tx,
+          ty: d.ty,
+          level: lvl,
           depth: (d.tx + d.ty) * 100 + lvl * 20 + 9,
-          draw: () => drawDragonfly(ctx, d, p.x, p.y, atm, time),
+          alt: d.alt,
+          draw: () => seasonalDraw(activity.dragonflies, () => drawDragonfly(ctx, d, p.x, p.y, atm, time)),
         });
       }
     }
@@ -567,7 +706,13 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
       const tile = world.at(Math.floor(c.tx), Math.floor(c.ty));
       const lvl = tile ? tile.level : 0;
       const p = isoToScreen(c.tx, c.ty, lvl);
-      list.push({ depth: (c.tx + c.ty) * 100 + lvl * 20 + 4, draw: () => drawCat(ctx, c, p.x, p.y, atm, time) });
+      list.push({
+        tx: c.tx,
+        ty: c.ty,
+        level: lvl,
+        depth: (c.tx + c.ty) * 100 + lvl * 20 + 4,
+        draw: () => drawCat(ctx, c, p.x, p.y, atm, time),
+      });
     }
     // Дикие соседи: цапля и олень крупные — видны и с общего плана
     const hr = opts.life.wildlife.heron;
@@ -575,95 +720,189 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
       const tile = world.at(Math.floor(hr.tx), Math.floor(hr.ty));
       const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
       const p = isoToScreen(hr.tx, hr.ty, lvl);
-      list.push({ depth: (hr.tx + hr.ty) * 100 + lvl * 20 + 6, draw: () => drawHeron(ctx, hr, p.x, p.y, atm, time) });
+      list.push({
+        tx: hr.tx,
+        ty: hr.ty,
+        level: lvl,
+        depth: (hr.tx + hr.ty) * 100 + lvl * 20 + 6,
+        draw: () => drawHeron(ctx, hr, p.x, p.y, atm, time),
+      });
     }
     for (const d of opts.life.wildlife.deer) {
       const tile = world.at(Math.floor(d.tx), Math.floor(d.ty));
       const lvl = tile ? tile.level : 0;
       const p = isoToScreen(d.tx, d.ty, lvl);
-      list.push({ depth: (d.tx + d.ty) * 100 + lvl * 20 + 5, draw: () => drawDeer(ctx, d, p.x, p.y, atm, time) });
+      list.push({
+        tx: d.tx,
+        ty: d.ty,
+        level: lvl,
+        depth: (d.tx + d.ty) * 100 + lvl * 20 + 5,
+        draw: () => drawDeer(ctx, d, p.x, p.y, atm, time),
+      });
+    }
+    if (opts.zoom >= 0.42 && activity.lizard > 0.001) {
+      for (const a of opts.life.lizards.agents) {
+        if (a.alpha <= 0.005) continue;
+        const tile = world.at(Math.floor(a.tx), Math.floor(a.ty));
+        if (!tile || tile.water || tile.indoor || tile.veranda) continue;
+        const p = isoToScreen(a.tx, a.ty, tile.level);
+        list.push({
+          tx: a.tx,
+          ty: a.ty,
+          level: tile.level,
+          alt: a.lift,
+          depth: (a.tx + a.ty) * 100 + tile.level * 20 + 14,
+          draw: () => seasonalDraw(activity.lizard, () => drawLizard(ctx, a, p.x, p.y - a.lift, atm, time)),
+        });
+      }
     }
     // Ёжик и мышка — видны при приближении (0.5+), но и на общем плане как точки
     if (opts.zoom >= 0.42) {
       for (const e of opts.life.wildlife.hedgehogs) {
+        if (activity.hedgehog <= 0.001) continue;
         const tile = world.at(Math.floor(e.tx), Math.floor(e.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(e.tx, e.ty, lvl);
-        list.push({ depth: (e.tx + e.ty) * 100 + lvl * 20 + 12, draw: () => drawHedgehog(ctx, e, p.x, p.y, atm, time) });
+        list.push({
+          tx: e.tx,
+          ty: e.ty,
+          level: lvl,
+          depth: (e.tx + e.ty) * 100 + lvl * 20 + 12,
+          draw: () => seasonalDraw(activity.hedgehog, () => drawHedgehog(ctx, e, p.x, p.y, atm, time)),
+        });
       }
       for (const m of opts.life.wildlife.mice) {
         const tile = world.at(Math.floor(m.tx), Math.floor(m.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(m.tx, m.ty, lvl);
-        list.push({ depth: (m.tx + m.ty) * 100 + lvl * 20 + 12, draw: () => drawMouse(ctx, m, p.x, p.y, atm, time) });
+        list.push({
+          tx: m.tx,
+          ty: m.ty,
+          level: lvl,
+          depth: (m.tx + m.ty) * 100 + lvl * 20 + 12,
+          draw: () => drawMouse(ctx, m, p.x, p.y, atm, time),
+        });
       }
       for (const o of opts.life.wildlife.owls) {
         const tile = world.at(Math.floor(o.tx), Math.floor(o.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(o.tx, o.ty, lvl);
         // Сова на ветке должна быть поверх кроны, иначе сидит ПОД деревом
-        list.push({ depth: (o.tx + o.ty) * 100 + lvl * 20 + 180, draw: () => drawOwl(ctx, o, p.x, p.y, atm, time) });
+        list.push({
+          tx: o.tx,
+          ty: o.ty,
+          level: lvl,
+          depth: (o.tx + o.ty) * 100 + lvl * 20 + 180,
+          draw: () => drawOwl(ctx, o, p.x, p.y, atm, time),
+        });
       }
       for (const sq of opts.life.wildlife.squirrels) {
         const tile = world.at(Math.floor(sq.tx), Math.floor(sq.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(sq.tx, sq.ty, lvl);
-        list.push({ depth: (sq.tx + sq.ty) * 100 + lvl * 20 + 160, draw: () => drawSquirrel(ctx, sq, p.x, p.y, atm, time) });
+        list.push({
+          tx: sq.tx,
+          ty: sq.ty,
+          level: lvl,
+          depth: (sq.tx + sq.ty) * 100 + lvl * 20 + 12,
+          draw: () => drawSquirrel(ctx, sq, p.x, p.y, atm, time),
+        });
       }
       for (const tu of opts.life.wildlife.turtles) {
+        if (activity.turtle <= 0.001) continue;
         const tile = world.at(Math.floor(tu.tx), Math.floor(tu.ty));
         const lvl = tile ? (tile.water ? tile.level - 0.26 : tile.level) : 0;
         const p = isoToScreen(tu.tx, tu.ty, lvl);
-        list.push({ depth: (tu.tx + tu.ty) * 100 + lvl * 20 + 8, draw: () => drawTurtle(ctx, tu, p.x, p.y, atm, time) });
+        list.push({
+          tx: tu.tx,
+          ty: tu.ty,
+          level: lvl,
+          depth: (tu.tx + tu.ty) * 100 + lvl * 20 + 8,
+          draw: () => seasonalDraw(activity.turtle, () => drawTurtle(ctx, tu, p.x, p.y, atm, time)),
+        });
       }
     }
     // Светлячки, мотыльки и пчёлы — ночная и дневная мелочь: на дальнем плане бережём кадр
     if (opts.zoom >= 0.42 && opts.particles) {
       for (const f of opts.life.wildlife.fireflies) {
+        if (activity.fireflies <= 0.001) continue;
         const tile = world.at(Math.floor(f.tx), Math.floor(f.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(f.tx, f.ty, lvl);
-        list.push({ depth: (f.tx + f.ty) * 100 + lvl * 20 + 200, draw: () => drawFirefly(ctx, f, p.x, p.y, atm, time) });
+        list.push({
+          tx: f.tx,
+          ty: f.ty,
+          level: lvl,
+          depth: (f.tx + f.ty) * 100 + lvl * 20 + 200,
+          draw: () => seasonalDraw(activity.fireflies, () => drawFirefly(ctx, f, p.x, p.y, atm, time)),
+        });
       }
       for (const m of opts.life.wildlife.moths) {
+        if (activity.moths <= 0.001) continue;
         const tile = world.at(Math.floor(m.tx), Math.floor(m.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(m.tx, m.ty, lvl);
-        list.push({ depth: (m.tx + m.ty) * 100 + lvl * 20 + 210, draw: () => drawMoth(ctx, m, p.x, p.y, atm, time) });
+        list.push({
+          tx: m.tx,
+          ty: m.ty,
+          level: lvl,
+          depth: (m.tx + m.ty) * 100 + lvl * 20 + 210,
+          draw: () => seasonalDraw(activity.moths, () => drawMoth(ctx, m, p.x, p.y, atm, time)),
+        });
       }
       for (const b of opts.life.wildlife.bees) {
+        if (activity.bees <= 0.001) continue;
         const tile = world.at(Math.floor(b.tx), Math.floor(b.ty));
         const lvl = tile ? tile.level : 0;
         const p = isoToScreen(b.tx, b.ty, lvl);
-        list.push({ depth: (b.tx + b.ty) * 100 + lvl * 20 + 220, draw: () => drawBee(ctx, b, p.x, p.y, atm, time) });
+        list.push({
+          tx: b.tx,
+          ty: b.ty,
+          level: lvl,
+          depth: (b.tx + b.ty) * 100 + lvl * 20 + 220,
+          alt: b.alt,
+          draw: () => seasonalDraw(activity.bees, () => drawBee(ctx, b, p.x, p.y, atm, time)),
+        });
       }
     }
   }
 
-  list.sort((a, b) => a.depth - b.depth);
-  for (const e of list) e.draw();
-
-  // Тёплое свечение окон дома изнутри
-  drawWindowGlow(ctx, world, atm);
+  return list;
 }
 
-export function drawWindowGlow(ctx: Ctx, world: World, atm: Atmosphere): void {
-  if (atm.lampGlow < 0.05) return;
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  const warm: RGB = { r: 255, g: 196, b: 122 };
-  for (let y = 0; y < GRID; y++) {
-    for (let x = 0; x < GRID; x++) {
-      const t = world.at(x, y)!;
-      if (!t.indoor) continue;
-      // светятся только клетки у кромки дома
-      const edge = !world.at(x, y + 1)?.indoor || !world.at(x + 1, y)?.indoor;
-      if (!edge) continue;
-      const p = isoToScreen(x + 0.5, y + 0.5, t.level);
-      glow(ctx, p.x, p.y - 10, 66, warm, atm.lampGlow * 0.28);
+/** Reflect the actual animated pose, not a second agent or a frozen icon. */
+export function drawAnimalReflections(ctx: Ctx, world: World, atm: Atmosphere, time: number, opts: ObjectsOpts): void {
+  if (!opts.life) return;
+  // Shadows are lighting on the shore, not part of an animal's reflected body.
+  const entries = animalEntries(ctx, world, { ...atm, shadowAmount: 0 }, time, opts);
+  if (!entries.length) return;
+  entries.sort((a, b) => a.depth - b.depth);
+  for (const surface of waterSurfaces(world)) {
+    const { minX, maxX, minY, maxY } = waterSurfaceBounds(surface);
+    ctx.save();
+    waterSurfacePath(ctx, surface);
+    ctx.clip('evenodd');
+    for (const entry of entries) {
+      if (surface.level > entry.level + 0.3) continue;
+      const plane = isoToScreen(entry.tx, entry.ty, surface.level - 0.26);
+      const base = isoToScreen(entry.tx, entry.ty, entry.level);
+      const reflectedY = 2 * plane.y - base.y;
+      // Generous local bounds include flight/perching height; the exact shore
+      // mask clips dry land and islands. No per-agent offscreen canvases/cache.
+      if (plane.x + 80 < minX || plane.x - 80 > maxX || reflectedY - 35 > maxY || reflectedY + 220 < minY) continue;
+      const sx = (plane.x - opts.camX) * opts.zoom + opts.viewW / 2;
+      const sy = (reflectedY - opts.camY) * opts.zoom + opts.viewH / 2;
+      if (sx < -120 || sx > opts.viewW + 120 || sy < -240 || sy > opts.viewH + 80) continue;
+      const drift = Math.sin(time * 0.0013 + plane.y * 0.07) * 0.65;
+      const wave = opts.waterMotion?.(plane.x, reflectedY + (entry.alt ?? 12), surface.level);
+      ctx.save();
+      ctx.globalAlpha *= 0.32 * (wave?.alpha ?? 1);
+      ctx.transform(1, 0, 0, -1, wave?.dx ?? drift, 2 * plane.y + (wave?.dy ?? 0));
+      entry.draw();
+      ctx.restore();
     }
+    ctx.restore();
   }
-  ctx.restore();
 }
 
 export function drawPaperGrain(
@@ -679,15 +918,10 @@ export function drawPaperGrain(
   if (!paperPattern) return paperPattern;
   ctx.save();
   ctx.globalCompositeOperation = 'overlay';
-  ctx.globalAlpha = 0.14;
-  ctx.fillStyle = paperPattern;
-  ctx.fillRect(0, 0, W, H);
-  ctx.restore();
-
-  // лёгкое размытие краёв кадра — «краска ушла в бумагу»
-  ctx.save();
-  ctx.globalCompositeOperation = 'soft-light';
-  ctx.globalAlpha = 0.1;
+  // The old overlay + soft-light passes reused the same neutral grain. A single
+  // calibrated pass keeps paper texture (tested against colour swatches) and avoids
+  // a second full-resolution blend every frame, especially expensive on HiDPI.
+  ctx.globalAlpha = 0.2;
   ctx.fillStyle = paperPattern;
   ctx.fillRect(0, 0, W, H);
   ctx.restore();
@@ -732,9 +966,10 @@ export function drawColorGrade(ctx: Ctx, W: number, H: number, atm: Atmosphere):
     ctx.fillStyle = css({ r: 70, g: 96, b: 176 }, (1 - t.daylight * 2) * 0.32);
     ctx.fillRect(0, 0, W, H);
   }
-  if (atm.season === 'winter') {
+  const cold = ecologyYear(t.now).cold;
+  if (cold > 0.001) {
     ctx.globalCompositeOperation = 'soft-light';
-    ctx.fillStyle = css({ r: 190, g: 214, b: 236 }, 0.14);
+    ctx.fillStyle = css({ r: 190, g: 214, b: 236 }, 0.14 * cold);
     ctx.fillRect(0, 0, W, H);
   }
 

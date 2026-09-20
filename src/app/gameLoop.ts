@@ -1,3 +1,6 @@
+import { screenToIso } from '../core/iso';
+import { FrameGate } from '../render/graphics';
+import { cachedCanopyDensity } from '../world/canopy';
 /**
  * Игровой цикл: время, погода, живность, звук и сам кадр рендера.
  * Всё, что меняется раз в кадр или раз в паузу, — здесь.
@@ -27,6 +30,7 @@ export interface LoopDeps {
   /** Миллисекунды бездействия до растворения интерфейса. */
   idleMs: number;
   isPracticeActive(): boolean;
+  isStartOpen?(): boolean;
   isZenMode(): boolean;
   /** Включить созерцание — по бездействию. */
   igniteZen(): void;
@@ -47,21 +51,34 @@ export function startLoop(deps: LoopDeps): void {
   const { world, scene, life, weatherSys, audio, timeCtl, ui, devPanel } = deps;
 
   let last = performance.now();
+  const simulationGate = new FrameGate(),
+    renderGate = new FrameGate();
+  let renderDt = 0;
   let eveningChecked = '';
   let audioAccum = 0;
   let observeAccum = 1200;
 
   /** Что сейчас звучит вокруг: считаем по составу сада рядом с камерой. */
-  function gatherAudioContext() {
+  function gatherAudioContext(now: number) {
     let water = 0;
-    let trees = 0;
+    let trees = 0,
+      foliage = 0;
     let hasChime = false;
+    let chimeWind = 0;
+    const ear = screenToIso(scene.camera.x, scene.camera.y);
     let hasShishi = false;
     for (const o of world.objects) {
       const item = ITEM_BY_ID.get(o.type);
       if (!item) continue;
-      if (item.kind === 'tree') trees++;
-      if (o.type === 'wind_chime') hasChime = true;
+      if (item.kind === 'tree') {
+        trees++;
+        foliage += 0.18 + 0.82 * cachedCanopyDensity(o.type, o.seed, now);
+      }
+      if (o.type === 'wind_chime') {
+        hasChime = true;
+        const distance = Math.hypot(o.tx + 0.5 - ear.x, o.ty + 0.5 - ear.y);
+        chimeWind = Math.max(chimeWind, life.windAt(o.tx + 0.5, o.ty + 0.5) * Math.max(0, 1 - distance / 14));
+      }
       if (o.type === 'shishi') hasShishi = true;
     }
     for (let y = 0; y < 26; y += 2) for (let x = 0; x < 26; x += 2) if (world.at(x, y)?.water) water += 0.03;
@@ -70,24 +87,39 @@ export function startLoop(deps: LoopDeps): void {
     return {
       current: loud.stream,
       falling: loud.fall,
-      wind: life.windBase + life.gusts.reduce((a, g) => a + g.strength, 0) * 0.5,
+      wind: life.windAt(ear.x, ear.y),
+      chimeWind,
       waterNearby: Math.min(1, water),
       hasChime,
       hasShishi,
       catNear: life.cats.length > 0,
       frogs: life.residents.frogs.filter((f) => f.hidden <= 0 && !f.gone).length,
       trees,
+      foliage: trees ? foliage / trees : 0,
     };
   }
 
   let frameError = false;
 
   function frame(now: number): void {
+    if (document.hidden) {
+      last = now;
+      simulationGate.reset();
+      renderGate.reset();
+      renderDt = 0;
+      requestAnimationFrame(frame);
+      return;
+    }
+    if (!simulationGate.due(now, 60)) {
+      requestAnimationFrame(frame);
+      return;
+    }
     // dt зажат с обеих сторон: после сна устройства или возврата вкладки
     // метка rAF может прийти раньше прошлой — отрицательный dt отравил бы
     // все возрасты (круги на воде и т.п.) и уронил бы кадр исключением.
     const dt = Math.min(Math.max(now - last, 0), 60);
     last = now;
+    renderDt = Math.min(100, renderDt + dt);
 
     try {
       step(now, dt);
@@ -143,7 +175,7 @@ export function startLoop(deps: LoopDeps): void {
     // Плавное возвращение камеры после входа: сколько бы ни шёл шаг,
     // через порог игрок входит, а не оказывается.
     if (deps.getEntryZoom() > 0) {
-      const k = 1 - Math.pow(0.004, dt / 1000);
+      const k = scene.motion ? 1 - Math.pow(0.004, dt / 1000) : 1;
       scene.camera.zoom += (deps.getEntryZoom() - scene.camera.zoom) * k;
       if (Math.abs(deps.getEntryZoom() - scene.camera.zoom) < 0.002 || !Number.isFinite(scene.camera.zoom)) {
         scene.camera.zoom = deps.getEntryZoom();
@@ -153,9 +185,12 @@ export function startLoop(deps: LoopDeps): void {
     }
 
     // Под листом практики сад не рисуется вовсе; свиток старта непрозрачен,
-    // но за ним сад живёт и греет первый кадр ко входу.
-    if (!deps.isPracticeActive()) scene.render(world, atm, now, dt, life, weatherSys.state);
-    deps.flushChronicleSnaps();
+    // но за ним сад живёт. Двух прогревочных кадров в секунду достаточно.
+    if (!deps.isPracticeActive() && renderGate.due(now, deps.isStartOpen?.() ? 2 : scene.graphicsProfile.fps)) {
+      scene.render(world, atm, now, renderDt, life, weatherSys.state);
+      renderDt = 0;
+      deps.flushChronicleSnaps();
+    }
     ui.tick(t, atm);
     devPanel.tick();
 
@@ -163,7 +198,7 @@ export function startLoop(deps: LoopDeps): void {
     audioAccum -= dt;
     if (audioAccum <= 0) {
       audioAccum = 400;
-      audio.update(400, t, weatherSys.state, gatherAudioContext());
+      audio.update(400, t, weatherSys.state, gatherAudioContext(t.now));
     }
   }
 

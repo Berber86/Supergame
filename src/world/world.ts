@@ -1,9 +1,12 @@
+import { FRUIT_TREE_TYPES } from './orchard';
 /** Состояние усадьбы: рельеф, вода, объекты, вехи. */
 
 import { GRID, inBounds } from '../core/iso';
 import { clamp, fbm, hash2 } from '../core/rng';
 import {
   BRUSH_BY_ID,
+  FURNITURE_IDS,
+  SMALL_HOUSE_IDS,
   CatalogItem,
   ITEMS,
   ITEM_BY_ID,
@@ -122,8 +125,10 @@ export class World {
     this.unlocked = new Set();
     this.fresh = new Set();
     if (lenient) {
+      for (const id of FRUIT_TREE_TYPES) this.unlocked.add(id);
       for (const o of this.objects) if (ITEM_BY_ID.has(o.type)) this.unlocked.add(o.type);
       for (const b of TERRAIN_BRUSHES) this.unlocked.add(b.id);
+      this.unlockInteriorIfHoused();
       // Всегда открыты базовые приглашения дикой жизни
       for (const id of ['feeder', 'birdbath', 'beehive', 'squirrel_feeder', 'turtle_log']) {
         this.unlocked.add(id);
@@ -132,11 +137,30 @@ export class World {
     this.unlockRandomItem();
   }
 
+  /** Free established gardens should not hide the house tab behind painting one more floor tile. */
+  private unlockInteriorIfHoused(): void {
+    if (this.grow) return;
+    if (!this.tiles.some((t) => t.indoor) && !this.objects.some((o) => SMALL_HOUSE_IDS.has(o.type))) return;
+    for (const id of FURNITURE_IDS) this.unlocked.add(id);
+  }
+
+  /** A furnished free-garden preset can have a house without a recorded construction milestone. */
+  tabAvailable(id: string): boolean {
+    const tab = TAB_BY_ID.get(id);
+    if (!tab) return false;
+    if (!tab.requires || this.milestones.has(tab.requires)) return true;
+    return (
+      id === 'house' &&
+      !this.grow &&
+      (this.tiles.some((t) => t.indoor) || this.objects.some((o) => SMALL_HOUSE_IDS.has(o.type)))
+    );
+  }
+
   /** Запись каталога технически доступна: веха вкладки открыта, размер влезает. */
   itemAvailable(item: CatalogItem | TerrainBrush): boolean {
     const tab = TAB_BY_ID.get(item.tab);
     if (!tab) return false;
-    if (tab.requires && !this.milestones.has(tab.requires)) return false;
+    if (!this.tabAvailable(item.tab)) return false;
     if (this.grow) {
       const r = this.grow.rect;
       const straight = item.w <= r.w && item.h <= r.h;
@@ -332,7 +356,24 @@ export class World {
     this.place('table', 6.5, 5.5, 0, old);
     this.place('cushion', 5.5, 6.5, 0, old);
     this.place('cushion', 7.5, 6.5, 0, old);
-    this.place('cat', 8.5, 7.5, 0, old);
+    // New gardens only. Keep the tea area open; partition off a quiet sleeping nook.
+    const furnishings: [string, number, number, number][] = [
+      ['tokonoma', 3.5, 3, 0],
+      ['tansu', 6, 3, 0],
+      ['indoor_plant', 9, 3, 0],
+      ['futon', 3.5, 6.5, 1],
+      ['byobu', 5, 6, 1],
+      ['byobu', 5, 7, 1],
+      ['irori', 8.5, 7.5, 0],
+      ['bonsai', 8, 3, 0],
+      ['bookshelf', 4.5, 3, 0],
+      ['kotatsu', 3.5, 4.5, 0],
+      ['engawa_bench', 10, 5, 1],
+    ];
+    for (const [type, x, y, rot] of furnishings) {
+      if (this.canPlace(type, x, y, rot)) this.place(type, x, y, rot, old);
+    }
+    this.place('cat', 7.5, 7.5, 0, old);
     // Миска у кота: второму коту будет зачем остаться
     this.place('bowl', 9.5, 7.5, 0, old);
     this.place('wind_chime', 9.5, 8.5, 0, old);
@@ -353,7 +394,7 @@ export class World {
     // Южная роща и дальний берег — чтобы кадр был наполнен во все стороны
     const more: [string, number, number][] = [
       ['maple', 2.5, 12.5],
-      ['pine', 3.5, 8.5],
+      ['pine', 1, 8.5],
       ['sakura', 2.5, 19],
       ['ginkgo', 11.5, 20.5],
       ['maple', 13.5, 22.5],
@@ -711,11 +752,14 @@ export class World {
    */
   applyCascade(x0: number, y0: number, w: number, h: number): void {
     const steps = Math.max(2, Math.min(w, h));
-    // Ступени идут по диагонали на юго-восток: там низ экрана, и падающая
-    // вода обращена к зрителю.
+    // Unequal, bent terrace bands rather than identical diagonal stair treads.
+    const phase = hash2(x0, y0, 157) * Math.PI * 2;
     const bandOf = (x: number, y: number) => {
-      const k = (x - x0 + (y - y0)) / 2;
-      return Math.max(0, Math.min(steps - 1, Math.floor(k)));
+      const u = (x - x0) / Math.max(1, w - 1);
+      const v = (y - y0) / Math.max(1, h - 1);
+      const bend = Math.sin(Math.max(0, Math.min(1, v)) * Math.PI) * Math.sin(u * Math.PI + phase) * 0.12;
+      const progress = u * 0.68 + v * 0.32 + bend;
+      return Math.max(0, Math.min(steps - 1, Math.floor((progress + 0.08) * (steps - 0.2))));
     };
 
     // 1) Рельеф: каждая полоса ниже предыдущей, вокруг — покатый берег
@@ -731,17 +775,19 @@ export class World {
       }
     }
 
-    // 2) Русло: извилистая лента вниз по ступеням, а не весь квадрат.
-    // Делаем шире (2.8 вместо 2.1), чтобы каскад выглядел как поток,
-    // а не как тонкая нитка на кубичных ступенях.
+    // Winding banks with a guaranteed connected staircase through the centre.
+    // The narrow/wide pools deliberately do not repeat at each elevation.
+    const connector = Math.sin(phase) > 0 ? 1 : -1;
     for (let y = y0; y < y0 + h; y++) {
       for (let x = x0; x < x0 + w; x++) {
         const t = this.at(x, y);
         if (!t || t.indoor || t.veranda) continue;
         if (this.hasBlockingTree(x, y)) continue;
         const axis = x - x0 - (y - y0);
-        const wob = (fbm(x * 0.7, y * 0.7, 2, 53) - 0.5) * 1.2 + (fbm(x * 1.4, y * 1.4, 2, 71) - 0.5) * 0.6;
-        if (Math.abs(axis + wob) > 2.8) continue;
+        const v = (y - y0) / Math.max(1, h - 1);
+        const wob = Math.sin(v * 4.4 + phase) * 0.55;
+        const width = 1.05 + Math.sin(v * 5.3 + phase + 1) * 0.4;
+        if (Math.abs(axis + wob) > width && axis !== 0 && axis !== connector) continue;
         t.water = true;
         t.ground = 'water';
         this.touch(x, y);
@@ -773,9 +819,6 @@ export class World {
     // Сглаживаем окружение, чтобы каскад не выглядел кубично-ступенчатым
     // — без этого каждая полоса — отдельный куб с земляной стенкой.
     this.smoothTerrain();
-
-    // Делаем русло шире и мягче: раньше было 2.1 клетки, теперь 2.8,
-    // чтобы вода покрывала уступ полностью и не оставляла земляных кубов.
 
     this.checkMilestone('first_pond');
     this.checkMilestone('running_water');
@@ -845,6 +888,7 @@ export class World {
       for (let x = r.x0; x <= r.x1; x++) {
         const t = this.at(x, y);
         if (!t) return false;
+        if (item.kind === 'tree' && (t.indoor || t.veranda)) return false;
         if (item.needsWater && !t.water) return false;
         if (!item.onWater && t.water) return false;
         if (t.water) anyWater = true;
@@ -1049,6 +1093,7 @@ export class World {
     if (id === 'meet_mouse') this.checkMilestone('mouse_guest');
     if (id === 'meet_owl') this.checkMilestone('owl_guest');
     if (id === 'meet_squirrel') this.checkMilestone('squirrel_guest');
+    if (id === 'meet_lizard') this.checkMilestone('lizard_guest');
     if (id === 'meet_turtle') this.checkMilestone('turtle_guest');
     if (id === 'meet_bee') this.checkMilestone('bee_guest');
     return true;
@@ -1140,7 +1185,9 @@ export class World {
         at: e.at,
         snap: i >= keepSnapFrom ? e.snap : undefined,
       })),
-      grow: this.grow ? { ...this.grow, rect: { ...this.grow.rect } } : null,
+      grow: this.grow
+        ? { ...this.grow, rect: { ...this.grow.rect }, ...(this.grow.clock ? { clock: { ...this.grow.clock } } : {}) }
+        : null,
       born: this.born,
       unlocked: [...this.unlocked],
       fresh: [...this.fresh],
@@ -1169,6 +1216,14 @@ export class World {
       veranda: t.veranda,
     }));
     this.objects = p.objects.map((o) => ({ ...o }));
+    // Repair only the identifiable original starter pine, not arbitrary player plantings.
+    const legacyPine = this.objects.find((o) => o.type === 'pine' && o.tx === 3.5 && o.ty === 8.5);
+    const starter =
+      this.objects.some((o) => o.type === 'torii' && o.tx === 22.5 && o.ty === 20.5) &&
+      this.objects.some((o) => o.type === 'table' && o.tx === 6.5 && o.ty === 5.5) &&
+      Array.from({ length: 42 }, (_, i) => this.at(3 + (i % 7), 3 + Math.floor(i / 7))?.indoor).every(Boolean);
+    if (legacyPine && starter && this.canPlace('pine', 1, 8.5, legacyPine.rot)) legacyPine.tx = 1;
+
     this.nextId = p.nextId;
     for (const o of this.objects) this.nextId = Math.max(this.nextId, o.id + 1);
     this.milestones = new Set(p.milestones);
@@ -1212,6 +1267,10 @@ export class World {
       // вольный оставляет себе то, что уже прожито
       this.initUnlocks(!p.grow);
     }
+    // Expose the interior kit in established free gardens, without moving/adding a single object.
+    // Growing gardens retain their existing discovery progression.
+    this.unlockInteriorIfHoused();
+    if (!this.grow) for (const id of FRUIT_TREE_TYPES) this.unlocked.add(id);
     this.noteObjectsChanged();
   }
 

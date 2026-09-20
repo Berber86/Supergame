@@ -1,3 +1,4 @@
+import type { GrowClockState } from '../core/growClock';
 /** Типы данных усадьбы. */
 
 export type GroundId = 'moss' | 'grass' | 'gravel' | 'sand' | 'stone' | 'soil' | 'water' | 'tatami' | 'deck';
@@ -50,6 +51,7 @@ export interface SaveData {
   fresh?: string[];
   /** Режим растущего сада: null или отсутствие — вольный сад. */
   grow?: {
+    clock?: GrowClockState;
     rect: { x: number; y: number; w: number; h: number };
     seed: number;
     bank: number;

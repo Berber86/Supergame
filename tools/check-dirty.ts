@@ -17,7 +17,15 @@ async function main() {
   const { renderTerrain } = await import('../src/render/terrain');
   const { BRUSH_BY_ID } = await import('../src/world/catalog');
 
-  const cases: { name: string; hour: number; act: (w: InstanceType<typeof World>) => void }[] = [
+  const cases: {
+    name: string;
+    hour: number;
+    date?: number;
+    setup?: (w: InstanceType<typeof World>) => void;
+    act: (w: InstanceType<typeof World>) => void;
+  }[] = [
+    { name: 'татами вместо веранды', hour: 13, act: (w) => w.setGround(10, 8, 'tatami') },
+    { name: 'проём в полу ночью', hour: 23, act: (w) => w.setGround(5, 5, 'moss') },
     { name: 'кисть мха 1×1', hour: 13, act: (w) => w.applyBrush(BRUSH_BY_ID.get('g_moss')!, 8, 20) },
     {
       name: 'кисть гравия 5×5',
@@ -27,12 +35,32 @@ async function main() {
         w.applyBrush(BRUSH_BY_ID.get('g_gravel')!, 8, 20);
       },
     },
+    { name: 'каскад с каменными берегами', hour: 13, act: (w) => w.applyBrush(BRUSH_BY_ID.get('w_cascade')!, 9, 17) },
+    {
+      name: 'правка существующего каскада',
+      hour: 13,
+      setup: (w) => w.applyBrush(BRUSH_BY_ID.get('w_cascade')!, 9, 17),
+      act: (w) => w.applyBrush(BRUSH_BY_ID.get('h_low')!, 10, 18),
+    },
     { name: 'пруд 4×4', hour: 9, act: (w) => w.applyBrush(BRUSH_BY_ID.get('w_pond4')!, 6, 21) },
     { name: 'холм 3×3 (меняет высоту)', hour: 17, act: (w) => w.applyBrush(BRUSH_BY_ID.get('h_hill3')!, 5, 19) },
     { name: 'ложбина 3×3', hour: 17, act: (w) => w.applyBrush(BRUSH_BY_ID.get('h_low')!, 20, 8) },
     { name: 'заливка области', hour: 13, act: (w) => w.floodFill(2, 24, 'sand') },
     { name: 'край сада', hour: 13, act: (w) => w.applyBrush(BRUSH_BY_ID.get('g_stone')!, 0, 25) },
+    { name: 'зима, берег', hour: 13, act: (w) => w.setGround(14, 12, 'moss') },
     { name: 'зима, снег', hour: 16, act: (w) => w.applyBrush(BRUSH_BY_ID.get('g_soil')!, 9, 18) },
+    {
+      name: 'первые сугробы, правка берега',
+      hour: 13,
+      date: new Date(2026, 11, 12, 13).getTime(),
+      act: (w) => w.setGround(14, 12, 'moss'),
+    },
+    {
+      name: 'проталины, новая тропа',
+      hour: 13,
+      date: new Date(2026, 2, 1, 13).getTime(),
+      act: (w) => w.applyBrush(BRUSH_BY_ID.get('g_stone')!, 9, 18),
+    },
   ];
 
   // Порог заметности — на канал, а не на сумму каналов.
@@ -49,10 +77,11 @@ async function main() {
     const d = new Date();
     d.setHours(c.hour, 0, 0, 0);
     // последний случай проверяем зимой
-    const ms = c.name.includes('зима') ? d.getTime() + 9 * 86400e3 : d.getTime();
+    const ms = c.date ?? (c.name.includes('зима') ? new Date(2026, 11, 19, c.hour).getTime() : d.getTime());
     const t = computeTime(ms);
     const atm = buildAtmosphere(t, 0);
 
+    c.setup?.(w);
     const layer = renderTerrain(w, atm, 1);
     w.clearTouched();
     c.act(w);

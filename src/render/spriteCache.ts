@@ -1,3 +1,7 @@
+import { STONE_TYPES } from '../world/stone';
+import { winterYear } from '../world/annualEnvironment';
+import { drawWindImage, windOffset } from './plantWind';
+import { crownCacheKey, crownCacheTime } from '../world/phenology';
 /**
  * Кэш готовых спрайтов.
  *
@@ -14,11 +18,16 @@
  * тип, сезон, стадия роста (огрублённая), освещение (огрублённое),
  * азимут солнца и золотой час (грубыми корзинами — светлая и теневая
  * стороны кроны выпекаются в спрайт), сид.
- * Ветер и время в ключ не входят — они применяются при копировании.
+ * Ветер и время покачивания в ключ не входят — они применяются при копировании.
+ * Годовое развитие кроны входит отдельной ограниченной ревизией (примерно 17 часов).
  */
 
-import { DrawCtx, drawObject, hasDrawer, setSkipShadows } from './sprites';
+import { DrawCtx, drawObject, drawCost, hasDrawer, setSkipShadows } from './sprites';
 import { Ctx } from './paint';
+import { flowerCycleKey } from './flowerCycle';
+import { css } from '../world/palette';
+import { ITEM_BY_ID, SMALL_HOUSE_IDS } from '../world/catalog';
+import { roofSnowKey } from './roofSnow';
 
 interface Entry {
   canvas: HTMLCanvasElement;
@@ -30,7 +39,7 @@ interface Entry {
 }
 
 const cache = new Map<string, Entry>();
-/** Больше не держим: при 4 сезонах и десятке стадий этого с запасом. */
+/** Жёсткий предел: прошедшие годовые ревизии вытесняются, архив крон не накапливается. */
 const LIMIT = 420;
 let frame = 0;
 let hits = 0;
@@ -47,7 +56,6 @@ const LIVE = new Set([
   'irori',
   'shishi',
   'wind_chime',
-  'water_stone',
   'tsukubai',
   'table',
 ]);
@@ -78,11 +86,20 @@ export function cacheable(type: string, cost: number): boolean {
   return !LIVE.has(type) && hasDrawer(type) && cost > 120;
 }
 
-export function spriteStats(): { size: number; hits: number; misses: number } {
-  return { size: cache.size, hits, misses };
+export function spriteStats(): { size: number; boxes: number; hits: number; misses: number; pixels: number } {
+  let pixels = 0;
+  for (const entry of cache.values()) pixels += entry.canvas.width * entry.canvas.height;
+  return { size: cache.size, boxes: boxes.size, hits, misses, pixels };
+}
+
+function releaseSprite(entry: Entry): void {
+  // Drop retired backing pixels immediately; rapid calendar scrubbing must not wait for canvas GC.
+  entry.canvas.width = 1;
+  entry.canvas.height = 1;
 }
 
 export function clearSprites(): void {
+  for (const entry of cache.values()) releaseSprite(entry);
   cache.clear();
   boxes.clear();
   hits = 0;
@@ -98,7 +115,7 @@ export function spriteFrame(): void {
  * Рисует объект через кэш. Возвращает false, если кэш не подошёл
  * и объект надо рисовать обычным способом.
  */
-export function drawCached(d: DrawCtx): boolean {
+function getCachedSprite(d: DrawCtx, relit = false): Entry | null {
   const { obj, atm } = d;
 
   // Огрубление ключа: без него кэш промахивался бы каждый кадр, потому
@@ -113,7 +130,11 @@ export function drawCached(d: DrawCtx): boolean {
   // перебация случается считаные разы за сутки, а не каждый кадр.
   const sunq = quantDown(atm.sunDir.x, 0.4);
   const goldq = quantDown(atm.golden, 0.34);
-  const key = `${obj.type}|${atm.season}|${gq}|${expq}|${lampq}|${sunq}|${goldq}|${obj.seed}|${obj.rot}`;
+  const snowKey = SMALL_HOUSE_IDS.has(obj.type) ? roofSnowKey(atm, obj.seed) : '';
+  const mineralKey = STONE_TYPES.has(obj.type)
+    ? `${Math.round((atm.stoneHabitat ?? 0.25) * 6)}:${Math.round(winterYear(atm.time.now).snow * 12)}`
+    : '';
+  const key = `${mineralKey}|${crownCacheKey(obj.type, obj.seed, atm.time.now)}|${Math.round((atm.materialWetness ?? 0) * 12)}|${flowerCycleKey(obj.type, atm)}|${relit ? 'lit' : 'base'}|${snowKey}|${obj.type}|${atm.season}|${gq}|${expq}|${lampq}|${sunq}|${goldq}|${obj.seed}|${obj.rot}`;
 
   let e = cache.get(key);
   if (!e) {
@@ -122,18 +143,20 @@ export function drawCached(d: DrawCtx): boolean {
     // Сначала я прикидывал высоту формулой от objectHeight — и кроны
     // обрезались: спрайт оказывался меньше настоящего рисунка.
     // Теперь один раз меряем, куда объект дотягивается на самом деле.
-    const box = measureBox(obj, atm, gq);
-    if (!box) return false;
+    const annualNow = crownCacheTime(obj.type, obj.seed, atm.time.now);
+    const bakeAtm = annualNow === atm.time.now ? atm : { ...atm, time: { ...atm.time, now: annualNow } };
+    const box = measureBox(obj, bakeAtm, gq);
+    if (!box) return null;
 
     const w = box.w;
     const h = box.h;
-    if (w <= 0 || h <= 0 || w > 900 || h > 900) return false;
+    if (w <= 0 || h <= 0 || w > 900 || h > 900) return null;
 
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
     const cx = canvas.getContext('2d');
-    if (!cx) return false;
+    if (!cx) return null;
 
     // Рисуем без ветра и на нулевом времени: движение добавится при копии
     const ax = box.ax;
@@ -145,11 +168,13 @@ export function drawCached(d: DrawCtx): boolean {
       ctx: cx as unknown as Ctx,
       x: 0,
       y: 0,
-      atm,
+      atm: bakeAtm,
       g: gq <= 0 ? 0.02 : gq,
       obj,
       time: 0,
       wind: 0,
+      plantPose: undefined,
+      windVector: undefined,
       alpha: 1,
     });
     setSkipShadows(false);
@@ -164,6 +189,16 @@ export function drawCached(d: DrawCtx): boolean {
 
   e.used = frame;
 
+  return e;
+}
+
+export function drawCached(d: DrawCtx): boolean {
+  const e = getCachedSprite(d);
+  if (!e) return false;
+  drawEntry(d, e);
+  return true;
+}
+function drawEntry(d: DrawCtx, e: Entry): void {
   const ctx = d.ctx as unknown as CanvasRenderingContext2D;
   const prev = ctx.globalAlpha;
   ctx.globalAlpha = d.alpha;
@@ -174,19 +209,63 @@ export function drawCached(d: DrawCtx): boolean {
   // появится мыло. Округляем в экранных координатах — с учётом текущего
   // преобразования, иначе при зуме округление не совпадёт с пикселями.
   const m = ctx.getTransform ? ctx.getTransform() : null;
-  const dx = d.x - e.ax;
-  const dy = d.y - e.ay;
+  let dx = d.x - e.ax;
+  let dy = d.y - e.ay;
   if (m && m.a !== 0 && m.d !== 0) {
-    const sx = m.a * dx + m.c * dy + m.e;
-    const sy = m.b * dx + m.d * dy + m.f;
-    const rx = Math.round(sx);
-    const ry = Math.round(sy);
-    ctx.drawImage(e.canvas, dx + (rx - sx) / m.a, dy + (ry - sy) / m.d);
+    const sx = m.a * dx + m.c * dy + m.e,
+      sy = m.b * dx + m.d * dy + m.f;
+    dx += (Math.round(sx) - sx) / m.a;
+    dy += (Math.round(sy) - sy) / m.d;
   } else {
-    ctx.drawImage(e.canvas, Math.round(dx), Math.round(dy));
+    dx = Math.round(dx);
+    dy = Math.round(dy);
   }
+  // Keep the very same snapped foot as in calm weather, also at fractional zoom/DPR.
+  if (d.plantPose && Math.abs(d.plantPose.slope) > 1e-6)
+    drawWindImage(ctx, e.canvas, dx + e.ax, dy + e.ay, e.ax, e.ay, e.canvas.width, e.canvas.height, d.plantPose);
+  else ctx.drawImage(e.canvas, dx, dy);
   ctx.globalAlpha = prev;
-  return true;
+}
+
+/** Shared live pose for the displayed sprite and its reflection; rigid objects never sway. */
+export function spriteSway(type: string, seed: number, g: number, time: number, wind: number): number {
+  const kind = ITEM_BY_ID.get(type)?.kind;
+  if (kind !== 'tree' && kind !== 'shrub' && kind !== 'flower') return 0;
+  const scale = 0.18 + 0.82 * Math.pow(cachedGrowth(g), 0.72);
+  return Math.sin(time * 0.0004 + seed) * 3 * wind * scale * 0.7;
+}
+
+/** The very same painted sprite, mirrored in broken horizontal strips; no shadow. */
+export function drawCachedReflection(d: DrawCtx, compression = 0.82, stripSize = 5): void {
+  const e = getCachedSprite(d);
+  if (!e) return;
+  const ctx = d.ctx;
+  ctx.save();
+  const alpha = ctx.globalAlpha * d.alpha;
+  ctx.translate(d.x + (d.plantPose || d.windVector ? 0 : spriteSway(d.obj.type, d.obj.seed, d.g, d.time, d.wind)), d.y);
+  ctx.scale(1, -compression);
+  // Only the part above the object's foot reflects. A fragment is 5 world pixels,
+  // not a screen-sized offscreen canvas; reused sprites also bound memory.
+  const step = Number.isFinite(stripSize) ? Math.max(5, Math.min(24, stripSize)) : 5;
+  for (let y = 0; y < e.ay; y += step) {
+    const h = Math.min(step, e.ay - y);
+    const depth = (e.ay - y) / Math.max(1, e.ay);
+    const wave = d.reflectionWarp?.(d.x, d.y + (e.ay - y) * compression);
+    const drift = wave?.dx ?? Math.sin(d.time * 0.0013 + y * 0.095 + d.obj.seed) * (0.3 + d.wind * 0.6);
+    ctx.globalAlpha = alpha * (0.9 - depth * 0.35) * (wave?.alpha ?? 1);
+    ctx.drawImage(
+      e.canvas,
+      0,
+      y,
+      e.canvas.width,
+      h,
+      -e.ax + drift + windOffset(d.plantPose, e.ay - y - h * 0.5),
+      y - e.ay - (wave?.dy ?? 0) / compression,
+      e.canvas.width,
+      h + 0.12,
+    );
+  }
+  ctx.restore();
 }
 
 /**
@@ -196,6 +275,12 @@ export function drawCached(d: DrawCtx): boolean {
  * чем всю жизнь угадывать размер и обрезать кроны.
  */
 const boxes = new Map<string, { w: number; h: number; ax: number; ay: number } | null>();
+
+/** Failures/empty dormant sprites need the same bound as successful measurements. */
+function rememberBox(key: string, box: { w: number; h: number; ax: number; ay: number } | null): void {
+  boxes.set(key, box);
+  if (boxes.size > 600) boxes.delete(boxes.keys().next().value!);
+}
 
 let _probe: HTMLCanvasElement | null = null;
 function getProbe(S: number): CanvasRenderingContext2D | null {
@@ -219,7 +304,8 @@ function measureBox(
   gq: number,
 ): { w: number; h: number; ax: number; ay: number } | null {
   // Размер зависит от сида из-за scaleJitter и зеркала, поэтому включаем seed
-  const key = `${obj.type}|${atm.season}|${gq}|${obj.rot}|${obj.seed}`;
+  const snowKey = SMALL_HOUSE_IDS.has(obj.type) ? roofSnowKey(atm, obj.seed) : '';
+  const key = `${crownCacheKey(obj.type, obj.seed, atm.time.now)}|${flowerCycleKey(obj.type, atm)}|${snowKey}|${obj.type}|${atm.season}|${gq}|${obj.rot}|${obj.seed}`;
   const hit = boxes.get(key);
   if (hit !== undefined) return hit;
 
@@ -228,7 +314,7 @@ function measureBox(
   const S = 380;
   const pc = getProbe(S);
   if (!pc) {
-    boxes.set(key, null);
+    rememberBox(key, null);
     return null;
   }
   // Опора строго в целых пикселях: спрайт потом кладётся по целым
@@ -248,12 +334,14 @@ function measureBox(
       obj: obj as never,
       time: 0,
       wind: 0,
+      plantPose: undefined,
+      windVector: undefined,
       alpha: 1,
     });
   } catch (e) {
     console.warn('[spriteCache] measure draw failed', obj.type, e);
     setSkipShadows(false);
-    boxes.set(key, null);
+    rememberBox(key, null);
     return null;
   }
   setSkipShadows(false);
@@ -263,7 +351,7 @@ function measureBox(
     img = (pc as any).getImageData(0, 0, S, S) as ImageData;
   } catch (e) {
     console.warn('[spriteCache] getImageData failed', e);
-    boxes.set(key, null);
+    rememberBox(key, null);
     return null;
   }
   const px = img.data;
@@ -285,7 +373,7 @@ function measureBox(
     if (top !== S) break;
   }
   if (top === S) {
-    boxes.set(key, null);
+    rememberBox(key, null);
     return null;
   }
   for (let y = S - 1; y >= top; y--) {
@@ -318,7 +406,7 @@ function measureBox(
   }
 
   if (bottom < 0 || right < 0) {
-    boxes.set(key, null);
+    rememberBox(key, null);
     return null;
   }
 
@@ -329,7 +417,7 @@ function measureBox(
   const w = Math.min(900, right - left + 1 + pad * 2);
   const h = Math.min(900, bottom - top + 1 + pad * 2);
   if (w <= 0 || h <= 0) {
-    boxes.set(key, null);
+    rememberBox(key, null);
     return null;
   }
   const box = {
@@ -338,11 +426,7 @@ function measureBox(
     ax: ox - left + pad,
     ay: oy - top + pad,
   };
-  boxes.set(key, box);
-  if (boxes.size > 600) {
-    const first = boxes.keys().next().value;
-    if (first) boxes.delete(first);
-  }
+  rememberBox(key, box);
   return box;
 }
 
@@ -356,5 +440,100 @@ function evict(): void {
       victim = k;
     }
   }
-  if (victim) cache.delete(victim);
+  if (victim) {
+    releaseSprite(cache.get(victim)!);
+    cache.delete(victim);
+  }
+}
+
+/** Two reusable large-sprite masks (1.25 MiB total); no per-light/per-frame sprite variants. */
+const lightMasks = new Map<number, HTMLCanvasElement>();
+export function paintObjectLight(d: DrawCtx, hits: import('./localLight').LightSample[], useCache = true): void {
+  if (!hits.length) return;
+  // A real re-lit material, not a uniform orange silhouette: books, grain and dark faces retain contrast.
+  const litD = {
+    ...d,
+    atm: {
+      ...d.atm,
+      exposure: Math.min(1.08, d.atm.exposure + 0.58),
+      lightTint: hits[0].light.color,
+      lightAmount: 0.34,
+    },
+  };
+  const cached = useCache && cacheable(d.obj.type, drawCost(d.obj.type)) ? getCachedSprite(litD, true) : null;
+  const strength = Math.min(
+    0.65,
+    hits.reduce((s, h) => s + h.strength, 0),
+  );
+  // Tiny materials need only receiver-level falloff. Avoid a mutable bitmap copy per blade of grass.
+  // Large cached crowns retain the spatial gradient; live objects retain their exact animation.
+  if (!cached || Math.max(cached.canvas.width, cached.canvas.height) <= 160) {
+    const direct = { ...litD, alpha: d.alpha * strength * 0.56 };
+    if (cached) drawEntry(direct, cached);
+    else {
+      setSkipShadows(true);
+      try {
+        drawObject(direct);
+      } finally {
+        setSkipShadows(false);
+      }
+    }
+    return;
+  }
+  const measured = { w: cached.canvas.width, h: cached.canvas.height, ax: cached.ax, ay: cached.ay };
+  if (measured.w > 512 || measured.h > 512) return;
+  const size = [256, 512].find((s) => s >= Math.max(measured.w, measured.h))!;
+  let lightMask = lightMasks.get(size);
+  if (!lightMask) {
+    lightMask = document.createElement('canvas');
+    lightMask.width = size;
+    lightMask.height = size;
+    lightMasks.set(size, lightMask);
+  }
+  const c = lightMask.getContext('2d')!;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.save();
+  c.beginPath();
+  c.rect(0, 0, measured.w, measured.h);
+  c.clip();
+  c.clearRect(0, 0, measured.w, measured.h);
+  c.drawImage(cached.canvas, 0, 0);
+  c.globalCompositeOperation = 'destination-in';
+  const l = hits[0].light;
+  const x = l.screen.x - d.x + measured.ax,
+    y = l.screen.y - d.y + measured.ay,
+    r = l.radius * 66;
+  const g = c.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, css(l.color, strength * 0.76));
+  g.addColorStop(0.45, css(l.color, strength * 0.55));
+  g.addColorStop(1, css(l.color, 0));
+  c.fillStyle = g;
+  c.fillRect(0, 0, measured.w, measured.h);
+  c.restore();
+  let dx = d.x - measured.ax,
+    dy = d.y - measured.ay;
+  const m = d.ctx.getTransform();
+  if (cached && m.a && m.d) {
+    const sx = m.a * dx + m.c * dy + m.e,
+      sy = m.b * dx + m.d * dy + m.f;
+    dx += (Math.round(sx) - sx) / m.a;
+    dy += (Math.round(sy) - sy) / m.d;
+  }
+  d.ctx.save();
+  d.ctx.globalAlpha = d.alpha;
+  d.ctx.globalCompositeOperation = 'source-over';
+  if (d.plantPose && Math.abs(d.plantPose.slope) > 1e-6)
+    drawWindImage(
+      d.ctx,
+      lightMask,
+      dx + measured.ax,
+      dy + measured.ay,
+      measured.ax,
+      measured.ay,
+      measured.w,
+      measured.h,
+      d.plantPose,
+    );
+  else d.ctx.drawImage(lightMask, 0, 0, measured.w, measured.h, dx, dy, measured.w, measured.h);
+  d.ctx.restore();
 }

@@ -570,7 +570,7 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       // Вид подбирается под ориентацию: в альбоме сад помещается целиком,
       // в книжной — только его середина. Без пересчёта после поворота
       // остался бы масштаб от прошлой ориентации.
-      if (touchMode) scene.fitToView();
+      if (touchMode) scene.fitToView(world);
       scene.clampCamera();
     }, 160);
   });

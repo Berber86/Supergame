@@ -1,33 +1,67 @@
+import { paintStone } from '../stone';
+import { flowerYear, winterYear } from '../../world/annualEnvironment';
 /** Жители пруда и водяные растения. */
 
-import { Drawer, WHITE, litc } from './common';
-import { clamp01, hash2, lerp } from '../../core/rng';
+import { flowerOpenness } from '../flowerCycle';
+import { Drawer, litc } from './common';
+import { hash2, lerp } from '../../core/rng';
 import { css, mix, shade } from '../../world/palette';
-import { blobPath, washBlob } from '../paint';
 
 // ---------------- Вода ----------------
 
+/** Winter keeps the planted object, but rhizomes rest below the water; only old stems remain. */
+function drawDormantWaterPlant(d: Parameters<Drawer>[0], lotus: boolean): void {
+  const { ctx, x, y, atm } = d;
+  ctx.save();
+  const brown = litc({ r: 128, g: 119, b: 91 }, atm);
+  if (lotus) {
+    ctx.strokeStyle = css(brown, 0.65);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(x, y + 2);
+    ctx.quadraticCurveTo(x + 3, y - 5, x + 1, y - 10);
+    ctx.stroke();
+    ctx.fillStyle = css(brown, 0.8);
+    ctx.beginPath();
+    ctx.ellipse(x + 1, y - 10, 3.2, 1.7, -0.25, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = css(brown, 0.2);
+    ctx.beginPath();
+    ctx.ellipse(x - 3, y + 2, 6, 2.5, -0.15, 0, Math.PI * 1.65);
+    ctx.lineTo(x - 3, y + 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 export const drawLilypad: Drawer = (d) => {
   const { ctx, atm, obj } = d;
+  const year = flowerYear('lilypad', obj.seed, atm.time.now);
+  ctx.save();
+  ctx.globalAlpha *= 1 - year.foliage;
+  drawDormantWaterPlant(d, false);
+  ctx.restore();
+  if (year.foliage <= 0.001) return;
   const bob = Math.sin(d.time * 0.0008 + obj.seed) * 1.5;
   for (let i = 0; i < 3; i++) {
     const r1 = hash2(i, obj.seed, 9);
     const r2 = hash2(i, obj.seed, 19);
     const px = d.x + (r1 - 0.5) * 22;
     const py = d.y + (r2 - 0.5) * 11 + bob;
-    const rx = 8 + r1 * 5;
+    const rx = (8 + r1 * 5) * Math.sqrt(year.foliage);
     const c = litc(mix({ r: 116, g: 156, b: 104 }, atm.palette.foliage, 0.4), atm);
-    ctx.fillStyle = css(shade(c, 0.7), 0.3);
+    ctx.fillStyle = css(shade(c, 0.7), 0.3 * year.foliage);
     ctx.beginPath();
     ctx.ellipse(px, py + 2, rx, rx * 0.55, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = css(c, 0.9);
+    ctx.fillStyle = css(c, 0.9 * year.foliage);
     ctx.beginPath();
     ctx.ellipse(px, py, rx, rx * 0.55, 0, 0.35, Math.PI * 2 - 0.35);
     ctx.lineTo(px, py);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = css(shade(c, 0.78), 0.4);
+    ctx.strokeStyle = css(shade(c, 0.78), 0.4 * year.foliage);
     ctx.lineWidth = 0.8;
     for (let k = 0; k < 4; k++) {
       const a = 0.6 + k * 1.2;
@@ -41,44 +75,54 @@ export const drawLilypad: Drawer = (d) => {
 
 export const drawLotus: Drawer = (d) => {
   const { ctx, atm, obj, g } = d;
+  const year = flowerYear('lotus', obj.seed, atm.time.now);
+  ctx.save();
+  ctx.globalAlpha *= 1 - year.foliage;
+  drawDormantWaterPlant(d, true);
+  ctx.restore();
+  if (year.foliage <= 0.001) return;
   const bob = Math.sin(d.time * 0.0007 + obj.seed) * 1.5;
-  const open = clamp01(atm.time.daylight * 1.4);
-  const scale = lerp(0.5, 1, g);
+  const open = flowerOpenness(atm);
+  let scale = lerp(0.5, 1, g) * Math.sqrt(year.foliage);
   const px = d.x;
   const py = d.y + bob;
   // лист
   const leaf = litc({ r: 108, g: 148, b: 100 }, atm);
-  ctx.fillStyle = css(leaf, 0.85);
+  ctx.fillStyle = css(leaf, 0.85 * year.foliage);
   ctx.beginPath();
   ctx.ellipse(px - 10, py + 3, 10 * scale, 5.5 * scale, 0, 0, Math.PI * 2);
   ctx.fill();
   // стебель
-  ctx.strokeStyle = css(litc({ r: 120, g: 154, b: 104 }, atm), 0.8);
+  ctx.strokeStyle = css(litc({ r: 120, g: 154, b: 104 }, atm), 0.8 * year.foliage);
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(px, py + 2);
   ctx.lineTo(px + 1, py - 12 * scale);
   ctx.stroke();
+  // Annual presence is independent of the day/night petal pose.
+  if (year.bloom <= 0.001) return;
+  const cy = py - 13 * scale;
+  scale *= Math.sqrt(year.bloom);
   // цветок
   const petal = litc({ r: 248, g: 204, b: 216 }, atm, 0.05);
   const petalDeep = litc({ r: 236, g: 166, b: 190 }, atm);
-  const cy = py - 13 * scale;
+
   const n = 7;
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2;
-    const spread = lerp(0.3, 1.1, open);
+    const spread = 1.1 * open;
     const ex = px + Math.cos(a) * 6 * scale * spread;
-    const ey = cy + Math.sin(a) * 3.4 * scale * spread - 2;
-    ctx.fillStyle = css(i % 2 === 0 ? petal : petalDeep, 0.9);
+    const ey = cy + Math.sin(a) * 3.4 * scale * spread - 2 - (1 - open) * 3 * scale;
+    ctx.fillStyle = css(i % 2 === 0 ? petal : petalDeep, 0.9 * year.bloom);
     ctx.save();
     ctx.translate(ex, ey);
-    ctx.rotate(a);
+    ctx.rotate(lerp(-Math.PI / 2, a, open));
     ctx.beginPath();
-    ctx.ellipse(0, 0, 5.5 * scale, 2.6 * scale, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 5.5 * scale, lerp(1.2, 2.6, open) * scale, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
-  ctx.fillStyle = css(litc({ r: 246, g: 226, b: 160 }, atm), 0.95);
+  ctx.fillStyle = css(litc({ r: 246, g: 226, b: 160 }, atm), 0.95 * year.bloom * Math.max(0, (open - 0.4) / 0.6));
   ctx.beginPath();
   ctx.arc(px, cy - 2, 2.4 * scale, 0, Math.PI * 2);
   ctx.fill();
@@ -138,7 +182,14 @@ export const drawReed: Drawer = (d) => {
   const { ctx, atm, g, obj } = d;
   const scale = lerp(0.45, 1, Math.pow(g, 0.7));
   const stalks = 5 + Math.round(scale * 3);
-  const stemCol = litc(atm.season === 'winter' ? { r: 176, g: 164, b: 130 } : { r: 116, g: 148, b: 92 }, atm);
+  const stemCol = litc(
+    mix(
+      { r: 116, g: 148, b: 92 },
+      { r: 176, g: 164, b: 130 },
+      1 - flowerYear('lilypad', obj.seed, atm.time.now).foliage,
+    ),
+    atm,
+  );
   const head = litc({ r: 132, g: 96, b: 66 }, atm);
 
   ctx.lineCap = 'round';
@@ -173,7 +224,7 @@ export const drawHorsetail: Drawer = (d) => {
   const { ctx, atm, g, obj } = d;
   const scale = lerp(0.45, 1, Math.pow(g, 0.7));
   const stalks = 6 + Math.round(scale * 4);
-  const col = litc(atm.season === 'winter' ? { r: 150, g: 158, b: 138 } : { r: 96, g: 142, b: 104 }, atm);
+  const col = litc(mix({ r: 96, g: 142, b: 104 }, { r: 150, g: 158, b: 138 }, winterYear(atm.time.now).snow), atm);
 
   for (let i = 0; i < stalks; i++) {
     const r1 = hash2(i, obj.seed, 23);
@@ -206,36 +257,23 @@ export const drawHorsetail: Drawer = (d) => {
 /** Камень, стоящий в воде: с мокрой полосой и кругами у основания. */
 
 export const drawWaterStone: Drawer = (d) => {
-  const { ctx, atm, obj } = d;
-  const rx = 11;
-  const ry = 8;
-  const base = { r: 132, g: 130, b: 126 };
-  const stone = litc(base, atm);
-
-  // Круги на воде вокруг камня — вода его обтекает
-  const ring = litc(mix(atm.palette.water, WHITE, 0.6), atm);
-  for (let i = 0; i < 2; i++) {
-    const ph = (((d.time * 0.0009 + i * 0.5 + obj.seed * 0.01) % 1) + 1) % 1;
-    ctx.strokeStyle = css(ring, 0.22 * (1 - ph));
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.ellipse(d.x, d.y + 2, rx * (0.9 + ph * 0.9), ry * (0.55 + ph * 0.6), 0, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-
-  // Сам камень
-  washBlob(ctx, d.x, d.y - ry * 0.5, rx, ry, stone, obj.seed, { layers: 2, alpha: 0.6, edge: 0.1, wobble: 0.3 });
-  // мокрая полоса у ватерлинии — камень темнее там, где его лижет вода
+  const { ctx } = d;
   ctx.save();
-  ctx.globalCompositeOperation = 'multiply';
-  ctx.fillStyle = css(mix(WHITE, mix(base, atm.palette.waterDeep, 0.5), 0.5), 1);
-  blobPath(ctx, d.x, d.y + 1, rx * 0.95, ry * 0.34, obj.seed + 5, 0.26, 8);
-  ctx.fill();
+  ctx.beginPath();
+  ctx.rect(d.x - 80, d.y - 100, 160, 102);
+  ctx.clip();
+  paintStone(
+    ctx,
+    d.x,
+    d.y,
+    d.obj.seed,
+    0.62,
+    d.obj.rot,
+    { ...d.atm, stoneHabitat: Math.max(0.7, d.atm.stoneHabitat ?? 0) },
+    false,
+    true,
+  );
   ctx.restore();
-  // блик сверху
-  ctx.fillStyle = css(litc(mix(base, WHITE, 0.45), atm, 0.04), 0.4);
-  blobPath(ctx, d.x - atm.sunDir.x * rx * 0.3, d.y - ry * 0.9, rx * 0.42, ry * 0.28, obj.seed + 9, 0.3, 7);
-  ctx.fill();
 };
 
 /** Мостки: простые доски над водой, без изгиба. */

@@ -1,212 +1,143 @@
-/** Мост и мостки: дуга ведёт от берега к берегу, к устоям код относится бережно. */
+/** Bridges use one projected deck curve for boards, beams, railings and posts. */
+import { type Drawer, litc, shadowUnder } from './common';
+import { isoToScreen, type Pt } from '../../core/iso';
+import { hash2 } from '../../core/rng';
+import { css, shade, mix } from '../../world/palette';
+import { shape, stroke, limb, oval } from '../animalBrush';
 
-import { Drawer, WHITE, litc } from './common';
-import { TILE_H, TILE_W } from '../../core/iso';
-import { hash2, lerp } from '../../core/rng';
-import { css, mix, shade } from '../../world/palette';
+/** rot=0 spans world X (catalogue footprint 3×1), rot=1 spans Y. */
+export function bridgePoint(rot: number, t: number, side: number, rail = 0, plank = false, reflection = false): Pt {
+  const along = (t - 0.5) * (plank ? 2 : 3);
+  const across = side * (plank ? 0.32 : 0.37);
+  const p = rot % 2 === 0 ? isoToScreen(along, across) : isoToScreen(across, along);
+  return { x: p.x, y: p.y + (reflection ? 1 : -1) * (7 + 4 * (plank ? 2 : 20) * t * (1 - t) + rail) };
+}
 
-// ---------------- Постройки ----------------
-
-export const drawBridge: Drawer = (d) => {
+function bridge(d: Parameters<Drawer>[0], plank: boolean): void {
   const { ctx, atm, obj } = d;
-  const wood = litc({ r: 164, g: 106, b: 76 }, atm);
-  const woodDark = litc({ r: 118, g: 74, b: 56 }, atm);
-  const rot = obj.rot % 2;
-  const dx = rot === 0 ? TILE_W / 2 : -TILE_W / 2;
-  const dy = TILE_H / 2;
-
+  const z = d.reflection ? -1 : 1;
+  const wood = litc({ r: 166, g: 117, b: 76 }, atm);
+  const dark = litc({ r: 93, g: 66, b: 49 }, atm);
+  const light = litc({ r: 213, g: 169, b: 111 }, atm);
+  const railColor = litc({ r: 128, g: 79, b: 54 }, atm);
+  const stone = litc(mix(atm.palette.stone, { r: 136, g: 135, b: 119 }, 0.45), atm);
+  const at = (t: number, side: number, height = 0) => {
+    const p = bridgePoint(obj.rot, t, side, height, plank, d.reflection);
+    if (d.reflection && d.reflectionWarp) {
+      const wave = d.reflectionWarp(d.x + p.x, d.y + p.y);
+      p.x += wave.dx;
+      p.y += wave.dy;
+    }
+    return p;
+  };
+  if (!d.reflection) shadowUnder(d, plank ? 49 : 72, plank ? 12 : 18, 0.38);
   ctx.save();
   ctx.translate(d.x, d.y);
-  const ax = -dx * 1.5;
-  const ay = -dy * 1.5;
-  const bx = dx * 1.5;
-  const by = dy * 1.5;
-  const arch = -26;
-  const w = 13; // полуширина настила
-
-  // тень на воде
-  ctx.fillStyle = css(atm.shadowTint, atm.shadowAmount * 0.9);
-  ctx.beginPath();
-  ctx.moveTo(ax, ay + 6);
-  ctx.quadraticCurveTo(0, arch * 0.4 + 10, bx, by + 6);
-  ctx.lineTo(bx, by + 14);
-  ctx.quadraticCurveTo(0, arch * 0.4 + 20, ax, ay + 14);
-  ctx.closePath();
-  ctx.fill();
-
-  // Устои: каменные опоры по обоим концам — без них дуга «висела в воздухе»,
-  // а ночью и зимой концы растворялись в тёмной воде.
-  const stBase = litc(mix(atm.palette.stone, { r: 168, g: 164, b: 154 }, 0.35), atm);
-  const stDark = litc(shade(atm.palette.stone, 0.62), atm);
-  const L = Math.hypot(bx - ax, by - ay);
-  const ux = (bx - ax) / L;
-  const uy = (by - ay) / L;
-  for (const [px, py, ox, oy] of [
-    [ax, ay, -ux, -uy],
-    [bx, by, ux, uy],
-  ]) {
-    const j = hash2(Math.round(px), Math.round(py), obj.seed) * 2 - 1;
-    ctx.fillStyle = css(stDark, 0.95);
-    ctx.beginPath();
-    ctx.ellipse(px + ox * 5, py + oy * 5 + 6, 13, 6.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = css(stBase, 0.97);
-    ctx.beginPath();
-    ctx.ellipse(px + ox * 4, py + oy * 4 + 3, 11 + j, 5.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(px - ox * 3, py - oy * 3 + 1.5, 7.5, 4, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // Короткие пандусы на устои и опорные сваи под концами настила
-  for (const [px, py, ox, oy] of [
-    [ax, ay, -ux, -uy],
-    [bx, by, ux, uy],
-  ]) {
-    ctx.fillStyle = css(shade(wood, 0.92), 0.96);
-    ctx.beginPath();
-    ctx.moveTo(px + ox * 16 - w * 0.38, py + oy * 16 - w * 0.38 + 2);
-    ctx.lineTo(px - w * 0.38 + ox * 1, py - w * 0.38 + oy * 1);
-    ctx.lineTo(px + w * 0.38 + ox * 1, py + w * 0.38 + oy * 1);
-    ctx.lineTo(px + ox * 16 + w * 0.38, py + oy * 16 + w * 0.38 + 2);
-    ctx.closePath();
-    ctx.fill();
-  }
-  ctx.strokeStyle = css(woodDark, 0.8);
-  ctx.lineWidth = 1.8;
-  for (const t of [0.075, 0.925]) {
-    const px = lerp(ax, bx, t);
-    const py = lerp(ay, by, t) + Math.sin(t * Math.PI) * arch;
-    for (const s of [-1, 1]) {
-      ctx.beginPath();
-      ctx.moveTo(px + s * w * 0.32, py);
-      ctx.lineTo(px + s * w * 0.32, py + 13 - s * 1.5);
-      ctx.stroke();
+  const outline = (t0: number, t1: number, s0: number, s1: number, lower = 0) => {
+    const a = at(t0, s0),
+      b = at(t1, s0),
+      c = at(t1, s1),
+      e = at(t0, s1);
+    ctx.moveTo(a.x, a.y + lower * z);
+    ctx.lineTo(b.x, b.y + lower * z);
+    ctx.lineTo(c.x, c.y + lower * z);
+    ctx.lineTo(e.x, e.y + lower * z);
+  };
+  const curve = (side: number, height: number) => {
+    for (let i = 0; i <= 32; i++) {
+      const p = at(i / 32, side, height);
+      if (i) ctx.lineTo(p.x, p.y);
+      else ctx.moveTo(p.x, p.y);
     }
-  }
-
-  // настил
-  ctx.beginPath();
-  ctx.moveTo(ax - w * 0.4, ay - w * 0.4);
-  ctx.quadraticCurveTo(0, arch - w * 0.4, bx - w * 0.4, by - w * 0.4);
-  ctx.lineTo(bx + w * 0.4, by + w * 0.4);
-  ctx.quadraticCurveTo(0, arch + w * 0.4, ax + w * 0.4, ay + w * 0.4);
-  ctx.closePath();
-  ctx.fillStyle = css(wood, 0.96);
-  ctx.fill();
-  ctx.strokeStyle = css(woodDark, 0.5);
-  ctx.lineWidth = 1.4;
-  ctx.stroke();
-
-  // Светлая кромка сверху — ночью и зимой дуга читается на тёмной воде
-  ctx.strokeStyle = css(litc(mix(wood, WHITE, 0.5), atm), 0.42);
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.moveTo(ax - w * 0.4, ay - w * 0.4);
-  ctx.quadraticCurveTo(0, arch - w * 0.4, bx - w * 0.4, by - w * 0.4);
-  ctx.stroke();
-
-  // доски
-  for (let i = 1; i < 12; i++) {
-    const t = i / 12;
-    const px = lerp(ax, bx, t);
-    const py = lerp(ay, by, t) + Math.sin(t * Math.PI) * arch;
-    ctx.strokeStyle = css(shade(wood, 0.82 + hash2(i, obj.seed, 3) * 0.25), 0.5);
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(px - w * 0.4, py - w * 0.4);
-    ctx.lineTo(px + w * 0.4, py + w * 0.4);
-    ctx.stroke();
-  }
-
-  // перила
-  for (const side of [-1, 1]) {
-    ctx.strokeStyle = css(woodDark, 0.85);
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(ax + side * w * 0.45, ay + side * w * 0.45 - 12);
-    ctx.quadraticCurveTo(side * 2, arch - 12, bx + side * w * 0.45, by + side * w * 0.45 - 12);
-    ctx.stroke();
-    for (let i = 0; i <= 3; i++) {
-      const t = i / 3;
-      const px = lerp(ax, bx, t) + side * w * 0.45;
-      const py = lerp(ay, by, t) + side * w * 0.45 + Math.sin(t * Math.PI) * arch;
-      ctx.beginPath();
-      ctx.moveTo(px, py);
-      ctx.lineTo(px, py - 12);
-      ctx.stroke();
+  };
+  // Stone abutments have a top and a shaded front, not two floating oval stickers.
+  for (const t of [0, 1]) {
+    shape(ctx, css(shade(stone, 0.68)), () => outline(t - 0.07, t + 0.07, -1.22, 1.22, 10));
+    for (const side of [-1, 1]) {
+      const p = at(t, side * 0.82);
+      limb(ctx, css(dark), 3.1, [
+        [p.x, p.y + 9 * z],
+        [p.x, p.y - z],
+      ]);
     }
+    shape(ctx, css(stone), () => outline(t - 0.07, t + 0.07, -1.22, 1.22, 5));
+    const a = at(t - 0.07, 1.22),
+      b = at(t + 0.07, 1.22);
+    limb(ctx, css(shade(stone, 1.16), 0.7), 0.8, [
+      [a.x, a.y + 5 * z],
+      [b.x, b.y + 5 * z],
+    ]);
   }
-  ctx.restore();
-};
-
-export const drawPlankBridge: Drawer = (d) => {
-  const { ctx, atm, obj } = d;
-  const len = TILE_H * 2;
-  const wood = litc({ r: 158, g: 118, b: 82 }, atm);
-  const dark = litc({ r: 112, g: 84, b: 60 }, atm);
-  const horiz = obj.rot % 2 === 0;
-
-  ctx.save();
-  ctx.translate(d.x, d.y - 6);
-  if (!horiz) ctx.scale(-1, 1);
-
-  // Опоры на обоих берегах — мостки не висят в воздухе
-  ctx.strokeStyle = css(dark, 0.85);
-  ctx.lineWidth = 1.7;
-  for (const tt of [-0.42, 0.42]) {
-    const cx = tt * len;
-    const cy = tt * TILE_H * 0.5;
-    for (const off of [-5, 5]) {
-      ctx.beginPath();
-      ctx.moveTo(cx, cy + off - 4);
-      ctx.lineTo(cx, cy + off + 10);
-      ctx.stroke();
+  const railing = (side: number) => {
+    for (let i = 0; i <= 5; i++) {
+      const t = i / 5,
+        p = at(t, side),
+        top = at(t, side, 19);
+      limb(ctx, css(dark), 3, [
+        [p.x, p.y + z],
+        [top.x, top.y - z],
+      ]);
+      limb(ctx, css(railColor), 1.8, [
+        [p.x - 0.5, p.y],
+        [top.x - 0.5, top.y - z],
+      ]);
+      oval(ctx, top.x, top.y - 1.5 * z, 2.2, 1.0, css(light));
     }
+    stroke(ctx, css(railColor), 2, () => curve(side, 8.5));
+    stroke(ctx, css(dark), 3.3, () => curve(side, 19));
+    stroke(ctx, css(railColor), 2.2, () => curve(side, 19.5));
+    stroke(ctx, css(light, 0.65), 0.65, () => curve(side, 20.1));
+  };
+  if (!plank) railing(-1);
+  // A real arched girder under the near deck edge; same lift as every board.
+  shape(ctx, css(dark), () => {
+    curve(1, 0);
+    for (let i = 32; i >= 0; i--) {
+      const p = at(i / 32, 1);
+      ctx.lineTo(p.x, p.y + 5.5 * z);
+    }
+  });
+  shape(ctx, css(wood), () => {
+    curve(-1, 0);
+    for (let i = 32; i >= 0; i--) {
+      const p = at(i / 32, 1);
+      ctx.lineTo(p.x, p.y);
+    }
+  });
+  const count = plank ? 13 : 21;
+  for (let i = 0; i < count; i++) {
+    const t0 = i / count,
+      t1 = (i + 0.96) / count;
+    shape(ctx, css(shade(wood, 0.91 + hash2(i, obj.seed, 53) * 0.16)), () => outline(t0, t1, -1, 1));
+    const a = at(t0, -1),
+      b = at(t0, 1);
+    limb(ctx, css(dark, 0.5), 0.55, [
+      [a.x, a.y],
+      [b.x, b.y],
+    ]);
+    const g0 = at((t0 + t1) / 2, -0.65),
+      g1 = at((t0 + t1) / 2, 0.7);
+    limb(ctx, css(light, 0.3), 0.5, [
+      [g0.x, g0.y],
+      [g1.x, g1.y],
+    ]);
+    if ((atm.materialWetness ?? 0) > 0 && i % 3 !== 0) {
+      const a = at((t0 + t1) / 2, -0.6),
+        b = at((t0 + t1) / 2, 0.25);
+      limb(ctx, css(mix(atm.skyBottom, { r: 231, g: 235, b: 219 }, 0.3), (atm.materialWetness ?? 0) * 0.33), 0.7, [
+        [a.x, a.y],
+        [b.x, b.y],
+      ]);
+    }
+    if (i % 3 === 1)
+      for (const side of [-0.8, 0.8]) {
+        const p = at((t0 + t1) / 2, side);
+        oval(ctx, p.x, p.y, 0.55, 0.38, css(dark, 0.7));
+      }
   }
-  // Камешки под опорами
-  ctx.fillStyle = css(litc(mix(atm.palette.stone, WHITE, 0.1), atm), 0.9);
-  for (const tt of [-0.42, 0.42]) {
-    const cx = tt * len;
-    const cy = tt * TILE_H * 0.5;
-    ctx.beginPath();
-    ctx.ellipse(cx + 2, cy + 11, 6, 3, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // Отражение в воде под мостками
-  ctx.save();
-  ctx.globalCompositeOperation = 'multiply';
-  ctx.fillStyle = css(mix(WHITE, atm.palette.waterDeep, 0.28), 1);
-  ctx.beginPath();
-  ctx.ellipse(0, 10, len * 0.5, 7, 0, 0, Math.PI * 2);
-  ctx.fill();
+  stroke(ctx, css(light, 0.7), 0.85, () => curve(1, 0.3));
+  if (!plank) railing(1);
   ctx.restore();
-
-  // Настил: несколько досок поперёк
-  const boards = 5;
-  for (let i = 0; i < boards; i++) {
-    const tt = (i + 0.5) / boards - 0.5;
-    const cx = tt * len;
-    const cy = tt * TILE_H * 0.5;
-    ctx.fillStyle = css(i % 2 === 0 ? wood : shade(wood, 0.93), 0.97);
-    ctx.beginPath();
-    ctx.moveTo(cx - 3, cy - 7);
-    ctx.lineTo(cx + 3, cy - 5.6);
-    ctx.lineTo(cx + 3, cy + 5.6);
-    ctx.lineTo(cx - 3, cy + 4.2);
-    ctx.closePath();
-    ctx.fill();
-  }
-  // Продольные лаги
-  ctx.strokeStyle = css(dark, 0.7);
-  ctx.lineWidth = 1.4;
-  for (const off of [-5, 5]) {
-    ctx.beginPath();
-    ctx.moveTo(-len * 0.5, -TILE_H * 0.25 + off);
-    ctx.lineTo(len * 0.5, TILE_H * 0.25 + off);
-    ctx.stroke();
-  }
-  ctx.restore();
-};
+}
+export const drawBridge: Drawer = (d) => bridge(d, false);
+export const drawPlankBridge: Drawer = (d) => bridge(d, true);

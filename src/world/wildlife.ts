@@ -15,13 +15,26 @@
  * Никаких нужд и наказаний; только сезон, час, погода и соседи.
  */
 
+import {
+  HERON_STRIKE_MS,
+  HERON_WADE_SPEED,
+  HERON_STRIDE,
+  HEDGEHOG_STRIDE,
+  heronFlight,
+  hedgehogSpeed,
+  squirrelSpeed,
+  squirrelStride,
+  squirrelUpright,
+} from './wildlifeMotion';
+import { mouseSpeed, MOUSE_STRIDE, owlAltitude, owlFlight } from './creatureMotion';
+import { advanceAnimal, easePose } from './animalMotion';
 import { GRID } from '../core/iso';
 import { clamp, lerp, makeRng } from '../core/rng';
 import { TimeState } from '../core/clock';
 import { Habitat, Invitation, Vec } from './habitat';
 import { Threat } from './residents';
 import { WeatherState } from './weatherState';
-import { ChronicleToastNote } from './world';
+import { ChronicleToastNote, World } from './world';
 
 const rnd = makeRng(9173);
 
@@ -69,6 +82,10 @@ export interface Moth {
 export type HeronState = 'fly-in' | 'stand' | 'stalk' | 'strike' | 'preen' | 'fly-out';
 
 export interface Heron {
+  gait?: number;
+  flightPose?: number;
+  preenPose?: number;
+  stalkPose?: number;
   tx: number;
   ty: number;
   from: Vec | null;
@@ -95,6 +112,9 @@ export interface DeerCoat {
 }
 
 export interface Deer {
+  /** Continuous gait in radians and smoothed grazing pose. */
+  gait?: number;
+  headLower?: number;
   tx: number;
   ty: number;
   from: Vec | null;
@@ -114,6 +134,10 @@ export interface Deer {
 export type HedgehogState = 'enter' | 'walk' | 'forage' | 'sniff' | 'curl' | 'leave';
 
 export interface Hedgehog {
+  /** Непрерывный шаг и плавное сворачивание, отдельно от таймера curl. */
+  gait?: number;
+  roll?: number;
+  motion?: number;
   tx: number;
   ty: number;
   from: Vec | null;
@@ -133,6 +157,8 @@ export interface Hedgehog {
 export type MouseState = 'enter' | 'forage' | 'walk' | 'hide' | 'flee' | 'leave';
 
 export interface Mouse {
+  gait?: number;
+  cover?: number;
   tx: number;
   ty: number;
   from: Vec | null;
@@ -154,6 +180,8 @@ export interface Mouse {
 export type OwlState = 'fly-in' | 'perch' | 'hoot' | 'look' | 'hunt' | 'fly-out';
 
 export interface Owl {
+  altitude?: number;
+  wingOpen?: number;
   tx: number;
   ty: number;
   from: Vec | null;
@@ -175,6 +203,11 @@ export interface Owl {
 export type SquirrelState = 'enter' | 'jump' | 'forage' | 'cache' | 'look' | 'flee' | 'leave';
 
 export interface Squirrel {
+  gait?: number;
+  motion?: number;
+  upright?: number;
+  actionTime?: number;
+  actionDuration?: number;
   tx: number;
   ty: number;
   from: Vec | null;
@@ -195,6 +228,11 @@ export interface Squirrel {
 export type TurtleState = 'enter' | 'bask' | 'walk' | 'swim' | 'hide' | 'look' | 'leave';
 
 export interface Turtle {
+  /** Continuous gait and retraction (0 = extended, 1 = hidden). */
+  gait?: number;
+  retract?: number;
+  /** Берег, к которому вернётся после короткого заплыва. */
+  swimShore?: Vec | null;
   tx: number;
   ty: number;
   from: Vec | null;
@@ -302,6 +340,7 @@ export class Wildlife {
     dt: number,
     now: number,
     threats: Threat[],
+    world?: World,
   ): void {
     this.updateFireflies(h, inv, t, wx, dt);
     this.updateMoths(h, inv, t, wx, dt);
@@ -311,7 +350,7 @@ export class Wildlife {
     this.updateMice(h, inv, t, dt, now, threats);
     this.updateOwls(h, inv, t, dt, now, threats);
     this.updateSquirrels(h, inv, t, dt, now, threats);
-    this.updateTurtles(h, inv, t, dt, now, threats);
+    this.updateTurtles(h, inv, t, dt, now, threats, world);
     this.updateBees(h, inv, t, wx, dt);
   }
 
@@ -322,7 +361,7 @@ export class Wildlife {
     if (t.daylight > 0.4) this.danced = false;
     for (let i = this.fireflies.length - 1; i >= 0; i--) {
       const f = this.fireflies[i];
-      if (want === 0) {
+      if (i >= want) {
         f.alpha -= dt / 2600;
         if (f.alpha <= 0) {
           this.fireflies.splice(i, 1);
@@ -414,7 +453,7 @@ export class Wildlife {
     const want = inv.moths;
     for (let i = this.moths.length - 1; i >= 0; i--) {
       const m = this.moths[i];
-      if (want === 0) {
+      if (i >= want) {
         m.alpha -= dt / 2600;
         if (m.alpha <= 0) {
           this.moths.splice(i, 1);
@@ -534,6 +573,8 @@ export class Wildlife {
         hr.phase = Math.min(1, hr.phase + dt * 0.00014);
         hr.tx = lerp(hr.from.x, hr.target.x, hr.phase);
         hr.ty = lerp(hr.from.y, hr.target.y, hr.phase);
+        const screenDx = hr.target.x - hr.from.x - (hr.target.y - hr.from.y);
+        if (Math.abs(screenDx) > 0.01) hr.facing = screenDx > 0 ? 1 : -1;
         if (hr.phase >= 1) {
           hr.state = 'stand';
           hr.timer = 16_000 + rnd() * 26_000;
@@ -557,16 +598,12 @@ export class Wildlife {
       }
       case 'stalk': {
         if (!hr.target) break;
-        hr.from = hr.from ?? { x: hr.tx, y: hr.ty };
-        hr.phase = Math.min(1, hr.phase + dt * 0.00016);
-        hr.tx = lerp(hr.from.x, hr.target.x, hr.phase);
-        hr.ty = lerp(hr.from.y, hr.target.y, hr.phase);
-        if (Math.abs(hr.target.x - hr.tx) > 0.05) hr.facing = hr.target.x > hr.tx ? 1 : -1;
+        advanceAnimal(hr, dt, HERON_WADE_SPEED, HERON_STRIDE);
         if (hr.phase >= 1) {
           const r = rnd();
           if (r < 0.5) {
             hr.state = 'strike';
-            hr.timer = 900;
+            hr.timer = HERON_STRIKE_MS;
             hr.struck = false;
           } else if (r < 0.8) {
             this.heronStep(hr, h, 0.35);
@@ -606,12 +643,17 @@ export class Wildlife {
         hr.phase = Math.min(1, hr.phase + dt * 0.00012);
         hr.tx = lerp(hr.from.x, hr.target.x, hr.phase);
         hr.ty = lerp(hr.from.y, hr.target.y, hr.phase);
+        const screenDx = hr.target.x - hr.from.x - (hr.target.y - hr.from.y);
+        if (Math.abs(screenDx) > 0.01) hr.facing = screenDx > 0 ? 1 : -1;
         if (hr.phase >= 1 || hr.tx < -4 || hr.tx > GRID + 4 || hr.ty < -4 || hr.ty > GRID + 4) {
           this.heron = null;
         }
         break;
       }
     }
+    hr.flightPose = easePose(hr.flightPose ?? heronFlight(hr), heronFlight(hr), dt, 130);
+    hr.preenPose = easePose(hr.preenPose ?? 0, hr.state === 'preen' ? 1 : 0, dt, 260);
+    hr.stalkPose = easePose(hr.stalkPose ?? 0, hr.state === 'stalk' ? 1 : 0, dt, 220);
   }
 
   private heronStep(hr: Heron, h: Habitat, strikeBias: number): void {
@@ -643,6 +685,7 @@ export class Wildlife {
     for (let i = this.deer.length - 1; i >= 0; i--) {
       const d = this.deer[i];
       d.timer -= dt;
+      d.headLower = easePose(d.headLower ?? 0, d.state === 'graze' ? 1 : 0, dt, 520);
       const shy = threats.some((c) => Math.hypot(c.x - d.tx, c.y - d.ty) < 2.6);
       if (shy && d.state !== 'leave') {
         d.state = 'leave';
@@ -660,12 +703,7 @@ export class Wildlife {
         case 'enter':
         case 'walk': {
           if (!d.target) break;
-          d.from = d.from ?? { x: d.tx, y: d.ty };
-          const v = d.state === 'enter' ? 0.00022 : 0.00018;
-          d.phase = Math.min(1, d.phase + dt * v);
-          d.tx = lerp(d.from.x, d.target.x, d.phase);
-          d.ty = lerp(d.from.y, d.target.y, d.phase);
-          if (Math.abs(d.target.x - d.tx) > 0.05) d.facing = d.target.x > d.tx ? 1 : -1;
+          advanceAnimal(d, dt, d.state === 'enter' ? 0.0007 : 0.0005, 0.85);
           if (d.phase >= 1) {
             d.state = 'graze';
             d.timer = 8000 + rnd() * 14_000;
@@ -696,11 +734,7 @@ export class Wildlife {
         }
         case 'leave': {
           if (!d.target) break;
-          d.from = d.from ?? { x: d.tx, y: d.ty };
-          d.phase = Math.min(1, d.phase + dt * 0.00024);
-          d.tx = lerp(d.from.x, d.target.x, d.phase);
-          d.ty = lerp(d.from.y, d.target.y, d.phase);
-          if (Math.abs(d.target.x - d.tx) > 0.05) d.facing = d.target.x > d.tx ? 1 : -1;
+          advanceAnimal(d, dt, 0.0017, 1.35);
           if (d.phase >= 1 || d.tx < -4 || d.tx > GRID + 4 || d.ty < -4 || d.ty > GRID + 4) {
             this.deer.splice(i, 1);
           }
@@ -765,13 +799,8 @@ export class Wildlife {
       switch (e.state) {
         case 'enter':
         case 'walk': {
-          if (!e.target) break;
-          e.from = e.from ?? { x: e.tx, y: e.ty };
-          const v = e.state === 'enter' ? 0.00032 : 0.00022;
-          e.phase = Math.min(1, e.phase + dt * v);
-          e.tx = lerp(e.from.x, e.target.x, e.phase);
-          e.ty = lerp(e.from.y, e.target.y, e.phase);
-          if (Math.abs(e.target.x - e.tx) > 0.05) e.facing = e.target.x > e.tx ? 1 : -1;
+          if (!e.target || (e.roll ?? 0) > 0.08) break;
+          advanceAnimal(e, dt, hedgehogSpeed(e.state), HEDGEHOG_STRIDE);
           if (e.phase >= 1) {
             e.state = rnd() < 0.5 ? 'forage' : 'sniff';
             e.timer = 4000 + rnd() * 8000;
@@ -818,20 +847,17 @@ export class Wildlife {
           break;
         }
         case 'leave': {
-          if (!e.target) break;
-          e.from = e.from ?? { x: e.tx, y: e.ty };
-          e.phase = Math.min(1, e.phase + dt * 0.00028);
-          e.tx = lerp(e.from.x, e.target.x, e.phase);
-          e.ty = lerp(e.from.y, e.target.y, e.phase);
-          if (Math.abs(e.target.x - e.tx) > 0.05) e.facing = e.target.x > e.tx ? 1 : -1;
+          if (!e.target || (e.roll ?? 0) > 0.08) break;
+          advanceAnimal(e, dt, hedgehogSpeed(e.state), HEDGEHOG_STRIDE);
           if (e.phase >= 1 || e.tx < -4 || e.tx > GRID + 4 || e.ty < -4 || e.ty > GRID + 4) {
             this.hedgehogs.splice(i, 1);
           }
           break;
         }
       }
-      e.tx = clamp(e.tx, 0.5, GRID - 0.5);
-      e.ty = clamp(e.ty, 0.5, GRID - 0.5);
+      e.roll = easePose(e.roll ?? 0, e.state === 'curl' ? 1 : 0, dt, e.state === 'curl' ? 180 : 650);
+      const moving = e.state === 'enter' || e.state === 'walk' || e.state === 'leave';
+      e.motion = easePose(e.motion ?? 0, moving ? 1 : 0, dt, 140);
     }
     if (this.hedgehogs.length >= inv.hedgehog) return;
     this.hedgehogTimer -= dt;
@@ -870,7 +896,7 @@ export class Wildlife {
       if (m.panic > 0) m.panic -= dt;
       const cat = threats.find((c) => Math.hypot(c.x - m.tx, c.y - m.ty) < 3.0);
       const owl = this.owls.find((o) => o.state === 'hunt' && Math.hypot(o.huntX - m.tx, o.huntY - m.ty) < 2.2);
-      const danger = cat ?? (owl ? { x: owl.huntX, y: owl.huntY, r: 2 } as Threat : null);
+      const danger = cat ?? (owl ? ({ x: owl.huntX, y: owl.huntY, r: 2 } as Threat) : null);
       if (danger && m.state !== 'flee' && m.state !== 'hide' && m.state !== 'leave') {
         const shelter = this.nearestMouseSpot(h, m.tx, m.ty);
         if (shelter) {
@@ -895,12 +921,7 @@ export class Wildlife {
         case 'enter':
         case 'walk': {
           if (!m.target) break;
-          m.from = m.from ?? { x: m.tx, y: m.ty };
-          const v = m.state === 'enter' ? 0.00055 : 0.00042;
-          m.phase = Math.min(1, m.phase + dt * v);
-          m.tx = lerp(m.from.x, m.target.x, m.phase);
-          m.ty = lerp(m.from.y, m.target.y, m.phase);
-          if (Math.abs(m.target.x - m.tx) > 0.05) m.facing = m.target.x > m.tx ? 1 : -1;
+          advanceAnimal(m, dt, mouseSpeed(m.state), MOUSE_STRIDE);
           if (m.phase >= 1) {
             m.state = rnd() < 0.6 ? 'forage' : 'hide';
             m.timer = m.state === 'forage' ? 3000 + rnd() * 6000 : 2000 + rnd() * 4000;
@@ -935,11 +956,7 @@ export class Wildlife {
         }
         case 'flee': {
           if (!m.target) break;
-          m.from = m.from ?? { x: m.tx, y: m.ty };
-          m.phase = Math.min(1, m.phase + dt * 0.0011);
-          m.tx = lerp(m.from.x, m.target.x, m.phase);
-          m.ty = lerp(m.from.y, m.target.y, m.phase);
-          if (Math.abs(m.target.x - m.tx) > 0.05) m.facing = m.target.x > m.tx ? 1 : -1;
+          advanceAnimal(m, dt, mouseSpeed(m.state), MOUSE_STRIDE);
           if (m.phase >= 1) {
             m.state = 'hide';
             m.timer = 3000 + rnd() * 7000;
@@ -949,19 +966,14 @@ export class Wildlife {
         }
         case 'leave': {
           if (!m.target) break;
-          m.from = m.from ?? { x: m.tx, y: m.ty };
-          m.phase = Math.min(1, m.phase + dt * 0.00052);
-          m.tx = lerp(m.from.x, m.target.x, m.phase);
-          m.ty = lerp(m.from.y, m.target.y, m.phase);
-          if (Math.abs(m.target.x - m.tx) > 0.05) m.facing = m.target.x > m.tx ? 1 : -1;
+          advanceAnimal(m, dt, mouseSpeed(m.state), MOUSE_STRIDE);
           if (m.phase >= 1 || m.tx < -4 || m.tx > GRID + 4 || m.ty < -4 || m.ty > GRID + 4) {
             this.mice.splice(i, 1);
           }
           break;
         }
       }
-      m.tx = clamp(m.tx, 0.5, GRID - 0.5);
-      m.ty = clamp(m.ty, 0.5, GRID - 0.5);
+      m.cover = easePose(m.cover ?? +(m.state === 'hide'), +(m.state === 'hide'), dt, 180);
     }
     if (this.mice.length >= inv.mice) return;
     this.mouseTimer -= dt;
@@ -1008,6 +1020,10 @@ export class Wildlife {
   private updateOwls(h: Habitat, inv: Invitation, _t: TimeState, dt: number, now: number, threats: Threat[]): void {
     for (let i = this.owls.length - 1; i >= 0; i--) {
       const o = this.owls[i];
+      o.altitude ??= owlAltitude(o);
+      o.wingOpen ??= +owlFlight(o);
+      const oldX = o.tx;
+      const oldY = o.ty;
       o.timer -= dt;
       if (o.hoot > 0) o.hoot -= dt;
 
@@ -1125,8 +1141,10 @@ export class Wildlife {
           break;
         }
       }
-      o.tx = clamp(o.tx, 0.5, GRID - 0.5);
-      o.ty = clamp(o.ty, 0.5, GRID - 0.5);
+      const screenDx = o.tx - oldX - (o.ty - oldY);
+      if (Math.abs(screenDx) > 0.00001) o.facing = screenDx > 0 ? 1 : -1;
+      o.altitude = easePose(o.altitude, owlAltitude(o), dt, 180);
+      o.wingOpen = easePose(o.wingOpen, +owlFlight(o), dt, 160);
     }
 
     if (this.owls.length >= inv.owl) return;
@@ -1158,9 +1176,18 @@ export class Wildlife {
 
   // ---------------- Белка ----------------
 
-  private updateSquirrels(h: Habitat, inv: Invitation, _t: TimeState, dt: number, now: number, threats: Threat[]): void {
+  private updateSquirrels(
+    h: Habitat,
+    inv: Invitation,
+    _t: TimeState,
+    dt: number,
+    now: number,
+    threats: Threat[],
+  ): void {
     for (let i = this.squirrels.length - 1; i >= 0; i--) {
       const s = this.squirrels[i];
+      const previousState = s.state;
+      s.actionTime = (s.actionTime ?? 0) + dt;
       s.timer -= dt;
       if (s.panic > 0) s.panic -= dt;
 
@@ -1188,15 +1215,7 @@ export class Wildlife {
         case 'enter':
         case 'jump': {
           if (!s.target) break;
-          s.from = s.from ?? { x: s.tx, y: s.ty };
-          const v = s.state === 'enter' ? 0.00055 : 0.00072;
-          s.phase = Math.min(1, s.phase + dt * v);
-          // Прыжок по дуге
-          const t = s.phase;
-          const jumpH = Math.sin(t * Math.PI) * 1.2;
-          s.tx = lerp(s.from.x, s.target.x, t);
-          s.ty = lerp(s.from.y, s.target.y, t) - jumpH * 0.15;
-          if (Math.abs(s.target.x - s.tx) > 0.05) s.facing = s.target.x > s.tx ? 1 : -1;
+          advanceAnimal(s, dt, squirrelSpeed(s.state), squirrelStride(s.state));
           if (s.phase >= 1) {
             s.state = rnd() < 0.5 ? 'forage' : 'look';
             s.timer = 2000 + rnd() * 4000;
@@ -1221,7 +1240,7 @@ export class Wildlife {
             } else if (r < 0.7) {
               s.state = 'cache';
               s.timer = 2000 + rnd() * 2500;
-              s.hasNut = rnd() < 0.6;
+              s.hasNut = s.hasNut || rnd() < 0.6;
               if (s.hasNut && rnd() < 0.4) this.pushNote('squirrel_cache', s.tx, s.ty);
             } else {
               s.state = 'look';
@@ -1247,10 +1266,7 @@ export class Wildlife {
         }
         case 'flee': {
           if (!s.target) break;
-          s.from = s.from ?? { x: s.tx, y: s.ty };
-          s.phase = Math.min(1, s.phase + dt * 0.001);
-          s.tx = lerp(s.from.x, s.target.x, s.phase);
-          s.ty = lerp(s.from.y, s.target.y, s.phase);
+          advanceAnimal(s, dt, squirrelSpeed(s.state), squirrelStride(s.state));
           if (s.phase >= 1) {
             s.state = 'look';
             s.timer = 3000 + rnd() * 5000;
@@ -1260,18 +1276,21 @@ export class Wildlife {
         }
         case 'leave': {
           if (!s.target) break;
-          s.from = s.from ?? { x: s.tx, y: s.ty };
-          s.phase = Math.min(1, s.phase + dt * 0.00055);
-          s.tx = lerp(s.from.x, s.target.x, s.phase);
-          s.ty = lerp(s.from.y, s.target.y, s.phase);
+          advanceAnimal(s, dt, squirrelSpeed(s.state), squirrelStride(s.state));
           if (s.phase >= 1 || s.tx < -4 || s.tx > GRID + 4 || s.ty < -4 || s.ty > GRID + 4) {
             this.squirrels.splice(i, 1);
           }
           break;
         }
       }
-      s.tx = clamp(s.tx, 0.5, GRID - 0.5);
-      s.ty = clamp(s.ty, 0.5, GRID - 0.5);
+      if (s.state !== previousState) {
+        s.actionTime = 0;
+        s.actionDuration = s.timer;
+        if (s.state === 'forage' && previousState !== 'cache' && !s.hasNut) s.hasNut = rnd() < 0.45;
+      }
+      const moving = s.state === 'enter' || s.state === 'jump' || s.state === 'flee' || s.state === 'leave';
+      s.motion = easePose(s.motion ?? 0, moving ? 1 : 0, dt, 100);
+      s.upright = easePose(s.upright ?? 0, squirrelUpright(s), dt, 190);
     }
 
     if (this.squirrels.length >= inv.squirrel) return;
@@ -1315,7 +1334,15 @@ export class Wildlife {
 
   // ---------------- Черепаха ----------------
 
-  private updateTurtles(h: Habitat, inv: Invitation, _t: TimeState, dt: number, now: number, threats: Threat[]): void {
+  private updateTurtles(
+    h: Habitat,
+    inv: Invitation,
+    _t: TimeState,
+    dt: number,
+    now: number,
+    threats: Threat[],
+    world?: World,
+  ): void {
     for (let i = this.turtles.length - 1; i >= 0; i--) {
       const tu = this.turtles[i];
       tu.timer -= dt;
@@ -1335,15 +1362,13 @@ export class Wildlife {
         tu.phase = 0;
       }
 
+      tu.retract = easePose(tu.retract ?? 0, tu.state === 'hide' ? 1 : 0, dt, tu.state === 'hide' ? 130 : 850);
+
       switch (tu.state) {
         case 'enter':
         case 'walk': {
           if (!tu.target) break;
-          tu.from = tu.from ?? { x: tu.tx, y: tu.ty };
-          const v = tu.state === 'enter' ? 0.00018 : 0.00014;
-          tu.phase = Math.min(1, tu.phase + dt * v);
-          tu.tx = lerp(tu.from.x, tu.target.x, tu.phase);
-          tu.ty = lerp(tu.from.y, tu.target.y, tu.phase);
+          advanceAnimal(tu, dt, tu.state === 'enter' ? 0.00022 : 0.00013, 0.24);
           if (tu.phase >= 1) {
             tu.state = 'bask';
             tu.timer = 12000 + rnd() * 20000;
@@ -1354,7 +1379,24 @@ export class Wildlife {
         case 'bask': {
           if (tu.timer <= 0) {
             const r = rnd();
-            if (r < 0.4 && h.turtleSpots.length > 1) {
+            // A short dip only into actual adjacent water, then back to the same bank.
+            const water: Vec[] = [];
+            if (world && r < 0.25) {
+              for (let y = Math.floor(tu.ty) - 1; y <= Math.floor(tu.ty) + 1; y++) {
+                for (let x = Math.floor(tu.tx) - 1; x <= Math.floor(tu.tx) + 1; x++) {
+                  if (world.at(x, y)?.water && Math.hypot(x + 0.5 - tu.tx, y + 0.5 - tu.ty) < 1.6) {
+                    water.push({ x: x + 0.5, y: y + 0.5 });
+                  }
+                }
+              }
+            }
+            if (water.length) {
+              tu.swimShore = { x: tu.tx, y: tu.ty };
+              tu.from = { ...tu.swimShore };
+              tu.target = water[Math.floor(rnd() * water.length)];
+              tu.phase = 0;
+              tu.state = 'swim';
+            } else if (r < 0.4 && h.turtleSpots.length > 1) {
               const g = h.turtleSpots[Math.floor(rnd() * h.turtleSpots.length)];
               if (Math.hypot(g.x - tu.tx, g.y - tu.ty) > 1.2) {
                 tu.from = { x: tu.tx, y: tu.ty };
@@ -1389,39 +1431,45 @@ export class Wildlife {
               tu.hide = 2000 + rnd() * 3000;
               tu.timer = tu.hide + 500;
             } else {
-              tu.state = 'bask';
+              if (tu.swimShore || (tu.target && world?.at(Math.floor(tu.tx), Math.floor(tu.ty))?.water)) {
+                tu.from = { x: tu.tx, y: tu.ty };
+                tu.target = tu.swimShore ?? tu.target;
+                tu.swimShore = null;
+                tu.phase = 0;
+                tu.state = 'swim';
+              } else {
+                tu.state = 'bask';
+              }
               tu.timer = 5000 + rnd() * 8000;
             }
           }
           break;
         }
         case 'swim': {
-          // Пока просто как walk, но медленнее
           if (!tu.target) break;
-          tu.from = tu.from ?? { x: tu.tx, y: tu.ty };
-          tu.phase = Math.min(1, tu.phase + dt * 0.00012);
-          tu.tx = lerp(tu.from.x, tu.target.x, tu.phase);
-          tu.ty = lerp(tu.from.y, tu.target.y, tu.phase);
+          advanceAnimal(tu, dt, 0.0004, 0.65);
           if (tu.phase >= 1) {
-            tu.state = 'bask';
-            tu.timer = 10000 + rnd() * 15000;
+            if (tu.swimShore) {
+              tu.from = { x: tu.tx, y: tu.ty };
+              tu.target = tu.swimShore;
+              tu.swimShore = null;
+              tu.phase = 0;
+            } else {
+              tu.state = 'bask';
+              tu.timer = 10000 + rnd() * 15000;
+            }
           }
           break;
         }
         case 'leave': {
           if (!tu.target) break;
-          tu.from = tu.from ?? { x: tu.tx, y: tu.ty };
-          tu.phase = Math.min(1, tu.phase + dt * 0.00018);
-          tu.tx = lerp(tu.from.x, tu.target.x, tu.phase);
-          tu.ty = lerp(tu.from.y, tu.target.y, tu.phase);
+          advanceAnimal(tu, dt, 0.00026, 0.24);
           if (tu.phase >= 1 || tu.tx < -4 || tu.tx > GRID + 4 || tu.ty < -4 || tu.ty > GRID + 4) {
             this.turtles.splice(i, 1);
           }
           break;
         }
       }
-      tu.tx = clamp(tu.tx, 0.5, GRID - 0.5);
-      tu.ty = clamp(tu.ty, 0.5, GRID - 0.5);
     }
 
     if (this.turtles.length >= inv.turtle) return;
@@ -1453,7 +1501,6 @@ export class Wildlife {
 
   private updateBees(h: Habitat, inv: Invitation, _t: TimeState, wx: WeatherState | null, dt: number): void {
     const want = inv.bees;
-    const wind = 0; // ветер учитывается через life.windAt, здесь не нужен
     void wx;
 
     const hiveCount = h.beehives.length;
@@ -1461,7 +1508,7 @@ export class Wildlife {
 
     for (let i = this.bees.length - 1; i >= 0; i--) {
       const b = this.bees[i];
-      if (want === 0) {
+      if (i >= want) {
         b.alpha -= dt / 2200;
         if (b.alpha <= 0) {
           this.bees.splice(i, 1);
@@ -1470,44 +1517,57 @@ export class Wildlife {
       } else if (b.alpha < 1) {
         b.alpha = Math.min(1, b.alpha + dt / 1200);
       }
+      // A date change or a flower finishing must not leave a pollen-gathering target on bare stems.
+      if (!b.carrying && b.target && !h.beeSpots.some((p) => p.x === b.target!.x && p.y === b.target!.y)) {
+        b.target = null;
+        b.state = 'fly';
+        b.timer = 0;
+      }
       b.timer -= dt;
       b.phase += dt * 0.005;
 
+      // На цветке лапки остаются на месте. Пыльца появляется после сбора,
+      // а не до него; затем пчела действительно возвращается к улью.
+      if (b.state === 'gather') {
+        b.vx = b.vy = 0;
+        b.alt = easePose(b.alt, 2, dt, 180);
+        if (b.timer > 0) continue;
+        b.carrying = true;
+        b.state = 'return';
+        b.target = null;
+      }
       if (b.timer <= 0 || !b.target) {
-        // С мёдом — домой в улей, без — к цветам. Если есть улей, он приоритет.
         const hive = hasHive && b.carrying ? h.beehives[Math.floor(rnd() * h.beehives.length)] : null;
-        const flower = !b.carrying ? h.beeSpots[Math.floor(rnd() * h.beeSpots.length)] : null;
-        // иногда даже без пыльцы залетает в улей — «проведать дом»
-        const visitHive = !b.carrying && hasHive && rnd() < 0.18 ? h.beehives[Math.floor(rnd() * h.beehives.length)] : null;
-        b.target = hive ?? visitHive ?? flower ?? h.beeSpots[Math.floor(rnd() * h.beeSpots.length)] ?? null;
-        b.timer = 1800 + rnd() * 3500;
-        if (b.target && Math.hypot(b.target.x - b.tx, b.target.y - b.ty) < 0.6) {
-          if (b.carrying) {
-            b.carrying = false;
-            b.state = 'gather';
-            // вернулась с мёдом — шанс на заметку
-            if (hasHive && rnd() < 0.08) this.pushNote('bee_return', b.tx, b.ty);
-          } else {
-            b.carrying = true;
-            b.state = 'return';
-          }
-          b.timer = 1100 + rnd() * 1800;
-        }
+        b.target = hive ?? h.beeSpots[Math.floor(rnd() * h.beeSpots.length)] ?? null;
+        b.state = b.carrying ? 'return' : 'fly';
+        b.timer = 12000;
       }
 
       if (b.target) {
         const dx = b.target.x - b.tx;
         const dy = b.target.y - b.ty;
-        const d = Math.hypot(dx, dy) || 1;
-        const wob = Math.sin(b.phase + b.seed) * 0.45;
-        // у улья пчёлы летают чуть быстрее и суетливее
-        const speedK = hasHive ? 1.25 : 1;
-        b.vx = (dx / d) * 0.00135 * speedK + wob * 0.00024;
-        b.vy = (dy / d) * 0.00135 * speedK;
-        b.tx += (b.vx + wind * 0.0003) * dt;
-        b.ty += b.vy * dt;
-        b.alt = 6 + Math.sin(b.phase * 2) * 2.2 + (b.carrying ? 2.4 : 0);
-        b.dir = Math.atan2(dy, dx);
+        const distance = Math.hypot(dx, dy);
+        if (distance < 0.12) {
+          b.vx = b.vy = 0;
+          if (b.carrying) {
+            b.carrying = false;
+            b.state = 'fly';
+            b.target = null;
+            b.timer = 0;
+            if (hasHive && rnd() < 0.08) this.pushNote('bee_return', b.tx, b.ty);
+          } else {
+            b.state = 'gather';
+            b.timer = 1100 + rnd() * 1800;
+          }
+        } else {
+          const step = Math.min(distance, 0.00135 * (hasHive ? 1.25 : 1) * dt);
+          b.vx = ((dx / distance) * step) / Math.max(1, dt);
+          b.vy = ((dy / distance) * step) / Math.max(1, dt);
+          b.tx += b.vx * dt;
+          b.ty += b.vy * dt;
+          b.alt = easePose(b.alt, 6 + Math.sin(b.phase * 2) * 2.2 + (b.carrying ? 2.4 : 0), dt, 180);
+          b.dir = Math.atan2(dy, dx);
+        }
       }
       b.tx = clamp(b.tx, 0.5, GRID - 0.5);
       b.ty = clamp(b.ty, 0.5, GRID - 0.5);
@@ -1542,7 +1602,8 @@ export class Wildlife {
       });
       if (this.bees.length === 1) this.pushNote('meet_bee', a.x, a.y);
     }
-    if (this.bees.length >= 4 && rnd() < (hasHive ? 0.0045 : 0.002)) this.pushNote('bee_swarm', this.bees[0]?.tx, this.bees[0]?.ty);
+    if (this.bees.length >= 4 && rnd() < (hasHive ? 0.0045 : 0.002))
+      this.pushNote('bee_swarm', this.bees[0]?.tx, this.bees[0]?.ty);
   }
 
   private exitFrom(x: number, y: number): Vec {

@@ -1,5 +1,6 @@
 /**
- * Время синхронизировано с часами и календарём игрока.
+ * Для вольного сада время синхронизировано с часами и календарём игрока.
+ * Растущий сад передаёт свой календарный момент и независимую солнечную фазу.
  * Сезоны — настоящие, как за окном: март — весна, июнь — лето,
  * сентябрь — осень, декабрь — зима. (Раньше сезон крутился за 3 реальных
  * дня, и сад мог встретить гостя снегом в сентябре.)
@@ -30,11 +31,27 @@ export const DAY_MS = 24 * 60 * 60 * 1000;
 /** Месяцы (0-based), с которых начинается каждый сезон: март, июнь, сентябрь, декабрь. */
 const SEASON_START_MONTH = [2, 5, 8, 11];
 
+/** Названия календарных пресетов; сами растения развиваются непрерывно между ними. */
+export const MONTH_NAMES = [
+  'Январь',
+  'Февраль',
+  'Март',
+  'Апрель',
+  'Май',
+  'Июнь',
+  'Июль',
+  'Август',
+  'Сентябрь',
+  'Октябрь',
+  'Ноябрь',
+  'Декабрь',
+] as const;
+
 /** Год, с которого усадьба считает свои годы: её первая весна. */
 const EPOCH_YEAR = 2024;
 
 export interface TimeState {
-  /** Абсолютное время мира в мс (обычно Date.now(), но может быть смещено «созерцанием»). */
+  /** Календарное время; в растущем саду солнечная фаза dayT независима. Абсолютное время мира в мс (обычно Date.now(), но может быть смещено «созерцанием»). */
   now: number;
   /** 0..1 внутри суток, 0 = полночь. */
   dayT: number;
@@ -54,10 +71,13 @@ export interface TimeState {
   label: string;
 }
 
-export function computeTime(now: number): TimeState {
+export function computeTime(now: number, solarPhase?: number): TimeState {
   const local = new Date(now);
   const dayT =
-    (local.getHours() * 3600 + local.getMinutes() * 60 + local.getSeconds() + local.getMilliseconds() / 1000) / 86400;
+    solarPhase !== undefined && Number.isFinite(solarPhase)
+      ? ((solarPhase % 1) + 1) % 1
+      : (local.getHours() * 3600 + local.getMinutes() * 60 + local.getSeconds() + local.getMilliseconds() / 1000) /
+        86400;
 
   // Сезон по календарному месяцу: мар–май весна, июн–авг лето, сен–ноя осень, дек–фев зима.
   const m = local.getMonth();
@@ -77,7 +97,7 @@ export function computeTime(now: number): TimeState {
   const year = Math.max(1, local.getFullYear() - EPOCH_YEAR + (m >= 2 ? 1 : 0));
 
   // Кривая света: восход ~5:30, закат ~19:30 (мягко плавает по сезонам).
-  const seasonShift = season === 'winter' ? 1.1 : season === 'summer' ? -0.9 : 0;
+  const seasonShift = 0.1 + Math.cos(annualPhase(now) * Math.PI * 2);
   const sunrise = (5.6 + seasonShift) / 24;
   const sunset = (19.4 - seasonShift) / 24;
 
@@ -89,8 +109,9 @@ export function computeTime(now: number): TimeState {
   const goldenSet = Math.exp(-Math.pow((dayT - (sunset - 0.03)) / 0.045, 2));
   const golden = clamp01(Math.max(goldenRise, goldenSet));
 
-  const hours = Math.floor(dayT * 24);
-  const minutes = Math.floor((dayT * 24 - hours) * 60);
+  const totalMinutes = Math.floor(dayT * 1440 + 1e-7) % 1440;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
 
   return {
     now,
@@ -114,8 +135,14 @@ export function computeTime(now: number): TimeState {
  * не убегая далеко от настоящей даты (посадки предметов меряются от now).
  */
 export function midSeasonMs(seasonIndex: number, refMs = Date.now()): number {
+  const start = SEASON_START_MONTH[((seasonIndex % 4) + 4) % 4];
+  return midMonthMs((start + 1) % 12, refMs);
+}
+
+/** 15-е число выбранного месяца, ближайшее к опорной дате, в местном часовом поясе. */
+export function midMonthMs(monthIndex: number, refMs = Date.now()): number {
   const ref = new Date(refMs);
-  const sm = SEASON_START_MONTH[((seasonIndex % 4) + 4) % 4];
+  const sm = ((Math.trunc(monthIndex) % 12) + 12) % 12;
   let best = Infinity;
   let bestMs = 0;
   for (let y = ref.getFullYear() - 1; y <= ref.getFullYear() + 1; y++) {
@@ -151,3 +178,24 @@ export function seasonBlend(t: TimeState): { from: SeasonId; to: SeasonId; k: nu
 }
 
 export { lerp };
+
+/** Continuous civil-year coordinate: Jan 15 = 0, Apr 15 = .25, Jul 15 = .5, Oct 15 = .75.
+ * Uses actual dated anchors, including leap days and timezone/DST offsets. No reset on January 1.
+ * The wrap at January 15 lies in dormancy; consumers must use periodic curves there.
+ */
+export function annualPhase(now: number): number {
+  if (!Number.isFinite(now)) return 0;
+  // Only the enclosing two anchors matter. This hot path used to construct all
+  // six dates on every leaf, shadow, reflection and cache lookup. Keep exact civil
+  // dates (including leap years/DST), without memoised timezone state or quantisation.
+  const date = new Date(now),
+    year = date.getFullYear(),
+    month = date.getMonth();
+  let quarter = Math.floor(month / 3);
+  if (month % 3 === 0 && date.getDate() < 15) quarter--;
+  const start = new Date(year, quarter * 3, 15).getTime(),
+    end = new Date(year, quarter * 3 + 3, 15).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
+  const phase = quarter * 0.25 + ((now - start) / (end - start)) * 0.25;
+  return (phase + 1) % 1;
+}

@@ -1,9 +1,9 @@
 /**
- * Панель разработчика: переключение времени суток, сезона и погоды.
+ * Панель разработчика: переключение времени суток, месяца, сезона и погоды.
  * Нужна на время создания игры — открывается клавишей T.
  */
 
-import { SEASON_NAMES, SEASONS } from '../core/clock';
+import { MONTH_NAMES, SEASON_NAMES, SEASONS } from '../core/clock';
 import { TimeControl } from '../core/timeControl';
 import { WeatherKind, WeatherSystem, WEATHER_NAMES } from '../world/weatherState';
 import { svgIcon } from './icons';
@@ -71,6 +71,12 @@ export class DevPanel {
         <div class="dev-seasons"></div>
 
         <div class="dev-row" style="margin-top:14px">
+          <span class="dev-label">Дата</span>
+          <span class="dev-value dev-date-val"></span>
+        </div>
+        <div class="dev-months" role="group" aria-label="Пресеты месяцев — 15-е число"></div>
+
+        <div class="dev-row" style="margin-top:14px">
           <span class="dev-label">Погода</span>
           <span class="dev-value dev-weather-val">Ясно</span>
         </div>
@@ -95,6 +101,7 @@ export class DevPanel {
     this.els.hour = this.root.querySelector('.dev-hour')!;
     this.els.hourVal = this.root.querySelector('.dev-hour-val')!;
     this.els.seasonVal = this.root.querySelector('.dev-season-val')!;
+    this.els.dateVal = this.root.querySelector('.dev-date-val')!;
     this.els.weatherVal = this.root.querySelector('.dev-weather-val')!;
     this.els.speedVal = this.root.querySelector('.dev-speed-val')!;
     this.els.body = this.root.querySelector('.dev-body')!;
@@ -148,6 +155,24 @@ export class DevPanel {
         this.hooks.onChange();
       });
       seasons.appendChild(b);
+    });
+
+    // Точки быстрого перехода внутри непрерывного годового цикла, не варианты графики.
+    const months = this.root.querySelector('.dev-months')!;
+    MONTH_NAMES.forEach((name, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'dev-chip month';
+      b.dataset.month = String(i);
+      b.textContent = name;
+      b.title = `${name}: 15-е число, выбранное время суток`;
+      b.addEventListener('click', () => {
+        if (!this.tc.state.active) this.tc.enable(false);
+        this.tc.setMonth(i);
+        this.refresh();
+        this.hooks.onChange();
+      });
+      months.appendChild(b);
     });
 
     // Погода
@@ -219,16 +244,25 @@ export class DevPanel {
     (this.els.active as HTMLInputElement).checked = st.active;
     this.els.body.classList.toggle('disabled', !st.active);
 
-    const h = st.active ? this.tc.displayHour : new Date().getHours() + new Date().getMinutes() / 60;
+    const time = this.tc.compute();
+    const date = new Date(time.now);
+    const h = time.dayT * 24;
     (this.els.hour as HTMLInputElement).value = String(h);
     const hh = Math.floor(h);
     const mm = Math.floor((h - hh) * 60);
     this.els.hourVal.textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 
-    const season = st.active ? SEASONS[st.seasonIndex] : this.tc.compute().season;
+    const season = time.season;
     this.els.seasonVal.textContent = SEASON_NAMES[season];
     this.root.querySelectorAll<HTMLElement>('.dev-chip.season').forEach((b) => {
       b.classList.toggle('on', b.dataset.season === season);
+    });
+
+    this.els.dateVal.textContent = date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+    this.root.querySelectorAll<HTMLElement>('.dev-chip.month').forEach((b) => {
+      const selected = Number(b.dataset.month) === date.getMonth();
+      b.classList.toggle('on', selected);
+      b.setAttribute('aria-pressed', String(selected));
     });
 
     const wk = this.weather.forced;
@@ -238,10 +272,15 @@ export class DevPanel {
       b.classList.toggle('on', b.dataset.weather === wk);
     });
 
-    this.els.speedVal.textContent =
-      st.speed === 0 ? 'остановлен' : st.speed === 1 ? 'реальный' : `ускорен ×${st.speed}`;
+    this.els.speedVal.textContent = this.tc.growAutomatic
+      ? 'месяц — 1 ч · сутки — 5 ч'
+      : st.speed === 0
+        ? 'остановлен'
+        : st.speed === 1
+          ? 'реальный'
+          : `ускорен ×${st.speed}`;
     this.root.querySelectorAll<HTMLElement>('.dev-chip.speed').forEach((b) => {
-      b.classList.toggle('on', Number(b.dataset.speed) === st.speed);
+      b.classList.toggle('on', !this.tc.growAutomatic && Number(b.dataset.speed) === st.speed);
     });
 
     const grow = this.hooks.getGrow?.() ?? null;
@@ -260,8 +299,6 @@ export class DevPanel {
   /** Раз в кадр — чтобы ползунок ехал при ускоренном времени. */
   tick(): void {
     if (!this.open) return;
-    if (this.tc.state.active && this.tc.state.speed !== 1) this.refresh();
-    // Рост тоже обновляем раз в кадр, если панель открыта
-    if (this.hooks.getGrow) this.refresh();
+    this.refresh();
   }
 }

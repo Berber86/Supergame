@@ -5,6 +5,9 @@
   top: 22px;
   right: 92px;
   width: 268px;
+  max-height: calc(100dvh - 44px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border-radius: 4px;
   padding: 0 0 14px;
   box-shadow: var(--shadow);
@@ -114,6 +117,22 @@ input[type='range'].dev-hour {
   gap: 5px;
 }
 
+.dev-months {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.dev-panel .dev-months .dev-chip {
+  min-width: 0;
+  padding-inline: 3px;
+  justify-content: center;
+}
+
+.dev-date-val {
+  font-size: 12.5px;
+}
+
 .dev-chip {
   flex: 0 0 auto;
   font-family: var(--serif);
@@ -153,6 +172,7 @@ input[type='range'].dev-hour {
   .dev-panel {
     right: 12px;
     top: 74px;
+    max-height: calc(100dvh - 86px - env(safe-area-inset-bottom, 0px));
     width: min(268px, calc(100vw - 24px));
   }
 }

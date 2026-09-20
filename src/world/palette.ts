@@ -1,3 +1,5 @@
+import { ecologyYear } from './ecology';
+import { crownAnchorBlend } from './phenology';
 /** Акварельная палитра: цвет мира зависит от сезона и от времени суток. */
 
 import { SeasonId, TimeState, seasonBlend } from '../core/clock';
@@ -90,8 +92,8 @@ export const SEASON_PALETTES: Record<SeasonId, SeasonPalette> = {
     accent: rgb(214, 118, 74),
   },
   winter: {
-    grass: rgb(220, 222, 222),
-    grassDeep: rgb(186, 194, 200),
+    grass: rgb(174, 178, 154),
+    grassDeep: rgb(139, 151, 134),
     moss: rgb(168, 182, 172),
     foliage: rgb(160, 170, 168),
     foliageDeep: rgb(122, 136, 140),
@@ -124,6 +126,10 @@ function mixPalette(a: SeasonPalette, b: SeasonPalette, t: number): SeasonPalett
 
 /** Освещение: ночь — холодный индиго, золотой час — тёплая охра, полдень — мягкий свет. */
 export interface Atmosphere {
+  /** Receiver-local material moisture, never changes the flower clock or global lighting. */
+  materialWetness?: number;
+  /** Local shade / ground dampness; stable habitat, not overnight moss growth. */
+  stoneHabitat?: number;
   palette: SeasonPalette;
   /** Цвет, которым тонируется всё под светом. */
   lightTint: RGB;
@@ -162,8 +168,15 @@ const DUSK_SKY: [RGB, RGB] = [rgb(146, 132, 168), rgb(244, 178, 128)];
 
 export function buildAtmosphere(t: TimeState, overcast = 0): Atmosphere {
   const blend = seasonBlend(t);
-  const palette = mixPalette(SEASON_PALETTES[blend.from], SEASON_PALETTES[blend.to], blend.k);
+  const annual = crownAnchorBlend(t.now),
+    anchors: SeasonId[] = ['winter', 'spring', 'summer', 'autumn'];
+  const palette = mixPalette(SEASON_PALETTES[anchors[annual.from]], SEASON_PALETTES[anchors[annual.to]], annual.amount);
 
+  // Bare March soil is ochre/grey, not an almost-April lawn. Moss stays subdued olive.
+  const ecology = ecologyYear(t.now);
+  palette.grass = mix(rgb(176, 164, 139), palette.grass, ecology.green);
+  palette.grassDeep = mix(rgb(139, 130, 107), palette.grassDeep, ecology.green);
+  palette.moss = mix(rgb(147, 143, 126), palette.moss, 0.15 + 0.85 * ecology.green);
   const d = t.daylight;
   // Тучи глушат золотой час и приглушают дневной свет
   const g = t.golden * (1 - overcast * 0.85);
@@ -215,14 +228,14 @@ export function buildAtmosphere(t: TimeState, overcast = 0): Atmosphere {
   return {
     palette,
     lightTint,
-    lightAmount: lerp(0.28, 0.1, d) + g * 0.2,
+    lightAmount: lerp(0.28, 0.065, d) + g * 0.2,
     shadowTint,
     shadowAmount,
     exposure,
     skyTop,
     skyBottom,
     lampGlow: clamp01(Math.max(1 - d * 1.35, overcast * 0.55 * (1 - d * 0.5))),
-    fireflies: clamp01(1 - d * 1.5) * (blend.from === 'summer' || blend.from === 'spring' ? 1 : 0.25),
+    fireflies: clamp01(1 - d * 1.5) * ecology.fireflies,
     sunDir,
     sunElev,
     season: blend.from,

@@ -4,6 +4,7 @@ dist
 *.local
 .vite
 preview-*.png
+preview-*.gif
 creature-sheet.png
 splash-*.png
 practice-*.png

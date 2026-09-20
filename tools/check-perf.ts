@@ -9,6 +9,8 @@
  */
 
 import { createCanvas } from '@napi-rs/canvas';
+import { makeRng } from '../src/core/rng';
+Math.random = makeRng(841);
 
 const g = globalThis as Record<string, unknown>;
 g.document = { createElement: (t: string) => (t === 'canvas' ? createCanvas(16, 16) : {}) };
@@ -30,7 +32,7 @@ async function main() {
   const { drawObject, drawCost } = await import('../src/render/sprites');
   const { cacheable, drawCached, spriteFrame, spriteStats, clearSprites } = await import('../src/render/spriteCache');
 
-  const d = new Date();
+  const d = new Date(2026, 6, 15);
   d.setHours(13, 0, 0, 0);
   const atm = buildAtmosphere(computeTime(d.getTime()), 0);
   const cv = createCanvas(1500, 860);

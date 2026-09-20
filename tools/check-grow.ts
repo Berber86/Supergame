@@ -3,7 +3,7 @@
  *
  *   npx tsx tools/check-grow.ts
  *
- * Геометрия удвоения, пороги 2·4·8·…, приход действий по настоящим
+ * Геометрия удвоения, пороги 1·2·4·7·11·16·22·…, приход действий по настоящим
  * минутам, плата за посадку и кисть, отказ при пустом запасе, границы
  * тумана (посадка, заливка, тропа, перенос), сохранение v6 и детерминизм
  * дикой земли. Возвращает ненулевой код при любом расхождении.
@@ -32,6 +32,7 @@ async function main(): Promise<void> {
   const {
     GROW_ACTION_MS,
     GROW_BANK_CAP,
+    GROW_MAX_STAGE,
     growOfferReady,
     growThreshold,
     growTick,
@@ -48,8 +49,31 @@ async function main(): Promise<void> {
   {
     const th = [0, 1, 2, 3, 4, 5, 6].map(growThreshold);
     check('пороги сбалансированы: 1,2,4,7,11,16,22', th.join(',') === '1,2,4,7,11,16,22', th.join(','));
-    // Обратная совместимость: первые 6 раньше были 2,4,8,16,32,64 — теперь мягче
-    const thOld = th.slice(1, 7);
+    check('ряд продолжается по +7, +8, +9: 29,37,46', [7, 8, 9].map(growThreshold).join(',') === '29,37,46');
+    check(
+      'разность соседних порогов растёт на единицу',
+      Array.from({ length: 20 }, (_, i) => i + 1).every((n) => growThreshold(n) - growThreshold(n - 1) === n),
+    );
+    check(
+      'некорректная ступень безопасна',
+      [-1, NaN, Infinity].every((n) => growThreshold(n) === 1),
+    );
+    check('дробная ступень округляется как в сохранениях', growThreshold(3.9) === 7);
+    for (let stage = 0; stage < GROW_MAX_STAGE; stage++) {
+      // Изолируем порог от геометрии: у тестового клочка всегда есть свободные стороны.
+      const state = newGrowState(7, 1000);
+      state.stage = stage;
+      state.progress = growThreshold(stage) - 1;
+      check(`ступень ${stage}: одного действия ещё не хватает`, !growOfferReady(state));
+      state.progress++;
+      check(`ступень ${stage}: предложение ровно на пороге`, growOfferReady(state));
+      state.progress++;
+      check(`ступень ${stage}: избыток прогресса не прячет предложение`, growOfferReady(state));
+    }
+    const finished = newGrowState(7, 1000);
+    finished.stage = GROW_MAX_STAGE;
+    finished.progress = growThreshold(GROW_MAX_STAGE);
+    check('формула не снимает ограничение числа расширений', !growOfferReady(finished));
     const st = newGrowState(7, 1000);
     check(
       'старт: клочок 2×2 в центре листа',
@@ -140,9 +164,13 @@ async function main(): Promise<void> {
       }
     const a = w.place('azalea', r.x + 0.5, r.y + 0.5, 0);
     check('первая посадка прошла, действие списано', !!a && w.grow.bank === 1 && w.grow.progress === 1);
+    check('уже первая посадка открывает рост', growOfferReady(w.grow));
     const b = w.place('grass_tuft', r.x + 1.5, r.y + 0.5, 0);
-    check('вторая посадка: запас пуст, прогресс у порога', !!b && w.grow.bank === 0 && w.grow.progress === 2);
-    check('порог 2 достигнут — сад предлагает расти', growOfferReady(w.grow));
+    check(
+      'вторая посадка: запас пуст, прогресс сверх первого порога',
+      !!b && w.grow.bank === 0 && w.grow.progress === 2,
+    );
+    check('накопленные действия не отменяют предложение роста', growOfferReady(w.grow));
     const c = w.place('moss_clump', r.x + 0.5, r.y + 1.5, 0);
     check('третья посадка отклонена', c === null && w.growRefused);
     check('отклонённое действие не растит прогресс', w.grow.progress === 2);

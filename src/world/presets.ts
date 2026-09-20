@@ -10,6 +10,7 @@ import { GRID } from '../core/iso';
 import { hash2 } from '../core/rng';
 import { World } from './world';
 import { DAY_MS } from '../core/clock';
+import { findPath } from './paths';
 
 type Builder = (world: World) => void;
 
@@ -72,6 +73,11 @@ function house(world: World, x0: number, y0: number, w: number, h: number): void
   }
 }
 
+/** Never use unchecked placement for the new interior fixtures. */
+function furnish(world: World, entries: [string, number, number, number][]): void {
+  for (const [type, x, y, rot] of entries) if (world.canPlace(type, x, y, rot)) world.place(type, x, y, rot, old);
+}
+
 function pond(world: World, x0: number, y0: number, w: number, h: number): void {
   world.applyWaterBlock(x0, y0, w, h);
 }
@@ -106,8 +112,13 @@ const tea: Preset = {
       if (t) t.ground = 'stone';
     }
     world.place('table', 5, 5, 0, old);
-    world.place('cushion', 4.5, 5.5, 0, old);
-    world.place('cushion', 5.5, 5.5, 0, old);
+    furnish(world, [
+      ['cushion', 4, 6, 0],
+      ['cushion', 6, 5.5, 0],
+      ['tokonoma', 4, 4, 0],
+      ['tansu', 5.5, 4, 0],
+      ['indoor_plant', 6, 6, 0],
+    ]);
     world.place('lantern_stone', 7.5, 8.5, 0, old);
     world.place('maple', 13.5, 6.5, 0, old);
     world.place('pine', 5.5, 12.5, 0, old);
@@ -133,26 +144,77 @@ const spring: Preset = {
   build: (world) => {
     clearToMoss(world);
     house(world, 2, 2, 4, 3);
-    // --- Исток у самой границы: холм и исток на краю, чтобы вода будто приходит извне ---
-    // северная кромка (y=0) — исток
-    world.applyHill(15, 0, 5, 4, 1);
-    world.applyHill(16, 0, 3, 3, 1);
-    world.applySpring(16, 0, 3, 2);
-    // каскад начинается прямо от края (x0=13,y0=0) — 5×7, стекает на юго-восток
-    world.applyCascade(13, 0, 5, 7);
-    // длинный извилистый ручей от каскада к озеру — несколько блоков воды
-    pond(world, 12, 7, 3, 2);
-    pond(world, 11, 9, 3, 2);
-    pond(world, 10, 11, 4, 2);
-    // озеро внизу, куда впадает ручей
-    pond(world, 8, 14, 8, 6);
-    pond(world, 14, 16, 5, 4);
-    // каменная кромка вдоль всего русла
-    scatterGround(world, 10, 6, 8, 2, 'stone');
-    scatterGround(world, 9, 10, 6, 2, 'stone');
-    world.place('bridge', 11, 10, 0, old);
-    world.place('bridge', 9, 13, 0, old);
-    world.place('rock_big', 13, 5, 0, old);
+    // A single authored watercourse, not disjoint soft pond brushes. All of the
+    // lowland water has the same elevation; terraces join through cardinal cells.
+    // Small overlapping ridges instead of the brush's broad rectangular platform.
+    for (let y = 0; y < 9; y++)
+      for (let x = 11; x < 24; x++) {
+        const dx = (x - 17.1) / 4.5,
+          dy = (y + 0.2) / 6;
+        const ridge = 1 - Math.hypot(dx, dy) + Math.sin(x * 1.4 + y * 0.8) * 0.1;
+        const t = world.at(x, y)!;
+        t.level = ridge > 0.6 ? 2 : ridge > 0.12 ? 1 : 0;
+        if (t.level > 0 && hash2(x, y, 431) > 0.46) t.ground = 'stone';
+      }
+    const channel: [number, number, number][] = [
+      [16, 17, 2],
+      [16, 17, 2],
+      [15, 17, 2],
+      [15, 16, 1],
+      [14, 16, 1],
+      [14, 15, 1],
+      [13, 15, 0],
+      [13, 14, 0],
+      [12, 14, 0],
+      [12, 13, 0],
+      [12, 13, 0],
+      [11, 13, 0],
+      [11, 12, 0],
+      [11, 12, 0],
+      [10, 13, 0],
+    ];
+    channel.forEach(([left, right, level], y) => {
+      // Dry landing/bank elevation agrees with the adjacent water, so bridges
+      // don't perch on a raised ledge on one end and plunge into a hole on the other.
+      for (let x = left - 1; x <= right + 1; x++) world.at(x, y)!.level = level;
+      for (let x = left; x <= right; x++) Object.assign(world.at(x, y)!, { water: true, ground: 'water' });
+    });
+    for (let y = 14; y <= 21; y++)
+      for (let x = 7; x <= 19; x++) {
+        const dx = (x + 0.5 - 13) / 5.4,
+          dy = (y + 0.5 - 17.7) / 3.9;
+        const shore = 1 + Math.sin(y * 1.1 + x * 0.55) * 0.075;
+        if (dx * dx + dy * dy <= shore) Object.assign(world.at(x, y)!, { level: 0, water: true, ground: 'water' });
+      }
+    // Sparse rock banks, no solid rectangular stone dams across the channel.
+    for (let y = 0; y < 8; y++)
+      for (let x = 12; x < 20; x++) {
+        const t = world.at(x, y)!;
+        if (
+          !t.water &&
+          hash2(x, y, 421) > 0.55 &&
+          [
+            [1, 0],
+            [-1, 0],
+            [0, 1],
+            [0, -1],
+          ].some(([dx, dy]) => world.at(x + dx, y + dy)?.water)
+        )
+          t.ground = 'stone';
+      }
+    world.smoothTerrain();
+    // Deck centres (13,10.5) and (12,13.5); both span X. Their ends sit on
+    // dry, level banks at 11.5/14.5 and 10.5/13.5, with water under the arch.
+    world.place('bridge', 12.5, 9, 0, old);
+    world.place('bridge', 11.5, 12, 0, old);
+    for (const [x, y] of [
+      [11, 10],
+      [14, 10],
+      [10, 13],
+      [13, 13],
+    ])
+      world.at(x, y)!.ground = 'stone';
+    world.place('rock_big', 12, 3, 0, old);
     world.place('rock_mid', 15, 8, 1, old);
     world.place('rock_mid', 7, 13, 0, old);
     world.place('rock_trio', 17, 12, 1, old);
@@ -161,21 +223,68 @@ const spring: Preset = {
     world.place('pine', 20, 1, 0, old);
     world.place('pine', 14, 1, 0, old);
     world.place('maple', 8, 8, 0, old);
-    world.place('willow', 7.5, 14.5, 0, old);
-    world.place('willow', 16.5, 18.5, 0, old);
+    world.place('willow', 6.5, 15.5, 0, old);
+    world.place('willow', 18.5, 17.5, 0, old);
     world.place('bamboo', 20.5, 0.5, 0, old);
     world.place('bamboo', 21, 1.5, 0, old);
     world.place('bamboo', 19, 2, 0, old);
     world.place('lantern_stone', 10.5, 9.5, 0, old);
-    world.place('lantern_path', 12.5, 12.5, 0, old);
-    world.place('fern', 15.5, 6.5, 0, old);
-    world.place('iris', 9.5, 15.5, 0, old);
-    world.place('iris', 13.5, 17.5, 0, old);
+    world.place('lantern_path', 14, 12.5, 0, old);
+    world.place('fern', 16.5, 6.5, 0, old);
+    world.place('iris', 7, 17, 0, old);
+    world.place('iris', 17.5, 20.5, 0, old);
     world.place('cat', 3.5, 3.5, 0, old);
     world.place('table', 3.5, 2.5, 0, old);
+    furnish(world, [
+      ['cushion', 4.5, 3.5, 0],
+      ['tansu', 4.5, 2, 0],
+      ['tokonoma', 2, 2, 0],
+      ['indoor_plant', 5, 4, 0],
+    ]);
     world.place('lotus', 10, 15, 0, old);
     world.place('lilypad', 11, 16, 0, old);
     world.place('lilypad', 13, 18, 0, old);
+    // A walking loop: veranda → west banks → bridges → east-bank overlook.
+    // A* uses the actual water/obstacle mask, never paints a dam over the river.
+    for (const [a, b] of [
+      [
+        [6, 6],
+        [11, 10],
+      ],
+      [
+        [11, 10],
+        [10, 13],
+      ],
+      [
+        [14, 10],
+        [13, 13],
+      ],
+      [
+        [13, 13],
+        [16, 14],
+      ],
+    ]) {
+      const path = findPath(world, { x: a[0], y: a[1] }, { x: b[0], y: b[1] });
+      for (const c of path ?? []) {
+        const t = world.at(c.x, c.y)!;
+        if (t.indoor || t.veranda || t.water) continue;
+        if (world.objects.some((o) => o.type === 'step_stone' && o.tx === c.x && o.ty === c.y)) continue;
+        if (world.canPlace('step_stone', c.x, c.y)) world.place('step_stone', c.x, c.y, 0, old);
+      }
+    }
+    // Sparse shore planting, deliberately leaving bridge entries unobstructed.
+    for (const [type, x, y] of [
+      ['reed', 7, 18],
+      ['reed', 17, 20],
+      ['horsetail', 18, 16],
+      ['iris', 8, 14],
+      ['fern', 16, 7],
+      ['rock_mid', 18, 19],
+    ] as [string, number, number][]) {
+      if (world.canPlace(type, x, y)) world.place(type, x, y, 0, old);
+    }
+    world.place('koi', 12, 17, 0, old);
+    world.place('koi', 14, 18, 0, old);
   },
 };
 
@@ -313,6 +422,12 @@ const path: Preset = {
     world.place('azalea', 9.5, 12.5, 0, old);
     world.place('cat', 3, 4, 0, old);
     world.place('table', 3.5, 3, 0, old);
+    furnish(world, [
+      ['cushion', 3.5, 4, 0],
+      ['tokonoma', 2, 2, 0],
+      ['tansu', 3.5, 2, 0],
+      ['indoor_plant', 2, 5, 0],
+    ]);
     pond(world, 14, 6, 4, 3);
     world.place('rock_mid', 15, 5, 0, old);
   },
@@ -370,10 +485,14 @@ const village: Preset = {
     world.place('lantern_path', 12.5, 14.5, 0, old);
     world.place('lantern_path', 15.5, 13.5, 0, old);
     // кот и мелочи
-    world.place('cat', 9, 9, 0, old);
-    world.place('cushion', 9.5, 9.5, 0, old);
-    world.place('bowl', 10, 9, 0, old);
-    world.place('table', 8.5, 8.5, 0, old);
+    // Outdoor tea area, not furniture placed inside an opaque miniature house.
+    world.place('cat', 9, 11, 0, old);
+    world.place('bowl', 9.5, 10.5, 0, old);
+    furnish(world, [
+      ['table', 8, 10.5, 0],
+      ['cushion', 8, 11.5, 0],
+      ['engawa_bench', 14.5, 10, 0],
+    ]);
     // маленький пруд
     pond(world, 17, 11, 3, 3);
     world.place('lotus', 18, 12, 0, old);

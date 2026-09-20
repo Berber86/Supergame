@@ -1,3 +1,4 @@
+import { GRAPHICS, isGraphicsQuality, type GraphicsQuality } from '../render/graphics';
 /**
  * Настройки вида.
  *
@@ -10,6 +11,7 @@
 const KEY = 'usadba.view.v1';
 
 export interface ViewSettings {
+  quality: GraphicsQuality;
   /** Лепестки, светлячки, бабочки, дождь. */
   particles: boolean;
   /** Плавные движения камеры и покачивания. */
@@ -21,6 +23,7 @@ export interface ViewSettings {
 }
 
 const DEFAULTS: ViewSettings = {
+  quality: 'balanced',
   particles: true,
   motion: true,
   contrast: false,
@@ -31,7 +34,16 @@ export function loadView(): ViewSettings {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return { ...DEFAULTS };
-    return { ...DEFAULTS, ...(JSON.parse(raw) as Partial<ViewSettings>) };
+    const v: unknown = JSON.parse(raw);
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return { ...DEFAULTS };
+    const obj = v as Record<string, unknown>;
+    return {
+      quality: isGraphicsQuality(obj.quality) ? obj.quality : DEFAULTS.quality,
+      particles: typeof obj.particles === 'boolean' ? obj.particles : DEFAULTS.particles,
+      motion: typeof obj.motion === 'boolean' ? obj.motion : DEFAULTS.motion,
+      contrast: typeof obj.contrast === 'boolean' ? obj.contrast : DEFAULTS.contrast,
+      uiScale: typeof obj.uiScale === 'number' && SCALES.includes(obj.uiScale) ? obj.uiScale : DEFAULTS.uiScale,
+    };
   } catch {
     return { ...DEFAULTS };
   }
@@ -105,6 +117,18 @@ export class SettingsPanel {
     const si = SCALES.indexOf(v.uiScale) < 0 ? 1 : SCALES.indexOf(v.uiScale);
     this.root.innerHTML = `
       <div class="sp-head">Как смотреть</div>
+      <div class="sp-graphics">
+        <div class="sp-label" id="graphics-label">Графика</div>
+        <div class="sp-quality" role="group" aria-labelledby="graphics-label">
+          ${Object.entries(GRAPHICS)
+            .map(
+              ([key, p]) =>
+                `<button type="button" data-quality="${key}" aria-pressed="${v.quality === key}" class="${v.quality === key ? 'on' : ''}">${p.name}</button>`,
+            )
+            .join('')}
+        </div>
+        <div class="sp-quality-hint">${GRAPHICS[v.quality].description} Все деревья, животные и сезоны остаются.</div>
+      </div>
       <div class="sp-row" data-act="particles">
         <div class="sp-label">Лепестки и светлячки<em>частицы в воздухе</em></div>
         <div class="sp-switch ${v.particles ? 'on' : ''}"><i></i></div>
@@ -134,6 +158,14 @@ export class SettingsPanel {
       <div class="sp-note">Настройки общие для всех усадеб.</div>
     `;
 
+    this.root.querySelectorAll<HTMLButtonElement>('[data-quality]').forEach((button) =>
+      button.addEventListener('click', () => {
+        const quality = button.dataset.quality;
+        if (!isGraphicsQuality(quality)) return;
+        this.set('quality', quality);
+        this.root.querySelector<HTMLButtonElement>(`[data-quality="${quality}"]`)?.focus();
+      }),
+    );
     this.root.querySelectorAll<HTMLElement>('.sp-row').forEach((row) => {
       const act = row.dataset.act;
       if (act === 'scale') return;

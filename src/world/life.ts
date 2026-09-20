@@ -1,3 +1,8 @@
+import { makeWindSampler, windFronts, type WindSampler } from './wind';
+import type { Gust } from './wind';
+export type { Gust } from './wind';
+import { Lizards } from './lizards';
+import { ecologyYear, wildlifeActivity, treeFallActivity } from './ecology';
 /**
  * Живность сада: коты, птицы, бабочки, карпы — и приглашённые жители воды.
  * Агенты со своими намерениями — сад должен жить сам по себе, без участия игрока.
@@ -8,11 +13,13 @@
  * голода и наказаний, только места, сезон, погода и друг друг.
  */
 
+import { CAT_STRIDE, catPosture, updateCatPosture, type CatPosture } from './creatureMotion';
+import { easePose } from './animalMotion';
 import { GRID } from '../core/iso';
 import { clamp, hash1, hash2, lerp, makeRng } from '../core/rng';
 import { ITEM_BY_ID } from './catalog';
 import { TimeState } from '../core/clock';
-import { Habitat, Invitation, invitations, scanHabitat } from './habitat';
+import { Habitat, Invitation, invitations, scanHabitat, floweringHabitat } from './habitat';
 import { Residents, Threat } from './residents';
 import { Wildlife } from './wildlife';
 import { WeatherState } from './weatherState';
@@ -55,6 +62,11 @@ interface Agent {
 }
 
 export interface Cat extends Agent {
+  posture?: CatPosture;
+  gait?: number;
+  actionTime?: number;
+  actionDuration?: number;
+  actionState?: CatState;
   id: number;
   state: CatState;
   /** Сколько мс осталось в текущем состоянии. */
@@ -127,17 +139,6 @@ export interface Fish {
   memoryStrength: number;
 }
 
-/** Порыв ветра — волна, проходящая через сад. */
-export interface Gust {
-  /** Позиция фронта вдоль оси распространения, в тайлах. */
-  pos: number;
-  strength: number;
-  /** Направление распространения. */
-  dx: number;
-  dy: number;
-  width: number;
-}
-
 const rnd = makeRng(20240320);
 
 function tileWalkable(world: World, tx: number, ty: number): boolean {
@@ -203,6 +204,7 @@ function seasonSpecies(season: string, atFeeder: boolean): BirdSpecies {
 }
 
 export class Life {
+  lizards = new Lizards();
   cats: Cat[] = [];
   /** Коты-гости: ещё не предметы сада, но уже его жители. */
   guests: Cat[] = [];
@@ -230,14 +232,16 @@ export class Life {
     owl: 0,
     squirrel: 0,
     turtle: 0,
+    lizard: 0,
     bees: 0,
     moths: 0,
   };
   /** Заметки в летопись: игровой цикл забирает их каждый кадр. */
   pendingNotes: ChronicleToastNote[] = [];
-  /** Общая фаза ветра 0..1 — плавный фон поверх порывов. */
-  windBase = 0.45;
-  private gustTimer = 4000;
+  /** Legacy centre-of-garden pressure; local consumers sample windVectorAt instead. */
+  windBase = 0;
+  windTime = 0;
+  private windSample: WindSampler = makeWindSampler(0);
   private birdTimer = 6000;
   private habitatTimer = 0;
   private guestTimer = 45_000;
@@ -245,6 +249,7 @@ export class Life {
   emitted: { x: number; y: number; kind: 'petal' | 'leaf'; seed: number }[] = [];
   /** Сид состава кои — чтобы рыбы переселялись за своими предметами. */
   private koiKey = '';
+  private dormantSince = new WeakMap<object, number>();
   /**
    * Потолок очереди опадающего. Когда сцена не рисуется (дзен-лист),
    * лепестки некому забирать — очередь не должна расти без предела.
@@ -253,14 +258,19 @@ export class Life {
 
   /** Забыть всю живность — при переходе в другую усадьбу. */
   reset(): void {
+    this.lizards.reset();
     this.cats = [];
     this.guests = [];
     this.birds = [];
     this.flutters = [];
     this.fish = [];
     this.gusts = [];
+    this.windTime = 0;
+    this.windBase = 0;
+    this.windSample = makeWindSampler(0);
     this.emitted = [];
     this.koiKey = '';
+    this.dormantSince = new WeakMap();
     this.habitat = null;
     this.habitatTimer = 0;
     this.guestTimer = 45_000;
@@ -346,7 +356,7 @@ export class Life {
 
   update(world: World, t: TimeState, dt: number, now: number, wx?: WeatherState | null): void {
     this.sync(world);
-    this.updateWind(dt, t);
+    this.updateWind(dt, t, wx);
 
     // Среда обитания пересчитывается редко: постройки не двигаются сами,
     // а обход сада каждый кадр был бы чистой тратой.
@@ -355,7 +365,7 @@ export class Life {
       this.habitatTimer = 2000;
       this.habitat = scanHabitat(world, world.grow?.rect ?? null);
     }
-    const h = this.habitat;
+    const h = floweringHabitat(this.habitat, t.now);
     const inv = invitations(h, t, wx ?? null, this.windBase);
     this.invitation = inv;
 
@@ -373,15 +383,58 @@ export class Life {
       this.residents.ripple(x, y, true);
       this.scareFish(x, y);
     };
-    this.wildlife.update(h, inv, t, wx ?? null, dt, now, threats);
+    this.wildlife.update(h, inv, t, wx ?? null, dt, now, threats, world);
     for (const note of this.wildlife.takeNotes()) this.note(world, note.id, note.x, note.y);
 
     this.updateCats(world, t, dt);
     this.updateGuest(world, h, inv, t, dt, now);
     this.updateBirds(world, t, dt, h, inv, wx ?? null);
-    this.updateFlutters(world, t, dt, now);
+    this.updateFlutters(world, t, dt, now, wx);
     this.updateFish(world, dt);
     this.updateFalling(world, t, dt);
+    const lizardThreats = [...threats];
+    const heron = this.wildlife.heron;
+    if (heron && heron.state !== 'fly-out') lizardThreats.push({ x: heron.tx, y: heron.ty, r: 2.5 });
+    for (const owl of this.wildlife.owls) lizardThreats.push({ x: owl.tx, y: owl.ty, r: 2.2 });
+    this.lizards.update(
+      world,
+      h,
+      inv,
+      t,
+      dt,
+      lizardThreats,
+      this.flutters,
+      this.wildlife.turtles.map((a) => ({ x: a.tx, y: a.ty })),
+    );
+
+    const year = ecologyYear(t.now);
+    this.retireDormant(this.flutters, year.butterflies, dt);
+    this.retireDormant(this.residents.frogs, year.frogs, dt);
+    this.retireDormant(this.residents.dragonflies, year.dragonflies, dt);
+    this.retireDormant(this.wildlife.bees, year.bees, dt);
+    this.retireDormant(this.wildlife.fireflies, year.fireflies, dt);
+    this.retireDormant(this.wildlife.moths, year.moths, dt);
+    this.retireDormant(this.wildlife.turtles, year.turtle, dt);
+    this.retireDormant(this.wildlife.hedgehogs, year.hedgehog, dt);
+  }
+
+  /** Invisible out-of-season agents must not stay curled/hidden forever in simulation arrays.
+   * Normal behaviours get five seconds to depart; this is a bounded hibernation fallback.
+   * Year-round cats, fish and birds are deliberately not cleared.
+   */
+  private retireDormant<T extends object>(agents: T[], activity: number, dt: number): void {
+    for (let i = agents.length - 1; i >= 0; i--) {
+      const agent = agents[i];
+      if (activity > 0.001) {
+        this.dormantSince.delete(agent);
+        continue;
+      }
+      const elapsed = (this.dormantSince.get(agent) ?? 0) + dt;
+      if (elapsed >= 5000) {
+        agents.splice(i, 1);
+        this.dormantSince.delete(agent);
+      } else this.dormantSince.set(agent, elapsed);
+    }
   }
 
   /**
@@ -398,44 +451,19 @@ export class Life {
 
   // ---------------- Ветер ----------------
 
-  private updateWind(dt: number, t: TimeState): void {
-    const now = performance.now();
-    // ровное «дыхание» + сезонная поправка: осенью и зимой ветрено
-    const seasonK = t.season === 'autumn' ? 1.25 : t.season === 'winter' ? 1.15 : 1;
-    this.windBase = (0.34 + Math.sin(now * 0.00011) * 0.16 + Math.sin(now * 0.00037) * 0.1) * seasonK;
-
-    this.gustTimer -= dt;
-    if (this.gustTimer <= 0) {
-      this.gustTimer = 5000 + rnd() * 11000;
-      const ang = rnd() * Math.PI * 2;
-      this.gusts.push({
-        pos: -8,
-        strength: 0.5 + rnd() * 0.9,
-        dx: Math.cos(ang),
-        dy: Math.sin(ang),
-        width: 6 + rnd() * 7,
-      });
-    }
-    for (let i = this.gusts.length - 1; i >= 0; i--) {
-      const g = this.gusts[i];
-      g.pos += dt * 0.0075 * (0.7 + g.strength * 0.5);
-      if (g.pos > GRID * 1.6 + g.width) this.gusts.splice(i, 1);
-    }
+  private updateWind(dt: number, t: TimeState, wx?: WeatherState | null): void {
+    this.windTime += Number.isFinite(dt) ? Math.max(0, dt) : 0;
+    const climate = (1 + 0.18 * (1 - ecologyYear(t.now).green)) * (1 + (wx?.rain ?? 0) * 0.28);
+    this.gusts = windFronts(this.windTime, climate);
+    this.windSample = makeWindSampler(this.windTime, climate);
+    this.windBase = this.windSample(GRID / 2, GRID / 2).strength;
   }
-
-  /** Сила ветра в конкретной точке сада — деревья качаются волной, а не разом. */
+  /** Shared pressure and direction, optionally delayed by the receiving material's inertia. */
+  windVectorAt(tx: number, ty: number, lag = 0) {
+    return this.windSample(tx, ty, lag);
+  }
   windAt(tx: number, ty: number): number {
-    let w = this.windBase;
-    for (const g of this.gusts) {
-      // проекция точки на ось распространения порыва
-      const proj = tx * g.dx + ty * g.dy;
-      const d = Math.abs(proj - g.pos);
-      if (d < g.width) {
-        const k = Math.cos((d / g.width) * Math.PI * 0.5);
-        w += g.strength * k * k;
-      }
-    }
-    return clamp(w, 0, 2.4);
+    return this.windVectorAt(tx, ty).strength;
   }
 
   // ---------------- Коты ----------------
@@ -444,6 +472,15 @@ export class Life {
     const cushions = findObjects(world, ['cushion']);
     const all = this.cats.concat(this.guests);
     for (const c of all) {
+      c.posture ??= catPosture(c.state);
+      if (c.actionState !== c.state) {
+        c.actionState = c.state;
+        c.actionTime = 0;
+        c.actionDuration = Math.max(1, c.timer);
+      }
+      c.actionTime = (c.actionTime ?? 0) + dt;
+      const oldX = c.tx;
+      const oldY = c.ty;
       c.timer -= dt;
       c.phase += dt * 0.001;
       if (c.greet > 0) c.greet -= dt;
@@ -457,11 +494,11 @@ export class Life {
           c.target = null;
           this.pickCatState(c, t);
         } else {
-          c.speed = lerp(c.speed, 1, 0.04);
-          const v = 0.0013 * dt * c.speed;
+          c.speed = easePose(c.speed, 1, dt, 400);
+          const v = Math.min(dist, 0.0013 * dt * c.speed);
           c.tx += (dx / dist) * v;
           c.ty += (dy / dist) * v;
-          if (Math.abs(dx) > 0.02) c.facing = dx > 0 ? 1 : -1;
+          if (Math.abs(dx - dy) > 0.02) c.facing = dx - dy > 0 ? 1 : -1;
           // не заходим в воду
           if (!tileWalkable(world, c.tx, c.ty)) {
             c.tx -= (dx / dist) * v;
@@ -471,9 +508,10 @@ export class Life {
           }
         }
       } else {
-        c.speed = lerp(c.speed, 0, 0.08);
+        c.speed = easePose(c.speed, 0, dt, 200);
       }
 
+      c.gait = (c.gait ?? 0) + (Math.hypot(c.tx - oldX, c.ty - oldY) / CAT_STRIDE) * Math.PI * 2;
       if (c.timer <= 0) this.pickCatState(c, t, world);
 
       // Кот наблюдает за птицей: это заметно со стороны и ни к чему не обязывает
@@ -499,6 +537,21 @@ export class Life {
             c.timer = 6000 + rnd() * 4000;
           } else {
             c.timer = Math.max(c.timer, 1200);
+          }
+        }
+      }
+      // A visible skink draws a cat's attention; it gets a head start and escapes into a crevice.
+      if ((c.state === 'sit' || c.state === 'loaf' || c.state === 'walk') && c.greet <= 0) {
+        const lizard = this.lizards.agents.find(
+          (a) => a.alpha > 0.5 && a.state !== 'hide' && Math.hypot(a.tx - c.tx, a.ty - c.ty) < 3.5,
+        );
+        if (lizard) {
+          c.facing = lizard.tx - c.tx - (lizard.ty - c.ty) > 0 ? 1 : -1;
+          if (c.state !== 'walk' && rnd() < dt * 0.00012) {
+            c.state = 'walk';
+            c.target = { x: lizard.tx, y: lizard.ty };
+            c.timer = 2500;
+            this.note(world, 'cat_lizard', c.tx, c.ty);
           }
         }
       }
@@ -559,6 +612,8 @@ export class Life {
         }
       }
     }
+
+    for (const c of all) updateCatPosture(c, dt);
 
     // Знакомство котов: сошлись близко — сели друг напротив друга
     for (const g of this.guests) {
@@ -725,6 +780,9 @@ export class Life {
       c.timer = 4000;
     }
     c.phase = 0;
+    c.actionTime = 0;
+    c.actionDuration = Math.max(1, c.timer);
+    c.actionState = c.state;
   }
 
   // ---------------- Второй кот ----------------
@@ -876,7 +934,9 @@ export class Life {
           slot,
         });
       } else if (groundBirds < 4) {
-        const spot = randomWalkable(world);
+        const fruit =
+          h.fruitSpots.length && rnd() < 0.75 ? h.fruitSpots[Math.floor(rnd() * h.fruitSpots.length)] : null;
+        const spot = fruit ?? randomWalkable(world);
         if (spot) {
           const fromLeft = rnd() > 0.5;
           this.birds.push({
@@ -890,7 +950,7 @@ export class Life {
             alt: 90 + rnd() * 50,
             hop: 0,
             scale: 0.85 + rnd() * 0.35,
-            species: seasonSpecies(t.season, false),
+            species: fruit ? 'sparrow' : seasonSpecies(t.season, false),
             place: 'ground',
             slot: 0,
           });
@@ -924,12 +984,17 @@ export class Life {
     // Компания у кормушки — событие, которое замечают
     const atFeeder = this.birds.filter((b) => b.place === 'feeder' && b.state !== 'fly-out').length;
     if (atFeeder >= 3) {
-      const fb = this.birds.find(bb => bb.place === 'feeder');
+      const fb = this.birds.find((bb) => bb.place === 'feeder');
       this.note(world, 'flock', fb?.tx, fb?.ty);
     }
     if (t.season === 'winter' && atFeeder >= 2) {
       world.checkMilestone('winter_feeder');
-      this.note(world, 'winter_table', this.birds.find(bb => bb.place === 'feeder')?.tx, this.birds.find(bb => bb.place === 'feeder')?.ty);
+      this.note(
+        world,
+        'winter_table',
+        this.birds.find((bb) => bb.place === 'feeder')?.tx,
+        this.birds.find((bb) => bb.place === 'feeder')?.ty,
+      );
     }
 
     for (let i = this.birds.length - 1; i >= 0; i--) {
@@ -944,6 +1009,8 @@ export class Life {
         const perchAlt = b.place === 'feeder' ? 26 : b.place === 'bath' ? 7 : 0;
         if (d < 0.25 && Math.abs(b.alt - perchAlt) < 3) {
           b.alt = perchAlt;
+          if (perchAlt <= 7 && world.at(Math.floor(b.tx), Math.floor(b.ty))?.water)
+            this.residents.ripple(b.tx, b.ty, false);
           if (b.place === 'feeder') {
             b.state = 'perch';
             b.timer = 1600 + rnd() * 2600;
@@ -1038,12 +1105,10 @@ export class Life {
 
   // ---------------- Бабочки ----------------
 
-  private updateFlutters(world: World, t: TimeState, dt: number, now: number): void {
-    const season = t.season;
-    const day = t.daylight;
-    const wantButterflies = day > 0.4 && (season === 'spring' || season === 'summer') ? 5 : 0;
-
-    const flowers = findObjects(world, ['lily', 'iris', 'azalea', 'lotus', 'lilypad']);
+  private updateFlutters(world: World, t: TimeState, dt: number, now: number, wx?: WeatherState | null): void {
+    const active = wildlifeActivity(t, wx, this.windBase).butterflies;
+    const flowers = floweringHabitat(this.habitat!, t.now).beeSpots;
+    const wantButterflies = Math.floor(5 * active * (flowers.length ? 1 : 0.35));
 
     while (this.flutters.length < wantButterflies) {
       const spot = flowers.length ? flowers[Math.floor(rnd() * flowers.length)] : randomWalkable(world);
@@ -1127,10 +1192,14 @@ export class Life {
         const item = ITEM_BY_ID.get(o.type);
         if (!item) continue;
         const c = { x: o.tx + item.w / 2, y: o.ty + item.h / 2 };
-        for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
-          const t = world.at(Math.floor(c.x + dx), Math.floor(c.y + dy));
-          if (t?.water) { feedSpots.push({ x: c.x + dx * 0.3, y: c.y + dy * 0.3 }); break; }
-        }
+        for (let dy = -3; dy <= 3; dy++)
+          for (let dx = -3; dx <= 3; dx++) {
+            const t = world.at(Math.floor(c.x + dx), Math.floor(c.y + dy));
+            if (t?.water) {
+              feedSpots.push({ x: c.x + dx * 0.3, y: c.y + dy * 0.3 });
+              break;
+            }
+          }
       }
     }
     for (const f of this.fish) {
@@ -1178,7 +1247,10 @@ export class Life {
         let nd = Infinity;
         for (const sp of feedSpots) {
           const d = Math.hypot(sp.x - f.tx, sp.y - f.ty);
-          if (d < nd) { nd = d; nearest = sp; }
+          if (d < nd) {
+            nd = d;
+            nearest = sp;
+          }
         }
         if (nearest && nd < 2.5) {
           if (!f.feedMemory || nd < Math.hypot(f.feedMemory.x - f.tx, f.feedMemory.y - f.ty)) {
@@ -1207,31 +1279,25 @@ export class Life {
       const nx = f.tx + Math.cos(f.dir) * v;
       const ny = f.ty + Math.sin(f.dir) * v;
       const nt = world.at(Math.floor(nx), Math.floor(ny));
-      if (nt?.water) { f.tx = nx; f.ty = ny; } else f.dir += 0.9;
+      if (nt?.water) {
+        f.tx = nx;
+        f.ty = ny;
+      } else f.dir += 0.9;
     }
   }
 
   // ---------------- Опадание с деревьев ----------------
 
   private updateFalling(world: World, t: TimeState, dt: number): void {
-    const season = t.season;
-    const isPetal = season === 'spring';
-    const isLeaf = season === 'autumn';
-    if (!isPetal && !isLeaf) return;
-
-    // Чем сильнее ветер, тем чаще срывает
-    const wind = this.windBase + this.gusts.reduce((a, g) => a + g.strength, 0) * 0.4;
-    const chance = (isPetal ? 0.004 : 0.003) * wind * dt;
-    if (rnd() > chance) return;
-
-    const trees = world.objects.filter((o) => {
-      const item = ITEM_BY_ID.get(o.type);
-      if (!item || item.kind !== 'tree') return false;
-      if (isPetal) return o.type === 'sakura';
-      return o.type === 'maple' || o.type === 'ginkgo' || o.type === 'sakura';
-    });
+    // First sample a real tree, then its shedding rate; dormant trees cannot emit petals.
+    if (rnd() > 0.008 * dt) return;
+    const trees = world.objects.filter((o) => ITEM_BY_ID.get(o.type)?.kind === 'tree');
     if (!trees.length) return;
     const tree = trees[Math.floor(rnd() * trees.length)];
+    if (rnd() > this.windAt(tree.tx + 0.5, tree.ty + 0.5) * 0.6) return;
+    const fall = treeFallActivity(tree.type, tree.seed, t.now);
+    const isPetal = fall.petals > 0;
+    if (rnd() > (isPetal ? fall.petals : fall.leaves)) return;
     const item = ITEM_BY_ID.get(tree.type)!;
     if (this.emitted.length < Life.EMITTED_CAP) {
       this.emitted.push({

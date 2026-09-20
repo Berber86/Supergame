@@ -1,13 +1,15 @@
 /** Миниатюрные иконки предметов — рисуются тем же кодом, что и сад, но в маленьком канвасе. */
 
-import { Atmosphere } from '../world/palette';
+import { computeTime } from '../core/clock';
+import { crownCacheKey, crownCacheTime } from '../world/phenology';
+import { buildAtmosphere, Atmosphere } from '../world/palette';
 import { drawObject, hasDrawer } from '../render/sprites';
 import { PlacedObject } from '../world/types';
 
 const cache = new Map<string, string>();
 
 export function itemIcon(itemId: string, atm: Atmosphere, size = 56): string {
-  const key = `${itemId}|${atm.season}|${size}`;
+  const key = `${itemId}|${atm.season}|${crownCacheKey(itemId, 424242, atm.time.now)}|${size}`;
   const hit = cache.get(key);
   if (hit) return hit;
 
@@ -20,8 +22,17 @@ export function itemIcon(itemId: string, atm: Atmosphere, size = 56): string {
 
   if (hasDrawer(itemId)) {
     // Иконка рисуется при «дневном» свете — независимо от времени суток в саду
+    const iconTime = {
+      ...computeTime(crownCacheTime(itemId, 424242, atm.time.now)),
+      dayT: 0.5,
+      hours: 12,
+      minutes: 0,
+      daylight: 1,
+      isNight: false,
+      golden: 0,
+    };
     const iconAtm: Atmosphere = {
-      ...atm,
+      ...buildAtmosphere(iconTime),
       exposure: 1,
       lightAmount: 0.06,
       shadowAmount: 0.16,
@@ -59,6 +70,8 @@ export function itemIcon(itemId: string, atm: Atmosphere, size = 56): string {
 
   const url = c.toDataURL();
   cache.set(key, url);
+  if (cache.size > 300) cache.delete(cache.keys().next().value!);
+  c.width = c.height = 1;
   return url;
 }
 
@@ -66,7 +79,7 @@ export function itemIcon(itemId: string, atm: Atmosphere, size = 56): string {
 const boxCache = new Map<string, { w: number; h: number; cx: number; cy: number }>();
 
 function measure(itemId: string, atm: Atmosphere, obj: PlacedObject): { w: number; h: number; cx: number; cy: number } {
-  const key = `${itemId}|${atm.season}`;
+  const key = `${itemId}|${atm.season}|${crownCacheKey(itemId, obj.seed, atm.time.now)}`;
   const hit = boxCache.get(key);
   if (hit) return hit;
 
@@ -107,6 +120,8 @@ function measure(itemId: string, atm: Atmosphere, obj: PlacedObject): { w: numbe
           cy: (top + bottom) / 2 - S * 0.78,
         };
   boxCache.set(key, box);
+  if (boxCache.size > 300) boxCache.delete(boxCache.keys().next().value!);
+  probe.width = probe.height = 1;
   return box;
 }
 
@@ -135,6 +150,7 @@ export const GLYPHS: Record<string, string> = {
   camera:
     '<rect x="3" y="7" width="18" height="12" rx="2.5"/><circle cx="12" cy="13" r="3.4"/><path d="M8 7l1.5-2.5h5L16 7"/>',
   rotate: '<path d="M4 12a8 8 0 1 1 2.6 5.9"/><path d="M3 18.5l1.2-4.4 4.4 1.2"/>',
+  book: '<path d="M12 6C9 4 5 4 2 5v14c3-1 7-1 10 1 3-2 7-2 10-1V5c-3-1-7-1-10 1v14"/><path d="M5 8h4M5 11h4M15 8h4M15 11h4"/>',
   scroll: '<path d="M6 4h12v16H6z"/><path d="M9 8h6M9 12h6M9 16h4"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   check: '<path d="M5.5 12.5l4.3 4.6L19 7.5"/>',
