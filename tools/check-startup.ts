@@ -258,7 +258,7 @@ if (scenario === 'touch-night-overloaded') {
   store.save(fixture);
   chosenId = store.activeId;
   denseOriginal = win.localStorage.getItem(`usadba.garden.${chosenId}`);
-  denseAfter = fixture.objects.length - 40 - 100 - 12;
+  denseAfter = fixture.objects.length - 54 - 134 - 16;
 }
 const counts: Record<string, number> = {};
 let runningWorld: InstanceType<typeof World> | undefined;
@@ -348,7 +348,7 @@ if (!problem) {
     assert.equal(runningWorld?.objects.length, denseAfter);
     assert.equal(win.localStorage.getItem(`usadba.garden.${chosenId}.before-thinning`), denseOriginal);
     assert.equal(win.document.querySelector('.landscape-notice').hidden, false);
-    assert.ok(win.document.querySelector('.landscape-notice').textContent.includes('152'));
+    assert.ok(win.document.querySelector('.landscape-notice').textContent.includes('204'));
     win.document.querySelector('.ln-close').click();
     assert.equal(win.document.querySelector('.landscape-notice').hidden, true);
   }

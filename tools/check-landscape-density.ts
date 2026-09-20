@@ -63,7 +63,8 @@ function add(data: SaveData, type: string, n: number, tx = 12, ty = 18): PlacedO
   return objects;
 }
 function scatteredTrees(data: SaveData, n = 80): void {
-  for (let i = 0; i < n; i++) add(data, 'pine', 1, 1 + (i % 20), 1 + Math.floor(i / 20));
+  // Spacing exceeds DUPLICATE_RADIUS so the 80 pines stay distinct plantings, never duplicate clusters.
+  for (let i = 0; i < n; i++) add(data, 'pine', 1, 1 + (i % 10) * 2.5, 1 + Math.floor(i / 10) * 2.5);
 }
 const representatives: Record<LandscapeGroup, string> = {
   trees: 'maple',
@@ -82,7 +83,7 @@ for (const [group, type] of Object.entries(representatives) as [LandscapeGroup, 
   assert.equal(thinLandscape(d).objects, d.objects, `${group}: at the limit is a no-op`);
   const original = add(d, type, 1);
   const plan = thinLandscape(d);
-  assert.equal(plan.removed, Math.ceil(limit / 2));
+  assert.equal(plan.removed, Math.ceil((limit * 2) / 3));
   assert.equal(plan.objects.length, d.objects.length - plan.removed);
   assert.equal(plan.objects[0], d.objects[0], 'keep the oldest original');
   assert.ok(!plan.objects.includes(original[0]), 'newest repetitions go first');
@@ -114,7 +115,7 @@ for (const id of ['moss_clump', 'grass_tuft', 'lily', 'iris', 'fern', 'lotus', '
   const plants = add(d, 'lily', 30),
     feeders = add(d, 'feeder', 20);
   const result = thinLandscape(d);
-  assert.equal(result.removed, 40);
+  assert.equal(result.removed, 54);
   assert.ok(
     [...plants, ...feeders].every((o) => result.objects.includes(o)),
     'only the over-budget group is thinned',
@@ -126,8 +127,8 @@ for (const id of ['moss_clump', 'grass_tuft', 'lily', 'iris', 'fern', 'lotus', '
   add(d, 'maple', 40);
   add(d, 'sakura', 41);
   const result = thinLandscape(d);
-  assert.equal(result.objects.filter((o) => o.type === 'maple').length, 20);
-  assert.equal(result.objects.filter((o) => o.type === 'sakura').length, 21);
+  assert.equal(result.objects.filter((o) => o.type === 'maple').length, 14);
+  assert.equal(result.objects.filter((o) => o.type === 'sakura').length, 14);
 }
 // Across spatial bucket boundaries, true Euclidean distances, no accidental whole-bed chain merges.
 for (const [x1, y1, x2, y2, expected] of [
@@ -135,7 +136,7 @@ for (const [x1, y1, x2, y2, expected] of [
   [12, 18, 12 + DUPLICATE_RADIUS, 18, 1],
   [12, 18, 12 + DUPLICATE_RADIUS + 0.0001, 18, 0],
   [12, 18, 12.3, 18.3, 1],
-  [12, 18, 12.4, 18.4, 0],
+  [12, 18, 12 + DUPLICATE_RADIUS / Math.SQRT2 + 0.001, 12 + DUPLICATE_RADIUS / Math.SQRT2 + 0.001, 0],
   [-0.05, 18, 0.05, 18, 0],
 ]) {
   const d = empty();
@@ -149,7 +150,7 @@ for (const [x1, y1, x2, y2, expected] of [
   scatteredTrees(d);
   const a = add(d, 'maple', 1, 12, 18)[0],
     b = add(d, 'maple', 1, 12.4, 18)[0],
-    c = add(d, 'maple', 1, 12.8, 18)[0];
+    c = add(d, 'maple', 1, 14.1, 18)[0];
   const result = thinLandscape(d);
   assert.ok(result.objects.includes(a) && !result.objects.includes(b) && result.objects.includes(c));
   assert.equal(result.removed, 1, 'a nearby chain is not one huge duplicate cluster');
@@ -164,18 +165,18 @@ for (const change of [{ level: 1 }, { water: true }, { indoor: true }, { veranda
 }
 {
   const d = empty();
-  for (let i = 0; i < 100; i++) add(d, 'pebbles', 1, i % 20, Math.floor(i / 20));
+  for (let i = 0; i < 100; i++) add(d, 'pebbles', 1, 1 + (i % 12) * 2.1, 1 + Math.floor(i / 12) * 2.1);
   add(d, 'rock_trio', 1);
   add(d, 'rock_trio', 1)[0].rot = 1;
   assert.equal(thinLandscape(d).removed, 0, 'rotated stones keep their deliberate orientation');
 }
-// Half the extra copies, rounded up, without ever deleting the last object at a location.
+// Two-thirds of the extra copies, rounded up, without ever deleting the last object at a location.
 for (const n of [2, 3, 4, 5, 21, 400]) {
   const d = empty();
   scatteredTrees(d);
   const same = add(d, 'maple', n);
   const result = thinLandscape(d);
-  assert.equal(result.removed, Math.ceil((n - 1) / 2));
+  assert.equal(result.removed, Math.ceil(((n - 1) * 2) / 3));
   assert.ok(result.objects.includes(same[0]));
 }
 {
@@ -190,7 +191,7 @@ for (const n of [2, 3, 4, 5, 21, 400]) {
   Object.freeze(d.objects);
   const result = thinLandscape(d);
   assert.equal(JSON.stringify(d), before, 'plan does not mutate any save fields');
-  assert.equal(result.objects.length, 1000, 'exactly one pass, not a loop until below budget');
+  assert.equal(result.objects.length, 667, 'exactly one pass, not a loop until below budget');
   assert.ok(result.objects.includes(older), 'age takes precedence over ID');
   assert.deepEqual(
     result.objects,
@@ -206,7 +207,7 @@ for (const n of [2, 3, 4, 5, 21, 400]) {
 }
 {
   const d = empty();
-  for (let i = 0; i < 100; i++) add(d, 'maple', 2, 1 + (i % 20), 1 + Math.floor(i / 20));
+  for (let i = 0; i < 100; i++) add(d, 'maple', 2, 1 + (i % 12) * 2.1, 1 + Math.floor(i / 12) * 2.1);
   const first = thinLandscape(d);
   assert.equal(first.objects.length, 100);
   assert.equal(
@@ -239,10 +240,10 @@ for (const preset of [null, ...PRESETS]) {
   } finally {
     Map.prototype.get = get;
   }
-  assert.equal(removed, 25_000);
+  assert.equal(removed, 33_333);
   assert.ok(lookups < 50 * d.objects.length, `bounded bucket work: ${lookups}`);
   console.log(
-    `  ок: 50 000 совпадающих растений → 25 000, ${Math.round(performance.now() - start)} мс, ${lookups} обращений к индексу`,
+    `  ок: 50 000 совпадающих растений → 16 667, ${Math.round(performance.now() - start)} мс, ${lookups} обращений к индексу`,
   );
 }
 
@@ -322,17 +323,19 @@ function overloaded(): SaveData {
   const d = empty();
   add(d, 'maple', 400);
   const { store, world, id } = stored(d);
-  for (const count of [200, 100, 50]) {
+  let previous = 400;
+  for (const count of [134, 45]) {
     assert.ok(store.open(world, id));
     assert.equal(world.objects.length, count);
     assert.equal(
       parseSave(JSON.parse(backing.get(backup(id))!))!.objects.length,
-      count * 2,
+      previous,
       'copy is from the last pass, not an autosave',
     );
+    previous = count;
   }
   assert.ok(store.open(world, id));
-  assert.equal(world.objects.length, 50);
+  assert.equal(world.objects.length, 45);
   assert.equal(store.lastThinning, null);
   const lastBackup = backing.get(backup(id));
   store.create(world, 'Без очистки');
@@ -475,5 +478,5 @@ for (const wrapped of [false, true]) {
   dom.window.close();
 }
 console.log(
-  'ок: пороги 6 групп, половина дублей, границы/расстояния/виды/повороты, старейшие посадки, защищённые дома/мебель/животные, один проход, 50k объектов; загрузка/переключение/импорт/старые сады, резервная копия и её выгрузка, отказы хранилища без потерь',
+  'ок: пороги 6 групп, две трети дублей, границы/расстояния/виды/повороты, старейшие посадки, защищённые дома/мебель/животные, один проход, 50k объектов; загрузка/переключение/импорт/старые сады, резервная копия и её выгрузка, отказы хранилища без потерь',
 );
