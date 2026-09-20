@@ -210,7 +210,9 @@ export function drawObject(d: DrawCtx): void {
   );
   ctx.translate(-d.x, -d.y);
 
-  if (d.plantPose && Math.abs(d.plantPose.slope) > 1e-6) {
+  // Keep the same basal clip in calm and gusts too: nested bark clips can otherwise
+  // rasterize a thin curved trunk differently when the first gust begins.
+  if (d.plantPose && (d.plantPose.hinge > 0 || Math.abs(d.plantPose.slope) > 1e-6)) {
     // Undo the seed transform for the world-space hinge, then let each rigid piece
     // receive the same seed anatomy. This path is diagnostic; normal play copies cached pixels.
     ctx.restore();
@@ -282,7 +284,7 @@ export function objectHeight(type: string): number {
     case 'willow':
       return 120;
     case 'pine':
-      return 165;
+      return 245;
     case 'bamboo':
       return 100;
     case 'pavilion':

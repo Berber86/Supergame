@@ -188,3 +188,21 @@
   line-height: 1.4;
   margin-top: 8px;
 }
+
+.sp-toggle {
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+}
+.sp-toggle:focus-visible {
+  outline: 2px solid #f6deaa;
+  outline-offset: -2px;
+}
+.sp-wind-hint {
+  padding: 0 14px 8px;
+  color: #dfd4bd;
+  font-size: 12px;
+  line-height: 1.4;
+}

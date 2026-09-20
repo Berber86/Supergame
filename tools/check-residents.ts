@@ -9,6 +9,10 @@
  * Возвращает ненулевой код при любом расхождении.
  */
 
+import { makeRng } from '../src/core/rng';
+// World seeds and habitat offsets must not make these lifecycle assertions a lottery.
+Math.random = makeRng(Number(process.env.CHECK_SEED ?? 841));
+
 const backing = new Map<string, string>();
 const g = globalThis as Record<string, unknown>;
 g.localStorage = {
@@ -159,26 +163,27 @@ async function main(): Promise<void> {
     );
   }
   {
-    // Кот рядом — лягушка ныряет
+    // Wait for a visible, settled frog, not an arbitrary instant when every frog may be submerged.
     const w = new World();
     const life = new Life();
     let now = 10_000;
-    for (let i = 0; i < 2400; i++) {
+    const visible = () => life.residents.frogs.find((f) => !f.gone && f.hidden <= 0 && f.state === 'sit');
+    let frog = visible();
+    for (let i = 0; i < 2400 && !frog; i++) {
       now += 200;
       life.update(w, summerNoon, 200, now, clear);
+      frog = visible();
     }
-    const frog = life.residents.frogs.find((f) => !f.gone && f.hidden <= 0);
     check('лягушка для опыта найдлась', !!frog);
     if (frog) {
-      w.place('cat', Math.round(frog.tx), Math.round(frog.ty), 0);
+      // Agents stand half a tile from their object origin. Put the new threat at THIS frog.
+      w.place('cat', frog.tx - 0.5, frog.ty - 0.5, 0);
       for (let i = 0; i < 20; i++) {
         now += 200;
         life.update(w, summerNoon, 200, now, clear);
       }
-      const dived = life.residents.frogs.every(
-        (f) => f.gone || f.hidden > 0 || f.state === 'dive' || f.state === 'hop',
-      );
-      check('кот подошёл — лягушка нырнула', dived);
+      // Frogs on the other shore need not react to a distant cat; an ordinary hop isn't a dive.
+      check('кот подошёл — лягушка нырнула', frog.hidden > 0 || frog.state === 'dive');
     }
   }
   {

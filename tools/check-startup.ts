@@ -11,6 +11,7 @@
  * кадр падал с исключением, цикл rAF умирал навсегда, игра «висла»).
  * Любая неотловленная ошибка кадра или остановка кадров — провал.
  */
+import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -18,7 +19,16 @@ import { tmpdir } from 'node:os';
 const SELF = 'tools/check-startup.ts';
 const DUMP = `${tmpdir()}/usadba-check-ls.json`;
 
-const SCENARIOS = ['dump', 'desktop-day-enter', 'touch-night-enter', 'touch-night-grow', 'touch-night-seeded'];
+const SCENARIOS = [
+  'dump',
+  'desktop-day-enter',
+  'touch-night-enter',
+  'touch-night-grow',
+  'touch-night-seeded',
+  'desktop-renamed-grow',
+  'desktop-day-preset',
+  'touch-night-overloaded',
+];
 
 // ---------------- драйвер ----------------
 
@@ -218,7 +228,68 @@ win.requestAnimationFrame = (cb: FrameRequestCallback) =>
 g.requestAnimationFrame = win.requestAnimationFrame;
 g.cancelAnimationFrame = win.cancelAnimationFrame.bind(win);
 
+const { World } = await import('../src/world/world');
+const { GardenStore } = await import('../src/world/gardens');
+const { Life } = await import('../src/world/life');
+const { Scene } = await import('../src/render/scene');
+const { WeatherSystem } = await import('../src/world/weatherState');
+const { TimeControl } = await import('../src/core/timeControl');
+let chosenId = '';
+if (scenario === 'desktop-renamed-grow') {
+  const fixtures = new GardenStore(),
+    fixture = new World();
+  fixtures.save(fixture);
+  const originalId = fixtures.activeId;
+  chosenId = fixtures.create(fixture, 'Камышовая заводь', { mode: 'grow' }).id;
+  assert.ok(fixtures.switchTo(fixture, originalId));
+}
+let denseOriginal = '',
+  denseAfter = 0;
+if (scenario === 'touch-night-overloaded') {
+  const store = new GardenStore(),
+    fixture = new World();
+  fixture.objects = fixture.objects.filter((o) => ['table', 'cat', 'cushion'].includes(o.type));
+  for (const [type, n, x, y] of [
+    ['maple', 81, 12, 18],
+    ['grass_tuft', 201, 15, 19],
+    ['feeder', 25, 18, 6],
+  ] as const)
+    for (let i = 0; i < n; i++) fixture.place(type, x, y, 0, Date.now() + i);
+  store.save(fixture);
+  chosenId = store.activeId;
+  denseOriginal = win.localStorage.getItem(`usadba.garden.${chosenId}`);
+  denseAfter = fixture.objects.length - 40 - 100 - 12;
+}
+const counts: Record<string, number> = {};
+let runningWorld: InstanceType<typeof World> | undefined;
+function spy(proto: any, key: string, label = key) {
+  const original = proto[key];
+  proto[key] = function (...args: any[]) {
+    counts[label] = (counts[label] ?? 0) + 1;
+    if (label === 'life') runningWorld = args[0];
+    return original.apply(this, args);
+  };
+}
+spy(Life.prototype, 'update', 'life');
+spy(Scene.prototype, 'render', 'render');
+spy(WeatherSystem.prototype, 'update', 'weather');
+spy(TimeControl.prototype, 'tick', 'clock');
+spy(GardenStore.prototype, 'save', 'save');
+spy(World.prototype, 'observe', 'observe');
+const storage = () =>
+  Object.fromEntries(
+    Array.from({ length: win.localStorage.length }, (_, i) => {
+      const k = win.localStorage.key(i);
+      return [k, win.localStorage.getItem(k)];
+    }),
+  );
 await import('../src/main');
+const waitingCounts = { ...counts },
+  waitingStorage = storage();
+assert.equal(win.document.getElementById('app').inert, true);
+assert.equal(counts.life ?? 0, 0);
+assert.equal(counts.render ?? 0, 0);
+assert.equal(counts.save ?? 0, 0);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let lastFrames = -1;
@@ -230,32 +301,65 @@ function alive(label: string): string {
 }
 
 await sleep(2500);
-let problem = alive('заставка');
+let problem = alive('выбор сада');
+win.dispatchEvent(new win.Event('beforeunload'));
+assert.deepEqual(
+  counts,
+  waitingCounts,
+  'no simulation, weather, clock, observation, rendering or autosave while choosing',
+);
+assert.deepEqual(storage(), waitingStorage, 'unopened saves are byte-for-byte unchanged');
+win.document.querySelector('.splash').click();
+win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape' }));
+assert.equal(win.document.getElementById('app').inert, true, 'backdrop/Escape does not pick a garden');
 
-if (!problem && scenario !== 'dump') {
-  if (scenario.endsWith('grow')) {
-    const btn = win.document.querySelector('.splash-grow') as any;
-    btn.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
-  } else {
-    win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter' }));
+if (!problem) {
+  const existing = chosenId
+    ? win.document.querySelector(`[data-garden="${chosenId}"]`)
+    : win.document.querySelector('.splash-garden');
+  if (existing && scenario !== 'touch-night-grow' && scenario !== 'desktop-day-preset') existing.click();
+  else {
+    win.document.querySelector('.splash-new').click();
+    const mode = win.document.querySelector('.splash-template');
+    mode.value =
+      scenario === 'touch-night-grow' ? 'grow' : scenario === 'desktop-day-preset' ? 'preset:moss' : 'classic';
+    mode.dispatchEvent(new win.Event('change'));
+    assert.deepEqual(counts, waitingCounts, 'editing the creation form does not wake the garden');
+    win.document
+      .querySelector('.splash-create')
+      .dispatchEvent(new win.Event('submit', { bubbles: true, cancelable: true }));
   }
+  assert.equal(win.document.getElementById('app').inert, false);
   await sleep(2500);
   problem = alive('вход');
-  for (let i = 0; i < 2 && !problem; i++) {
+  assert.ok(
+    (counts.life ?? 0) > 0 && (counts.render ?? 0) > 0 && (counts.weather ?? 0) > 0 && (counts.clock ?? 0) > 0,
+    'the chosen garden starts normally',
+  );
+  if (scenario === 'touch-night-grow' || scenario === 'desktop-renamed-grow') assert.ok(runningWorld?.grow);
+  if (scenario === 'desktop-renamed-grow') {
+    const store = new GardenStore();
+    assert.equal(store.activeId, chosenId);
+    assert.equal(store.active?.name, 'Камышовая заводь');
+  }
+  if (scenario === 'desktop-day-preset')
+    assert.ok(!runningWorld?.tiles.some((t) => t.indoor), 'moss preset, not the starter house');
+  if (scenario === 'touch-night-overloaded') {
+    assert.equal(runningWorld?.objects.length, denseAfter);
+    assert.equal(win.localStorage.getItem(`usadba.garden.${chosenId}.before-thinning`), denseOriginal);
+    assert.equal(win.document.querySelector('.landscape-notice').hidden, false);
+    assert.ok(win.document.querySelector('.landscape-notice').textContent.includes('152'));
+    win.document.querySelector('.ln-close').click();
+    assert.equal(win.document.querySelector('.landscape-notice').hidden, true);
+  }
+  for (let i = 0; i < 2 && !problem && scenario !== 'dump'; i++) {
     await sleep(2000);
     problem = alive(`работа сада #${i}`);
   }
 }
-
 if (!problem && scenario === 'dump') {
-  win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter' }));
-  await sleep(2000);
-  const dump: Record<string, string> = {};
-  for (let i = 0; i < win.localStorage.length; i++) {
-    const k = win.localStorage.key(i);
-    dump[k] = win.localStorage.getItem(k);
-  }
-  writeFileSync(DUMP, JSON.stringify(dump));
+  win.dispatchEvent(new win.Event('beforeunload'));
+  writeFileSync(DUMP, JSON.stringify(storage()));
 }
 
 if (problem) {

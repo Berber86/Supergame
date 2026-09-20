@@ -26,6 +26,8 @@ export interface ChronicleText {
   text: string;
   /** Иероглиф-печать у строки. */
   kanji: string;
+  /** A quiet, event-backed milestone; also restored from an older chronicle. */
+  milestone?: string;
 }
 
 export const CHRONICLE: Record<string, ChronicleText> = {
@@ -36,7 +38,16 @@ export const CHRONICLE: Record<string, ChronicleText> = {
   guest_stayed: { kanji: '猫', text: 'Гость остался навсегда: у него теперь своя подушка.' },
   chorus: { kanji: '声', text: 'После дождя лягушки пели хором, перебивая друг друга.' },
   flock: { kanji: '群', text: 'Кормушка не пустует: птицы пришли компанией и не ссорились.' },
-  cats_greet: { kanji: '礼', text: 'Два кота сели друг напротив друга и молча посмотрели. Никто не уступил.' },
+  cats_greet: { kanji: '礼', text: 'Два кота осторожно сблизились и обнюхали друг друга. Знакомство состоялось.' },
+  cats_rest: { kanji: '憩', text: 'После знакомства коты устроились рядом. На двоих — одно тихое место.' },
+  birds_share_bath: {
+    kanji: '譲',
+    text: 'Одна птица обсыхала на краю, пока другая купалась. У маленькой поилки всем нашлось место.',
+  },
+  deer_nuzzle: {
+    kanji: '親',
+    text: 'Два оленя сблизились и ненадолго соприкоснулись носами. Потом снова прислушались к роще.',
+  },
   birds_fled: { kanji: '風', text: 'Кот подобрался к птицам — и кормушка на миг опустела.' },
   bath_splash: { kanji: '湯', text: 'Птица выкупалась в поилке, оставив круги и много шума.' },
   winter_table: { kanji: '雪', text: 'Зимой у кормушки особенно людно: сад кормит своих.' },
@@ -57,9 +68,31 @@ export const CHRONICLE: Record<string, ChronicleText> = {
   owl_hunt: { kanji: '夜', text: 'Сова сорвалась с ветки и пронеслась над травой. Мышки затаились.' },
   meet_squirrel: { kanji: '栗', text: 'По сосне пронеслась белка — рыжая вспышка с пушистым хвостом.' },
   squirrel_cache: { kanji: '実', text: 'Белка спрятала орешек под мхом и огляделась: никто не видел.' },
-  meet_lizard: { kanji: '蜥', text: 'На тёплом камне замерла ящерица. Только бока тихо дышат.' },
-  cat_lizard: { kanji: '隙', text: 'Кот заметил ящерицу и осторожно подкрался к её камню.' },
-  lizard_hunt: { kanji: '瞬', text: 'Короткий бросок в траве. Ящерица снова застыла на солнце.' },
+  meet_lizard: {
+    kanji: '蜥',
+    text: 'Из щели между камнями выглянула ящерица. У солнечного уголка появился свой житель.',
+    milestone: 'lizard_guest',
+  },
+  lizard_bask: {
+    kanji: '陽',
+    text: 'Камень отдал ящерице своё тепло. Она распласталась на солнце, едва заметно дыша.',
+    milestone: 'lizard_bask',
+  },
+  lizard_hunt: {
+    kanji: '瞬',
+    text: 'Короткий бросок — и насекомое поймано. Над травой снова тишина.',
+    milestone: 'lizard_hunter',
+  },
+  cat_lizard: {
+    kanji: '隙',
+    text: 'Кот заметил ящерицу и осторожно подкрался к её камню. Ящерица насторожилась.',
+    milestone: 'lizard_watch',
+  },
+  lizard_escape: {
+    kanji: '逃',
+    text: 'Мелькнул длинный хвост — ящерица успела в укрытие. У камня осталась только тень.',
+    milestone: 'lizard_escape',
+  },
   meet_turtle: { kanji: '亀', text: 'На камне у пруда появилась черепаха. Вытянула шею к солнцу.' },
   turtle_bask: { kanji: '甲', text: 'Черепаха греется на камне. Вода рядом, но спешить некуда.' },
   meet_bee: { kanji: '蜂', text: 'Над цветами загудела первая пчела. Сад стал громче на полтона.' },

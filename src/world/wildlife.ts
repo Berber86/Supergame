@@ -1,3 +1,4 @@
+import { AnimalCompany, type CompanyPose } from './animalCompany';
 /**
  * Дикие соседи: светлячки, цапля, олень, ёжик, мышка, сова, белка, черепаха, пчёлы.
  *
@@ -112,6 +113,7 @@ export interface DeerCoat {
 }
 
 export interface Deer {
+  company?: CompanyPose;
   /** Continuous gait in radians and smoothed grazing pose. */
   gait?: number;
   headLower?: number;
@@ -285,6 +287,7 @@ export class Wildlife {
   private ffTimer = 0;
   private mothTimer = 0;
   private heronTimer = 120_000;
+  private deerCompany = new AnimalCompany<Deer>('deer');
   private deerTimer = 90_000;
   private hedgehogTimer = 70_000;
   private mouseTimer = 45_000;
@@ -310,6 +313,7 @@ export class Wildlife {
     this.fireflies = [];
     this.moths = [];
     this.heron = null;
+    this.deerCompany.reset();
     this.deer = [];
     this.hedgehogs = [];
     this.mice = [];
@@ -345,7 +349,7 @@ export class Wildlife {
     this.updateFireflies(h, inv, t, wx, dt);
     this.updateMoths(h, inv, t, wx, dt);
     this.updateHeron(h, inv, t, dt, now, threats);
-    this.updateDeer(h, inv, t, dt, now, threats);
+    this.updateDeer(h, inv, t, dt, now, threats, world, wx);
     this.updateHedgehogs(h, inv, t, dt, now, threats);
     this.updateMice(h, inv, t, dt, now, threats);
     this.updateOwls(h, inv, t, dt, now, threats);
@@ -681,11 +685,32 @@ export class Wildlife {
 
   // ---------------- Олень ----------------
 
-  private updateDeer(h: Habitat, inv: Invitation, t: TimeState, dt: number, now: number, threats: Threat[]): void {
+  private updateDeer(
+    h: Habitat,
+    inv: Invitation,
+    t: TimeState,
+    dt: number,
+    now: number,
+    threats: Threat[],
+    world?: World,
+    wx?: WeatherState | null,
+  ): void {
+    this.deerCompany.update(
+      world,
+      this.deer,
+      dt,
+      (d) =>
+        d.state !== 'leave' &&
+        now - d.born < d.stay &&
+        (wx?.rain ?? 0) < 0.55 &&
+        !threats.some((c) => Math.hypot(c.x - d.tx, c.y - d.ty) < 2.6),
+      (id, x, y) => this.pushNote(id, x, y),
+    );
     for (let i = this.deer.length - 1; i >= 0; i--) {
       const d = this.deer[i];
       d.timer -= dt;
       d.headLower = easePose(d.headLower ?? 0, d.state === 'graze' ? 1 : 0, dt, 520);
+      if (d.company) continue;
       const shy = threats.some((c) => Math.hypot(c.x - d.tx, c.y - d.ty) < 2.6);
       if (shy && d.state !== 'leave') {
         d.state = 'leave';
@@ -751,7 +776,13 @@ export class Wildlife {
     const chance = dawn ? 0.5 : dusk ? 0.45 : t.daylight > 0.4 ? 0.1 : 0.05;
     const seasonK = t.season === 'winter' ? 0.4 : t.season === 'summer' ? 0.8 : 1;
     if (rnd() > chance * seasonK) return;
-    const g = h.glades[Math.floor(rnd() * h.glades.length)];
+    // A companion visits the same glade, rather than an unrelated corner of a large garden.
+    const companion = this.deer.find((d) => d.state !== 'leave');
+    const anchor =
+      companion?.state === 'enter' ? companion.target : companion ? { x: companion.tx, y: companion.ty } : null;
+    const nearby = anchor ? h.glades.filter((p) => Math.hypot(p.x - anchor.x, p.y - anchor.y) < 2.8) : [];
+    const pool = nearby.length ? nearby : h.glades;
+    const g = pool[Math.floor(rnd() * pool.length)];
     if (!g) return;
     const edge = this.exitFrom(g.x, g.y);
     this.deer.push({
@@ -772,6 +803,7 @@ export class Wildlife {
       born: now,
       stay: 150_000 + rnd() * 250_000,
     });
+    if (this.deer.length === 1 && inv.deer >= 2) this.deerTimer = 35_000 + rnd() * 30_000;
     this.pushNote('meet_deer', g.x, g.y);
     if (this.deer.length >= 2) this.pushNote('deer_pair', g.x, g.y);
   }

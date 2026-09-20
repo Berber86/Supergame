@@ -9,6 +9,10 @@
  * Возвращает ненулевой код при любом расхождении.
  */
 
+import { makeRng } from '../src/core/rng';
+// World seeds and habitat offsets must not make these lifecycle assertions a lottery.
+Math.random = makeRng(Number(process.env.CHECK_SEED ?? 841));
+
 const backing = new Map<string, string>();
 const g = globalThis as Record<string, unknown>;
 g.localStorage = {
@@ -158,11 +162,16 @@ async function main(): Promise<void> {
     const life = new Life();
     const h0 = scanHabitat(w);
     check('стартовый пруд достаточно велик', h0.water >= 10, `${h0.water}`);
-    life.wildlife.force('heron', h0, autumnDawn);
+    // This is the uninterrupted lifecycle. The next case tests disturbance explicitly:
+    // random cats/low-flying birds must not cancel all four visits before the first hunt.
+    const updateWildlife = life.wildlife.update.bind(life.wildlife);
+    life.wildlife.update = (h, inv, t, wx, dt, now, _threats, world) =>
+      updateWildlife(h, inv, t, wx, dt, now, [], world);
     let now = 10_000;
     let struck = false;
     let sawStand = false;
     for (let visit = 0; visit < 4; visit++) {
+      life.wildlife.force('heron', h0, autumnDawn);
       for (let i = 0; i < 6000; i++) {
         now += 200;
         life.update(w, autumnDawn, 200, now, clear);
@@ -172,7 +181,6 @@ async function main(): Promise<void> {
         if (hr.state === 'strike') struck = true;
       }
       if (struck) break;
-      life.wildlife.force('heron', h0, autumnDawn);
     }
     check('цапля стояла у воды', sawStand);
     check('цапля пробовала бить по воде', struck);
@@ -202,22 +210,31 @@ async function main(): Promise<void> {
     }
   }
   {
-    // Удар по воде разгоняет карпов
+    // Isolate the actual strike callback: random visitors may scare the heron away before
+    // any strike, and roaming koi need not be within range during five arbitrary visits.
+    // Natural stalking/departure and reactions to cats are exercised separately above.
     const w = new World();
+    w.objects = w.objects.filter((o) => o.type !== 'cat');
+    w.noteObjectsChanged();
     const life = new Life();
-    const h1 = scanHabitat(w);
-    life.wildlife.force('heron', h1, autumnDawn);
-    let now = 10_000;
-    let panicked = false;
-    for (let visit = 0; visit < 5 && !panicked; visit++) {
-      for (let i = 0; i < 6000 && !panicked; i++) {
-        now += 200;
-        life.update(w, autumnDawn, 200, now, clear);
-        if (life.fish.some((f) => f.panic > 0)) panicked = true;
-      }
-      if (!panicked) life.wildlife.force('heron', h1, autumnDawn);
+    life.sync(w);
+    life.wildlife.force('heron', scanHabitat(w), autumnDawn);
+    const hr = life.wildlife.heron,
+      fish = life.fish[0];
+    check('цапля и карп готовы к проверке удара', !!hr && !!fish);
+    if (hr && fish) {
+      Object.assign(hr, { tx: fish.tx, ty: fish.ty, state: 'strike', timer: 650, struck: false });
+      life.update(w, autumnDawn, 100, 10_100, clear);
+      check(
+        'до удара карпы не испуганы',
+        life.fish.every((f) => f.panic === 0),
+      );
+      life.update(w, autumnDawn, 100, 10_200, clear);
+      check('удар цапли разогнал карпов', hr.struck && fish.panic > 0);
+      const hitPanic = fish.panic;
+      life.update(w, autumnDawn, 100, 10_300, clear);
+      check('один удар не сбрасывает испуг каждый кадр', fish.panic < hitPanic);
     }
-    check('удар цапли разогнал карпов', panicked);
   }
 
   // ---------- Олень ----------

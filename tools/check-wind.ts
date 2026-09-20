@@ -79,6 +79,7 @@ assert.deepEqual(
 const fpsSamples = [];
 for (const fps of [30, 60, 144]) {
   const life = new Life();
+  life.smartWind = true;
   for (let i = 0; i < 20 * fps; i++) (life as any).updateWind(1000 / fps, time);
   fpsSamples.push(life.windVectorAt(13, 13, 650));
   const before = life.windTime;
@@ -87,6 +88,27 @@ for (const fps of [30, 60, 144]) {
 }
 for (const sample of fpsSamples)
   assert.ok(Math.abs(sample.screenX - fpsSamples[0].screenX) < 1e-8, 'FPS-independent pressure');
+// The default mode neither creates fronts nor retains their lazy samplers.
+{
+  const life = new Life();
+  assert.equal(life.smartWind, false);
+  for (let i = 0; i < 100; i++) (life as any).updateWind(200, time);
+  assert.equal(life.gusts.length, 0);
+  assert.equal((life as any).windSample, undefined);
+  assert.deepEqual(life.windVectorAt(13, 13, 650), CALM);
+  assert.ok(life.windBase > 0 && life.windBase < 0.6, 'gentle scalar breeze remains');
+  assert.equal(life.windAt(1, 2), life.windAt(24, 22));
+  life.smartWind = true;
+  (life as any).updateWind(0, time);
+  assert.ok(life.gusts.length > 0 && (life as any).windSample);
+  life.smartWind = false;
+  (life as any).updateWind(0, time);
+  assert.equal(life.gusts.length, 0);
+  assert.equal((life as any).windSample, undefined);
+  life.smartWind = true;
+  life.reset();
+  assert.equal(life.smartWind, true, 'garden switches preserve the view preference');
+}
 const air = { x: 1, y: -1, strength: Math.SQRT2, screenX: 1, screenY: 0 };
 assert.ok(windLag('pine') > windLag('bamboo') && windLag('bamboo') > windLag('grass_tuft'));
 assert.ok(
@@ -256,6 +278,40 @@ for (let i = 0; i < 10000; i++) {
 }
 assert.equal(JSON.stringify(world.toJSON()), saved);
 assert.ok(spriteStats().size <= 420 && spriteStats().boxes <= 600);
+// The real scene must bypass the field for objects, water, reflections and particles when disabled.
+{
+  const canvas = createCanvas(720, 480);
+  Object.assign(canvas, { clientWidth: 720, clientHeight: 480 });
+  const scene = new Scene(canvas as never),
+    garden = new World(),
+    life = new Life();
+  scene.life = life;
+  scene.particles = false;
+  scene.centerOn(13, 14);
+  scene.camera.zoom = 0.65;
+  scene.setQuality('low');
+  assert.equal(scene.smartWind, false);
+  let samples = 0;
+  const sample = life.windVectorAt.bind(life);
+  life.windVectorAt = (x, y, lag) => {
+    samples++;
+    return sample(x, y, lag);
+  };
+  (life as any).updateWind(20_000, time);
+  const saved = JSON.stringify(garden.toJSON());
+  scene.render(garden, atm, 20_000, 16);
+  assert.equal(samples, 0);
+  scene.smartWind = life.smartWind = true;
+  (life as any).updateWind(0, time);
+  scene.render(garden, atm, 20_000, 16);
+  assert.ok(samples > 0, 'positive control: the enabled scene samples the travelling field');
+  samples = 0;
+  scene.smartWind = life.smartWind = false;
+  (life as any).updateWind(0, time);
+  scene.render(garden, atm, 20_000, 16);
+  assert.equal(samples, 0, 'live switch off reaches every visual consumer');
+  assert.equal(JSON.stringify(garden.toJSON()), saved);
+}
 console.log(
   'ок: all wind directions/corners, travelling peaks and true lulls, 30/60/144Hz parity, species inertia, rooted cached/direct silhouettes, live reflections/water/leaves, no wind rebakes and bounded 27-hour front evaluation',
 );
@@ -286,6 +342,7 @@ if (process.argv.includes('--preview')) {
   Object.assign(preview, { clientWidth: 1120, clientHeight: 580 });
   const scene = new Scene(preview as never);
   scene.setQuality('balanced');
+  scene.smartWind = true;
   scene.camera.zoom = 1.3;
   scene.centerOn(13, 13);
   scene.camera.y -= 20;

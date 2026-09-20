@@ -25,6 +25,7 @@ for (const scenario of ['garden', 'dense-night', 'rain']) {
     const cv = createCanvas(960, 640);
     Object.assign(cv, { clientWidth: 960, clientHeight: 640 });
     const scene = new Scene(cv as never);
+    scene.smartWind = process.argv.includes('--wind-peak');
     if ('setQuality' in scene) (scene as unknown as { setQuality(q: string): void }).setQuality(quality);
     scene.camera.zoom = 0.85;
     scene.centerOn(12.5, 14);

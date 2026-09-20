@@ -13,6 +13,8 @@ import { isoToScreen } from '../src/core/iso';
 import { WeatherSystem } from '../src/world/weatherState';
 import { drawObjects, drawPaperGrain } from '../src/render/scene-steps';
 import { getPaperTile } from '../src/render/paint';
+import { drawCached } from '../src/render/spriteCache';
+import { TREE_FORMS, treeProfile } from '../src/world/treeHabits';
 import { drawWaterAnimation, prepareWaterSurface, waterSurfaceBounds } from '../src/render/waterSurface';
 import { canvasCrop } from '../src/render/canvasCrop';
 import { startLoop } from '../src/app/gameLoop';
@@ -73,7 +75,8 @@ for (const quality of qualities) {
     renders = 0,
     simTime = 0,
     ticks = 0,
-    snaps = 0;
+    snaps = 0,
+    otherWork = 0;
   let splash = false;
   Object.assign(globalThis, {
     requestAnimationFrame: (cb: FrameRequestCallback) => {
@@ -82,8 +85,9 @@ for (const quality of qualities) {
     },
   });
   const noop = () => {};
+  const work = () => otherWork++;
   const deps = {
-    world: { objects: [], at: () => null, observe: noop, noteEvening: noop },
+    world: { objects: [], at: () => null, observe: work, noteEvening: work },
     scene: {
       viewW: 640,
       viewH: 400,
@@ -93,11 +97,17 @@ for (const quality of qualities) {
       render: () => renders++,
     },
     life: { update: () => ticks++, windBase: 0.3, windAt: () => 0.3, gusts: [], cats: [], residents: { frogs: [] } },
-    weatherSys: { update: noop, state: { overcast: 0 } },
-    audio: { update: noop },
-    timeCtl: { tick: (dt: number) => (simTime += dt), compute: () => t },
-    ui: { buildOpen: true, tick: noop },
-    devPanel: { tick: noop },
+    weatherSys: { update: work, state: { overcast: 0 } },
+    audio: { update: work },
+    timeCtl: {
+      tick: (dt: number) => (simTime += dt),
+      compute: () => {
+        work();
+        return t;
+      },
+    },
+    ui: { buildOpen: true, tick: work },
+    devPanel: { tick: work },
     idleMs: 30000,
     isPracticeActive: () => false,
     isStartOpen: () => splash,
@@ -106,10 +116,10 @@ for (const quality of qualities) {
     lastInteractionMs: () => 0,
     getEntryZoom: () => 0,
     setEntryZoom: noop,
-    flushMilestones: noop,
-    flushChronicle: noop,
+    flushMilestones: work,
+    flushChronicle: work,
     flushChronicleSnaps: () => snaps++,
-    growFrame: noop,
+    growFrame: work,
   };
   // Same monotonic origin for all runs, independent of time consumed by the test itself.
   const original = performance.now;
@@ -129,13 +139,22 @@ for (const quality of qualities) {
   callback(13010);
   assert.equal(renders, n + 1);
   splash = true;
-  const warm = renders;
+  const beforeChoice = { renders, ticks, simTime, snaps, otherWork };
   for (let i = 0; i < 144; i++) callback(13100 + (i * 1000) / 144);
-  assert.ok(renders - warm <= 2, 'opaque splash does not render an invisible full-rate garden');
+  assert.deepEqual(
+    { renders, ticks, simTime, snaps, otherWork },
+    beforeChoice,
+    'no hidden simulation, clock, warm-up render or photo before the choice',
+  );
+  callback(100_000); // A long wait must not be replayed as simulation steps on entry.
   splash = false;
-  const entered = renders;
-  callback(14200);
+  const entered = renders,
+    beforeTicks = ticks,
+    beforeTime = simTime;
+  callback(100_017);
   assert.equal(renders, entered + 1);
+  assert.equal(ticks - beforeTicks, 1);
+  assert.ok(simTime - beforeTime <= 17, 'no pre-choice time catch-up');
 }
 assert.equal(new Set(simulations).size, 1, 'same world simulation in all modes');
 for (const ratio of [1, 1.5, 2]) {
@@ -194,33 +213,52 @@ w.objects = [];
 for (const tile of w.tiles)
   Object.assign(tile, { water: false, level: 0, ground: 'soil', indoor: false, veranda: false });
 const tree = w.place('maple', 12, 12)!;
-tree.seed = 441;
-const p = isoToScreen(12.5, 12.5),
-  zoom = 6,
-  camX = p.x + 500 / zoom,
-  camY = p.y - 70;
-const clipped = createCanvas(400, 300),
-  cc = clipped.getContext('2d');
-cc.translate(200, 150);
-cc.scale(zoom, zoom);
-cc.translate(-camX, -camY);
-drawObjects(cc as never, w, atm, 0, {
-  life: null,
-  wind: 0,
-  zoom,
-  camX,
-  camY,
-  viewW: 400,
-  viewH: 300,
-  movingId: -1,
-  highlightId: -1,
-  useSpriteCache: true,
-  particles: false,
-});
-assert.ok(
-  cc.getImageData(0, 0, 400, 300).data.some((v, i) => i % 4 === 3 && v > 30),
-  'zoomed crown does not pop out at screen edge',
-);
+// The old hard-coded camera assumed seed 441 was broad. Derive the crop from real foliage
+// for every form: the root stays 300 screen pixels off-screen, beyond the old fixed margin.
+for (const form of TREE_FORMS) {
+  tree.seed = 0;
+  while (treeProfile('maple', tree.seed)!.form !== form) tree.seed++;
+  const probe = createCanvas(400, 380),
+    pc = probe.getContext('2d');
+  drawCached({ ctx: pc as never, obj: tree, atm, x: 180, y: 320, g: 1, alpha: 1, time: 0, wind: 0 });
+  const pixels = pc.getImageData(0, 0, 400, 380).data;
+  let edgeX = 0,
+    edgeY = 0;
+  edge: for (let x = 399; x > 180; x--)
+    for (let y = 0; y < 300; y++)
+      if (pixels[(y * 400 + x) * 4 + 3] > 100) {
+        edgeX = x - 180;
+        edgeY = y - 320;
+        break edge;
+      }
+  assert.ok(edgeX > 0, `${form}: nonempty crown reference`);
+  const p = isoToScreen(12.5, 12.5),
+    zoom = 340 / edgeX,
+    camX = p.x + 500 / zoom,
+    camY = p.y + edgeY;
+  const clipped = createCanvas(400, 300),
+    cc = clipped.getContext('2d');
+  cc.translate(200, 150);
+  cc.scale(zoom, zoom);
+  cc.translate(-camX, -camY);
+  drawObjects(cc as never, w, atm, 0, {
+    life: null,
+    wind: 0,
+    zoom,
+    camX,
+    camY,
+    viewW: 400,
+    viewH: 300,
+    movingId: -1,
+    highlightId: -1,
+    useSpriteCache: true,
+    particles: false,
+  });
+  assert.ok(
+    cc.getImageData(0, 0, 400, 300).data.some((v, i) => i % 4 === 3 && v > 30),
+    `${form}: zoomed crown does not pop out at screen edge`,
+  );
+}
 // Culling does not change any visible water pixels.
 const surface = prepareWaterSurface(world)[0],
   bounds = waterSurfaceBounds(surface);
@@ -281,6 +319,11 @@ for (const bad of ['null', '42', '[]', '{', '{"uiScale":"huge","particles":0,"mo
   assert.equal(loadView().uiScale, 1);
   assert.equal(loadView().quality, 'balanced');
   assert.equal(loadView().particles, true);
+  assert.equal(loadView().smartWind, false);
+}
+for (const bad of ['false', 'true', 0, 1, null, []]) {
+  localStorage.setItem('usadba.view.v1', JSON.stringify({ smartWind: bad }));
+  assert.equal(loadView().smartWind, false, 'only an explicit boolean opts in');
 }
 localStorage.setItem(
   'usadba.view.v1',
@@ -301,6 +344,16 @@ for (const quality of qualities) {
   assert.equal(view.uiScale, 1.2);
 }
 assert.equal(calls, 3);
+assert.equal(view.smartWind, false, 'legacy preferences opt out of smart wind');
+for (const expected of [true, false, true]) {
+  document.querySelector<HTMLButtonElement>('[data-act="smartWind"]')!.click();
+  assert.equal(view.smartWind, expected);
+  assert.equal(loadView().smartWind, expected);
+  assert.equal(document.activeElement?.getAttribute('aria-checked'), String(expected));
+  assert.equal(document.activeElement?.getAttribute('role'), 'switch');
+  assert.equal(view.motion, false, 'wind is independent of reduced motion');
+}
+assert.equal(calls, 6);
 saveView(view);
 assert.deepEqual(loadView(), view);
 dom.window.close();

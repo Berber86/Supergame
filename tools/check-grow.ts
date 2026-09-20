@@ -3,11 +3,13 @@
  *
  *   npx tsx tools/check-grow.ts
  *
- * Геометрия удвоения, пороги 1·2·4·7·11·16·22·…, приход действий по настоящим
+ * Геометрия удвоения, пороги 1·1·2·3·4·5·6·…, приход действий по настоящим
  * минутам, плата за посадку и кисть, отказ при пустом запасе, границы
  * тумана (посадка, заливка, тропа, перенос), сохранение v6 и детерминизм
  * дикой земли. Возвращает ненулевой код при любом расхождении.
  */
+
+import { isDeepStrictEqual } from 'node:util';
 
 const backing = new Map<string, string>();
 const g = globalThis as Record<string, unknown>;
@@ -48,17 +50,19 @@ async function main(): Promise<void> {
   console.log('геометрия и пороги');
   {
     const th = [0, 1, 2, 3, 4, 5, 6].map(growThreshold);
-    check('пороги сбалансированы: 1,2,4,7,11,16,22', th.join(',') === '1,2,4,7,11,16,22', th.join(','));
-    check('ряд продолжается по +7, +8, +9: 29,37,46', [7, 8, 9].map(growThreshold).join(',') === '29,37,46');
+    check('пороги сбалансированы: 1,1,2,3,4,5,6', th.join(',') === '1,1,2,3,4,5,6', th.join(','));
+    check('ряд продолжается линейно: 7,8,9', [7, 8, 9].map(growThreshold).join(',') === '7,8,9');
     check(
-      'разность соседних порогов растёт на единицу',
-      Array.from({ length: 20 }, (_, i) => i + 1).every((n) => growThreshold(n) - growThreshold(n - 1) === n),
+      'после двух единиц каждый порог растёт на один',
+      Array.from({ length: 20 }, (_, i) => i + 1).every(
+        (n) => growThreshold(n) - growThreshold(n - 1) === (n === 1 ? 0 : 1),
+      ),
     );
     check(
       'некорректная ступень безопасна',
       [-1, NaN, Infinity].every((n) => growThreshold(n) === 1),
     );
-    check('дробная ступень округляется как в сохранениях', growThreshold(3.9) === 7);
+    check('дробная ступень округляется как в сохранениях', growThreshold(3.9) === 3);
     for (let stage = 0; stage < GROW_MAX_STAGE; stage++) {
       // Изолируем порог от геометрии: у тестового клочка всегда есть свободные стороны.
       const state = newGrowState(7, 1000);
@@ -126,6 +130,41 @@ async function main(): Promise<void> {
       return a;
     });
     check('стороны чередуются: 4×2, 4×4, 8×4, 8×8', got.length === rects.length && areas[4] === 64);
+  }
+
+  console.log('два лёгких расширения и прежний прогресс');
+  {
+    const w = new World(),
+      now = Date.now();
+    w.grow = newGrowState(91, now);
+    for (let stage = 0; stage < 2; stage++) {
+      const r = w.grow.rect;
+      check(`расширение ${stage + 1}: до действия предложения нет`, !growOfferReady(w.grow));
+      check(
+        `расширение ${stage + 1}: одного действия достаточно`,
+        !!w.place('moss_clump', r.x + 0.5, r.y + 0.5) && growOfferReady(w.grow),
+      );
+      w.growExpand(growZones(w.grow.rect)[0]);
+      check(`расширение ${stage + 1}: счёт начинается заново`, w.grow.progress === 0);
+    }
+    check('два расширения стоили только два действия', w.grow.bank === 1 && w.grow.stage === 2);
+    w.grow.stage = 4;
+    w.grow.progress = 4;
+    const saved = serializeSave(w.toJSON()),
+      loaded = new World();
+    check('прежний растущий сад открывается', loaded.fromJSON(JSON.parse(saved)));
+    check(
+      'старый прогресс не сгорает и уже даёт новый порог',
+      !!loaded.grow &&
+        loaded.grow.progress === 4 &&
+        loaded.grow.stage === 4 &&
+        loaded.grow.bank === 1 &&
+        growOfferReady(loaded.grow),
+    );
+    check(
+      'смена порогов не меняет данные сохранения',
+      isDeepStrictEqual(JSON.parse(serializeSave(loaded.toJSON())), JSON.parse(saved)),
+    );
   }
 
   console.log('приход действий по времени');

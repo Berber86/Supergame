@@ -50,6 +50,7 @@ export class GardensPanel {
         <div class="gp-btn" data-act="export">${svgIcon('file', 15)}<span>Выгрузить</span></div>
         <div class="gp-btn" data-act="import">${svgIcon('gardens', 15)}<span>Принять</span></div>
       </div>
+      <button type="button" class="gp-btn gp-backup" hidden>Скачать сад до прореживания</button>
       <div class="gp-new-chooser" style="display:none"></div>
       <div class="gp-hint">Усадьбы хранятся в этом браузере. Выгрузите файл, чтобы перенести сад на другое устройство.</div>`;
     parent.appendChild(el);
@@ -65,10 +66,15 @@ export class GardensPanel {
     input.addEventListener('change', () => void this.onFile());
 
     el.querySelector('.gp-close')!.addEventListener('click', () => this.setOpen(false));
-    el.querySelectorAll<HTMLElement>('.gp-btn').forEach((b) => {
+    el.querySelectorAll<HTMLElement>('.gp-btn[data-act]').forEach((b) => {
       b.addEventListener('click', () => this.action(b.dataset.act!));
     });
 
+    el.querySelector('.gp-backup')!.addEventListener('click', () => {
+      this.hooks.toast(
+        this.store.exportThinningBackup() ? 'Копия до прореживания выгружена' : 'Не удалось прочитать копию',
+      );
+    });
     this.refresh();
   }
 
@@ -79,6 +85,7 @@ export class GardensPanel {
   setOpen(v: boolean): void {
     this.el.classList.toggle('show', v);
     if (v) this.refresh();
+    else this.el.querySelector<HTMLButtonElement>('.gp-backup')!.hidden = true;
   }
 
   toggle(): void {
@@ -94,8 +101,7 @@ export class GardensPanel {
     const classicBtn = `<button class="gp-choice" data-choice="classic"><b>Вольный сад</b><span>Классическая усадьба 7×6, пруд, холм</span></button>`;
     const growBtn = `<button class="gp-choice gp-choice-grow" data-choice="grow"><b>Растущий сад</b><span>Клочок 2×2, действия раз в 10 мин, туман</span></button>`;
     const presetBtns = PRESETS.map(
-      (p) =>
-        `<button class="gp-choice" data-choice="preset:${p.id}"><b>${p.name}</b><span>${p.hint}</span></button>`,
+      (p) => `<button class="gp-choice" data-choice="preset:${p.id}"><b>${p.name}</b><span>${p.hint}</span></button>`,
     ).join('');
     c.innerHTML = `
       <div class="gp-chooser-head"><span>Новая усадьба</span><span class="gp-chooser-close">${svgIcon('close', 12)}</span></div>
@@ -165,16 +171,22 @@ export class GardensPanel {
   }
 
   refresh(): void {
+    // No raw save reads while this hidden panel is being built behind the start chooser.
+    this.el.querySelector<HTMLButtonElement>('.gp-backup')!.hidden = !this.isOpen || !this.store.hasThinningBackup();
     this.listEl.innerHTML = '';
     for (const g of this.store.list) {
       const row = document.createElement('div');
       row.className = `gp-row${g.id === this.store.activeId ? ' active' : ''}`;
       row.innerHTML = `
         <div class="gp-info">
-          <div class="gp-name" title="Нажмите, чтобы переименовать">${g.name}</div>
-          <div class="gp-meta">${g.objects ? `${g.objects} предметов` : 'пустая земля'} · ${ago(g.saved)}</div>
+          <div class="gp-name" title="Нажмите, чтобы переименовать"></div>
+          <div class="gp-meta"></div>
         </div>
         <span class="gp-del" title="Удалить">${svgIcon('trash', 14)}</span>`;
+
+      row.querySelector('.gp-name')!.textContent = g.name;
+      row.querySelector('.gp-meta')!.textContent =
+        `${g.objects ? `${g.objects} предметов` : 'пустая земля'} · ${ago(g.saved)}`;
 
       row.querySelector('.gp-info')!.addEventListener('click', () => {
         if (g.id === this.store.activeId) {

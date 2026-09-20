@@ -1,17 +1,9 @@
-import {
-  trunkCurve,
-  woodPoint,
-  woodFrame,
-  woodCurve,
-  paintWood,
-  branchSkeleton,
-  type WoodCurve,
-  type WoodPoint,
-} from '../treeWood';
-import { TREE_CROWNS, crownWidth } from '../../world/canopy';
+import { pineGeometry } from '../pineGeometry';
+import { treeProfile } from '../../world/treeHabits';
+import { treeGeometry } from '../treeGeometry';
+import { trunkCurve, woodPoint, woodFrame, woodCurve, paintWood, type WoodCurve, type WoodPoint } from '../treeWood';
 import { flowerYear, winterYear } from '../../world/annualEnvironment';
 import { plantYear, leafGroup, crownAnchorBlend } from '../../world/phenology';
-import { crownSites } from '../crownGeometry';
 /** Деревья и кусты: стволы, ветви, кроны — стартовый сад почти весь отсюда. */
 
 import { flowerOpenness, flowerHeadPath } from '../flowerCycle';
@@ -28,11 +20,6 @@ interface TreeStyle {
   crownSummer: RGB;
   crownAutumn: RGB;
   blossom?: RGB;
-  height: number;
-  crownW: number;
-  crownH: number;
-  layers: number;
-  droop?: number;
   fruit?: RGB;
 }
 
@@ -41,10 +28,10 @@ function anchorColor(now: number, colors: RGB[]): RGB {
   return mix(colors[b.from], colors[b.to], b.amount);
 }
 
-function drawTrunk(d: DrawCtx, h: number, w: number, col: RGB, bend: number) {
+function drawTrunk(d: DrawCtx, h: number, w: number, col: RGB, bend: number, anatomy?: WoodCurve) {
   const { ctx, atm, obj } = d,
     scale = lerp(0.18, 1, Math.pow(d.g, 0.72));
-  const trunk = trunkCurve(obj.type, obj.seed, d.x, d.y, h, w, bend);
+  const trunk = anatomy ?? trunkCurve(obj.type, obj.seed, d.x, d.y, h, w, bend);
   // Short root shoulders merge into a flared base rather than a post cut off at ground level.
   for (const side of [-1, 1]) {
     const root = woodCurve(
@@ -160,45 +147,36 @@ function makeTree(style: TreeStyle): Drawer {
   return (d) => {
     const { ctx, atm, g, obj } = d,
       state = plantYear(obj.type, obj.seed, atm.time.now);
-    const scale = lerp(0.18, 1, Math.pow(g, 0.72)),
-      h = style.height * scale;
-    const cw = crownWidth(style.crownW, obj.seed) * scale;
-    const ch = style.crownH * scale * (0.8 + hash2(obj.seed, 6, 9) * 0.42);
+    const profile = treeProfile(obj.type, obj.seed);
+    if (!profile) return;
+    const scale = lerp(0.18, 1, Math.pow(g, 0.72));
     const sway = Math.sin(d.time * 0.0004 + obj.seed) * 3 * d.wind * scale;
-    const leanJ = (hash2(obj.seed, 7, 11) - 0.5) * 0.32;
+    const { h, cw, w, trunk, sites, skeleton, curtains } = treeGeometry(profile, obj.seed, g, d.x, d.y, sway);
     const trunkCol = litc(style.trunk, atm),
       branchCol = shade(trunkCol, 0.92);
-    const trunkW = Math.max(2.2, 7 * scale * (0.9 + hash2(obj.seed, 12, 17) * 0.2));
-    // Permanent dimensions; shadowUnder applies the shared annual canopy density.
     shadowUnder(d, cw * 0.62, cw * 0.26, 0.9);
-    const { tx, ty, trunk } = drawTrunk(d, h, trunkW, trunkCol, sway * 0.35 + leanJ * h * 0.14);
-    const sites = crownSites(obj.seed, cw, ch, style.layers);
-    const point = (p: { x: number; y: number }) => ({ x: tx + p.x + sway, y: ty + p.y });
-    const skeleton = branchSkeleton(obj.type, obj.seed, trunk, sites, scale, sway);
+    drawTrunk(d, h, w, trunkCol, 0, trunk);
+    const point = (p: { x: number; y: number }) => ({ x: trunk.d.x + p.x + sway, y: trunk.d.y + p.y });
     // Junctions originate on the real curved bole at different heights, not in one broom-like knot.
     for (const branch of skeleton.branches) paintWood(ctx, branch, branchCol, obj.seed);
     for (const twig of skeleton.twigs) paintWood(ctx, twig, branchCol, obj.seed);
-    for (const site of sites) {
-      const end = point(site);
-      for (let k = 0; k < 2; k++) {
-        const dx =
-          (k === 0 ? -1 : 1) *
-          site.rx *
-          (0.25 + hash2(site.index, obj.seed, 1471 + k) * 0.25) *
-          (obj.type === 'ginkgo' ? 0.64 : 1);
-        const dy = style.droop
-          ? style.droop * scale * (0.55 + hash2(site.index, obj.seed, 1481 + k) * 0.35)
-          : -site.ry * (0.42 + hash2(site.index, obj.seed, 1481 + k) * 0.36) * (obj.type === 'sakura' ? 0.75 : 1);
-        const start = woodPoint(skeleton.twigs[site.index], k === 0 ? 0.67 : 1);
-        const tip = woodCurve(
-          start,
-          { x: end.x + dx, y: end.y + dy },
-          0.38 * scale,
-          0.09 * scale,
-          dx * 0.18,
-          style.droop ? -12 * scale : 0,
-        );
-        paintWood(ctx, tip, branchCol, obj.seed);
+    if (curtains.length) {
+      for (const shoot of curtains) paintWood(ctx, shoot, branchCol, obj.seed);
+    } else {
+      for (const site of sites) {
+        const end = point(site);
+        for (let k = 0; k < 2; k++) {
+          const dx =
+            (k === 0 ? -1 : 1) *
+            site.rx *
+            (0.25 + hash2(site.index, obj.seed, 1471 + k) * 0.25) *
+            (obj.type === 'ginkgo' ? 0.64 : 1);
+          const dy =
+            -site.ry * (0.42 + hash2(site.index, obj.seed, 1481 + k) * 0.36) * (obj.type === 'sakura' ? 0.75 : 1);
+          const start = woodPoint(skeleton.twigs[site.index], k === 0 ? 0.67 : 1);
+          const tip = woodCurve(start, { x: end.x + dx, y: end.y + dy }, 0.38 * scale, 0.09 * scale, dx * 0.18, 0);
+          paintWood(ctx, tip, branchCol, obj.seed);
+        }
       }
     }
     drawTreeCavity(d, trunk, woodPoint(skeleton.branches[skeleton.branches.length - 1], 0.18));
@@ -257,15 +235,44 @@ function makeTree(style: TreeStyle): Drawer {
           obj.seed + site.index * 17 + 7,
           { layers: 1, alpha: 0.26 * opacity, edge: 0, wobble: 0.3 },
         );
-        if (style.droop) {
-          ctx.strokeStyle = css(main, 0.62 * opacity);
-          ctx.lineWidth = 1.8 * scale * leaf.size;
-          const len = style.droop * scale * leaf.size * (0.55 + tint * 0.5),
-            wob = Math.sin(d.time * 0.0007 + site.index) * 4 * d.wind;
+        if (curtains.length) {
+          const shoots = curtains.slice(site.index * 3, site.index * 3 + 3);
+          ctx.strokeStyle = css(main, 0.75 * opacity);
+          ctx.lineWidth = 1.05 * scale * leaf.size;
           ctx.beginPath();
-          ctx.moveTo(p.x, p.y);
-          ctx.quadraticCurveTo(p.x + wob, p.y + len * 0.6, p.x + wob - 3, p.y + len);
+          for (const shoot of shoots) {
+            ctx.moveTo(shoot.a.x, shoot.a.y);
+            ctx.bezierCurveTo(shoot.b.x, shoot.b.y, shoot.c.x, shoot.c.y, shoot.d.x, shoot.d.y);
+          }
           ctx.stroke();
+          // A curtain is foliage, not three naked lines: tapered leaf pairs follow
+          // the same shoots. One fill per crown site, baked in the normal sprite cache.
+          ctx.fillStyle = css(main, 0.82 * opacity);
+          ctx.beginPath();
+          for (const shoot of shoots) {
+            const pairs = Math.min(12, Math.max(4, Math.ceil((shoot.d.y - shoot.a.y) / (7 * scale))));
+            for (let k = 0; k < pairs; k++) {
+              const t = 0.12 + ((k + 0.2 + hash2(k, site.index + obj.seed, 3463) * 0.6) / pairs) * 0.8,
+                at = woodPoint(shoot, t);
+              const size = Math.min(
+                scale * leaf.size * (0.72 + hash2(k, site.index + obj.seed, 3461) * 0.36),
+                Math.max(0, (d.y - at.y - scale) / 7.6),
+              );
+              for (const side of [-1, 1]) {
+                const y = at.y + (side === 1 ? 1.2 * size : 0);
+                ctx.moveTo(at.x, y);
+                ctx.quadraticCurveTo(
+                  at.x + side * 4.2 * size,
+                  y + 1.8 * size,
+                  at.x + side * 2.1 * size,
+                  y + 6.4 * size,
+                );
+                ctx.quadraticCurveTo(at.x + side * 0.25 * size, y + 3.3 * size, at.x, y);
+                ctx.closePath();
+              }
+            }
+          }
+          ctx.fill();
         }
       }
       // Sakura's pink crown is part of its canopy: blossom and leaf emergence overlap, not a season switch.
@@ -343,8 +350,6 @@ export const drawSakura = makeTree({
   crownSummer: { r: 138, g: 172, b: 116 },
   crownAutumn: { r: 206, g: 150, b: 104 },
   blossom: { r: 252, g: 226, b: 234 },
-  height: 96,
-  ...TREE_CROWNS.sakura,
 });
 
 export const drawMaple = makeTree({
@@ -352,8 +357,6 @@ export const drawMaple = makeTree({
   crownSpring: { r: 150, g: 186, b: 116 },
   crownSummer: { r: 110, g: 158, b: 96 },
   crownAutumn: { r: 208, g: 104, b: 66 },
-  height: 92,
-  ...TREE_CROWNS.maple,
 });
 
 export const drawGinkgo = makeTree({
@@ -361,8 +364,6 @@ export const drawGinkgo = makeTree({
   crownSpring: { r: 164, g: 196, b: 122 },
   crownSummer: { r: 128, g: 172, b: 102 },
   crownAutumn: { r: 234, g: 194, b: 88 },
-  height: 98,
-  ...TREE_CROWNS.ginkgo,
 });
 
 export const drawWillow = makeTree({
@@ -370,9 +371,6 @@ export const drawWillow = makeTree({
   crownSpring: { r: 172, g: 200, b: 130 },
   crownSummer: { r: 140, g: 178, b: 110 },
   crownAutumn: { r: 198, g: 186, b: 116 },
-  height: 94,
-  ...TREE_CROWNS.willow,
-  droop: 46,
 });
 
 /** Flattened sprays with broken needle fringes, never smooth leaf-cloud ellipses. */
@@ -444,34 +442,29 @@ function pineSpray(
 
 export const drawPine: Drawer = (d) => {
   const { ctx, atm, obj, g } = d;
-  const scale = lerp(0.2, 1, Math.pow(g, 0.7)),
-    heightJ = 0.88 + hash2(obj.seed, 3, 7) * 0.27,
-    h = 148 * scale * heightJ;
-  const sway = Math.sin(d.time * 0.0003 + obj.seed) * 2.2 * d.wind * scale;
-  shadowUnder(d, 48 * scale, 20 * scale, 0.9);
+  const sway = Math.sin(d.time * 0.0003 + obj.seed) * 2.2 * d.wind;
+  const geometry = pineGeometry(obj.seed, g, d.x, d.y, sway);
+  const { profile, scale, sprays } = geometry;
+  shadowUnder(d, (profile.spread + 7) * scale, (16 + profile.spread * 0.08) * scale, 0.9);
   const trunkCol = litc({ r: 114, g: 83, b: 66 }, atm);
-  const { tx, ty, trunk } = drawTrunk(
-    d,
-    h,
-    Math.max(2.6, 9.2 * scale * (0.9 + heightJ * 0.12)),
-    trunkCol,
-    sway * 0.3 + (hash2(obj.seed, 7, 11) - 0.5) * h * 0.08,
-  );
-  // Short scaly plates, distinct from smooth deciduous bark and bamboo joints.
-  for (let i = 0; i < 18; i++) {
-    const t = 0.07 + i * 0.039 + (hash2(obj.seed, i, 2981) - 0.5) * 0.014,
-      a = woodFrame(trunk, t),
-      b = woodFrame(trunk, t + 0.017 + hash2(obj.seed, i, 2987) * 0.012);
-    const side = hash2(obj.seed, i, 2999) > 0.5 ? 1 : -1;
-    ctx.fillStyle = css(shade(trunkCol, i % 3 ? 0.69 + hash2(obj.seed, i, 3001) * 0.13 : 1.25), 0.26);
-    ctx.beginPath();
-    ctx.moveTo(a.x + a.nx * a.r * side * 0.85, a.y + a.ny * a.r * side * 0.85);
-    ctx.lineTo(a.x - a.nx * a.r * side * 0.1, a.y - a.ny * a.r * side * 0.1);
-    ctx.lineTo(b.x - b.nx * b.r * side * 0.18, b.y - b.ny * b.r * side * 0.18);
-    ctx.lineTo(b.x + b.nx * b.r * side * 0.73, b.y + b.ny * b.r * side * 0.73);
-    ctx.closePath();
-    ctx.fill();
-  }
+  drawTrunk(d, geometry.height, geometry.width, trunkCol, 0, geometry.trunks[0]);
+  for (const trunk of geometry.trunks.slice(1)) paintWood(ctx, trunk, trunkCol, obj.seed + 997, true);
+  // Short scaly plates follow each actual leader, including the second fork.
+  for (const trunk of geometry.trunks)
+    for (let i = 0; i < 18; i++) {
+      const t = 0.07 + i * 0.039 + (hash2(obj.seed, i, 2981) - 0.5) * 0.014,
+        a = woodFrame(trunk, t),
+        b = woodFrame(trunk, t + 0.017 + hash2(obj.seed, i, 2987) * 0.012);
+      const side = hash2(obj.seed, i, 2999) > 0.5 ? 1 : -1;
+      ctx.fillStyle = css(shade(trunkCol, i % 3 ? 0.69 + hash2(obj.seed, i, 3001) * 0.13 : 1.25), 0.26);
+      ctx.beginPath();
+      ctx.moveTo(a.x + a.nx * a.r * side * 0.85, a.y + a.ny * a.r * side * 0.85);
+      ctx.lineTo(a.x - a.nx * a.r * side * 0.1, a.y - a.ny * a.r * side * 0.1);
+      ctx.lineTo(b.x - b.nx * b.r * side * 0.18, b.y - b.ny * b.r * side * 0.18);
+      ctx.lineTo(b.x + b.nx * b.r * side * 0.73, b.y + b.ny * b.r * side * 0.73);
+      ctx.closePath();
+      ctx.fill();
+    }
   const needle = mix(
     { r: 62, g: 103, b: 76 },
     { r: 74, g: 108, b: 103 },
@@ -481,54 +474,23 @@ export const drawPine: Drawer = (d) => {
   const main = litc(tint, atm),
     deep = litc(shade(tint, 0.64), atm),
     light = litc(mix(tint, { r: 173, g: 185, b: 123 }, 0.38), atm, 0.025);
-  const sprays: { x: number; y: number; rx: number; ry: number; seed: number }[] = [];
-  const tiers = 3 + Math.floor(hash2(obj.seed, 13, 17) * 2);
-  for (let i = 0; i < tiers; i++)
-    for (const side of [-1, 1]) {
-      if (i > 0 && hash2(obj.seed, i * 3 + side, 2939) > 0.84) continue;
-      const u = i / (tiers - 1),
-        join = woodPoint(trunk, 0.4 + u * 0.47 + (side === 1 ? 0.035 : 0));
-      const spread = (45 - u * 20) * scale * (0.84 + hash2(obj.seed, i * 3 + side, 2941) * 0.3);
-      const tip = {
-        x: join.x + side * spread + sway,
-        y: join.y - (6 + hash2(obj.seed, i * 3 + side, 2953) * 7) * scale,
-      };
-      const branch = woodCurve(join, tip, (2.7 - u * 0.8) * scale, 0.38 * scale, -side * 5 * scale, 8 * scale);
-      paintWood(ctx, branch, shade(trunkCol, 0.9), obj.seed, true);
-      for (let k = 0; k < 2; k++) {
-        const p = woodPoint(branch, 0.62 + k * 0.38);
-        const crown = { x: p.x + side * k * 3 * scale, y: p.y - (4 + k * 2) * scale };
-        paintWood(
-          ctx,
-          woodCurve(p, crown, 0.8 * scale, 0.13 * scale, side * 2 * scale, -2 * scale),
-          trunkCol,
-          obj.seed,
-        );
-        sprays.push({
-          ...crown,
-          rx: (13 + hash2(obj.seed, i * 7 + k + side, 2963) * 6) * (1 - u * 0.16) * scale,
-          ry: (6 + hash2(obj.seed, i * 9 + k + side, 2969) * 2) * scale,
-          seed: obj.seed + i * 31 + k * 13 + side,
-        });
-      }
-      if (i === 0 && hash2(obj.seed, side, 2971) > 0.4) {
-        ctx.fillStyle = css(shade(trunkCol, 0.8), 0.93);
-        const p = woodPoint(branch, 0.8);
-        ctx.beginPath();
-        ctx.ellipse(p.x, p.y + 3.5 * scale, 1.7 * scale, 3.8 * scale, -side * 0.2, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = css(shade(trunkCol, 1.5), 0.45);
-        ctx.lineWidth = 0.55 * scale;
-        ctx.beginPath();
-        ctx.moveTo(p.x - 1.3 * scale, p.y + 3 * scale);
-        ctx.lineTo(p.x + 1.3 * scale, p.y + 4 * scale);
-        ctx.stroke();
-      }
+  for (const bough of geometry.boughs) {
+    paintWood(ctx, bough.curve, shade(trunkCol, 0.9), obj.seed, true);
+    if (bough.cone) {
+      const p = woodPoint(bough.curve, 0.8);
+      ctx.fillStyle = css(shade(trunkCol, 0.8), 0.93);
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y + 3.5 * scale, 1.7 * scale, 3.8 * scale, -bough.side * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = css(shade(trunkCol, 1.5), 0.45);
+      ctx.lineWidth = 0.55 * scale;
+      ctx.beginPath();
+      ctx.moveTo(p.x - 1.3 * scale, p.y + 3 * scale);
+      ctx.lineTo(p.x + 1.3 * scale, p.y + 4 * scale);
+      ctx.stroke();
     }
-  sprays.push(
-    { x: tx - 9 * scale + sway, y: ty - 2 * scale, rx: 17 * scale, ry: 8 * scale, seed: obj.seed + 177 },
-    { x: tx + 11 * scale + sway, y: ty + 2 * scale, rx: 14 * scale, ry: 7 * scale, seed: obj.seed + 191 },
-  );
+  }
+  for (const twig of geometry.twigs) paintWood(ctx, twig, trunkCol, obj.seed);
   // Back sprays first; the open inner branches remain visible between the needle tips.
   sprays.sort((a, b) => a.y - b.y);
   for (const p of sprays) pineSpray(d, p.x, p.y, p.rx, p.ry, p.seed, scale, main, deep, light);
@@ -812,8 +774,6 @@ export const drawPersimmon = makeTree({
   crownSpring: { r: 142, g: 174, b: 105 },
   crownSummer: { r: 96, g: 138, b: 88 },
   crownAutumn: { r: 208, g: 138, b: 72 },
-  height: 74,
-  ...TREE_CROWNS.persimmon,
   fruit: { r: 234, g: 122, b: 44 },
 });
 

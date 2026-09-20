@@ -20,6 +20,7 @@ import { DevPanel } from './ui/devPanel';
 import { History } from './core/history';
 import { GardenStore } from './world/gardens';
 import { GardensPanel } from './ui/gardensPanel';
+import { LandscapeNotice } from './ui/landscapeNotice';
 import { findPath, layPath } from './world/paths';
 import { SettingsPanel, applyView, loadView } from './ui/settings';
 import { isTouchDevice } from './ui/touch';
@@ -32,14 +33,17 @@ import { StartScreen } from './ui/startScreen';
 import { isoToScreen } from './core/iso';
 
 const app = document.getElementById('app')!;
+/** Until an explicit choice, this is only an inert, unsaved placeholder — not an active garden. */
+let startOpen = true;
+app.inert = true;
+app.setAttribute('aria-hidden', 'true');
 
 const canvas = document.createElement('canvas');
 canvas.id = 'garden';
 app.appendChild(canvas);
 
 const world = new World();
-const gardens = new GardenStore();
-if (!gardens.load(world)) gardens.save(world);
+const gardens = new GardenStore({ deferEmpty: true });
 
 const history = new History(world);
 
@@ -104,6 +108,7 @@ function syncGrowRect(): void {
 
 /** Сохранение теперь всегда идёт в активный слот усадьбы. */
 function saveWorld(): void {
+  if (startOpen) return;
   syncRoofButton();
   syncGrowRect();
   const res = gardens.save(world);
@@ -111,10 +116,6 @@ function saveWorld(): void {
   if (res.ok) hideStorageWarn();
   else showStorageWarn(res.reason);
 }
-
-// Слот был, но не прочитался даже из копии — честно скажем об этом:
-// данные уже отложены карантином, перед игроком чистая земля.
-if (gardens.lastLoadFailed) showStorageWarn('broken');
 
 /**
  * Видимость кровли — настройка взгляда, а не сада: она одна на все усадьбы
@@ -167,8 +168,6 @@ function loadPaintPref(): 'tap' | 'stroke' {
   }
 }
 let paintMode: 'tap' | 'stroke' = loadPaintPref();
-/** Свиток стартовой страницы ещё висит: сад за ним живёт, но не слушает клавиш. */
-let startOpen = true;
 let ghostRot = 0;
 let zenMode = false;
 let lastInteraction = performance.now();
@@ -335,6 +334,8 @@ const settingsPanel = new SettingsPanel(
   (v) => {
     scene.particles = v.particles;
     scene.motion = v.motion;
+    scene.smartWind = v.smartWind;
+    life.smartWind = v.smartWind;
     scene.setQuality(v.quality);
   },
   {
@@ -343,26 +344,41 @@ const settingsPanel = new SettingsPanel(
   },
 );
 
+/** Shared by the front door and the in-garden slot panel. Nothing from the previous garden follows. */
+function resetGardenView(): void {
+  history.clear();
+  input.cancelOngoingAction();
+  scene.markTerrainDirty();
+  life.reset();
+  chronicleToast.clear();
+  snapQueue = [];
+  const r = world.grow?.rect;
+  if (r) {
+    scene.camera.zoom = 1.15;
+    scene.centerOn(r.x + r.w / 2, r.y + r.h / 2);
+  } else if (isTouchDevice()) scene.fitToView(world);
+  else if (startOpen) {
+    scene.centerOn(GRID / 2, GRID / 2 + 1.5);
+    scene.camera.zoom = 0.85;
+  }
+  scene.clampCamera();
+  growAccum = 0;
+  growLineShown = false;
+  growBankShown = false;
+  ui.setGrowVisible(false);
+  ui.setGrowBankVisible(false);
+  ui.select({ kind: 'none' });
+  ui.renderTabs();
+  ui.renderItems();
+  syncHistoryUI();
+  syncRoofButton();
+  syncGrowRect();
+  landscapeNotice.show(gardens.lastThinning);
+  wake();
+}
+const landscapeNotice = new LandscapeNotice(app, gardens, world, (visible) => chronicleToast.setPaused(visible));
 const gardensPanel = new GardensPanel(app, world, gardens, {
-  onSwitch() {
-    // Мир заменился целиком: история чужой усадьбы больше не имеет смысла
-    history.clear();
-    // Незавершённое действие относилось к прошлому саду — отпускаем его:
-    // переносимый предмет, начатая тропа, мазок кистью.
-    input.cancelOngoingAction();
-    scene.markTerrainDirty();
-    life.reset();
-    chronicleToast.clear();
-    snapQueue = [];
-    if (isTouchDevice() && !world.grow) scene.fitToView(world);
-    ui.select({ kind: 'none' });
-    ui.renderTabs();
-    ui.renderItems();
-    syncHistoryUI();
-    syncRoofButton();
-    syncGrowRect();
-    wake();
-  },
+  onSwitch: resetGardenView,
   toast: (t) => ui.toast(t),
 });
 
@@ -1073,77 +1089,38 @@ function growPick(tx: number, ty: number): boolean {
   return false;
 }
 
-/** Вторая дверь заставки: войти в растущий сад (создать или открыть свой). */
-function enterGrow(): void {
-  // если уже в растущем — ничего не пересоздаём
-  if (world.grow) {
-    // камера уже на месте, просто закрываем заставку
-  } else {
-    // ищем любой растущий сад в списке (может быть несколько)
-    const growMeta = gardens.list.find((m) => {
-      // эвристика: имя начинается с «Растущий сад» или мир в слоте имеет grow
-      // но читать слоты тяжело — проверяем имя
-      return m.name.startsWith('Растущий сад');
-    });
-    if (growMeta) {
-      if (growMeta.id !== gardens.activeId) {
-        if (!gardens.switchTo(world, growMeta.id)) {
-          // не открылся — создаём новый
-          gardens.create(world, undefined, { mode: 'grow' });
-          saveWorld();
-        }
-      }
-    } else {
-      gardens.create(world, undefined, { mode: 'grow' });
-      saveWorld();
-    }
-  }
-  history.clear();
-  input.cancelOngoingAction();
-  scene.markTerrainDirty();
-  life.reset();
-  chronicleToast.clear();
-  snapQueue = [];
-  ui.select({ kind: 'none' });
-  ui.renderTabs();
-  ui.renderItems();
-  syncHistoryUI();
-  // Камера — на открытый клочок земли
-  const r = world.grow?.rect;
-  if (r) {
-    scene.camera.zoom = 1.15;
-    scene.centerOn(r.x + r.w / 2, r.y + r.h / 2);
-  }
-  growLineShown = false;
-  ui.setGrowVisible(false);
-  growBankShown = false;
-  ui.setGrowBankVisible(false);
-  syncRoofButton();
-  syncGrowRect();
-  startOpen = false;
-  wake();
-  void toggleSound(true);
-  entryZoom = scene.camera.zoom;
-}
+// ---------------- Выбор сада ----------------
 
-// ---------------- Заставка ----------------
-
-// Свиток на стене: свет идёт по тем же часам, что и сад, а вход
-// одновременно разблокирует звук — без касания страницы браузер его не даст.
 const start = new StartScreen({
-  hour: () => timeCtl.compute().dayT * 24,
+  // The scroll must not tick or migrate a growing garden's clock just to light the menu.
+  hour: () => {
+    const d = new Date();
+    return d.getHours() + d.getMinutes() / 60;
+  },
   motion: view.motion,
+  gardens: gardens.list,
+  activeId: gardens.activeId,
+  onOpen(id) {
+    if (!gardens.open(world, id)) return false;
+    resetGardenView();
+    return true;
+  },
+  onCreate(name, options) {
+    gardens.create(world, name || undefined, { ...options, saveCurrent: false });
+    resetGardenView();
+    return true;
+  },
   onEnter() {
     startOpen = false;
+    app.inert = false;
+    app.removeAttribute('aria-hidden');
+    canvas.tabIndex = -1;
+    canvas.focus({ preventScroll: true });
     wake();
+    saveWorld();
     void toggleSound(true);
-    // Шаг через порог: камера подаётся вперёд, а не прыгает на место.
     entryZoom = scene.camera.zoom;
     scene.camera.zoom *= 0.86;
-    // Подсказка ждёт входа: за свитком её всё равно не видно.
-  },
-  onGrow() {
-    enterGrow();
   },
 });
 start.mount(document.body);
@@ -1182,6 +1159,8 @@ scene.snapRoof();
 ui.setRoofState(scene.roofVisible);
 scene.particles = view.particles;
 scene.motion = view.motion;
+scene.smartWind = view.smartWind;
+life.smartWind = view.smartWind;
 scene.setQuality(view.quality);
 ui.setPaintMode(paintMode);
 syncRoofButton();

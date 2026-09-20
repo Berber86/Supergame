@@ -123,6 +123,20 @@ try {
   toast.dispose();
   advance(912000);
   assert.equal(timers.size, 0);
+  toast = new ChronicleToast(root, (x: number, y: number) => visits.push([x, y]));
+  toast.setPaused(true);
+  push('meet_frog', 3, 4);
+  advance(922000);
+  push('meet_deer', 9, 10);
+  assert.equal(count(), 0, 'load-time notice does not compete with chronicle popups');
+  assert.equal(timers.size, 0, 'paused notifications do not poll or allocate timers');
+  toast.setPaused(false);
+  assert.equal(count(), 1);
+  (root.querySelector('.chronicle-toast') as HTMLElement).click();
+  assert.deepEqual(visits.at(-1), [9, 10], 'the latest event appears when the notice is dismissed');
+  toast.dispose();
+  advance(923000);
+  assert.equal(timers.size, 0);
   console.log(
     'ок: 180000ms minimum, early close/click/auto-fade, latest-only burst, bounded timers, hidden tab, garden switch, reload, clock jumps, unavailable storage and unchanged chronicle records',
   );

@@ -8,6 +8,7 @@ import { computeTime, DAY_MS } from '../src/core/clock';
 import { makeRng } from '../src/core/rng';
 import { isoToScreen } from '../src/core/iso';
 import { litterYear } from '../src/world/annualEnvironment';
+import { treeFallActivity } from '../src/world/ecology';
 import { canopyLeafDensity, TREE_CROWNS } from '../src/world/canopy';
 import { buildAtmosphere } from '../src/world/palette';
 import { World } from '../src/world/world';
@@ -47,6 +48,22 @@ for (const type of Object.keys(TREE_CROWNS).filter((type) => type !== 'yuzu')) {
     for (const month of [5, 6, 7]) assert.equal(litterYear(type, seed, date(month, 1)).leaves, 0);
   }
 }
+// The reported date: September 20 must have sparse real broadleaf litter, not zero until late October.
+for (const seed of [17, 441, 9876]) {
+  for (const type of ['maple', 'sakura']) {
+    const early = litterYear(type, seed, date(8, 20));
+    assert.ok(early.leaves > 0.025 && early.leaves < 0.12, `${type}: small September fall`);
+    assert.ok(treeFallActivity(type, seed, date(8, 20)).leaves > 0, 'particles and ground share the early shedding');
+    assert.ok(litterYear(type, seed, date(9, 20)).leaves > early.leaves);
+    assert.ok(litterYear(type, seed, date(10, 20)).leaves > early.leaves * 5);
+  }
+  assert.ok(litterYear('willow', seed, date(8, 20)).leaves < litterYear('maple', seed, date(8, 20)).leaves);
+  assert.ok(
+    litterYear('maple', seed, date(2, 20)).leaves > 0.25,
+    'March retains old broadleaf litter, not only needles',
+  );
+}
+assert.equal(litterYear('pine', 441, date(8, 20)).leaves, 0.38, 'pine needle turnover is unchanged');
 assert.ok(litterYear('sakura', 441, date(4, 10)).petals > 0.5);
 assert.ok(litterYear('sakura', 441, date(4, 10)).leaves < 0.06, 'new petals do not replenish old leaf litter');
 const fresh = litterColor('maple', 1),
@@ -97,6 +114,13 @@ const autumn = render(date(10, 12)),
   april = render(date(3)),
   may = render(date(4)),
   summer = render(date(5, 1));
+for (const zoom of [0.4, 0.55, 1]) {
+  const early = render(date(8, 20), zoom),
+    late = render(date(10, 20), zoom);
+  assert.ok(early.mass > 0 && early.ink > 0, `September leaf flecks are visible even at phone zoom ${zoom}`);
+  assert.ok(early.mass < late.mass * 0.2, 'September is sparse, not a November carpet');
+  assert.equal(render(date(8, 20), zoom).hash, early.hash, 'returning from late autumn does not leave stale litter');
+}
 assert.ok(autumn.ink > 7500, `substantial actual raster coverage, got ${autumn.ink} pixels`);
 assert.ok(march.mass < autumn.mass * 0.55 && april.mass < march.mass * 0.6);
 assert.ok(may.mass < autumn.mass * 0.05);

@@ -1,4 +1,6 @@
-import { makeWindSampler, windFronts, type WindSampler } from './wind';
+import { AnimalCompany, type CompanyPose } from './animalCompany';
+import { BirdBaths } from './birdBaths';
+import { CALM, makeWindSampler, windFronts, type WindSampler } from './wind';
 import type { Gust } from './wind';
 export type { Gust } from './wind';
 import { Lizards } from './lizards';
@@ -62,6 +64,7 @@ interface Agent {
 }
 
 export interface Cat extends Agent {
+  company?: CompanyPose;
   posture?: CatPosture;
   gait?: number;
   actionTime?: number;
@@ -89,6 +92,8 @@ export interface Cat extends Agent {
 }
 
 export interface Bird extends Agent {
+  /** Brief wing-shake on the rim after a real bath; no new persisted state. */
+  bathDry?: number;
   state: BirdState;
   timer: number;
   target: Vec | null;
@@ -239,9 +244,12 @@ export class Life {
   /** Заметки в летопись: игровой цикл забирает их каждый кадр. */
   pendingNotes: ChronicleToastNote[] = [];
   /** Legacy centre-of-garden pressure; local consumers sample windVectorAt instead. */
+  smartWind = false;
   windBase = 0;
   windTime = 0;
-  private windSample: WindSampler = makeWindSampler(0);
+  private windSample: WindSampler | undefined;
+  private catCompany = new AnimalCompany<Cat>('cat');
+  private birdBaths = new BirdBaths();
   private birdTimer = 6000;
   private habitatTimer = 0;
   private guestTimer = 45_000;
@@ -258,6 +266,8 @@ export class Life {
 
   /** Забыть всю живность — при переходе в другую усадьбу. */
   reset(): void {
+    this.catCompany.reset();
+    this.birdBaths.reset();
     this.lizards.reset();
     this.cats = [];
     this.guests = [];
@@ -267,7 +277,7 @@ export class Life {
     this.gusts = [];
     this.windTime = 0;
     this.windBase = 0;
-    this.windSample = makeWindSampler(0);
+    this.windSample = undefined;
     this.emitted = [];
     this.koiKey = '';
     this.dormantSince = new WeakMap();
@@ -386,7 +396,7 @@ export class Life {
     this.wildlife.update(h, inv, t, wx ?? null, dt, now, threats, world);
     for (const note of this.wildlife.takeNotes()) this.note(world, note.id, note.x, note.y);
 
-    this.updateCats(world, t, dt);
+    this.updateCats(world, t, dt, now, wx ?? null);
     this.updateGuest(world, h, inv, t, dt, now);
     this.updateBirds(world, t, dt, h, inv, wx ?? null);
     this.updateFlutters(world, t, dt, now, wx);
@@ -454,23 +464,38 @@ export class Life {
   private updateWind(dt: number, t: TimeState, wx?: WeatherState | null): void {
     this.windTime += Number.isFinite(dt) ? Math.max(0, dt) : 0;
     const climate = (1 + 0.18 * (1 - ecologyYear(t.now).green)) * (1 + (wx?.rain ?? 0) * 0.28);
+    if (!this.smartWind) {
+      // No fronts, lag samplers or per-position pressure calculations in the default mode.
+      this.gusts.length = 0;
+      this.windSample = undefined;
+      this.windBase =
+        climate * (0.22 + Math.sin(this.windTime * 0.00021) * 0.1 + Math.sin(this.windTime * 0.00057 + 1.2) * 0.05);
+      return;
+    }
     this.gusts = windFronts(this.windTime, climate);
     this.windSample = makeWindSampler(this.windTime, climate);
     this.windBase = this.windSample(GRID / 2, GRID / 2).strength;
   }
   /** Shared pressure and direction, optionally delayed by the receiving material's inertia. */
   windVectorAt(tx: number, ty: number, lag = 0) {
-    return this.windSample(tx, ty, lag);
+    return this.smartWind ? (this.windSample?.(tx, ty, lag) ?? CALM) : CALM;
   }
   windAt(tx: number, ty: number): number {
-    return this.windVectorAt(tx, ty).strength;
+    return this.smartWind ? this.windVectorAt(tx, ty).strength : this.windBase;
   }
 
   // ---------------- Коты ----------------
 
-  private updateCats(world: World, t: TimeState, dt: number): void {
+  private updateCats(world: World, t: TimeState, dt: number, now: number, wx: WeatherState | null): void {
     const cushions = findObjects(world, ['cushion']);
     const all = this.cats.concat(this.guests);
+    this.catCompany.update(
+      world,
+      all,
+      dt,
+      (c) => (!c.guest || now < c.leaveAt) && (wx?.rain ?? 0) < 0.55,
+      (id, x, y) => this.note(world, id, x, y),
+    );
     for (const c of all) {
       c.posture ??= catPosture(c.state);
       if (c.actionState !== c.state) {
@@ -479,6 +504,10 @@ export class Life {
         c.actionDuration = Math.max(1, c.timer);
       }
       c.actionTime = (c.actionTime ?? 0) + dt;
+      if (c.company) {
+        c.speed = easePose(c.speed, c.state === 'walk' ? 1 : 0, dt, 200);
+        continue;
+      }
       const oldX = c.tx;
       const oldY = c.ty;
       c.timer -= dt;
@@ -614,30 +643,6 @@ export class Life {
     }
 
     for (const c of all) updateCatPosture(c, dt);
-
-    // Знакомство котов: сошлись близко — сели друг напротив друга
-    for (const g of this.guests) {
-      for (const c of this.cats) {
-        const d = Math.hypot(g.tx - c.tx, g.ty - c.ty);
-        if (d > 2.6 || d < 0.001) continue;
-        if (g.state === 'walk' || c.state === 'walk') continue;
-        g.facing = c.tx > g.tx ? 1 : -1;
-        c.facing = g.tx > c.tx ? 1 : -1;
-        if (g.state !== 'sit') {
-          g.state = 'sit';
-          g.timer = 4000;
-        }
-        if (c.state !== 'sit') {
-          c.state = 'sit';
-          c.timer = 4000;
-        }
-        if (g.greet <= 0) {
-          g.greet = 9000;
-          c.greet = 9000;
-          this.note(world, 'cats_greet', (g.tx + c.tx) / 2, (g.ty + c.ty) / 2);
-        }
-      }
-    }
   }
 
   private nearestGroundBird(c: Cat, r: number): Bird | null {
@@ -904,9 +909,16 @@ export class Life {
       this.birdTimer = 7000 + rnd() * 16000;
       // Кормушка зовёт своих: зимой у неё людно, летом — пара завсегдатаев
       const wantFeeder = h.feeders.length > 0 && feederBirds < inv.feederBirds;
-      const wantBath = h.baths.length > 0 && t.season === 'summer' && rnd() < 0.3 && rain < 0.2;
+      const atBath = this.birds.filter((b) => b.place === 'bath' && b.state !== 'fly-out').length;
+      const wantBath =
+        h.baths.length > 0 &&
+        atBath < h.baths.length * 2 &&
+        t.season === 'summer' &&
+        rnd() < (atBath ? 0.75 : 0.38) &&
+        rain < 0.2;
       if (wantFeeder || wantBath) {
-        const feeder = wantFeeder ? h.feeders[Math.floor(rnd() * h.feeders.length)] : null;
+        const feeder =
+          wantFeeder && (!wantBath || rnd() < 0.4) ? h.feeders[Math.floor(rnd() * h.feeders.length)] : null;
         const bath = !feeder && wantBath ? h.baths[Math.floor(rnd() * h.baths.length)] : null;
         const at = feeder ?? bath!;
         const fromLeft = rnd() > 0.5;
@@ -997,8 +1009,17 @@ export class Life {
       );
     }
 
+    this.birdBaths.update(
+      this.birds,
+      world,
+      dt,
+      daytime && rain < 0.55 && t.season !== 'winter',
+      (b) => this.birdLeave(b),
+      (id, x, y) => this.note(world, id, x, y),
+    );
     for (let i = this.birds.length - 1; i >= 0; i--) {
       const b = this.birds[i];
+      if (this.birdBaths.owns(b)) continue;
       b.timer -= dt;
 
       if (b.state === 'fly-in' && b.target) {
@@ -1006,8 +1027,8 @@ export class Life {
         const dy = b.target.y - b.ty;
         const d = Math.hypot(dx, dy);
         const v = 0.0028 * dt;
-        const perchAlt = b.place === 'feeder' ? 26 : b.place === 'bath' ? 7 : 0;
-        if (d < 0.25 && Math.abs(b.alt - perchAlt) < 3) {
+        const perchAlt = b.place === 'feeder' ? 26 : b.place === 'bath' ? this.birdBaths.landingHeight(b, world) : 0;
+        if (d < (b.place === 'bath' ? 0.025 : 0.25) && Math.abs(b.alt - perchAlt) < 3) {
           b.alt = perchAlt;
           if (perchAlt <= 7 && world.at(Math.floor(b.tx), Math.floor(b.ty))?.water)
             this.residents.ripple(b.tx, b.ty, false);
@@ -1017,7 +1038,7 @@ export class Life {
             world.checkMilestone('bird_guest');
             this.note(world, 'meet_feeder', b.tx, b.ty);
           } else if (b.place === 'bath') {
-            b.state = rnd() < 0.5 ? 'drink' : 'bathe';
+            b.state = 'perch';
             b.timer = 1800 + rnd() * 2600;
             world.checkMilestone('bird_guest');
           } else {

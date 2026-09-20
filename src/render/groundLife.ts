@@ -1,9 +1,10 @@
+import { LEAFY_BASE, treeProfile } from '../world/treeHabits';
 import { isFruitTree, fruitYear, orchardFlowerTint } from '../world/orchard';
 import { paintOrchardFruit } from './orchardFruit';
 import { rainField, rainShade } from './afterRain';
 import { flowerYear, litterYear, winterYear } from '../world/annualEnvironment';
 import { crownCacheKey, crownCacheTime } from '../world/phenology';
-import { TREE_CROWNS, crownWidth } from '../world/canopy';
+import { TREE_CROWNS, crownDimensions } from '../world/canopy';
 import { scaleJitterOf } from './sprites/common';
 /** Sparse, persistent-looking ground ecology. Decoration only: never places objects or changes saves. */
 import { isoToScreen, tileDiamond, TILE_W } from '../core/iso';
@@ -67,6 +68,7 @@ export function groundLifeField(world: World): GroundField {
     const item = ITEM_BY_ID.get(o.type)!,
       x = o.tx + item.w / 2,
       y = o.ty + item.h / 2;
+    const habit = treeProfile(o.type, o.seed);
     return {
       x,
       y,
@@ -74,17 +76,19 @@ export function groundLifeField(world: World): GroundField {
       type: o.type,
       seed: o.seed,
       litterRadius: TREE_CROWNS[o.type]
-        ? 0.28 + (crownWidth(TREE_CROWNS[o.type].crownW, o.seed) * scaleJitterOf(o.seed)) / (TILE_W * 0.7)
+        ? 0.28 + (crownDimensions(o.type, o.seed)!.crownW * scaleJitterOf(o.seed)) / (TILE_W * 0.7)
         : 1.35,
       tree: item.kind === 'tree',
       plantedFlower: item.kind === 'flower',
       radius:
         item.kind === 'tree'
-          ? o.type === 'willow'
-            ? 1.85
-            : o.type === 'bamboo'
-              ? 1.05
-              : 1.5
+          ? habit
+            ? ((habit.type === 'willow' ? 1.85 : 1.5) * habit.crownW) / LEAFY_BASE[habit.type].crownW
+            : o.type === 'willow'
+              ? 1.85
+              : o.type === 'bamboo'
+                ? 1.05
+                : 1.5
           : item.kind === 'shrub'
             ? 0.8
             : Math.max(item.w, item.h) * 0.65,
@@ -252,17 +256,19 @@ function paintLeafLitter(
     }
   }
   const fine = groundDetailAlpha('leaves', zoom);
-  if (fine <= 0) return;
+  // At phone/low-detail scale keep a few readable flecks, not just a translucent wash.
+  const markAlpha = fine > 0 ? fine : coarse * 0.8;
+  if (markAlpha <= 0) return;
   const colors = Array.from({ length: 5 }, (_, i) => css(shade(color, 0.79 + i * 0.09), 0.58 + state.fresh * 0.16));
-  const count = dense ? Math.round(84 * density) : 13;
+  const count = dense ? Math.round((fine > 0 ? 84 : 16) * density) : fine > 0 ? 13 : 5;
   for (let i = 0; i < count && state.leaves > 0; i++) {
     const r = hash2(i, p.seed, 47),
-      present = smoothstep(r * 0.72, r * 0.72 + 0.28, state.leaves);
+      present = smoothstep(r * 0.95, r * 0.95 + 0.05, state.leaves);
     if (present <= 0.001) continue;
     const x = q.x + (hash2(i, p.seed, 17) - 0.5) * (dense ? 78 : 34),
       y = q.y + (hash2(i, p.seed, 23) - 0.5) * (dense ? 32 : 14);
     ctx.save();
-    ctx.globalAlpha *= fine * present;
+    ctx.globalAlpha *= markAlpha * present;
     ctx.translate(x, y);
     ctx.rotate(hash2(i, p.seed, 1613) * Math.PI * 2);
     // Weathered leaves shrivel as well as fade, before disappearing completely in late May.

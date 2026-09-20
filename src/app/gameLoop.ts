@@ -102,7 +102,7 @@ export function startLoop(deps: LoopDeps): void {
   let frameError = false;
 
   function frame(now: number): void {
-    if (document.hidden) {
+    if (document.hidden || deps.isStartOpen?.()) {
       last = now;
       simulationGate.reset();
       renderGate.reset();
@@ -184,9 +184,9 @@ export function startLoop(deps: LoopDeps): void {
       scene.clampCamera();
     }
 
-    // Под листом практики сад не рисуется вовсе; свиток старта непрозрачен,
-    // но за ним сад живёт. Двух прогревочных кадров в секунду достаточно.
-    if (!deps.isPracticeActive() && renderGate.due(now, deps.isStartOpen?.() ? 2 : scene.graphicsProfile.fps)) {
+    // До выбора сада frame() не вызывает step() вообще — даже для прогрева.
+    // Под листом практики/энциклопедии сад не рисуется.
+    if (!deps.isPracticeActive() && renderGate.due(now, scene.graphicsProfile.fps)) {
       scene.render(world, atm, now, renderDt, life, weatherSys.state);
       renderDt = 0;
       deps.flushChronicleSnaps();

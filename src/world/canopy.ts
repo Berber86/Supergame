@@ -1,3 +1,4 @@
+import { LEAFY_BASE, treeProfile } from './treeHabits';
 import { ORCHARD_SHAPES } from './orchard';
 /** Shared annual optical cover. Branches survive leaf fall; blossoms also intercept light.
  * Derived from the same seeded leaf groups as the drawing, never from a season label.
@@ -8,18 +9,22 @@ import { ANNUAL_CROWN_TYPES, crownCacheKey, crownCacheTime, leafGroup, plantYear
 /** Shared mature dimensions: the litter footprint must follow the actual tree, not a fixed tile radius. */
 export const TREE_CROWNS: Record<string, { crownW: number; crownH: number; layers: number }> = {
   ...ORCHARD_SHAPES,
-  sakura: { crownW: 98, crownH: 74, layers: 5 },
-  maple: { crownW: 96, crownH: 72, layers: 5 },
-  ginkgo: { crownW: 82, crownH: 78, layers: 4 },
-  willow: { crownW: 104, crownH: 58, layers: 4 },
-  persimmon: { crownW: 58, crownH: 46, layers: 3 },
+  ...LEAFY_BASE,
 };
 export function crownWidth(width: number, seed: number): number {
   return width * (0.8 + hash2(seed, 5, 7) * 0.42);
 }
+/** Shared seeded dimensions for painting, litter and canopy density. Orchard habits stay unchanged. */
+export function crownDimensions(type: string, seed: number) {
+  const habit = treeProfile(type, seed);
+  if (habit) return habit;
+  const base = TREE_CROWNS[type];
+  return base ? { ...base, crownW: crownWidth(base.crownW, seed) } : undefined;
+}
 function leafArea(type: string, seed: number, state: PlantYear): number {
   if (state.evergreen) return 1;
-  const count = TREE_CROWNS[type] ? (TREE_CROWNS[type].layers + 2) * 3 : type === 'wisteria' ? 16 : 21;
+  const crown = crownDimensions(type, seed);
+  const count = crown ? (crown.layers + 2) * 3 : type === 'wisteria' ? 16 : 21;
   let area = 0;
   for (let i = 0; i < count; i++) {
     const leaf = leafGroup(state, seed, i);

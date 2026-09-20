@@ -18,6 +18,23 @@
 - bird_nest.webp 25K placeholder
 
 Integration:
+
 - public/images/chronicle/ served via Vite
-- CHRONICLE_IMAGES map in chroniclePanel.ts
+- CHRONICLE_IMAGES map in chronicleArt.ts (re-exported from chroniclePanel.ts)
 - .ch-img CSS: sepia, shadow, border
+
+## Ящерица — обновлённые полевые наблюдения
+
+Пять самостоятельных акварельных сцен на тёплой бумаге. Сгенерированы для игры
+и оптимизированы в WebP (до 900×600, q83; суммарно около 414 КиБ). Сырые PNG в Git
+не хранятся. Версии в `images/chronicle/` и `public/images/chronicle/` идентичны.
+
+- `meet_lizard.webp` — **Солнечный гость**: молодой полосатый сцинк с синим хвостом.
+- `lizard_bask.webp` — **Впитать солнце**: бронзовая взрослая форма отдыхает на камне.
+- `lizard_hunt.webp` — **Маленький охотник**: короткий бросок к насекомому в траве.
+- `cat_lizard.webp` — **Кошачье любопытство**: кот осторожно подходит к камню.
+- `lizard_escape.webp` — **Быстрее тени**: ящерица скрывается в спасительной щели.
+
+Общий реестр теперь в `src/ui/chronicleArt.ts` (старый экспорт из
+`chroniclePanel.ts` сохранён). Те же файлы используются в летописи, её уведомлениях
+и на странице ящерицы в энциклопедии; чтение страницы не открывает вехи.

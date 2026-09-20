@@ -6,16 +6,68 @@ import { drawObject, setSkipShadows } from '../src/render/sprites';
 import { drawCached, clearSprites, spriteStats } from '../src/render/spriteCache';
 import { computeTime } from '../src/core/clock';
 import { buildAtmosphere } from '../src/world/palette';
+import { pineProfile, pineGrowth, PINE_FORMS, PINE_FORM_NAMES } from '../src/world/pine';
+import { pineGeometry } from '../src/render/pineGeometry';
+import { woodPoint, woodFrame } from '../src/render/treeWood';
+import { plantPose, windOffset } from '../src/render/plantWind';
+import { World } from '../src/world/world';
+import { serializeSave } from '../src/world/saveFormat';
+import { scaleJitterOf } from '../src/render/sprites/common';
 Object.assign(globalThis, { document: { createElement: () => createCanvas(8, 8) } });
-const cv = createCanvas(1120, 470),
+// Every archetype, not just four accidentally similar seeds. The original four remain in regression checks.
+const seeds = Array.from({ length: 512 }, (_, i) => i);
+const examples = PINE_FORMS.map((form) => seeds.find((seed) => pineProfile(seed).form === form)!);
+const heights = seeds.map((seed) => pineProfile(seed).height);
+assert.ok(Math.min(...heights) < 98 && Math.max(...heights) > 220);
+assert.ok(Math.max(...heights) / Math.min(...heights) > 2.3, 'mature pines have visibly different heights');
+for (const form of PINE_FORMS)
+  assert.ok(
+    seeds.filter((seed) => pineProfile(seed).form === form).length > 50,
+    `${form}: a real habit, not a rare accident`,
+  );
+assert.equal(pineGrowth(0), 0.2);
+assert.equal(pineGrowth(1), 1);
+for (const seed of seeds) {
+  const skeleton = pineGeometry(seed, 1);
+  assert.deepEqual(pineGeometry(seed, 1), skeleton, 'no calendar, random generator state, or prior visits');
+  assert.ok(skeleton.sprays.length >= 6 && skeleton.sprays.length <= 24);
+  assert.equal(skeleton.trunks.length, skeleton.profile.form === 'forked' ? 2 : 1);
+  if (skeleton.forkAt) assert.deepEqual(skeleton.trunks[1].a, woodPoint(skeleton.trunks[0], skeleton.forkAt));
+  for (const bough of skeleton.boughs) {
+    assert.deepEqual(bough.curve.a, woodPoint(skeleton.trunks[bough.parent], bough.at));
+    assert.ok(bough.curve.r0 <= woodFrame(skeleton.trunks[bough.parent], bough.at).r);
+  }
+  for (const curve of [...skeleton.trunks, ...skeleton.boughs.map((b) => b.curve), ...skeleton.twigs]) {
+    let radius = Infinity;
+    for (let i = 0; i <= 16; i++) {
+      const f = woodFrame(curve, i / 16);
+      assert.ok(Object.values(f).every(Number.isFinite));
+      assert.ok(f.r > 0 && f.r <= radius + 1e-9);
+      radius = f.r;
+    }
+  }
+  const young = pineGeometry(seed, 0.2);
+  assert.equal(young.profile.form, skeleton.profile.form);
+  assert.ok(young.height < skeleton.height && young.sprays.length === skeleton.sprays.length);
+  const air = { x: 1, y: -1, strength: Math.SQRT2, screenX: 1, screenY: 0 };
+  const pose = plantPose('pine', seed, 1, 1000, air)!;
+  assert.equal(windOffset(pose, 0), 0);
+  assert.ok(pose.hinge > skeleton.height * 0.3 && pose.hinge < skeleton.height * 0.65);
+  assert.equal(plantPose('pine', seed, 1, 1000, air, true)!.hinge, 0);
+}
+console.log(
+  'ок: 512 сидов, 5 силуэтов, высота более чем вдвое, настоящие развилки и крепления ветвей, масштабный ветер',
+);
+
+const cv = createCanvas(1600, 470),
   ctx = cv.getContext('2d');
 const atm = buildAtmosphere(computeTime(new Date(2026, 8, 20, 8, 13).getTime()));
 ctx.fillStyle = '#e2e5cf';
-ctx.fillRect(0, 0, 1120, 470);
-for (const [i, seed] of [17, 441, 2891, 9406].entries()) {
+ctx.fillRect(0, 0, 1600, 470);
+for (const [i, seed] of examples.entries()) {
   ctx.save();
-  ctx.translate(140 + i * 280, 418);
-  ctx.scale(1.7, 1.7);
+  ctx.translate(160 + i * 320, 414);
+  ctx.scale(1.45, 1.45);
   drawObject({
     ctx: ctx as never,
     x: 0,
@@ -28,6 +80,9 @@ for (const [i, seed] of [17, 441, 2891, 9406].entries()) {
     alpha: 1,
   });
   ctx.restore();
+  ctx.fillStyle = '#4b5946';
+  ctx.font = '20px sans-serif';
+  ctx.fillText(PINE_FORM_NAMES[pineProfile(seed).form], 20 + i * 320, 455);
 }
 if (process.argv.includes('--before')) {
   writeFileSync('preview-pine-before.png', cv.toBuffer('image/png'));
@@ -59,40 +114,90 @@ function render(seed: number, g: number, month: number, cached: boolean) {
 }
 const digest = (p: Uint8ClampedArray) => createHash('sha256').update(p).digest('hex');
 const variants = new Set<string>();
-for (const seed of [17, 441, 2891, 9406])
+const renderedHeights: number[] = [];
+// Include the outer object transform when selecting extremal raster tests.
+const screenHeight = (seed: number) => (pineProfile(seed).height + 14) * (0.92 + (scaleJitterOf(seed) - 0.88) * 0.5);
+const tallest = seeds.reduce((a, b) => (screenHeight(a) > screenHeight(b) ? a : b));
+const shortest = seeds.reduce((a, b) => (screenHeight(a) < screenHeight(b) ? a : b));
+const widest = seeds.reduce((a, b) => (pineProfile(a).spread > pineProfile(b).spread ? a : b));
+const mostLeaning = seeds.reduce((a, b) =>
+  pineProfile(a).height * pineProfile(a).lean > pineProfile(b).height * pineProfile(b).lean ? a : b,
+);
+for (const seed of new Set([...examples, 17, 441, 2891, 9406, tallest, shortest, widest, mostLeaning]))
   for (const g of [0.2, 1])
     for (const month of [0, 3, 8]) {
       const raw = render(seed, g, month, false),
         cached = render(seed, g, month, true);
       let total = 0,
-        lost = 0;
+        lost = 0,
+        top = Infinity,
+        bottom = -Infinity;
       for (let i = 3; i < raw.length; i += 4)
         if (raw[i] > 30) {
           total++;
+          const y = Math.floor(i / 4 / 450);
+          top = Math.min(top, y);
+          bottom = Math.max(bottom, y);
           if (cached[i] < 2) lost++;
         }
       assert.ok(total > 100 && lost / total < 0.009, 'needle fringe and branch tips fit the cached sprite');
+      // Independent large-canvas edges also catch a too-small *measurement* canvas.
+      for (let x = 0; x < 450; x++) assert.ok(raw[x * 4 + 3] < 2 && raw[(389 * 450 + x) * 4 + 3] < 2);
+      for (let y = 0; y < 390; y++) assert.ok(raw[y * 450 * 4 + 3] < 2 && raw[(y * 450 + 449) * 4 + 3] < 2);
+      if (g === 1 && month === 8) renderedHeights.push(bottom - top);
       const warm = digest(cached);
       clearSprites();
       assert.equal(digest(render(seed, g, month, true)), warm);
       variants.add(warm);
     }
 assert.ok(variants.size >= 16);
+assert.ok(
+  Math.max(...renderedHeights) / Math.min(...renderedHeights) > 2,
+  'height variety reaches the rendered scene, not just metadata',
+);
 assert.ok(spriteStats().size <= 420 && spriteStats().boxes <= 600);
-console.log('ок: pine variants, seed/growth/seasons, uncached/cached bounds and cold/warm cache parity');
+// Existing planted trees retain identity and positions; no new save field is needed.
+const world = new World();
+const saved = serializeSave(world.toJSON());
+const identities = world.objects
+  .filter((o) => o.type === 'pine')
+  .map((o) => ({
+    id: o.id,
+    x: o.tx,
+    y: o.ty,
+    seed: o.seed,
+    geometry: pineGeometry(o.seed, 1),
+  }));
+assert.ok(identities.length > 0);
+const loaded = new World();
+assert.ok(loaded.fromJSON(JSON.parse(saved)));
+assert.deepEqual(
+  loaded.objects
+    .filter((o) => o.type === 'pine')
+    .map((o) => ({
+      id: o.id,
+      x: o.tx,
+      y: o.ty,
+      seed: o.seed,
+      geometry: pineGeometry(o.seed, 1),
+    })),
+  identities,
+);
+assert.equal(serializeSave(world.toJSON()), saved);
+console.log('ок: все формы, крайние размеры, рост/сезоны, границы, холодный/прогретый кэш и прежние сохранения');
 if (process.argv.includes('--preview')) {
   writeFileSync('preview-pine.png', cv.toBuffer('image/png'));
   if (existsSync('preview-pine-before.png')) {
-    const out = createCanvas(1120, 1030),
+    const out = createCanvas(1600, 1030),
       c = out.getContext('2d');
     c.fillStyle = '#eee9dc';
-    c.fillRect(0, 0, 1120, 1030);
+    c.fillRect(0, 0, 1600, 1030);
     c.fillStyle = '#414d3d';
     c.font = '25px sans-serif';
-    c.fillText('Было: округлые облака листвы', 24, 35);
+    c.fillText('Было: похожие ярусные силуэты', 24, 35);
     c.drawImage(await loadImage('preview-pine-before.png'), 0, 50);
     c.fillStyle = '#414d3d';
-    c.fillText('Теперь: открытые ветви, ярусы хвои и игольчатый край', 24, 552);
+    c.fillText('Теперь: пять форм и заметный разброс высоты', 24, 552);
     c.drawImage(cv, 0, 565);
     writeFileSync('preview-pine-comparison.png', out.toBuffer('image/png'));
   }
