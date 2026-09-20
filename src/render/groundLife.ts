@@ -1,8 +1,10 @@
 import { rainField, rainShade } from './afterRain';
 import { flowerYear, litterYear, winterYear } from '../world/annualEnvironment';
 import { crownCacheKey, crownCacheTime } from '../world/phenology';
+import { TREE_CROWNS, crownWidth } from '../world/canopy';
+import { scaleJitterOf } from './sprites/common';
 /** Sparse, persistent-looking ground ecology. Decoration only: never places objects or changes saves. */
-import { isoToScreen, tileDiamond } from '../core/iso';
+import { isoToScreen, tileDiamond, TILE_W } from '../core/iso';
 import { fbm, hash2, clamp01, smoothstep } from '../core/rng';
 import { ITEM_BY_ID, SMALL_HOUSE_IDS } from '../world/catalog';
 import type { World } from '../world/world';
@@ -23,6 +25,8 @@ export interface GroundPatch {
   damp: number;
   treeType?: string;
   treeSeed?: number;
+  /** Stable crown-footprint density; not a seasonal or accumulating particle count. */
+  litterDensity?: number;
 }
 interface HabitatObject {
   x: number;
@@ -31,6 +35,7 @@ interface HabitatObject {
   type: string;
   seed: number;
   radius: number;
+  litterRadius: number;
   tree: boolean;
   plantedFlower: boolean;
 }
@@ -65,6 +70,9 @@ export function groundLifeField(world: World): GroundField {
       level: world.at(Math.floor(x), Math.floor(y))?.level ?? 0,
       type: o.type,
       seed: o.seed,
+      litterRadius: TREE_CROWNS[o.type]
+        ? 0.28 + (crownWidth(TREE_CROWNS[o.type].crownW, o.seed) * scaleJitterOf(o.seed)) / (TILE_W * 0.7)
+        : 1.35,
       tree: item.kind === 'tree',
       plantedFlower: item.kind === 'flower',
       radius:
@@ -132,9 +140,11 @@ export function groundLifeField(world: World): GroundField {
         damp,
         treeType: nearest?.type,
         treeSeed: nearest?.seed,
+        litterDensity: nearest ? 0.35 + 0.65 * (1 - smoothstep(0.15, 1, nearestD / nearest.litterRadius)) : 0,
       };
-      // Litter belongs to a nearby tree; broad patches of empty ground remain between communities.
-      if (nearest && nearestD < 1.35 && roll > 0.22) {
+      // A fallen broad crown forms a connected skirt, not a few randomly omitted confetti tiles.
+      // Open ground beyond the actual parent footprint still stays sparse.
+      if (nearest && nearestD < nearest.litterRadius && (TREE_CROWNS[nearest.type] || roll > 0.22)) {
         add({ ...base, kind: nearest.type === 'pine' ? 'needles' : 'leaves' });
         if (damp > 0.6 && cover > 0.28 && hash2(x, y, 941) > 0.56)
           add({ ...base, x: px + 0.12, y: py + 0.05, seed: seed + 9, kind: 'mushrooms' });
@@ -172,6 +182,7 @@ export function groundLifeField(world: World): GroundField {
     const chosen = new Set([...field.patches].sort((a, b) => priority(a) - priority(b)).slice(0, 400));
     field.patches = field.patches.filter((p) => chosen.has(p));
   }
+  for (const stamp of old?.paint?.images.values() ?? []) stamp.canvas.width = stamp.canvas.height = 1;
   fields.set(world, field);
   return field;
 }
@@ -181,16 +192,118 @@ export function groundDetailAlpha(kind: GroundLifeKind, zoom: number): number {
   if (kind === 'grass') return clamp01((zoom - 0.36) / 0.24);
   return clamp01((zoom - 0.23) / 0.2);
 }
-function litterColor(p: GroundPatch, atm: Atmosphere): RGB {
-  if (p.treeType === 'pine') return { r: 131, g: 111, b: 65 };
-  const year = litterYear(p.treeType ?? 'maple', p.treeSeed ?? p.seed, atm.time.now);
-  const fresh =
-    p.treeType === 'ginkgo'
+/** Leaf colours age independently from spring petals: old maple litter must not turn pink. */
+export function litterColor(type: string, fresh: number): RGB {
+  if (type === 'pine') return { r: 131, g: 111, b: 65 };
+  const autumn =
+    type === 'ginkgo'
       ? { r: 214, g: 177, b: 66 }
-      : p.treeType === 'maple'
+      : type === 'maple'
         ? { r: 180, g: 96, b: 59 }
         : { r: 171, g: 139, b: 72 };
-  return mix(mix({ r: 133, g: 120, b: 76 }, fresh, year.fresh), { r: 224, g: 186, b: 183 }, year.petals);
+  return mix({ r: 119, g: 111, b: 94 }, autumn, fresh);
+}
+/** Dense but bounded ground marks, baked into the existing small surface stamps, never particles. */
+function paintLeafLitter(
+  ctx: Ctx,
+  p: GroundPatch,
+  zoom: number,
+  state: ReturnType<typeof litterYear>,
+  lit: (color: RGB) => RGB,
+): void {
+  if (state.amount <= 0.001) return;
+  const q = isoToScreen(p.x, p.y, p.level),
+    dense = !!TREE_CROWNS[p.treeType ?? ''],
+    density = dense ? (p.litterDensity ?? 1) : 1,
+    color = lit(litterColor(p.treeType ?? 'maple', state.fresh)),
+    coarse = groundDetailAlpha('soil', zoom);
+  // Broad, broken watercolour bed remains readable at phone zoom, beneath the individual leaves.
+  if (state.leaves > 0) {
+    ctx.fillStyle = css(color, coarse * state.leaves * (dense ? 0.28 : 0.11) * density);
+    // Keep the complete irregular edge inside the existing 100×56 stamp.
+    blobPath(ctx, q.x, q.y, dense ? 42 : 27, dense ? 18 : 11, p.seed, 0.15, 11);
+    ctx.fill();
+    if (dense) {
+      ctx.fillStyle = css(shade(color, 0.88), coarse * state.leaves * 0.18 * density);
+      for (let k = 0; k < 3; k++) {
+        const x = q.x + (hash2(k, p.seed, 1601) - 0.5) * 46,
+          y = q.y + (hash2(k, p.seed, 1607) - 0.5) * 17;
+        blobPath(ctx, x, y, 13 + k * 2, 5 + k, p.seed + k * 31, 0.4, 8);
+        ctx.fill();
+      }
+    }
+  }
+  const fine = groundDetailAlpha('leaves', zoom);
+  if (fine <= 0) return;
+  const colors = Array.from({ length: 5 }, (_, i) => css(shade(color, 0.79 + i * 0.09), 0.58 + state.fresh * 0.16));
+  const count = dense ? Math.round(84 * density) : 13;
+  for (let i = 0; i < count && state.leaves > 0; i++) {
+    const r = hash2(i, p.seed, 47),
+      present = smoothstep(r * 0.72, r * 0.72 + 0.28, state.leaves);
+    if (present <= 0.001) continue;
+    const x = q.x + (hash2(i, p.seed, 17) - 0.5) * (dense ? 78 : 34),
+      y = q.y + (hash2(i, p.seed, 23) - 0.5) * (dense ? 32 : 14);
+    ctx.save();
+    ctx.globalAlpha *= fine * present;
+    ctx.translate(x, y);
+    ctx.rotate(hash2(i, p.seed, 1613) * Math.PI * 2);
+    // Weathered leaves shrivel as well as fade, before disappearing completely in late May.
+    const size = (0.68 + state.fresh * 0.32) * (0.85 + hash2(i, p.seed, 1619) * 0.35);
+    ctx.scale(size, size * (0.72 + state.fresh * 0.18));
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.beginPath();
+    if (p.treeType === 'maple') {
+      ctx.moveTo(-3, 0);
+      ctx.lineTo(-1, -1);
+      ctx.lineTo(-1, -3);
+      ctx.lineTo(1, -1);
+      ctx.lineTo(3, -2);
+      ctx.lineTo(2, 0);
+      ctx.lineTo(4, 1);
+      ctx.lineTo(0, 2);
+    } else if (p.treeType === 'ginkgo') {
+      ctx.moveTo(-2, 1);
+      ctx.arc(0, 0, 3, -2.5, 0.6);
+      ctx.lineTo(-2, 1);
+    } else {
+      const narrow = p.treeType === 'bamboo' || p.treeType === 'willow';
+      ctx.ellipse(0, 0, narrow ? 4 : 3, narrow ? 0.8 : 1.4, 0, 0, Math.PI * 2);
+    }
+    ctx.closePath();
+    ctx.fill();
+    if (i % 3 === 0) {
+      ctx.strokeStyle = css(shade(color, 0.65), 0.35);
+      ctx.lineWidth = 0.45;
+      ctx.beginPath();
+      ctx.moveTo(-2, 0);
+      ctx.lineTo(2, 0);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // Fresh blossom fall is a separate sparse layer, never recolouring the old brown leaf carpet.
+  if (state.petals > 0) {
+    ctx.fillStyle = css(lit({ r: 232, g: 191, b: 196 }), 0.8);
+    for (let i = 0; i < 26; i++) {
+      const r = hash2(i, p.seed, 1621),
+        present = smoothstep(r * 0.7, r * 0.7 + 0.3, state.petals);
+      if (present <= 0.001) continue;
+      ctx.save();
+      ctx.globalAlpha *= fine * present;
+      ctx.beginPath();
+      ctx.ellipse(
+        q.x + (hash2(i, p.seed, 1627) - 0.5) * 70,
+        q.y + (hash2(i, p.seed, 1637) - 0.5) * 29,
+        2,
+        1.1,
+        r * 6.28,
+        0,
+        Math.PI * 2,
+      );
+      ctx.fill();
+      ctx.restore();
+    }
+  }
 }
 /** Communities keep their sites; only their appearance follows the current microclimate. */
 export function groundPatchClimate(p: GroundPatch, shade: number): { shade: number; damp: number } {
@@ -211,19 +324,17 @@ function paintPatch(ctx: Ctx, p: GroundPatch, atm: Atmosphere, zoom: number): vo
   const lit = (c: RGB) => shade(mix(c, atm.lightTint, atm.lightAmount), atm.exposure * (1 - p.shade * 0.06));
   const grass = lit(atm.palette.grassDeep),
     earth = lit(atm.palette.soil),
-    litter = lit(litterColor(p, atm));
+    litter = lit(litterColor(p.treeType ?? 'maple', litterState.fresh));
+  if (p.kind === 'leaves') {
+    paintLeafLitter(ctx, p, zoom, litterState, lit);
+    return;
+  }
   // Low-contrast humus under a tree reads as one organic area even when individual leaves are hidden.
-  if (['leaves', 'needles', 'roots', 'soil', 'moss', 'grass'].includes(p.kind)) {
+  if (['needles', 'roots', 'soil', 'moss', 'grass'].includes(p.kind)) {
     const col =
-      p.kind === 'moss'
-        ? lit(atm.palette.moss)
-        : p.kind === 'grass'
-          ? grass
-          : p.kind === 'leaves' || p.kind === 'needles'
-            ? litter
-            : earth;
+      p.kind === 'moss' ? lit(atm.palette.moss) : p.kind === 'grass' ? grass : p.kind === 'needles' ? litter : earth;
     const a = groundDetailAlpha('soil', zoom) * (p.kind === 'roots' ? 0.22 : p.kind === 'soil' ? 0.21 : 0.11);
-    ctx.fillStyle = css(col, a * (p.kind === 'leaves' ? litterState.amount : 1));
+    ctx.fillStyle = css(col, a);
     blobPath(ctx, q.x, q.y, 20 + hash2(p.seed, 1, 3) * 12, 8 + hash2(p.seed, 2, 3) * 5, p.seed, 0.48, 9);
     ctx.fill();
   }
@@ -244,47 +355,24 @@ function paintPatch(ctx: Ctx, p: GroundPatch, atm: Atmosphere, zoom: number): vo
     }
     return;
   }
-  const count =
-    p.kind === 'mushrooms' ? 3 : p.kind === 'flowers' ? 5 : p.kind === 'leaves' ? 13 : p.kind === 'needles' ? 10 : 7;
+  const count = p.kind === 'mushrooms' ? 3 : p.kind === 'flowers' ? 5 : p.kind === 'needles' ? 10 : 7;
   for (let i = 0; i < count; i++) {
     const x = q.x + (hash2(i, p.seed, 17) - 0.5) * 34,
       y = q.y + (hash2(i, p.seed, 23) - 0.5) * 14;
     const r = hash2(i, p.seed, 47);
-    if (p.kind === 'leaves' || p.kind === 'needles') {
+    if (p.kind === 'needles') {
       ctx.save();
-      if (p.kind === 'leaves') ctx.globalAlpha *= smoothstep(r * 0.72, r * 0.72 + 0.28, litterState.amount);
       ctx.translate(x, y);
       ctx.rotate(r * 6.28);
       ctx.fillStyle = css(litter, 0.68);
       ctx.strokeStyle = css(litter, 0.65);
       ctx.lineWidth = 0.8;
-      if (p.kind === 'needles') {
-        ctx.beginPath();
-        ctx.moveTo(-3, 0);
-        ctx.lineTo(3, 0);
-        ctx.moveTo(-2, 1);
-        ctx.lineTo(3, 0);
-        ctx.stroke();
-      } else {
-        ctx.beginPath();
-        if (p.treeType === 'maple') {
-          ctx.moveTo(-3, 0);
-          ctx.lineTo(-1, -1);
-          ctx.lineTo(-1, -3);
-          ctx.lineTo(1, -1);
-          ctx.lineTo(3, -2);
-          ctx.lineTo(2, 0);
-          ctx.lineTo(4, 1);
-          ctx.lineTo(0, 2);
-        } else if (p.treeType === 'ginkgo') {
-          ctx.moveTo(-2, 1);
-          ctx.arc(0, 0, 3, -2.5, 0.6);
-          ctx.lineTo(-2, 1);
-        } else
-          ctx.ellipse(0, 0, p.treeType === 'bamboo' ? 4 : 3, p.treeType === 'bamboo' ? 0.8 : 1.4, 0, 0, Math.PI * 2);
-        ctx.closePath();
-        ctx.fill();
-      }
+      ctx.beginPath();
+      ctx.moveTo(-3, 0);
+      ctx.lineTo(3, 0);
+      ctx.moveTo(-2, 1);
+      ctx.lineTo(3, 0);
+      ctx.stroke();
       ctx.restore();
     } else if (p.kind === 'mushrooms') {
       ctx.strokeStyle = css(lit({ r: 209, g: 195, b: 159 }), 0.9);

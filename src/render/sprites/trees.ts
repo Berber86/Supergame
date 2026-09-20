@@ -1,3 +1,4 @@
+import { TREE_CROWNS, crownWidth } from '../../world/canopy';
 import { flowerYear, winterYear } from '../../world/annualEnvironment';
 import { plantYear, leafGroup, crownAnchorBlend } from '../../world/phenology';
 import { crownSites } from '../crownGeometry';
@@ -157,7 +158,7 @@ function makeTree(style: TreeStyle): Drawer {
       state = plantYear(obj.type, obj.seed, atm.time.now);
     const scale = lerp(0.18, 1, Math.pow(g, 0.72)),
       h = style.height * scale;
-    const cw = style.crownW * scale * (0.8 + hash2(obj.seed, 5, 7) * 0.42);
+    const cw = crownWidth(style.crownW, obj.seed) * scale;
     const ch = style.crownH * scale * (0.8 + hash2(obj.seed, 6, 9) * 0.42);
     const sway = Math.sin(d.time * 0.0004 + obj.seed) * 3 * d.wind * scale;
     const leanJ = (hash2(obj.seed, 7, 11) - 0.5) * 0.32;
@@ -355,9 +356,7 @@ export const drawSakura = makeTree({
   crownAutumn: { r: 206, g: 150, b: 104 },
   blossom: { r: 252, g: 226, b: 234 },
   height: 96,
-  crownW: 98,
-  crownH: 74,
-  layers: 5,
+  ...TREE_CROWNS.sakura,
 });
 
 export const drawMaple = makeTree({
@@ -366,9 +365,7 @@ export const drawMaple = makeTree({
   crownSummer: { r: 110, g: 158, b: 96 },
   crownAutumn: { r: 208, g: 104, b: 66 },
   height: 92,
-  crownW: 96,
-  crownH: 72,
-  layers: 5,
+  ...TREE_CROWNS.maple,
 });
 
 export const drawGinkgo = makeTree({
@@ -377,9 +374,7 @@ export const drawGinkgo = makeTree({
   crownSummer: { r: 128, g: 172, b: 102 },
   crownAutumn: { r: 234, g: 194, b: 88 },
   height: 98,
-  crownW: 82,
-  crownH: 78,
-  layers: 4,
+  ...TREE_CROWNS.ginkgo,
 });
 
 export const drawWillow = makeTree({
@@ -388,9 +383,7 @@ export const drawWillow = makeTree({
   crownSummer: { r: 140, g: 178, b: 110 },
   crownAutumn: { r: 198, g: 186, b: 116 },
   height: 94,
-  crownW: 104,
-  crownH: 58,
-  layers: 4,
+  ...TREE_CROWNS.willow,
   droop: 46,
 });
 
@@ -767,9 +760,7 @@ export const drawPersimmon = makeTree({
   crownSummer: { r: 96, g: 138, b: 88 },
   crownAutumn: { r: 208, g: 138, b: 72 },
   height: 74,
-  crownW: 58,
-  crownH: 46,
-  layers: 3,
+  ...TREE_CROWNS.persimmon,
   fruit: { r: 234, g: 122, b: 44 },
 });
 

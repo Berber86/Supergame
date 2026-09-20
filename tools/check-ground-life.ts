@@ -22,7 +22,7 @@ Object.assign(globalThis, {
 Math.random = makeRng(3281);
 const day = buildAtmosphere(computeTime(new Date(2026, 3, 19, 12).getTime()));
 const night = buildAtmosphere(computeTime(new Date(2026, 3, 19, 23).getTime()));
-const autumn = buildAtmosphere(computeTime(new Date(2026, 8, 19, 12).getTime()));
+const autumn = buildAtmosphere(computeTime(new Date(2026, 10, 12, 12).getTime()));
 const winter = buildAtmosphere(computeTime(new Date(2026, 0, 15, 12).getTime()));
 const w = new World();
 w.objects = [];

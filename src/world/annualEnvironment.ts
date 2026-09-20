@@ -4,6 +4,7 @@
 import { annualPhase } from '../core/clock';
 import { hash2, smoothstep } from '../core/rng';
 import { plantYear } from './phenology';
+import { canopyLeafDensity } from './canopy';
 
 function pulse(q: number, a: number, b: number, c: number, d: number): number {
   return smoothstep(a, b, q) * (1 - smoothstep(c, d, q));
@@ -37,15 +38,29 @@ export function flowerYear(type: string, seed: number, now: number): { bloom: nu
       : pulse(p, water ? 0.25 : 0.19, water ? 0.4 : 0.29, 0.74, water ? 0.92 : 0.95);
   return { bloom, foliage };
 }
-export function litterYear(type: string, seed: number, now: number): { amount: number; fresh: number; petals: number } {
+export interface LitterYear {
+  /** Combined visual activity, retained for consumers of the whole ground layer. */
+  amount: number;
+  /** Last autumn's leaves; separate from fresh spring petals. */
+  leaves: number;
+  fresh: number;
+  petals: number;
+}
+export function litterYear(type: string, seed: number, now: number): LitterYear {
   const plant = plantYear(type, seed, now),
     q = plant.phase < 0.5 ? plant.phase + 1 : plant.phase;
-  const fall = plant.phase < 0.5 ? 1 : plant.leafFall;
+  // In autumn, the missing drawn leaf area becomes litter. In spring it belongs to
+  // last year's crown, not the new buds. No integration/history required for offline time.
+  const fall = plant.phase < 0.5 ? 1 : 1 - canopyLeafDensity(type, seed, now);
   const petals = type === 'sakura' ? pulse(plant.phase, 0.25, 0.32, 0.345, 0.435) : 0;
-  const old = 1 - smoothstep(1.01, 1.4, q);
+  // About half remains in March, a thin residue in April, gone by the end of May
+  // even for the latest seeded tree. Snow hides the winter stock; it doesn't erase it.
+  const old = 1 - smoothstep(0.97, 1.35, q);
+  const leaves = plant.evergreen ? 0.38 : fall * old;
   return {
-    amount: plant.evergreen ? 0.38 : Math.max(petals, fall * old),
-    fresh: plant.evergreen ? 0.25 : 1 - smoothstep(0.88, 1.16, q),
+    amount: Math.max(petals, leaves),
+    leaves,
+    fresh: plant.evergreen ? 0.25 : 1 - smoothstep(0.86, 1.1, q),
     petals,
   };
 }
