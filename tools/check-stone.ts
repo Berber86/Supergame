@@ -214,6 +214,30 @@ for (let y = 0; y < garden.size; y++)
       for (let j = i + 1; j < flags.length; j++)
         assert.ok(separate(flags[i], flags[j]), `non-overlapping paving at ${x},${y}`);
   }
+// A path is not a row of identical tokens: most treads cross the walk in the
+// ground plane, with a real spread of widths/aspects and more than one outline.
+const widths: number[] = [],
+  aspects: number[] = [],
+  vertices = new Set<number>();
+for (let x = 2; x <= 20; x++) w.at(x, 20)!.ground = 'stone';
+for (let x = 3; x < 20; x++)
+  for (const poly of stoneFlags(w, x, 20, w.at(x, 20)!)) {
+    assert.ok(poly.length >= 3 && poly.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)));
+    const across = poly.map((p) => (p.x - p.y * 2) * Math.SQRT1_2),
+      along = poly.map((p) => (p.x + p.y * 2) * Math.SQRT1_2);
+    const width = Math.max(...across) - Math.min(...across),
+      depth = Math.max(...along) - Math.min(...along);
+    widths.push(width);
+    aspects.push(width / depth);
+    vertices.add(poly.length);
+  }
+assert.ok(
+  aspects.filter((r) => r > 1.5).length > aspects.length * 0.6,
+  'most long axes cross the walk, not the screen',
+);
+assert.ok(Math.max(...widths) / Math.min(...widths) > 1.7, 'substantial size variety, not tiny jitter on one stamp');
+assert.ok(Math.min(...aspects) < 1.5 && Math.max(...aspects) > 3, 'rounded stones interrupt elongated treads');
+assert.ok(vertices.size >= 3, 'different broken/worn outlines');
 const loaded = new World();
 assert.ok(loaded.fromJSON(structuredClone(w.toJSON())));
 assert.deepEqual(stoneFlags(loaded, 8, 7, loaded.at(8, 7)!), layout);
@@ -279,4 +303,18 @@ if (process.argv.includes('--preview') && existsSync('preview-stone-before.png')
   sc.fillStyle = '#737363';
   sc.fillText('Настоящий рендер игры · сравнение при одной камере и освещении · фактура сохраняется в кэше', 36, 1015);
   writeFileSync('preview-stone-comparison.png', sheet.toBuffer('image/png'));
+}
+
+if (process.argv.includes('--preview') && existsSync('preview-path-regular.png')) {
+  const sheet = createCanvas(1440, 558),
+    sc = sheet.getContext('2d');
+  sc.fillStyle = '#ede7d6';
+  sc.fillRect(0, 0, 1440, 558);
+  sc.fillStyle = '#414c3c';
+  sc.font = '23px serif';
+  sc.fillText('Было: одинаковый шаг и форма', 24, 35);
+  sc.fillText('Теперь: неровная каменная «лестница»', 744, 35);
+  sc.drawImage(await loadImage('preview-path-regular.png'), 0, 54, 720, 489);
+  sc.drawImage(canvas, 720, 54, 720, 489);
+  writeFileSync('preview-path.png', sheet.toBuffer('image/png'));
 }

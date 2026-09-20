@@ -1,4 +1,4 @@
-import { paintFlag, stonePath } from './stone';
+import { paintFlag, stonePath, flagRound } from './stone';
 import { winterYear } from '../world/annualEnvironment';
 /** Отрисовка земли: непрерывные акварельные заливки, мягкие границы материалов, вода с берегом. */
 
@@ -602,7 +602,10 @@ function drawRoadRibbon(ctx: Ctx, world: World, x: number, y: number, t: Tile, a
 /** Same organic road geometry for residual moisture; appends to a batched nonzero-winding path. */
 export function wetRoadPath(ctx: Ctx, world: World, x: number, y: number, t: Tile): void {
   if (t.ground === 'stone') {
-    for (const points of stoneFlags(world, x, y, t)) stonePath(ctx, points, 0.06, true);
+    const organic = !t.indoor && !t.veranda && roadThin(world, x, y, t.ground);
+    stoneFlags(world, x, y, t).forEach((points, i) =>
+      stonePath(ctx, points, flagRound(x * 173 + y * 977 + i * 37, organic), true),
+    );
     return;
   }
   const sk = roadSkeleton(world, x, y, t);
@@ -937,7 +940,7 @@ function drawTileDetail(ctx: Ctx, world: World, x: number, y: number, t: Tile, a
         });
         stoneFlags(world, x, y, t).forEach((points, i) => {
           const seed = x * 173 + y * 977 + i * 37;
-          paintFlag(ctx, points, mineral, seed, 1.2);
+          paintFlag(ctx, points, mineral, seed, 1.2, !!sk && !t.indoor && !t.veranda);
           if (damp && !t.indoor && !t.veranda && hash2(seed, 3, 2707) > 0.48) {
             const a = points[0],
               b = points[1];
@@ -987,26 +990,117 @@ export function stoneFlags(world: World, x: number, y: number, t: Tile): { x: nu
   const sk = t.indoor || t.veranda ? null : roadSkeleton(world, x, y, t),
     seed = x * 173 + y * 977;
   if (sk) {
-    const flags: { x: number; y: number }[][] = [];
-    const slab = (cx: number, cy: number, rx: number, s: number) => {
-      const points = [];
-      for (let i = 0; i < 7; i++) {
-        const a = (i / 7) * Math.PI * 2,
-          r = 0.87 + hash2(s, i, 2647) * 0.13;
-        points.push({ x: cx + Math.cos(a) * rx * r, y: cy + Math.sin(a) * rx * 0.58 * r });
-      }
-      flags.push(points);
-    };
-    slab(sk.c.x, sk.c.y, TILE_W * 0.108, seed);
+    // Build in the ground plane, then project to isometric screen space. A long
+    // stone lies ACROSS the walk, not horizontally on the screen like a tile icon.
+    const direction = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+      Math.atan2((b.y - a.y) * 2, b.x - a.x);
+    const sites: { x: number; y: number; angle: number; seed: number }[] = [];
+    const first = sk.arms[Math.floor(hash2(seed, 1, 2711) * sk.arms.length)];
+    const axis = first ? direction(sk.c, first.m) : hash2(seed, 2, 2713) * Math.PI;
+    sites.push({
+      x: sk.c.x - Math.sin(axis) * (hash2(seed, 3, 2719) - 0.5) * 11,
+      y: sk.c.y + Math.cos(axis) * (hash2(seed, 3, 2719) - 0.5) * 5.5,
+      angle: axis,
+      seed,
+    });
     sk.arms.forEach((a, i) => {
       const length = Math.hypot(a.m.x - sk.c.x, a.m.y - sk.c.y),
         steps = Math.ceil(length / 33);
       for (let j = 1; j <= steps; j++) {
-        const u = j / (steps + 0.5);
-        slab(lerp(sk.c.x, a.m.x, u), lerp(sk.c.y, a.m.y, u), TILE_W * 0.09, seed + i * 13 + j * 31);
+        const s = seed + i * 47 + j * 131,
+          angle = direction(sk.c, a.m);
+        const u = (j + (hash2(s, 5, 2731) - 0.5) * 0.22) / (steps + 0.5);
+        const side = (hash2(s, 6, 2741) - 0.5) * 12;
+        sites.push({
+          x: lerp(sk.c.x, a.m.x, u) - Math.sin(angle) * side,
+          y: lerp(sk.c.y, a.m.y, u) + Math.cos(angle) * side * 0.5,
+          angle,
+          seed: s,
+        });
       }
     });
-    return flags;
+    // Different outlines: a broken slab, a worn oval, a broad wedge, a chipped
+    // rectangular tread. No shared seven-sided stamp and no repeating big/small beat.
+    const outlines = [
+      [
+        [-1, -0.42],
+        [-0.74, -0.92],
+        [0.28, -0.83],
+        [0.96, -0.33],
+        [0.84, 0.62],
+        [0.05, 1],
+        [-0.88, 0.56],
+      ],
+      [
+        [-1, -0.1],
+        [-0.82, -0.7],
+        [-0.22, -1],
+        [0.54, -0.87],
+        [1, -0.24],
+        [0.86, 0.56],
+        [0.2, 0.94],
+        [-0.57, 0.7],
+      ],
+      [
+        [-0.95, -0.63],
+        [0.43, -0.96],
+        [1, -0.12],
+        [0.48, 0.9],
+        [-0.8, 0.67],
+      ],
+      [
+        [-1, -0.5],
+        [-0.69, -0.91],
+        [0.77, -0.77],
+        [0.96, -0.42],
+        [0.84, 0.73],
+        [-0.51, 1],
+        [-0.95, 0.52],
+      ],
+    ];
+    return sites.map((site) => {
+      const r = hash2(site.seed, 7, 2749),
+        angle = site.angle + (hash2(site.seed, 8, 2753) - 0.5) * 0.65;
+      const tread = hash2(site.seed, 11, 2791) < 0.7;
+      const wide = tread ? 20 + r * 17 : 14 + r * 11,
+        deep = (tread ? 7 : 10) + hash2(site.seed, 9, 2767) * 5;
+      const nx = -Math.sin(angle),
+        ny = Math.cos(angle),
+        tx = Math.cos(angle),
+        ty = Math.sin(angle);
+      const shape = outlines[Math.floor(hash2(site.seed, 10, 2777) * outlines.length)];
+      let points = shape.map(([u, v], i) => {
+        const erosion = 0.9 + hash2(site.seed, i, 2789) * 0.13;
+        return {
+          x: site.x + nx * u * wide * erosion + tx * v * deep,
+          y: site.y + (ny * u * wide * erosion + ty * v * deep) * 0.5,
+        };
+      });
+      // At a bend or fork, fit a natural edge against the neighbouring tread;
+      // keep the rest of its outline, rather than shrinking all stones to beads.
+      for (const other of sites) {
+        if (other === site) continue;
+        const dx = other.x - site.x,
+          dy = (other.y - site.y) * 2,
+          distance = Math.hypot(dx, dy);
+        const boundary = (distance * distance - distance * 2) / 2;
+        const side = (p: { x: number; y: number }) => (p.x - site.x) * dx + (p.y - site.y) * 2 * dy - boundary;
+        const clipped: typeof points = [];
+        for (let i = 0; i < points.length; i++) {
+          const a = points[i],
+            b = points[(i + 1) % points.length],
+            da = side(a),
+            db = side(b);
+          if (da <= 0) clipped.push(a);
+          if (da < 0 !== db < 0) {
+            const t = da / (da - db);
+            clipped.push({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) });
+          }
+        }
+        points = clipped;
+      }
+      return points;
+    });
   }
   // Four fitted flags around an off-centre joint, inset to preserve earth-filled seams.
   const p = (u: number, v: number) => isoToScreen(x + u, y + v, t.level);

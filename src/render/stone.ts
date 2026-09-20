@@ -251,16 +251,24 @@ export function paintStone(
   ctx.restore();
 }
 /** Fitted paving: planar irregular polygon with a shallow, chipped front lip. */
-export function paintFlag(ctx: Ctx, points: StonePoint[], col: RGB, seed: number, depth = 2): void {
-  const k = 0.91 + hash2(seed, 1, 2609) * 0.17;
+export function flagRound(seed: number, organic = false): number {
+  return organic ? 0.14 + hash2(seed, 3, 2801) * 0.19 : 0.06;
+}
+export function paintFlag(ctx: Ctx, points: StonePoint[], col: RGB, seed: number, depth = 2, organic = false): void {
+  const k = organic ? 0.87 + hash2(seed, 1, 2609) * 0.26 : 0.91 + hash2(seed, 1, 2609) * 0.17;
+  const round = flagRound(seed, organic);
+  if (organic) {
+    const warmth = hash2(seed, 5, 2803);
+    col = { r: col.r * (0.97 + warmth * 0.09), g: col.g * (0.99 + warmth * 0.035), b: col.b * (1.035 - warmth * 0.15) };
+  }
   stonePath(
     ctx,
     points.map((p) => ({ x: p.x, y: p.y + depth })),
-    0.06,
+    round,
   );
   ctx.fillStyle = css(shade(col, 0.71), 0.95);
   ctx.fill();
-  stonePath(ctx, points, 0.06);
+  stonePath(ctx, points, round);
   ctx.fillStyle = css(shade(col, k));
   ctx.fill();
   ctx.save();

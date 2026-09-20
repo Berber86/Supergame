@@ -345,8 +345,10 @@ export function drawRainGround(
         mix(sky, { r: 225, g: 231, b: 229 }, 0.35),
         Math.pow(wet, 1.8) * 0.26 * Math.min(1, atm.exposure),
       );
-      ctx.moveTo(lerp(a.x, b.x, 0.18), lerp(a.y, b.y, 0.18) + 0.5);
-      ctx.lineTo(lerp(a.x, b.x, 0.7), lerp(a.y, b.y, 0.7) + 0.5);
+      const cx = points.reduce((s, p) => s + p.x, 0) / points.length,
+        cy = points.reduce((s, p) => s + p.y, 0) / points.length;
+      ctx.moveTo(lerp(lerp(a.x, b.x, 0.36), cx, 0.04), lerp(lerp(a.y, b.y, 0.36), cy, 0.04));
+      ctx.lineTo(lerp(lerp(a.x, b.x, 0.64), cx, 0.04), lerp(lerp(a.y, b.y, 0.64), cy, 0.04));
     } else {
       ctx.moveTo(p.x - 15, p.y - 5);
       ctx.lineTo(p.x + 8, p.y + (c.deck ? 6 : -5));
