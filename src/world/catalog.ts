@@ -1114,6 +1114,12 @@ export const MILESTONES: Record<string, Milestone> = {
     text: 'По соснам пронеслась белка. Где-то в дупле уже спрятаны орешки.',
     unlocks: 'Запасы',
   },
+  lizard_guest: {
+    id: 'lizard_guest',
+    title: 'Солнечный гость',
+    text: 'В сухом уголке сада поселилась проворная ящерица.',
+    unlocks: 'Жизнь среди камней',
+  },
   turtle_guest: {
     id: 'turtle_guest',
     title: 'Камень ожил',

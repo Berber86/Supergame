@@ -169,7 +169,7 @@ export class AnimalGuide {
       `${a.name} ${a.latin} ${a.group}`.toLocaleLowerCase('ru').includes(query),
     );
     this.list.replaceChildren();
-    for (const group of ['Звери', 'Птицы', 'У воды', 'Насекомые']) {
+    for (const group of ['Звери', 'Пресмыкающиеся', 'Птицы', 'У воды', 'Насекомые']) {
       const animals = matches.filter((a) => a.group === group);
       if (!animals.length) continue;
       const heading = document.createElement('h3');

@@ -25,6 +25,7 @@ export function ecologyYear(now: number) {
     fireflies: pulse(p, 0.36, 0.46, 0.62, 0.7),
     moths: pulse(p, 0.27, 0.4, 0.68, 0.82),
     turtle: pulse(p, 0.26, 0.4, 0.66, 0.81) * (1 - winter.ice),
+    lizard: pulse(p, 0.235, 0.35, 0.7, 0.84) * (1 - winter.ice),
     hedgehog: pulse(p, 0.23, 0.34, 0.74, 0.87),
   };
 }
@@ -42,6 +43,13 @@ export function wildlifeActivity(t: TimeState, weather?: WeatherState | null, wi
     fireflies: year.fireflies * flying * night,
     moths: year.moths * flying * night,
     frogs: year.frogs * (1 - snow),
+    lizard:
+      year.lizard *
+      day *
+      smoothstep(7.5, 9.5, t.dayT * 24) *
+      (1 - smoothstep(16.5, 18.5, t.dayT * 24)) *
+      (1 - smoothstep(0.08, 0.3, rain)) *
+      (1 - snow),
     turtle: year.turtle * day * (1 - smoothstep(0.15, 0.4, rain)) * (1 - snow),
     hedgehog: year.hedgehog * night * (1 - snow),
   };

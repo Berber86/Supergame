@@ -65,6 +65,9 @@ export interface Habitat {
   squirrelSpots: Vec[];
   /** Камни у воды, где греется черепаха. */
   turtleSpots: Vec[];
+  /** Dry warm stones / crevices: lizards never need a pond to visit. */
+  lizardSpots: (Vec & { lift: number })[];
+  lizardShelters: Vec[];
   /** Цветы и ульи — туда летят пчёлы. */
   beeSpots: (Vec & { type?: string; seed?: number })[];
   /** Ульи — зовут пчёл. */
@@ -105,6 +108,8 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
     owlSpots: [],
     squirrelSpots: [],
     turtleSpots: [],
+    lizardSpots: [],
+    lizardShelters: [],
     beeSpots: [],
     beehives: [],
     squirrelFeeders: [],
@@ -207,6 +212,15 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
         break;
       default:
         break;
+    }
+    const dry = world.at(Math.floor(c.x), Math.floor(c.y));
+    if (dry && !dry.water && !dry.indoor && !dry.veranda) {
+      const lifts: Record<string, number> = { rock_big: 29, rock_mid: 18, rock_trio: 12, step_stone: 3 };
+      if (lifts[o.type] !== undefined) {
+        h.lizardSpots.push({ ...c, lift: lifts[o.type] });
+        h.lizardShelters.push({ ...c });
+      }
+      if (item.kind === 'shrub' || o.type === 'fern' || o.type === 'grass_tuft') h.lizardShelters.push(c);
     }
     if (PERCH_TYPES.includes(o.type)) h.perches.push(c);
     if (item.kind === 'tree') {
@@ -385,6 +399,11 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
   return h;
 }
 
+/** Deep canopy isn't a basking platform; use light openings rather than every rock. */
+export function sunnyLizardSpots(h: Habitat): Habitat['lizardSpots'] {
+  return h.lizardSpots.filter((p) => !h.trees.some((t) => Math.hypot(t.x - p.x, t.y - p.y) < 1));
+}
+
 /** Сколько кого сад готов принять прямо сейчас. */
 export interface Invitation {
   frogs: number;
@@ -410,6 +429,7 @@ export interface Invitation {
   squirrel: number;
   /** Черепаха: греется на камне у воды днём. */
   turtle: number;
+  lizard: number;
   /** Пчёлы: цветы и ульи, тёплый день. */
   bees: number;
   /** Мотыльки: тёплая ночь у света и цветов, спутники светлячков. */
@@ -606,6 +626,10 @@ export function invitations(h: Habitat, t: TimeState, wx: WeatherState | null, w
     owl,
     squirrel,
     turtle,
+    lizard:
+      sunnyLizardSpots(h).length && h.lizardShelters.length && activity.lizard > 0.15
+        ? Math.min(3, Math.max(1, Math.floor(h.lizardSpots.length * activity.lizard)))
+        : 0,
     bees,
     moths,
   };

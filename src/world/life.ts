@@ -1,3 +1,4 @@
+import { Lizards } from './lizards';
 import { ecologyYear, wildlifeActivity, treeFallActivity } from './ecology';
 /**
  * Живность сада: коты, птицы, бабочки, карпы — и приглашённые жители воды.
@@ -211,6 +212,7 @@ function seasonSpecies(season: string, atFeeder: boolean): BirdSpecies {
 }
 
 export class Life {
+  lizards = new Lizards();
   cats: Cat[] = [];
   /** Коты-гости: ещё не предметы сада, но уже его жители. */
   guests: Cat[] = [];
@@ -238,6 +240,7 @@ export class Life {
     owl: 0,
     squirrel: 0,
     turtle: 0,
+    lizard: 0,
     bees: 0,
     moths: 0,
   };
@@ -262,6 +265,7 @@ export class Life {
 
   /** Забыть всю живность — при переходе в другую усадьбу. */
   reset(): void {
+    this.lizards.reset();
     this.cats = [];
     this.guests = [];
     this.birds = [];
@@ -392,6 +396,21 @@ export class Life {
     this.updateFlutters(world, t, dt, now, wx);
     this.updateFish(world, dt);
     this.updateFalling(world, t, dt);
+    const lizardThreats = [...threats];
+    const heron = this.wildlife.heron;
+    if (heron && heron.state !== 'fly-out') lizardThreats.push({ x: heron.tx, y: heron.ty, r: 2.5 });
+    for (const owl of this.wildlife.owls) lizardThreats.push({ x: owl.tx, y: owl.ty, r: 2.2 });
+    this.lizards.update(
+      world,
+      h,
+      inv,
+      t,
+      dt,
+      lizardThreats,
+      this.flutters,
+      this.wildlife.turtles.map((a) => ({ x: a.tx, y: a.ty })),
+    );
+
     const year = ecologyYear(t.now);
     this.retireDormant(this.flutters, year.butterflies, dt);
     this.retireDormant(this.residents.frogs, year.frogs, dt);
@@ -547,6 +566,21 @@ export class Life {
             c.timer = 6000 + rnd() * 4000;
           } else {
             c.timer = Math.max(c.timer, 1200);
+          }
+        }
+      }
+      // A visible skink draws a cat's attention; it gets a head start and escapes into a crevice.
+      if ((c.state === 'sit' || c.state === 'loaf' || c.state === 'walk') && c.greet <= 0) {
+        const lizard = this.lizards.agents.find(
+          (a) => a.alpha > 0.5 && a.state !== 'hide' && Math.hypot(a.tx - c.tx, a.ty - c.ty) < 3.5,
+        );
+        if (lizard) {
+          c.facing = lizard.tx - c.tx - (lizard.ty - c.ty) > 0 ? 1 : -1;
+          if (c.state !== 'walk' && rnd() < dt * 0.00012) {
+            c.state = 'walk';
+            c.target = { x: lizard.tx, y: lizard.ty };
+            c.timer = 2500;
+            this.note(world, 'cat_lizard', c.tx, c.ty);
           }
         }
       }

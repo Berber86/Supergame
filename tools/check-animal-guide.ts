@@ -15,9 +15,10 @@ import type { Turtle } from '../src/world/wildlife';
 import type { Deer } from '../src/world/wildlife';
 
 const day = buildAtmosphere(computeTime(new Date(2026, 5, 15, 13).getTime()));
-assert.equal(GUIDE_ANIMALS.length, 22);
+assert.equal(GUIDE_ANIMALS.length, 23);
 assert.equal(new Set(GUIDE_ANIMALS.map((a) => a.id)).size, GUIDE_ANIMALS.length);
 const expected: Record<string, string[]> = {
+  lizard: ['emerge', 'bask', 'look', 'walk', 'hunt', 'strike', 'flee', 'hide', 'leave'],
   deer: ['enter', 'walk', 'graze', 'look', 'leave'],
   turtle: ['enter', 'bask', 'walk', 'swim', 'hide', 'look', 'leave'],
   cat: ['sleep', 'sit', 'walk', 'wash', 'stretch', 'loaf'],
@@ -213,7 +214,7 @@ opener.focus();
 guide.setOpen(true);
 assert.ok(guide.isOpen);
 assert.equal(frames.size, 1);
-assert.equal(w.document.querySelectorAll('.ag-list button').length, 22);
+assert.equal(w.document.querySelectorAll('.ag-list button').length, GUIDE_ANIMALS.length);
 const search = w.document.querySelector<HTMLInputElement>('input[type=search]')!;
 search.value = 'череп';
 search.dispatchEvent(new w.Event('input'));
@@ -223,6 +224,15 @@ assert.equal(w.document.querySelector('.ag-page h2')!.textContent, 'Черепа
 assert.equal(w.document.querySelectorAll('[data-state]').length, 7);
 (w.document.querySelector('[data-state=swim]') as HTMLButtonElement).click();
 assert.equal(w.document.querySelector('[data-state=swim]')!.getAttribute('aria-pressed'), 'true');
+search.value = 'ящер';
+search.dispatchEvent(new w.Event('input'));
+assert.equal(w.document.querySelectorAll('.ag-list button').length, 1);
+(w.document.querySelector('.ag-list button') as HTMLButtonElement).click();
+assert.equal(w.document.querySelector('.ag-page h2')!.textContent, 'Ящерица');
+assert.equal(w.document.querySelectorAll('[data-state]').length, 9);
+assert.equal(w.document.querySelectorAll('.ag-variants option').length, 4);
+(w.document.querySelector('[data-state=flee]') as HTMLButtonElement).click();
+assert.equal(w.document.querySelector('[data-state=flee]')!.getAttribute('aria-pressed'), 'true');
 search.value = 'несуществующий';
 search.dispatchEvent(new w.Event('input'));
 assert.ok(w.document.querySelector('.ag-empty'));

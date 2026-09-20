@@ -1,3 +1,4 @@
+import { makeLizard } from '../src/world/lizards';
 /** Accelerated sampling of 120 real-clock hours, not a claim of a 120-hour browser run. */
 import assert from 'node:assert/strict';
 import { createCanvas } from '@napi-rs/canvas';
@@ -33,6 +34,7 @@ const groups = () => ({
   moths: life.wildlife.moths,
   turtle: life.wildlife.turtles,
   hedgehog: life.wildlife.hedgehogs,
+  lizard: life.lizards.agents,
 });
 // Exercise the long-stay cases, not only fast insects which already flew away correctly.
 for (const type of ['turtle', 'hedgehog', 'fireflies'] as const) life.wildlife.force(type, habitat, summer);
@@ -88,6 +90,8 @@ life.wildlife.moths.push({
   state: 'rest',
   flutter: 0,
 });
+assert.ok(habitat.lizardShelters.length);
+life.lizards.agents = [{ ...makeLizard(43, habitat.lizardShelters[0]), state: 'hide', timer: 1e7 }];
 for (const [key, agents] of Object.entries(groups())) assert.ok(agents.length, `populated ${key}`);
 const winterBird = {
   tx: 20,
@@ -194,5 +198,5 @@ clearSprites();
 assert.equal(spriteStats().pixels, 0);
 canvas.width = canvas.height = 1;
 console.log(
-  `ок: 120h sampled (10 seasonal years / 24 solar days), all eight dormant populations retire; year-round residents retained; ${baked} sprite bakes, peak ${((peakPixels * 4) / 1024 / 1024).toFixed(1)} MiB backing pixels, peak ${peakAgents} warm agents; empty cache capped at 600`,
+  `ок: 120h sampled (10 seasonal years / 24 solar days), all nine dormant populations retire; year-round residents retained; ${baked} sprite bakes, peak ${((peakPixels * 4) / 1024 / 1024).toFixed(1)} MiB backing pixels, peak ${peakAgents} warm agents; empty cache capped at 600`,
 );

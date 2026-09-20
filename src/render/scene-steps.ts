@@ -1,3 +1,4 @@
+import { drawLizard } from './lizard';
 import { ecologyYear, wildlifeActivity } from '../world/ecology';
 import { spriteSway } from './spriteCache';
 import { rainMaterial, drawSmallHouseDrips, type RainField } from './afterRain';
@@ -692,6 +693,22 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
         depth: (d.tx + d.ty) * 100 + lvl * 20 + 5,
         draw: () => drawDeer(ctx, d, p.x, p.y, atm, time),
       });
+    }
+    if (opts.zoom >= 0.42 && activity.lizard > 0.001) {
+      for (const a of opts.life.lizards.agents) {
+        if (a.alpha <= 0.005) continue;
+        const tile = world.at(Math.floor(a.tx), Math.floor(a.ty));
+        if (!tile || tile.water || tile.indoor || tile.veranda) continue;
+        const p = isoToScreen(a.tx, a.ty, tile.level);
+        list.push({
+          tx: a.tx,
+          ty: a.ty,
+          level: tile.level,
+          alt: a.lift,
+          depth: (a.tx + a.ty) * 100 + tile.level * 20 + 14,
+          draw: () => seasonalDraw(activity.lizard, () => drawLizard(ctx, a, p.x, p.y - a.lift, atm, time)),
+        });
+      }
     }
     // Ёжик и мышка — видны при приближении (0.5+), но и на общем плане как точки
     if (opts.zoom >= 0.42) {

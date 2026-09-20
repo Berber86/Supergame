@@ -1,3 +1,5 @@
+import { makeLizard, LIZARD_COATS, lizardSpeed, type Lizard } from '../world/lizards';
+import { drawLizard } from '../render/lizard';
 import { CAT_STRIDE, mouseSpeed, MOUSE_STRIDE } from '../world/creatureMotion';
 import { HERON_STRIKE_MS } from '../world/wildlifeMotion';
 /** The field guide uses isolated specimens, never live agents or the player's save. */
@@ -30,7 +32,7 @@ export interface GuideAnimal {
   id: string;
   name: string;
   latin: string;
-  group: 'Звери' | 'Птицы' | 'У воды' | 'Насекомые';
+  group: 'Пресмыкающиеся' | 'Звери' | 'Птицы' | 'У воды' | 'Насекомые';
   description: string;
   habitat: string;
   scale: number;
@@ -200,6 +202,47 @@ const deer = animal<Deer>(
     coat: { spots: variant < 2, antlers: variant === 0 || variant === 2, winter: variant === 3 },
   }),
   drawDeer,
+);
+
+const lizard = animal<Lizard>(
+  {
+    id: 'lizard',
+    name: 'Ящерица',
+    latin: 'Plestiodon · садовый сцинк',
+    group: 'Пресмыкающиеся',
+    scale: 8,
+    baseline: 0.6,
+    description:
+      'Стилизованный японский сцинк: гладкое вытянутое тело, четыре короткие лапы и гибкий хвост. Окрасы закреплены за особью; у молодой формы золотистые полосы и синий хвост.',
+    habitat:
+      'С конца весны до ранней осени, примерно с 8 до 18 часов в сухую погоду. Утром греется на камнях, в жаркий полдень ищет кусты. Охотится в траве, иногда ловит присевшую бабочку. Кот подкрадывается — ящерица замирает и удирает в щель; избегает птиц, цапли и совы. Уступает занятый камень черепахе и соседям. Ночью, под дождём и зимой уходит в укрытие.',
+    variants: LIZARD_COATS,
+  },
+  {
+    emerge: 'Выходит из укрытия',
+    bask: 'Греется и дышит',
+    look: 'Оглядывается',
+    walk: 'Перебегает',
+    hunt: 'Подкрадывается',
+    strike: 'Ловит насекомое',
+    flee: 'Удирает',
+    hide: 'Прячется',
+    leave: 'Уходит на покой',
+  },
+  (state, time, variant) => {
+    const p = phase(time, state),
+      a = makeLizard(40 + variant, { x: 0, y: 0 });
+    return {
+      ...a,
+      state,
+      alpha: state === 'hide' ? Math.max(0.03, 1 - p) : state === 'emerge' ? Math.min(1, p * 3) : 1,
+      gait: ((time * lizardSpeed(state)) / 0.22) * Math.PI * 2,
+      motion: lizardSpeed(state) ? 1 : 0,
+      timer: (1 - p) * animationDuration(state),
+      duration: animationDuration(state),
+    };
+  },
+  drawLizard,
 );
 
 const turtle = animal<Turtle>(
@@ -579,6 +622,7 @@ const bee = animal<Bee>(
 );
 
 export const GUIDE_ANIMALS: GuideAnimal[] = [
+  lizard,
   deer,
   turtle,
   cat,
