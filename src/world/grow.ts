@@ -1,3 +1,4 @@
+import { newGrowClock, type GrowClockState } from '../core/growClock';
 /**
  * Растущий сад: режим ограниченных действий.
  *
@@ -30,6 +31,8 @@ export interface GrowRect {
 }
 
 export interface GrowState {
+  /** Independent seasonal/solar clock. Missing in legacy saves until migrated. */
+  clock?: GrowClockState;
   rect: GrowRect;
   /** Зерно рождения дикой земли: лист один на всю усадьбу. */
   seed: number;
@@ -131,6 +134,7 @@ export function newGrowState(seed: number, now: number): GrowState {
   return {
     rect: { x: c, y: c, w: 2, h: 2 },
     seed,
+    clock: newGrowClock(now),
     // Первые три действия даром: иначе первые двадцать минут нечего делать
     bank: 3,
     tick: now,

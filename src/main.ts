@@ -138,7 +138,10 @@ function saveRoofPref(visible: boolean): void {
 }
 
 const life = new Life();
-const timeCtl = new TimeControl();
+const timeCtl = new TimeControl(
+  () => world.grow,
+  () => queueMicrotask(saveWorld),
+);
 const weatherSys = new WeatherSystem();
 const audio = new GardenAudio();
 const scene = new Scene(canvas);

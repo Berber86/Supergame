@@ -1,5 +1,6 @@
 /**
- * Время синхронизировано с часами и календарём игрока.
+ * Для вольного сада время синхронизировано с часами и календарём игрока.
+ * Растущий сад передаёт свой календарный момент и независимую солнечную фазу.
  * Сезоны — настоящие, как за окном: март — весна, июнь — лето,
  * сентябрь — осень, декабрь — зима. (Раньше сезон крутился за 3 реальных
  * дня, и сад мог встретить гостя снегом в сентябре.)
@@ -50,7 +51,7 @@ export const MONTH_NAMES = [
 const EPOCH_YEAR = 2024;
 
 export interface TimeState {
-  /** Абсолютное время мира в мс (обычно Date.now(), но может быть смещено «созерцанием»). */
+  /** Календарное время; в растущем саду солнечная фаза dayT независима. Абсолютное время мира в мс (обычно Date.now(), но может быть смещено «созерцанием»). */
   now: number;
   /** 0..1 внутри суток, 0 = полночь. */
   dayT: number;
@@ -70,10 +71,13 @@ export interface TimeState {
   label: string;
 }
 
-export function computeTime(now: number): TimeState {
+export function computeTime(now: number, solarPhase?: number): TimeState {
   const local = new Date(now);
   const dayT =
-    (local.getHours() * 3600 + local.getMinutes() * 60 + local.getSeconds() + local.getMilliseconds() / 1000) / 86400;
+    solarPhase !== undefined && Number.isFinite(solarPhase)
+      ? ((solarPhase % 1) + 1) % 1
+      : (local.getHours() * 3600 + local.getMinutes() * 60 + local.getSeconds() + local.getMilliseconds() / 1000) /
+        86400;
 
   // Сезон по календарному месяцу: мар–май весна, июн–авг лето, сен–ноя осень, дек–фев зима.
   const m = local.getMonth();
@@ -93,7 +97,7 @@ export function computeTime(now: number): TimeState {
   const year = Math.max(1, local.getFullYear() - EPOCH_YEAR + (m >= 2 ? 1 : 0));
 
   // Кривая света: восход ~5:30, закат ~19:30 (мягко плавает по сезонам).
-  const seasonShift = season === 'winter' ? 1.1 : season === 'summer' ? -0.9 : 0;
+  const seasonShift = 0.1 + Math.cos(annualPhase(now) * Math.PI * 2);
   const sunrise = (5.6 + seasonShift) / 24;
   const sunset = (19.4 - seasonShift) / 24;
 
@@ -105,8 +109,9 @@ export function computeTime(now: number): TimeState {
   const goldenSet = Math.exp(-Math.pow((dayT - (sunset - 0.03)) / 0.045, 2));
   const golden = clamp01(Math.max(goldenRise, goldenSet));
 
-  const hours = Math.floor(dayT * 24);
-  const minutes = Math.floor((dayT * 24 - hours) * 60);
+  const totalMinutes = Math.floor(dayT * 1440 + 1e-7) % 1440;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
 
   return {
     now,

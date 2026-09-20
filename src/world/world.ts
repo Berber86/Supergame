@@ -1182,7 +1182,9 @@ export class World {
         at: e.at,
         snap: i >= keepSnapFrom ? e.snap : undefined,
       })),
-      grow: this.grow ? { ...this.grow, rect: { ...this.grow.rect } } : null,
+      grow: this.grow
+        ? { ...this.grow, rect: { ...this.grow.rect }, ...(this.grow.clock ? { clock: { ...this.grow.clock } } : {}) }
+        : null,
       born: this.born,
       unlocked: [...this.unlocked],
       fresh: [...this.fresh],

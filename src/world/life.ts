@@ -253,6 +253,7 @@ export class Life {
   emitted: { x: number; y: number; kind: 'petal' | 'leaf'; seed: number }[] = [];
   /** Сид состава кои — чтобы рыбы переселялись за своими предметами. */
   private koiKey = '';
+  private dormantSince = new WeakMap<object, number>();
   /**
    * Потолок очереди опадающего. Когда сцена не рисуется (дзен-лист),
    * лепестки некому забирать — очередь не должна расти без предела.
@@ -269,6 +270,7 @@ export class Life {
     this.gusts = [];
     this.emitted = [];
     this.koiKey = '';
+    this.dormantSince = new WeakMap();
     this.habitat = null;
     this.habitatTimer = 0;
     this.guestTimer = 45_000;
@@ -390,6 +392,34 @@ export class Life {
     this.updateFlutters(world, t, dt, now, wx);
     this.updateFish(world, dt);
     this.updateFalling(world, t, dt);
+    const year = ecologyYear(t.now);
+    this.retireDormant(this.flutters, year.butterflies, dt);
+    this.retireDormant(this.residents.frogs, year.frogs, dt);
+    this.retireDormant(this.residents.dragonflies, year.dragonflies, dt);
+    this.retireDormant(this.wildlife.bees, year.bees, dt);
+    this.retireDormant(this.wildlife.fireflies, year.fireflies, dt);
+    this.retireDormant(this.wildlife.moths, year.moths, dt);
+    this.retireDormant(this.wildlife.turtles, year.turtle, dt);
+    this.retireDormant(this.wildlife.hedgehogs, year.hedgehog, dt);
+  }
+
+  /** Invisible out-of-season agents must not stay curled/hidden forever in simulation arrays.
+   * Normal behaviours get five seconds to depart; this is a bounded hibernation fallback.
+   * Year-round cats, fish and birds are deliberately not cleared.
+   */
+  private retireDormant<T extends object>(agents: T[], activity: number, dt: number): void {
+    for (let i = agents.length - 1; i >= 0; i--) {
+      const agent = agents[i];
+      if (activity > 0.001) {
+        this.dormantSince.delete(agent);
+        continue;
+      }
+      const elapsed = (this.dormantSince.get(agent) ?? 0) + dt;
+      if (elapsed >= 5000) {
+        agents.splice(i, 1);
+        this.dormantSince.delete(agent);
+      } else this.dormantSince.set(agent, elapsed);
+    }
   }
 
   /**

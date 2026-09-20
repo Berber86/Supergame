@@ -139,6 +139,8 @@ export function drawObjectShadow(d: DrawCtx): void {
     const pc = probe.getContext('2d');
     if (!pc) {
       shadowSpec.set(key, null);
+      if (shadowSpec.size > 600) shadowSpec.delete(shadowSpec.keys().next().value!);
+      probe.width = probe.height = 1;
       return;
     }
     probeShadowBegin();

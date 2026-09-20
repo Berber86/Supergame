@@ -272,10 +272,15 @@ export class DevPanel {
       b.classList.toggle('on', b.dataset.weather === wk);
     });
 
-    this.els.speedVal.textContent =
-      st.speed === 0 ? 'остановлен' : st.speed === 1 ? 'реальный' : `ускорен ×${st.speed}`;
+    this.els.speedVal.textContent = this.tc.growAutomatic
+      ? 'месяц — 1 ч · сутки — 5 ч'
+      : st.speed === 0
+        ? 'остановлен'
+        : st.speed === 1
+          ? 'реальный'
+          : `ускорен ×${st.speed}`;
     this.root.querySelectorAll<HTMLElement>('.dev-chip.speed').forEach((b) => {
-      b.classList.toggle('on', Number(b.dataset.speed) === st.speed);
+      b.classList.toggle('on', !this.tc.growAutomatic && Number(b.dataset.speed) === st.speed);
     });
 
     const grow = this.hooks.getGrow?.() ?? null;

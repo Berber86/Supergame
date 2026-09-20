@@ -84,8 +84,10 @@ export function cacheable(type: string, cost: number): boolean {
   return !LIVE.has(type) && hasDrawer(type) && cost > 120;
 }
 
-export function spriteStats(): { size: number; boxes: number; hits: number; misses: number } {
-  return { size: cache.size, boxes: boxes.size, hits, misses };
+export function spriteStats(): { size: number; boxes: number; hits: number; misses: number; pixels: number } {
+  let pixels = 0;
+  for (const entry of cache.values()) pixels += entry.canvas.width * entry.canvas.height;
+  return { size: cache.size, boxes: boxes.size, hits, misses, pixels };
 }
 
 function releaseSprite(entry: Entry): void {
@@ -262,6 +264,12 @@ export function drawCachedReflection(d: DrawCtx, compression = 0.82): void {
  */
 const boxes = new Map<string, { w: number; h: number; ax: number; ay: number } | null>();
 
+/** Failures/empty dormant sprites need the same bound as successful measurements. */
+function rememberBox(key: string, box: { w: number; h: number; ax: number; ay: number } | null): void {
+  boxes.set(key, box);
+  if (boxes.size > 600) boxes.delete(boxes.keys().next().value!);
+}
+
 let _probe: HTMLCanvasElement | null = null;
 function getProbe(S: number): CanvasRenderingContext2D | null {
   if (!_probe) {
@@ -294,7 +302,7 @@ function measureBox(
   const S = 380;
   const pc = getProbe(S);
   if (!pc) {
-    boxes.set(key, null);
+    rememberBox(key, null);
     return null;
   }
   // Опора строго в целых пикселях: спрайт потом кладётся по целым
@@ -319,7 +327,7 @@ function measureBox(
   } catch (e) {
     console.warn('[spriteCache] measure draw failed', obj.type, e);
     setSkipShadows(false);
-    boxes.set(key, null);
+    rememberBox(key, null);
     return null;
   }
   setSkipShadows(false);
@@ -329,7 +337,7 @@ function measureBox(
     img = (pc as any).getImageData(0, 0, S, S) as ImageData;
   } catch (e) {
     console.warn('[spriteCache] getImageData failed', e);
-    boxes.set(key, null);
+    rememberBox(key, null);
     return null;
   }
   const px = img.data;
@@ -351,7 +359,7 @@ function measureBox(
     if (top !== S) break;
   }
   if (top === S) {
-    boxes.set(key, null);
+    rememberBox(key, null);
     return null;
   }
   for (let y = S - 1; y >= top; y--) {
@@ -384,7 +392,7 @@ function measureBox(
   }
 
   if (bottom < 0 || right < 0) {
-    boxes.set(key, null);
+    rememberBox(key, null);
     return null;
   }
 
@@ -395,7 +403,7 @@ function measureBox(
   const w = Math.min(900, right - left + 1 + pad * 2);
   const h = Math.min(900, bottom - top + 1 + pad * 2);
   if (w <= 0 || h <= 0) {
-    boxes.set(key, null);
+    rememberBox(key, null);
     return null;
   }
   const box = {
@@ -404,11 +412,7 @@ function measureBox(
     ax: ox - left + pad,
     ay: oy - top + pad,
   };
-  boxes.set(key, box);
-  if (boxes.size > 600) {
-    const first = boxes.keys().next().value;
-    if (first) boxes.delete(first);
-  }
+  rememberBox(key, box);
   return box;
 }
 

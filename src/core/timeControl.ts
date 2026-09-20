@@ -1,6 +1,9 @@
+import { growTime, newGrowClock } from './growClock';
+import type { GrowState } from '../world/grow';
 /**
  * Управление временем для разработки и проверки.
- * По умолчанию сад живёт по часам игрока; здесь можно взять время под контроль:
+ * По умолчанию вольный сад живёт по часам игрока, растущий — по своему ритму.
+ * Здесь можно взять время под контроль:
  * выбрать час, месяц, сезон или запустить ускоренное течение суток.
  *
  * Это инструмент периода создания игры — в готовой версии панель просто скрыта.
@@ -28,13 +31,39 @@ export class TimeControl {
   /** Накопленное «искусственное» время, когда включено ускорение. */
   private simMs = 0;
 
-  constructor() {
+  private seenGrow: GrowState | null | undefined;
+  constructor(
+    private readonly growSource?: () => GrowState | null,
+    private readonly onGrowMigration?: () => void,
+  ) {
     this.load();
+    this.syncGrow();
+  }
+
+  private syncGrow(): GrowState | null {
+    const grow = this.growSource?.() ?? null;
+    if (grow !== this.seenGrow) {
+      // Opening a growing garden always starts its own rhythm, not a saved developer speed.
+      if (grow) {
+        this.state.active = false;
+        this.simMs = 0;
+      }
+      this.seenGrow = grow;
+    }
+    if (grow && !grow.clock) {
+      grow.clock = newGrowClock(Date.now());
+      this.onGrowMigration?.();
+    }
+    return grow;
+  }
+  get growAutomatic(): boolean {
+    return !!this.syncGrow() && !this.state.active;
   }
 
   /** Вычисляет момент времени: либо настоящий, либо сконструированный. */
   now(): number {
-    if (!this.state.active) return Date.now();
+    const grow = this.syncGrow();
+    if (!this.state.active) return grow ? growTime(grow.clock!, Date.now()).now : Date.now();
 
     const d = new Date(midMonthMs(this.state.monthIndex));
     // Задаём именно местный час, а не число миллисекунд после полуночи.
@@ -44,11 +73,13 @@ export class TimeControl {
   }
 
   compute(): TimeState {
-    return computeTime(this.now());
+    const grow = this.syncGrow();
+    return grow && !this.state.active ? growTime(grow.clock!, Date.now()) : computeTime(this.now());
   }
 
   /** Ход ускоренного времени. dt — реальные миллисекунды кадра. */
   tick(dt: number): void {
+    this.syncGrow();
     if (!this.state.active || !Number.isFinite(dt) || dt <= 0) return;
     // Без прежнего скачка назад через 40 дней: можно непрерывно пройти весь год.
     this.simMs += dt * this.state.speed;
@@ -56,7 +87,7 @@ export class TimeControl {
 
   enable(fromReal = true): void {
     if (fromReal && !this.state.active) {
-      const t = computeTime(Date.now());
+      const t = this.compute();
       this.state.hour = t.dayT * 24;
       this.state.seasonIndex = t.seasonIndex;
       this.state.monthIndex = new Date(t.now).getMonth();
