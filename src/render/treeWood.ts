@@ -140,6 +140,7 @@ export function branchSkeleton(
   sites: CrownSite[],
   scale: number,
   sway = 0,
+  branchBase?: number,
 ) {
   const groups = sites.filter((s) => s.index % 3 === 0);
   const ranked = [...groups].sort((a, b) => a.parentY - b.parentY);
@@ -153,7 +154,8 @@ export function branchSkeleton(
           : type === 'sakura'
             ? 0.82 - rank * 0.4
             : 0.85 - rank * 0.39;
-    const attachment = height + (hash2(s.index, seed, 2063) - 0.5) * 0.03;
+    const attachment =
+      (branchBase === undefined ? height : lerp(0.89, branchBase, rank)) + (hash2(s.index, seed, 2063) - 0.5) * 0.03;
     const a = woodPoint(trunk, attachment),
       d = { x: trunk.d.x + s.parentX + sway, y: trunk.d.y + s.parentY };
     const radius = Math.min(woodFrame(trunk, attachment).r * 0.88, (type === 'willow' ? 3.3 : 2.9) * scale);
@@ -162,15 +164,23 @@ export function branchSkeleton(
       a,
       d,
       radius,
-      0.95 * scale,
+      Math.min(0.95 * scale, radius * 0.72),
       sign * (type === 'sakura' ? 9 : type === 'willow' ? 12 : 5) * scale,
       (type === 'ginkgo' ? -8 : type === 'willow' ? -12 : -4) * scale,
     );
   });
   const twigs = sites.map((s) => {
-    const a = branches[Math.floor(s.index / 3)].d,
+    const parent = branches[Math.floor(s.index / 3)];
+    const a = parent.d,
       d = { x: trunk.d.x + s.x + sway, y: trunk.d.y + s.y };
-    return woodCurve(a, d, 0.97 * scale, 0.3 * scale, (d.x - a.x) * 0.09, -2 * scale);
+    return woodCurve(
+      a,
+      d,
+      Math.min(0.97 * scale, parent.r1),
+      Math.min(0.3 * scale, parent.r1 * 0.55),
+      (d.x - a.x) * 0.09,
+      -2 * scale,
+    );
   });
   return { branches, twigs };
 }

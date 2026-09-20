@@ -1,3 +1,4 @@
+import { companyBend } from '../world/animalCompany';
 /** Articulated silhouettes shared by the garden and the field guide. */
 import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
 import type { Deer, Turtle } from '../world/wildlife';
@@ -33,7 +34,7 @@ export function drawDeer(ctx: Ctx, d: Deer, x: number, y: number, atm: Atmospher
   const moving = ['enter', 'walk', 'leave'].includes(d.state);
   const running = d.state === 'leave';
   const gait = d.gait ?? time * (running ? 0.009 : 0.004);
-  const lower = d.headLower ?? (d.state === 'graze' ? 1 : 0);
+  const lower = (d.headLower ?? (d.state === 'graze' ? 1 : 0)) + companyBend(d.company) * 0.08;
   const breath = Math.sin(time * 0.0018 + d.seed);
   const bob = moving ? Math.cos(gait * 2) * (running ? 0.9 : 0.24) : breath * 0.12;
 

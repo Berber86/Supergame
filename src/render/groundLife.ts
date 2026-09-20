@@ -1,9 +1,10 @@
+import { LEAFY_BASE, treeProfile } from '../world/treeHabits';
 import { isFruitTree, fruitYear, orchardFlowerTint } from '../world/orchard';
 import { paintOrchardFruit } from './orchardFruit';
 import { rainField, rainShade } from './afterRain';
 import { flowerYear, litterYear, winterYear } from '../world/annualEnvironment';
 import { crownCacheKey, crownCacheTime } from '../world/phenology';
-import { TREE_CROWNS, crownWidth } from '../world/canopy';
+import { TREE_CROWNS, crownDimensions } from '../world/canopy';
 import { scaleJitterOf } from './sprites/common';
 /** Sparse, persistent-looking ground ecology. Decoration only: never places objects or changes saves. */
 import { isoToScreen, tileDiamond, TILE_W } from '../core/iso';
@@ -67,6 +68,7 @@ export function groundLifeField(world: World): GroundField {
     const item = ITEM_BY_ID.get(o.type)!,
       x = o.tx + item.w / 2,
       y = o.ty + item.h / 2;
+    const habit = treeProfile(o.type, o.seed);
     return {
       x,
       y,
@@ -74,17 +76,19 @@ export function groundLifeField(world: World): GroundField {
       type: o.type,
       seed: o.seed,
       litterRadius: TREE_CROWNS[o.type]
-        ? 0.28 + (crownWidth(TREE_CROWNS[o.type].crownW, o.seed) * scaleJitterOf(o.seed)) / (TILE_W * 0.7)
+        ? 0.28 + (crownDimensions(o.type, o.seed)!.crownW * scaleJitterOf(o.seed)) / (TILE_W * 0.7)
         : 1.35,
       tree: item.kind === 'tree',
       plantedFlower: item.kind === 'flower',
       radius:
         item.kind === 'tree'
-          ? o.type === 'willow'
-            ? 1.85
-            : o.type === 'bamboo'
-              ? 1.05
-              : 1.5
+          ? habit
+            ? ((habit.type === 'willow' ? 1.85 : 1.5) * habit.crownW) / LEAFY_BASE[habit.type].crownW
+            : o.type === 'willow'
+              ? 1.85
+              : o.type === 'bamboo'
+                ? 1.05
+                : 1.5
           : item.kind === 'shrub'
             ? 0.8
             : Math.max(item.w, item.h) * 0.65,

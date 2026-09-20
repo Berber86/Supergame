@@ -73,6 +73,8 @@ export class Scene {
   private dpr = 1;
   private quality: GraphicsQuality = 'high';
   motion = true;
+  /** Optional travelling gusts. Default rendering uses inexpensive scalar sway. */
+  smartWind = false;
   get graphicsQuality(): GraphicsQuality {
     return this.quality;
   }
@@ -301,9 +303,11 @@ export class Scene {
       console.warn('[scene] rain update', e);
     }
     const profile = this.graphicsProfile;
-    const windField: WindSampler = this.life
-      ? (x, y, lag) => this.life!.windVectorAt(x, y, lag)
-      : makeWindSampler(time);
+    const windField: WindSampler | undefined = this.smartWind
+      ? this.life
+        ? (x, y, lag) => this.life!.windVectorAt(x, y, lag)
+        : makeWindSampler(time)
+      : undefined;
     const ctx = this.ctx;
     const W = this.viewW;
     const H = this.viewH;

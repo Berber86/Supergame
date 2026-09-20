@@ -12,6 +12,8 @@ const KEY = 'usadba.view.v1';
 
 export interface ViewSettings {
   quality: GraphicsQuality;
+  /** Необязательное поле порывов с инерцией крон; без него — лёгкий простой ветер. */
+  smartWind: boolean;
   /** Лепестки, светлячки, бабочки, дождь. */
   particles: boolean;
   /** Плавные движения камеры и покачивания. */
@@ -24,6 +26,7 @@ export interface ViewSettings {
 
 const DEFAULTS: ViewSettings = {
   quality: 'balanced',
+  smartWind: false,
   particles: true,
   motion: true,
   contrast: false,
@@ -39,6 +42,7 @@ export function loadView(): ViewSettings {
     const obj = v as Record<string, unknown>;
     return {
       quality: isGraphicsQuality(obj.quality) ? obj.quality : DEFAULTS.quality,
+      smartWind: typeof obj.smartWind === 'boolean' ? obj.smartWind : DEFAULTS.smartWind,
       particles: typeof obj.particles === 'boolean' ? obj.particles : DEFAULTS.particles,
       motion: typeof obj.motion === 'boolean' ? obj.motion : DEFAULTS.motion,
       contrast: typeof obj.contrast === 'boolean' ? obj.contrast : DEFAULTS.contrast,
@@ -137,6 +141,12 @@ export class SettingsPanel {
         <div class="sp-label">Плавные движения<em>покачивание, наплывы камеры</em></div>
         <div class="sp-switch ${v.motion ? 'on' : ''}"><i></i></div>
       </div>
+      <button type="button" class="sp-row sp-toggle" data-act="smartWind" role="switch"
+        aria-label="Умный ветер" aria-checked="${v.smartWind}">
+        <span class="sp-label">Умный ветер<em>волны порывов и изгибы крон</em></span>
+        <span class="sp-switch ${v.smartWind ? 'on' : ''}" aria-hidden="true"><i></i></span>
+      </button>
+      <div class="sp-wind-hint">Без умного ветра остаётся лёгкое покачивание. По умолчанию выключен.</div>
       <div class="sp-row" data-act="contrast">
         <div class="sp-label">Чёткий интерфейс<em>плотнее фон под надписями</em></div>
         <div class="sp-switch ${v.contrast ? 'on' : ''}"><i></i></div>
@@ -172,7 +182,10 @@ export class SettingsPanel {
       row.addEventListener('click', () => {
         if (act === 'particles') this.set('particles', !v.particles);
         else if (act === 'motion') this.set('motion', !v.motion);
-        else if (act === 'contrast') this.set('contrast', !v.contrast);
+        else if (act === 'smartWind') {
+          this.set('smartWind', !v.smartWind);
+          this.root.querySelector<HTMLButtonElement>('[data-act="smartWind"]')?.focus();
+        } else if (act === 'contrast') this.set('contrast', !v.contrast);
         else if (act === 'sound') {
           this.sound?.toggle();
           this.render();

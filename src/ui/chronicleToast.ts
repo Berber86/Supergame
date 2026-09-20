@@ -21,6 +21,7 @@ const LAST_SHOWN_KEY = 'usadba:chronicle-toast-shown';
 export class ChronicleToast {
   private root: HTMLElement;
   private pending: Queued | null = null;
+  private paused = false;
   private nextAllowed = 0;
   private cooldownTimer = 0;
   private onVisibility = () => {
@@ -59,6 +60,12 @@ export class ChronicleToast {
     this.showNext();
   }
 
+  /** Delay new popups while a load-time notice needs the same small-screen space. */
+  setPaused(paused: boolean): void {
+    this.paused = paused;
+    this.showNext();
+  }
+
   /** Switching gardens drops old destinations, but never bypasses the quiet interval. */
   clear(): void {
     window.clearTimeout(this.timer);
@@ -77,7 +84,7 @@ export class ChronicleToast {
   private showNext(): void {
     window.clearTimeout(this.cooldownTimer);
     this.cooldownTimer = 0;
-    if (this.currentEl || !this.pending || document.hidden) return;
+    if (this.currentEl || !this.pending || document.hidden || this.paused) return;
     const remaining = this.nextAllowed - performance.now();
     if (remaining > 0) {
       this.cooldownTimer = window.setTimeout(() => this.showNext(), remaining);

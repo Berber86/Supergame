@@ -1,3 +1,4 @@
+import { companyBend } from '../world/animalCompany';
 /** Коты: один сочленённый силуэт, шесть поз и четыре устойчивых окраса. */
 import type { Cat, CatCoat } from '../world/life';
 import type { Atmosphere, RGB } from '../world/palette';
@@ -48,8 +49,9 @@ export function drawCat(ctx: Ctx, c: Cat, x: number, y: number, atm: Atmosphere,
   const backY = -10 + low * 4 + p.sit * 4 - p.stretch * 3;
   const chestX = 4 - p.sit * 3 + p.stretch * 5;
   const chestY = -10 - p.sit * 7 + low * 3.5 + p.stretch * 5;
-  const hx = 10 - p.sit * 7 - p.sleep * 1.5 + p.stretch * 4;
-  const hy = -15 - p.sit * 10 + p.sleep * 9.5 + p.stretch * 8;
+  const greeting = companyBend(c.company);
+  const hx = 10 - p.sit * 7 - p.sleep * 1.5 + p.stretch * 4 + greeting * 4.5;
+  const hy = -15 - p.sit * 10 + p.sleep * 9.5 + p.stretch * 8 + greeting * 1.7;
   const bob = Math.cos(p.gait * 2) * p.walk * 0.23;
   ctx.save();
   ctx.translate(x, y);
@@ -151,7 +153,7 @@ export function drawCat(ctx: Ctx, c: Cat, x: number, y: number, atm: Atmosphere,
   // Голова: скулы, отдельные уши, миндалевидные глаза и белые подусники.
   ctx.save();
   ctx.translate(hx, hy + bob);
-  ctx.rotate(p.sleep * 0.42 + p.stretch * 0.15 + p.wash * (0.18 + Math.sin(time * 0.006) * 0.06));
+  ctx.rotate(greeting * 0.12 + p.sleep * 0.42 + p.stretch * 0.15 + p.wash * (0.18 + Math.sin(time * 0.006) * 0.06));
   for (const side of [-1, 1]) {
     const ear = Math.sin(time * 0.0018 + side * 2 + c.seed) * 0.1;
     shape(ctx, fur, () => {

@@ -1,18 +1,9 @@
 import { pineGeometry } from '../pineGeometry';
-import {
-  trunkCurve,
-  woodPoint,
-  woodFrame,
-  woodCurve,
-  paintWood,
-  branchSkeleton,
-  type WoodCurve,
-  type WoodPoint,
-} from '../treeWood';
-import { TREE_CROWNS, crownWidth } from '../../world/canopy';
+import { treeProfile } from '../../world/treeHabits';
+import { treeGeometry } from '../treeGeometry';
+import { trunkCurve, woodPoint, woodFrame, woodCurve, paintWood, type WoodCurve, type WoodPoint } from '../treeWood';
 import { flowerYear, winterYear } from '../../world/annualEnvironment';
 import { plantYear, leafGroup, crownAnchorBlend } from '../../world/phenology';
-import { crownSites } from '../crownGeometry';
 /** Деревья и кусты: стволы, ветви, кроны — стартовый сад почти весь отсюда. */
 
 import { flowerOpenness, flowerHeadPath } from '../flowerCycle';
@@ -29,11 +20,6 @@ interface TreeStyle {
   crownSummer: RGB;
   crownAutumn: RGB;
   blossom?: RGB;
-  height: number;
-  crownW: number;
-  crownH: number;
-  layers: number;
-  droop?: number;
   fruit?: RGB;
 }
 
@@ -161,21 +147,16 @@ function makeTree(style: TreeStyle): Drawer {
   return (d) => {
     const { ctx, atm, g, obj } = d,
       state = plantYear(obj.type, obj.seed, atm.time.now);
-    const scale = lerp(0.18, 1, Math.pow(g, 0.72)),
-      h = style.height * scale;
-    const cw = crownWidth(style.crownW, obj.seed) * scale;
-    const ch = style.crownH * scale * (0.8 + hash2(obj.seed, 6, 9) * 0.42);
+    const profile = treeProfile(obj.type, obj.seed);
+    if (!profile) return;
+    const scale = lerp(0.18, 1, Math.pow(g, 0.72));
     const sway = Math.sin(d.time * 0.0004 + obj.seed) * 3 * d.wind * scale;
-    const leanJ = (hash2(obj.seed, 7, 11) - 0.5) * 0.32;
+    const { h, cw, w, trunk, sites, skeleton } = treeGeometry(profile, obj.seed, g, d.x, d.y, sway);
     const trunkCol = litc(style.trunk, atm),
       branchCol = shade(trunkCol, 0.92);
-    const trunkW = Math.max(2.2, 7 * scale * (0.9 + hash2(obj.seed, 12, 17) * 0.2));
-    // Permanent dimensions; shadowUnder applies the shared annual canopy density.
     shadowUnder(d, cw * 0.62, cw * 0.26, 0.9);
-    const { tx, ty, trunk } = drawTrunk(d, h, trunkW, trunkCol, sway * 0.35 + leanJ * h * 0.14);
-    const sites = crownSites(obj.seed, cw, ch, style.layers);
-    const point = (p: { x: number; y: number }) => ({ x: tx + p.x + sway, y: ty + p.y });
-    const skeleton = branchSkeleton(obj.type, obj.seed, trunk, sites, scale, sway);
+    drawTrunk(d, h, w, trunkCol, 0, trunk);
+    const point = (p: { x: number; y: number }) => ({ x: trunk.d.x + p.x + sway, y: trunk.d.y + p.y });
     // Junctions originate on the real curved bole at different heights, not in one broom-like knot.
     for (const branch of skeleton.branches) paintWood(ctx, branch, branchCol, obj.seed);
     for (const twig of skeleton.twigs) paintWood(ctx, twig, branchCol, obj.seed);
@@ -187,8 +168,8 @@ function makeTree(style: TreeStyle): Drawer {
           site.rx *
           (0.25 + hash2(site.index, obj.seed, 1471 + k) * 0.25) *
           (obj.type === 'ginkgo' ? 0.64 : 1);
-        const dy = style.droop
-          ? style.droop * scale * (0.55 + hash2(site.index, obj.seed, 1481 + k) * 0.35)
+        const dy = profile.droop
+          ? profile.droop * scale * (0.55 + hash2(site.index, obj.seed, 1481 + k) * 0.35)
           : -site.ry * (0.42 + hash2(site.index, obj.seed, 1481 + k) * 0.36) * (obj.type === 'sakura' ? 0.75 : 1);
         const start = woodPoint(skeleton.twigs[site.index], k === 0 ? 0.67 : 1);
         const tip = woodCurve(
@@ -197,7 +178,7 @@ function makeTree(style: TreeStyle): Drawer {
           0.38 * scale,
           0.09 * scale,
           dx * 0.18,
-          style.droop ? -12 * scale : 0,
+          profile.droop ? -12 * scale : 0,
         );
         paintWood(ctx, tip, branchCol, obj.seed);
       }
@@ -258,15 +239,21 @@ function makeTree(style: TreeStyle): Drawer {
           obj.seed + site.index * 17 + 7,
           { layers: 1, alpha: 0.26 * opacity, edge: 0, wobble: 0.3 },
         );
-        if (style.droop) {
+        if (profile.droop) {
           ctx.strokeStyle = css(main, 0.62 * opacity);
           ctx.lineWidth = 1.8 * scale * leaf.size;
-          const len = style.droop * scale * leaf.size * (0.55 + tint * 0.5),
-            wob = Math.sin(d.time * 0.0007 + site.index) * 4 * d.wind;
-          ctx.beginPath();
-          ctx.moveTo(p.x, p.y);
-          ctx.quadraticCurveTo(p.x + wob, p.y + len * 0.6, p.x + wob - 3, p.y + len);
-          ctx.stroke();
+          for (let strand = 0; strand < 3; strand++) {
+            const sx = p.x + (strand - 1) * rx * 0.55;
+            const len = Math.min(
+              d.y - p.y - 5 * scale,
+              profile.droop * scale * leaf.size * (0.64 + hash2(site.index, obj.seed, 3419 + strand) * 0.42),
+            );
+            const wob = Math.sin(d.time * 0.0007 + site.index) * 4 * d.wind;
+            ctx.beginPath();
+            ctx.moveTo(sx, p.y);
+            ctx.quadraticCurveTo(sx + wob, p.y + len * 0.6, sx + wob - 3 * scale, p.y + len);
+            ctx.stroke();
+          }
         }
       }
       // Sakura's pink crown is part of its canopy: blossom and leaf emergence overlap, not a season switch.
@@ -344,8 +331,6 @@ export const drawSakura = makeTree({
   crownSummer: { r: 138, g: 172, b: 116 },
   crownAutumn: { r: 206, g: 150, b: 104 },
   blossom: { r: 252, g: 226, b: 234 },
-  height: 96,
-  ...TREE_CROWNS.sakura,
 });
 
 export const drawMaple = makeTree({
@@ -353,8 +338,6 @@ export const drawMaple = makeTree({
   crownSpring: { r: 150, g: 186, b: 116 },
   crownSummer: { r: 110, g: 158, b: 96 },
   crownAutumn: { r: 208, g: 104, b: 66 },
-  height: 92,
-  ...TREE_CROWNS.maple,
 });
 
 export const drawGinkgo = makeTree({
@@ -362,8 +345,6 @@ export const drawGinkgo = makeTree({
   crownSpring: { r: 164, g: 196, b: 122 },
   crownSummer: { r: 128, g: 172, b: 102 },
   crownAutumn: { r: 234, g: 194, b: 88 },
-  height: 98,
-  ...TREE_CROWNS.ginkgo,
 });
 
 export const drawWillow = makeTree({
@@ -371,9 +352,6 @@ export const drawWillow = makeTree({
   crownSpring: { r: 172, g: 200, b: 130 },
   crownSummer: { r: 140, g: 178, b: 110 },
   crownAutumn: { r: 198, g: 186, b: 116 },
-  height: 94,
-  ...TREE_CROWNS.willow,
-  droop: 46,
 });
 
 /** Flattened sprays with broken needle fringes, never smooth leaf-cloud ellipses. */
@@ -777,8 +755,6 @@ export const drawPersimmon = makeTree({
   crownSpring: { r: 142, g: 174, b: 105 },
   crownSummer: { r: 96, g: 138, b: 88 },
   crownAutumn: { r: 208, g: 138, b: 72 },
-  height: 74,
-  ...TREE_CROWNS.persimmon,
   fruit: { r: 234, g: 122, b: 44 },
 });
 

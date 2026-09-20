@@ -1,206 +1,272 @@
-/**
- * Стартовая страница: свиток на стене тёмной комнаты.
- *
- * Дверь в сад, а не рекламный щит. На экране ничего не продаётся и ничего
- * не выбирается: лист рисовой бумаги, круг энсо, каллиграфия и одна строка
- * «войти в сад». Свет подчиняется настоящему часу игрока, поэтому сад
- * начинается ещё до входа — свиток висит то в ночной синеве, то в охре
- * заката, и это тот же час, что и в мире за ним.
- *
- * Холст рисует `startArt`, здесь — только DOM: место листа, слова, клавиши
- * и дверная ручка. Разделение позволяет проверить кисть оффлайн
- * (`tools/start-preview.ts`), не поднимая браузер.
- */
-
-import { SCROLL_TEXT, StartArt, StartFrame } from './startArt';
+/** The garden's front door. Only metadata and decorative paper are alive until a garden is chosen. */
+import { SCROLL_TEXT, StartArt, type StartFrame } from './startArt';
 import { APP_VERSION } from '../version';
+import type { GardenMeta, GardenCreateOptions } from '../world/gardens';
+import { PRESETS } from '../world/presets';
 
+export type StartGardenOptions = Pick<GardenCreateOptions, 'mode' | 'preset'>;
 export interface StartScreenOptions {
-  /** Час сада — свет на заставке живёт по тем же часам, что и мир. */
+  /** Wall-clock light, independent of any unopened garden's clock. */
   hour: () => number;
-  /** Игрок вошёл: клик одновременно разблокирует звук. */
+  gardens: readonly GardenMeta[];
+  activeId: string;
+  /** False keeps the chooser open; no fall-through to a different garden. */
+  onOpen: (id: string) => boolean;
+  onCreate: (name: string, options: StartGardenOptions) => boolean;
+  /** Called once, only after the selected garden is ready. Unlocks the app and audio. */
   onEnter: () => void;
-  /** Вторая дверь: растущий сад с ограниченным ресурсом действий. */
-  onGrow?: () => void;
-  /** Настройки вида: выключенные плавные движения гасят дыхание и пыль. */
   motion: boolean;
 }
 
-/** Сколько идёт вход: тушь ложится, знаки проявляются, лист отходит. */
+const CHOICES: { id: string; name: string; hint: string; options: StartGardenOptions }[] = [
+  {
+    id: 'classic',
+    name: 'Вольный сад',
+    hint: 'Усадьба, пруд и холм. Стройте свободно, без ожидания действий.',
+    options: { mode: 'free' },
+  },
+  {
+    id: 'grow',
+    name: 'Растущий сад',
+    hint: 'Начните с клочка земли 2×2. Новое действие — раз в 10 минут; сад постепенно выходит из тумана.',
+    options: { mode: 'grow' },
+  },
+  ...PRESETS.map((p) => ({ id: `preset:${p.id}`, name: p.name, hint: p.hint, options: { preset: p.id } })),
+];
 const ENTER_MS = 2100;
-/** Уход заставки — та же длительность, что в CSS у `.splash`. */
 const LEAVE_MS = 1400;
 
 export class StartScreen {
-  /** Корень заставки: он же место, куда приходят переменные листа. */
   readonly el: HTMLDivElement;
-  /** Слой слов поверх холста — название и вход. */
-  private scroll: HTMLElement;
-
+  private brand: HTMLElement;
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private art = new StartArt();
-  private opts: StartScreenOptions;
   private raf = 0;
   private born = performance.now();
+  private lastArtFrame = -Infinity;
   private needSize = true;
   private opened = false;
   private reduced: boolean;
 
-  constructor(opts: StartScreenOptions) {
-    this.opts = opts;
+  constructor(private opts: StartScreenOptions) {
     this.reduced = !opts.motion || matchMedia('(prefers-reduced-motion: reduce)').matches;
-
     this.el = document.createElement('div');
     this.el.className = 'splash';
-    this.el.setAttribute('role', 'presentation');
-
-    this.canvas = document.createElement('canvas');
-    this.canvas.className = 'splash-canvas';
-    this.canvas.setAttribute('aria-hidden', 'true');
-    this.el.appendChild(this.canvas);
+    this.el.setAttribute('role', 'main');
+    this.el.setAttribute('aria-label', 'Вход в усадьбу');
+    this.el.innerHTML = `
+      <div class="splash-brand">
+        <canvas class="splash-canvas" aria-hidden="true"></canvas>
+        <div class="splash-scroll">
+          <h1 class="splash-title">Усадьба Безмятежности</h1>
+          <p class="splash-caption">У каждого сада — свой ритм</p>
+        </div>
+      </div>
+      <div class="splash-door">
+        <header class="splash-mobile-heading"><span aria-hidden="true" class="splash-small-enso"></span><h1>Усадьба<br>Безмятежности</h1></header>
+        <section class="splash-chooser paper" aria-labelledby="splash-heading">
+          <p class="splash-eyebrow">ПОРОГ УСАДЬБЫ</p>
+          <h2 id="splash-heading">Выберите сад</h2>
+          <p class="splash-intro">Вернитесь в свою усадьбу или начните новую.</p>
+          <p class="splash-error" role="alert" hidden></p>
+          <div class="splash-existing">
+            <div class="splash-gardens" role="list" aria-label="Сохранённые сады"></div>
+            <p class="splash-empty" hidden>Здесь пока нет садов. Создайте первый — он останется ждать вас в этом браузере.</p>
+            <button class="splash-new" type="button"><span aria-hidden="true">+</span> Создать сад</button>
+          </div>
+          <form class="splash-create" hidden>
+            <button type="button" class="splash-back">← К списку садов</button>
+            <label>Название сада <span class="splash-optional">необязательно</span>
+              <input class="splash-name" name="name" maxlength="40" autocomplete="off" placeholder="Название подберём сами">
+            </label>
+            <label>С чего начать
+              <select class="splash-template" name="template" aria-describedby="splash-template-hint"></select>
+            </label>
+            <p id="splash-template-hint" class="splash-template-hint"></p>
+            <button class="splash-create-submit" type="submit">Создать и войти <span aria-hidden="true">→</span></button>
+          </form>
+          <footer class="splash-note"><span class="splash-idle-dot" aria-hidden="true"></span>Симуляция начнётся после входа.<br>Сады хранятся в этом браузере.</footer>
+        </section>
+      </div>`;
+    this.brand = this.el.querySelector('.splash-brand')!;
+    this.canvas = this.el.querySelector('.splash-canvas')!;
     this.ctx = this.canvas.getContext('2d')!;
 
-    // Слова живут в отдельном слое над холстом: браузер набирает текст
-    // лучше нас, а каллиграфия и печать остаются нарисованными.
-    const scroll = document.createElement('div');
-    scroll.className = 'splash-scroll';
-    scroll.innerHTML = `
-      <h1 class="splash-title">Усадьба Безмятежности</h1>
-      <button class="splash-enter" type="button">войти в сад</button>
-      <button class="splash-grow" type="button">растущий сад</button>`;
-    this.el.appendChild(scroll);
-    this.scroll = scroll;
-
+    const list = this.el.querySelector('.splash-gardens')!;
+    const gardens = [...opts.gardens].sort(
+      (a, b) => Number(b.id === opts.activeId) - Number(a.id === opts.activeId) || b.saved - a.saved,
+    );
+    for (const garden of gardens) {
+      const row = document.createElement('div');
+      row.setAttribute('role', 'listitem');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `splash-garden${garden.id === opts.activeId ? ' recent' : ''}`;
+      button.dataset.garden = garden.id;
+      button.innerHTML = `<span class="sg-info"><span class="sg-name"></span><span class="sg-meta"></span></span><span class="sg-open" aria-hidden="true">Войти →</span>`;
+      button.querySelector('.sg-name')!.textContent = garden.name;
+      const date = new Date(garden.saved).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+      button.querySelector('.sg-meta')!.textContent =
+        `${garden.id === opts.activeId ? 'Последний вход · ' : ''}${date} · ${garden.objects} предметов`;
+      button.addEventListener('click', () =>
+        this.enter(
+          () => opts.onOpen(garden.id),
+          'Не удалось открыть этот сад. Данные не перезаписаны; попробуйте выбрать другой сад.',
+        ),
+      );
+      row.appendChild(button);
+      list.appendChild(row);
+    }
+    this.el.querySelector<HTMLElement>('.splash-empty')!.hidden = gardens.length > 0;
+    this.el.querySelector('.splash-new')!.addEventListener('click', () => this.showCreate(true));
+    this.el.querySelector('.splash-back')!.addEventListener('click', () => this.showCreate(false));
+    const select = this.el.querySelector<HTMLSelectElement>('.splash-template')!;
+    for (const choice of CHOICES) {
+      const option = document.createElement('option');
+      option.value = choice.id;
+      option.textContent = choice.name;
+      select.appendChild(option);
+    }
+    const describe = () => {
+      this.el.querySelector('#splash-template-hint')!.textContent = CHOICES.find((c) => c.id === select.value)!.hint;
+    };
+    select.addEventListener('change', describe);
+    describe();
+    this.el.querySelector('form')!.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const choice = CHOICES.find((c) => c.id === select.value);
+      if (!choice) return;
+      const name = this.el.querySelector<HTMLInputElement>('.splash-name')!.value.trim().slice(0, 40);
+      this.enter(() => opts.onCreate(name, choice.options), 'Не удалось создать сад. Попробуйте ещё раз.');
+    });
+    // Native buttons/inputs handle Enter and Space themselves. Neither the backdrop nor Escape enters a garden.
+    this.el.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !this.el.querySelector<HTMLFormElement>('form')!.hidden) {
+        e.preventDefault();
+        this.showCreate(false);
+      }
+      e.stopPropagation();
+    });
     if (APP_VERSION) {
       const mark = document.createElement('div');
       mark.className = 'splash-mark';
       mark.textContent = `v${APP_VERSION}`;
       this.el.appendChild(mark);
     }
-
-    const enter = scroll.querySelector<HTMLButtonElement>('.splash-enter')!;
-    enter.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.enter();
-    });
-    const grow = scroll.querySelector<HTMLButtonElement>('.splash-grow')!;
-    grow.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (this.opened) return;
-      this.opts.onGrow?.();
-      this.enter(false);
-    });
-    this.el.addEventListener('click', () => this.enter());
-    window.addEventListener('keydown', this.onKey);
     window.addEventListener('resize', this.onResize);
     window.addEventListener('orientationchange', this.onResize);
     window.visualViewport?.addEventListener('resize', this.onResize);
     document.addEventListener('visibilitychange', this.onVisibility);
-
-    // Каллиграфия ждёт шрифт: пока его нет, знаки писались бы запасными.
-    // Сэмплом передаём сами иероглифы — иначе браузер привезёт только
-    // латинский подсет шрифта и знаки останутся чужими.
     const fonts = document.fonts;
     if (fonts?.load) {
       Promise.all([fonts.load('300 48px "Noto Serif JP"', '静かな庭'), fonts.load('600 32px "Noto Serif JP"', '静')])
         .then(() => fonts.ready)
-        .then(() => this.art.reloadFonts())
+        .then(() => {
+          this.art.reloadFonts();
+          this.requestFrame();
+        })
         .catch(() => {
-          /* шрифт не доехал — останутся запасные с засечками */
+          /* system serif fallback */
         });
     }
   }
 
-  /** Поставить заставку на экран и начать дышать. */
   mount(parent: HTMLElement): void {
     parent.appendChild(this.el);
-    this.needSize = true;
     this.born = performance.now();
-    this.raf = requestAnimationFrame(this.frame);
+    this.requestFrame();
+    this.el.querySelector<HTMLButtonElement>('.splash-garden, .splash-new')?.focus({ preventScroll: true });
   }
-
+  private showCreate(show: boolean): void {
+    if (this.opened) return;
+    this.el.querySelector<HTMLElement>('.splash-existing')!.hidden = show;
+    this.el.querySelector<HTMLFormElement>('form')!.hidden = !show;
+    this.el.querySelector('#splash-heading')!.textContent = show ? 'Новая усадьба' : 'Выберите сад';
+    this.el.querySelector('.splash-intro')!.textContent = show
+      ? 'Выберите, с чего начнётся ваш новый сад.'
+      : 'Вернитесь в свою усадьбу или начните новую.';
+    this.el.querySelector<HTMLElement>('.splash-error')!.hidden = true;
+    const focus = this.el.querySelector<HTMLElement>(show ? '.splash-name' : '.splash-new');
+    focus?.focus({ preventScroll: true });
+  }
+  private requestFrame(): void {
+    if (!this.raf && !this.opened && !document.hidden) this.raf = requestAnimationFrame(this.frame);
+  }
   private onResize = (): void => {
     this.needSize = true;
+    this.requestFrame();
   };
-
   private onVisibility = (): void => {
     if (document.hidden) {
       cancelAnimationFrame(this.raf);
       this.raf = 0;
-    } else if (!this.raf && !this.opened) {
-      this.raf = requestAnimationFrame(this.frame);
-    }
+    } else this.requestFrame();
   };
-
-  private onKey = (e: KeyboardEvent): void => {
-    if (this.opened) return;
-    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') {
-      e.preventDefault();
-      this.enter();
-    }
-  };
-
   private applySize(): void {
-    const w = Math.max(1, this.el.clientWidth || window.innerWidth);
-    const h = Math.max(1, this.el.clientHeight || window.innerHeight);
+    const w = Math.max(1, this.brand.clientWidth || window.innerWidth * 0.48);
+    const h = Math.max(1, this.brand.clientHeight || window.innerHeight * 0.88);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.art.resize(w, h, dpr);
     this.canvas.width = Math.round(w * dpr);
     this.canvas.height = Math.round(h * dpr);
-
-    // Слова встают по тому же месту листа, где лежит мазок: числа берутся
-    // из одной формулы с кистью, поэтому надпись не может «съехать».
-    const lay = this.art.layout;
-    const s = this.el.style;
-    s.setProperty('--sx', `${lay.x}px`);
-    s.setProperty('--sy', `${lay.y}px`);
-    s.setProperty('--sw', `${lay.w}px`);
-    s.setProperty('--sh', `${lay.h}px`);
-    s.setProperty('--title', String(SCROLL_TEXT.title));
-    s.setProperty('--enter', String(SCROLL_TEXT.enter));
+    const lay = this.art.layout,
+      style = this.brand.style;
+    style.setProperty('--sx', `${lay.x}px`);
+    style.setProperty('--sy', `${lay.y}px`);
+    style.setProperty('--sw', `${lay.w}px`);
+    style.setProperty('--sh', `${lay.h}px`);
+    style.setProperty('--title', String(SCROLL_TEXT.title));
+    style.setProperty('--enter', String(SCROLL_TEXT.enter));
   }
-
   private frame = (now: number): void => {
     this.raf = 0;
-    if (this.needSize) {
+    if (this.opened || document.hidden) return;
+    // The compact chooser has no hidden animated canvas. Desktop artwork is decorative, never a garden.
+    if (window.innerWidth < 900 || window.innerHeight < 540) return;
+    const resize = this.needSize;
+    if (resize) {
       this.needSize = false;
       this.applySize();
     }
-    if (document.hidden) return;
-
-    // Вход играем один раз: мягко, но не так долго, чтобы ждать.
-    const t = (now - this.born) / ENTER_MS;
-    const frame: StartFrame = {
-      time: now,
-      ink: this.reduced ? 1 : Math.min(1, Math.max(0, t)),
-      hour: this.opts.hour(),
-      motes: !this.reduced,
-      motion: !this.reduced,
-    };
-    this.art.render(this.ctx, frame);
-
-    // Пока лист не отдан саду — продолжаем дышать.
-    if (!this.opened) this.raf = requestAnimationFrame(this.frame);
+    if (resize || now - this.lastArtFrame >= 1000 / 30 || this.reduced) {
+      this.lastArtFrame = now;
+      const frame: StartFrame = {
+        time: now,
+        ink: this.reduced ? 1 : Math.min(1, Math.max(0, (now - this.born) / ENTER_MS)),
+        hour: this.opts.hour(),
+        motes: !this.reduced,
+        motion: !this.reduced,
+      };
+      this.art.render(this.ctx, frame);
+    }
+    if (!this.reduced) this.requestFrame();
   };
-
-  /** Игрок вошёл в сад. */
-  private enter(enter = true): void {
+  private enter(prepare: () => boolean, failure: string): void {
     if (this.opened) return;
+    let ready = false;
+    try {
+      ready = prepare();
+    } catch {
+      /* keep the chooser and its form available */
+    }
+    if (!ready) {
+      const error = this.el.querySelector<HTMLElement>('.splash-error')!;
+      error.textContent = failure;
+      error.hidden = false;
+      return;
+    }
     this.opened = true;
-    this.el.classList.add('hide');
-    this.scroll.setAttribute('aria-hidden', 'true');
-    window.removeEventListener('keydown', this.onKey);
+    cancelAnimationFrame(this.raf);
+    this.raf = 0;
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('orientationchange', this.onResize);
     window.visualViewport?.removeEventListener('resize', this.onResize);
     document.removeEventListener('visibilitychange', this.onVisibility);
-    // Сад за заставкой живой: пока лист поднимается, камера уже двигается.
-    if (enter) this.opts.onEnter();
-    setTimeout(() => {
-      cancelAnimationFrame(this.raf);
-      this.raf = 0;
-      this.el.remove();
-    }, LEAVE_MS);
+    this.el.classList.add('hide');
+    this.el.inert = true;
+    this.el.setAttribute('aria-hidden', 'true');
+    this.opts.onEnter();
+    setTimeout(() => this.el.remove(), this.reduced ? 0 : LEAVE_MS);
   }
 }

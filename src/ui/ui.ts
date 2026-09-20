@@ -69,6 +69,7 @@ export class UI {
   private els: Record<string, HTMLElement> = {};
   private toastTimer = 0;
   private iconSeason = '';
+  private startHints?: () => void;
   brushSize = 1;
   /** Назначается извне: переключение звука. */
 
@@ -165,7 +166,10 @@ export class UI {
       /* приватный режим — переживём */
     }
     if (rotateSeen) rotate.classList.add('dismissed');
-    else setTimeout(hideRotate, 9000);
+    else
+      this.startHints = () => {
+        setTimeout(hideRotate, 9000);
+      };
     layer.appendChild(rotate);
     this.els.rotate = rotate;
 
@@ -303,7 +307,7 @@ export class UI {
         <dt>1 2 3</dt><dd>Размер кисти земли</dd>
         <dt>Ctrl+Z</dt><dd>Отменить · с Shift — вернуть</dd>
         <dt>R</dt><dd>Убрать крышу — заглянуть в комнаты</dd>
-        <dt>S</dt><dd>Настройки: частицы, контраст, размер</dd>
+        <dt>S</dt><dd>Настройки: графика, ветер, движение, звук</dd>
         <dt>Shift+P</dt><dd>Формат снимка: широкий · квадрат · свиток</dd>
         <dt>U</dt><dd>Усадьбы: несколько садов, файл на диск</dd>
         <dt>Esc</dt><dd>Отложить инструмент</dd>`;
@@ -701,6 +705,9 @@ export class UI {
   /** Обновление часов и сезонной полоски. */
   private iconYear = '';
   tick(t: TimeState, atm: Atmosphere): void {
+    // No hint timer or "seen" write while the garden is still behind the chooser.
+    this.startHints?.();
+    this.startHints = undefined;
     const prevSeason = this.iconSeason;
     this.atm = atm;
     this.els.clock.textContent = t.label;

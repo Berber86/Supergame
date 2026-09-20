@@ -1,3 +1,4 @@
+import { LEAFY_BASE, treeProfile } from '../world/treeHabits';
 import { STONE_TYPES } from '../world/stone';
 import { liquidExposure } from '../world/ecology';
 /** Residual rain: receiver-aware drying, small temporary puddles and bounded roof drips. No save mutations. */
@@ -60,6 +61,7 @@ export function rainField(world: World): RainField {
     const i = ITEM_BY_ID.get(o.type)!,
       roof = SMALL_HOUSE_IDS.has(o.type),
       s = roof ? smallHouseSize(o.type) : { u: 0, v: 0 };
+    const habit = treeProfile(o.type, o.seed);
     return {
       index,
       level: world.at(Math.floor(o.tx + i.w / 2), Math.floor(o.ty + i.h / 2))?.level ?? 0,
@@ -68,7 +70,7 @@ export function rainField(world: World): RainField {
       roof,
       u: (o.rot % 2 ? s.v : s.u) / 2,
       v: (o.rot % 2 ? s.u : s.v) / 2,
-      r: i.kind === 'tree' ? 1.8 : 1,
+      r: i.kind === 'tree' ? 1.8 * (habit ? habit.crownW / LEAFY_BASE[habit.type].crownW : 1) : 1,
     };
   });
   const f: RainField = {

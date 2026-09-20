@@ -72,6 +72,7 @@ export function drawBird(ctx: Ctx, b: Bird, x: number, y: number, atm: Atmospher
   const foot = pigment({ r: 148, g: 120, b: 91 }, atm);
   const flying = b.state === 'fly-in' || b.state === 'fly-out';
   const bathing = b.state === 'bathe';
+  const drying = b.bathDry ?? 0;
   const peck = b.state === 'peck' || b.state === 'feed' || b.state === 'drink';
   const dip = peck ? Math.pow((Math.sin(time * (b.state === 'drink' ? 0.003 : 0.008) + b.seed) + 1) * 0.5, 3) : 0;
   const hop = b.state === 'hop' ? Math.max(0, Math.sin(b.hop)) : 0;
@@ -89,7 +90,7 @@ export function drawBird(ctx: Ctx, b: Bird, x: number, y: number, atm: Atmospher
   );
   ctx.translate(0, -b.alt - hop * 3);
   ctx.scale(b.facing * scale, scale);
-  ctx.rotate(bathing ? Math.sin(time * 0.022) * 0.12 : dip * 0.5);
+  ctx.rotate(bathing ? Math.sin(time * 0.022) * 0.12 : drying ? Math.sin(time * 0.035) * 0.08 * drying : dip * 0.5);
 
   ctx.save();
   ctx.translate(-4.8, -5.2);
@@ -112,7 +113,7 @@ export function drawBird(ctx: Ctx, b: Bird, x: number, y: number, atm: Atmospher
     ctx.translate(-1, -7.6);
     const flap = Math.sin(time * (bathing ? 0.025 : 0.018) + b.seed + (far ? -0.3 : 0));
     ctx.rotate((far ? 0.15 : -0.15) + flap * 0.75);
-    ctx.scale(far ? 0.78 : 1, bathing ? 0.6 : 1);
+    ctx.scale(far ? 0.78 : 1, bathing ? 0.6 : drying ? 0.32 + drying * 0.18 : 1);
     shape(ctx, far ? cap : back, () => {
       ctx.moveTo(2, 1);
       ctx.quadraticCurveTo(-3, -10, -11, -11.6);
@@ -134,7 +135,7 @@ export function drawBird(ctx: Ctx, b: Bird, x: number, y: number, atm: Atmospher
     });
     ctx.restore();
   };
-  if (flying || bathing) drawWing(true);
+  if (flying || bathing || drying > 0.1) drawWing(true);
   const footY = hop ? -1.4 : 0;
   for (const side of [-1, 1]) {
     const fx = side * 1.65;
@@ -159,7 +160,7 @@ export function drawBird(ctx: Ctx, b: Bird, x: number, y: number, atm: Atmospher
       ctx.moveTo(3.6, -7.3);
       ctx.quadraticCurveTo(3, -4.7, 0.3, -3);
     });
-  if (flying || bathing) drawWing(false);
+  if (flying || bathing || drying > 0.1) drawWing(false);
   else {
     oval(ctx, -1.9, -7.3, 4.5, 2.1, wingColor, -0.17);
     for (let i = 0; i < 4; i++)

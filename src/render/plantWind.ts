@@ -1,6 +1,7 @@
 /** Rigid lower bole, flexible crown. Two copies of the SAME cached pixels, not rebaked wind frames. */
 import { hash1, hash2 } from '../core/rng';
 import { pineGrowth, pineProfile } from '../world/pine';
+import { treeProfile } from '../world/treeHabits';
 import type { WindVector } from '../world/wind';
 import type { Ctx } from './paint';
 export interface PlantPose {
@@ -49,12 +50,17 @@ export function plantPose(
   // Pergola posts, rocks and architecture are deliberately excluded.
   if (!r) return undefined;
   const pine = type === 'pine' ? pineProfile(seed) : null;
-  const height = pine ? pine.height + 12 : r.height;
+  const tree = treeProfile(type, seed);
+  const height = pine ? pine.height + 12 : tree ? tree.height + tree.crownH * 0.8 : r.height;
   // A tall clear bole and a low spreading pine do not bend at the same world height.
-  const hinge = pine ? pine.height * (pine.form === 'umbrella' ? 0.55 : 0.4) : r.hinge;
+  const hinge = pine
+    ? pine.height * (pine.form === 'umbrella' ? 0.55 : 0.4)
+    : tree
+      ? tree.height * tree.branchBase
+      : r.hinge;
   const scale = pine
     ? pineGrowth(g) * (0.92 + hash1(seed, 29) * 0.12)
-    : 0.18 + 0.82 * Math.pow(Math.max(0, Math.min(1, g)), 0.72);
+    : (0.18 + 0.82 * Math.pow(Math.max(0, Math.min(1, g)), 0.72)) * (tree ? 0.92 + hash1(seed, 29) * 0.12 : 1);
   const spring = 1 + Math.sin(time * r.frequency + seed) * (type === 'bamboo' ? 0.19 : 0.08);
   const slope = wind.screenX * r.flex * (0.88 + hash2(seed, 1, 2237) * 0.24) * spring;
   return { slope: simple ? (slope * (height - hinge)) / height : slope, hinge: simple ? 0 : hinge * scale };
