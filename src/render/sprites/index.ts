@@ -282,7 +282,7 @@ export function objectHeight(type: string): number {
     case 'willow':
       return 120;
     case 'pine':
-      return 165;
+      return 245;
     case 'bamboo':
       return 100;
     case 'pavilion':

@@ -2,6 +2,7 @@
 import type { Cat, CatCoat } from '../world/life';
 import type { Atmosphere, RGB } from '../world/palette';
 import { catMotion } from '../world/creatureMotion';
+import { catTorso, traceCatTorso, catCoatPoint, catTabbyStripes } from './catCoat';
 import { Ctx, softShadow } from './paint';
 import { oval, shape, stroke, limb, pigment } from './animalBrush';
 
@@ -103,12 +104,8 @@ export function drawCat(ctx: Ctx, c: Cat, x: number, y: number, atm: Atmosphere,
   leg(false, true);
   leg(true, true);
 
-  const outline = () => {
-    ctx.moveTo(backX - 9, backY + 1);
-    ctx.bezierCurveTo(backX - 10, backY - 8, backX + 3, backY - 8, chestX, chestY - 5.7);
-    ctx.bezierCurveTo(chestX + 6, chestY - 4, chestX + 6.5, chestY + 4.3, chestX + 1, chestY + 5.2);
-    ctx.bezierCurveTo(backX + 2, backY + 5.7, backX - 7, backY + 7, backX - 9, backY + 1);
-  };
+  const torso = catTorso(backX, backY, chestX, chestY);
+  const outline = () => traceCatTorso(ctx, torso);
   ctx.save();
   ctx.translate(0, bob);
   ctx.scale(1, 1 + p.breath * 0.009);
@@ -117,22 +114,26 @@ export function drawCat(ctx: Ctx, c: Cat, x: number, y: number, atm: Atmosphere,
   ctx.beginPath();
   outline();
   ctx.clip();
-  oval(ctx, chestX + 3, chestY + 3.4, 4.8, 6.4, pale, 0.15);
+  // A subtle back glint follows the skin too; it must not slash across the tabby bands.
+  stroke(ctx, pigment(colors.pale, atm, 0.28), 0.5, () => {
+    for (let i = 0; i <= 12; i++) {
+      const point = catCoatPoint(torso, 0.16 + i * 0.055, 0.095);
+      if (i === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    }
+  });
   if (c.coat === 'tortoise') {
     oval(ctx, backX - 2, backY - 3, 4.2, 4.8, mark, -0.4);
     oval(ctx, chestX - 1.1, chestY - 3, 3.0, 3.6, mark, 0.5);
     oval(ctx, backX - 6.4, backY + 3, 2.5, 2.9, pale);
-  } else
-    for (let i = 0; i < 5; i++)
-      stroke(ctx, mark, 0.85, () => {
-        const xx = backX - 4 + i * 2.5;
-        ctx.moveTo(xx, backY - 6.5);
-        ctx.quadraticCurveTo(xx - 1.9, backY - 2, xx - 0.3, backY + 0.5);
+  } else {
+    for (const stripe of catTabbyStripes(torso, c.seed))
+      shape(ctx, mark, () => {
+        stripe.forEach((point, i) => (i ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y)));
       });
-  stroke(ctx, pigment(colors.pale, atm, 0.45), 0.55, () => {
-    ctx.moveTo(backX - 7, backY - 3);
-    ctx.quadraticCurveTo(backX - 3, backY - 7, backX + 3, backY - 4.6);
-  });
+  }
+  // The white bib is unmarked fur, not a pale undercoat crossed by dark stripes.
+  oval(ctx, chestX + 3, chestY + 3.4, 4.8, 6.4, pale, 0.15);
   ctx.restore();
   ctx.restore();
   if (p.sleep < 0.6) leg(false, false);
