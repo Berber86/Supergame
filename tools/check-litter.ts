@@ -19,7 +19,7 @@ Object.assign(globalThis, {
 });
 Math.random = makeRng(3829);
 const date = (month: number, day = 15, year = 2026) => new Date(year, month, day, 13).getTime();
-for (const type of Object.keys(TREE_CROWNS)) {
+for (const type of Object.keys(TREE_CROWNS).filter((type) => type !== 'yuzu')) {
   for (const seed of [17, 441, 9876]) {
     let previous = litterYear(type, seed, date(0, 1));
     for (let now = date(0, 1); now < date(0, 1, 2027); now += DAY_MS / 4) {
@@ -129,7 +129,7 @@ assert.ok(
   'moving a tree also releases retired ground stamps',
 );
 console.log(
-  `ок: five species / seeded continuous year, crown-to-ground leaf area, grey-brown spring thinning, zero old leaves by June, smaller tree footprint, ${autumn.ink} autumn ink pixels, LOD, six-year cache reuse and save purity`,
+  `ок: deciduous species / seeded continuous year, crown-to-ground leaf area, grey-brown spring thinning, zero old leaves by June, smaller tree footprint, ${autumn.ink} autumn ink pixels, LOD, six-year cache reuse and save purity`,
 );
 
 if (process.argv.includes('--preview')) {

@@ -1,3 +1,4 @@
+import { isFruitTree, orchardBloom } from './orchard';
 /** A stylised temperate garden, not local weather: shared continuous ecological year.
  * March is thaw/dormancy, April wakes gradually, summer has the busiest wildlife.
  * Calendar labels and artificial lamps never substitute for warmth or real flowers.
@@ -55,6 +56,7 @@ export function wildlifeActivity(t: TimeState, weather?: WeatherState | null, wi
   };
 }
 export function nectarBloom(type: string, seed: number, now: number): number {
+  if (isFruitTree(type)) return orchardBloom(type, seed, now);
   return type === 'sakura' || type === 'wisteria'
     ? plantYear(type, seed, now).bloom
     : flowerYear(type, seed, now).bloom;

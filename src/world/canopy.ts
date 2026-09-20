@@ -1,3 +1,4 @@
+import { ORCHARD_SHAPES } from './orchard';
 /** Shared annual optical cover. Branches survive leaf fall; blossoms also intercept light.
  * Derived from the same seeded leaf groups as the drawing, never from a season label.
  */
@@ -6,6 +7,7 @@ import { ANNUAL_CROWN_TYPES, crownCacheKey, crownCacheTime, leafGroup, plantYear
 
 /** Shared mature dimensions: the litter footprint must follow the actual tree, not a fixed tile radius. */
 export const TREE_CROWNS: Record<string, { crownW: number; crownH: number; layers: number }> = {
+  ...ORCHARD_SHAPES,
   sakura: { crownW: 98, crownH: 74, layers: 5 },
   maple: { crownW: 96, crownH: 72, layers: 5 },
   ginkgo: { crownW: 82, crownH: 78, layers: 4 },

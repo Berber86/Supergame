@@ -1,3 +1,4 @@
+import { drawFruitFall } from './fruitFall';
 import { drawLizard } from './lizard';
 import { ecologyYear, wildlifeActivity } from '../world/ecology';
 import { spriteSway } from './spriteCache';
@@ -531,6 +532,8 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
             );
             if (opts.particles && !isMoving)
               drawSmallHouseDrips({ ctx, x: p.x, y: p.y, atm, g, obj: o, time, wind, alpha: 1 }, opts.rainWeather);
+            if (opts.particles && !isMoving)
+              drawFruitFall({ ctx, x: p.x, y: p.y, atm, g, obj: o, time, wind, alpha: 1 }, world);
             return;
           }
         }
@@ -553,6 +556,8 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
         );
         if (opts.particles && !isMoving)
           drawSmallHouseDrips({ ctx, x: p.x, y: p.y, atm, g, obj: o, time, wind, alpha: 1 }, opts.rainWeather);
+        if (opts.particles && !isMoving)
+          drawFruitFall({ ctx, x: p.x, y: p.y, atm, g, obj: o, time, wind, alpha: 1 }, world);
       },
     });
   }

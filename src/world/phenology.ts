@@ -1,4 +1,5 @@
 /** Annual plant development. Pure, continuous curves; no saved growth state, no month sprites. */
+import { isFruitTree, orchardBloom } from './orchard';
 import { annualPhase } from '../core/clock';
 import { clamp01, hash2, smoothstep } from '../core/rng';
 
@@ -22,6 +23,9 @@ interface Profile {
   fall: [number, number];
 }
 const PROFILES: Record<string, Profile> = {
+  ume: { bud: [0.025, 0.09], out: [0.185, 0.29], mature: [0.25, 0.4], color: [0.63, 0.78], fall: [0.745, 0.89] },
+  nashi: { bud: [0.12, 0.21], out: [0.21, 0.32], mature: [0.28, 0.45], color: [0.66, 0.8], fall: [0.78, 0.915] },
+  peach: { bud: [0.095, 0.17], out: [0.19, 0.31], mature: [0.26, 0.43], color: [0.62, 0.78], fall: [0.75, 0.89] },
   maple: { bud: [0.075, 0.185], out: [0.12, 0.275], mature: [0.2, 0.44], color: [0.6, 0.78], fall: [0.745, 0.88] },
   sakura: { bud: [0.08, 0.21], out: [0.235, 0.365], mature: [0.28, 0.46], color: [0.6, 0.795], fall: [0.74, 0.885] },
   ginkgo: { bud: [0.115, 0.225], out: [0.15, 0.305], mature: [0.235, 0.46], color: [0.675, 0.79], fall: [0.77, 0.875] },
@@ -29,7 +33,7 @@ const PROFILES: Record<string, Profile> = {
   persimmon: { bud: [0.12, 0.23], out: [0.17, 0.32], mature: [0.25, 0.46], color: [0.625, 0.8], fall: [0.765, 0.915] },
   wisteria: { bud: [0.09, 0.205], out: [0.155, 0.3], mature: [0.25, 0.45], color: [0.655, 0.81], fall: [0.76, 0.89] },
 };
-const EVERGREEN = new Set(['pine', 'bamboo', 'hedge', 'azalea', 'camellia']);
+const EVERGREEN = new Set(['pine', 'bamboo', 'hedge', 'azalea', 'camellia', 'yuzu']);
 export const ANNUAL_CROWN_TYPES = new Set([...Object.keys(PROFILES), ...EVERGREEN]);
 export function plantYear(type: string, seed: number, now: number): PlantYear {
   const offset = ((hash2(seed, 71, 1301) - 0.5) * 12) / 365; // fixed ±six-day individuality, not random every spring
@@ -41,8 +45,9 @@ export function plantYear(type: string, seed: number, now: number): PlantYear {
   const leafFall = evergreen ? 0 : smoothstep(...p.fall, phase);
   const maturity = evergreen ? 1 : smoothstep(...p.mature, phase);
   const bud = smoothstep(...p.bud, phase) * (1 - smoothstep(p.out[0], p.out[1] + 0.025, phase));
-  const bloom =
-    type === 'sakura'
+  const bloom = isFruitTree(type)
+    ? orchardBloom(type, seed, now)
+    : type === 'sakura'
       ? smoothstep(0.19, 0.245, phase) * (1 - smoothstep(0.265, 0.36, phase))
       : type === 'wisteria'
         ? smoothstep(0.17, 0.265, phase) * (1 - smoothstep(0.31, 0.43, phase))

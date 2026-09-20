@@ -963,7 +963,9 @@ export class Life {
           slot,
         });
       } else if (groundBirds < 4) {
-        const spot = randomWalkable(world);
+        const fruit =
+          h.fruitSpots.length && rnd() < 0.75 ? h.fruitSpots[Math.floor(rnd() * h.fruitSpots.length)] : null;
+        const spot = fruit ?? randomWalkable(world);
         if (spot) {
           const fromLeft = rnd() > 0.5;
           this.birds.push({
@@ -977,7 +979,7 @@ export class Life {
             alt: 90 + rnd() * 50,
             hop: 0,
             scale: 0.85 + rnd() * 0.35,
-            species: seasonSpecies(t.season, false),
+            species: fruit ? 'sparrow' : seasonSpecies(t.season, false),
             place: 'ground',
             slot: 0,
           });

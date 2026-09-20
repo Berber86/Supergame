@@ -110,7 +110,15 @@ for (const type of FLOWERING_TYPES) {
   clearSprites();
   reset();
   const obj = { id: 1, type, tx: 0, ty: 0, rot: 0, seed: 441, planted: 0 };
-  const bloomDay = type === 'lotus' ? buildAtmosphere(computeTime(new Date(2026, 6, 15, 12).getTime())) : day;
+  const bloomDate: Record<string, [number, number]> = {
+    lotus: [6, 15],
+    ume: [1, 25],
+    nashi: [3, 20],
+    peach: [3, 1],
+    yuzu: [4, 25],
+  };
+  const choice = bloomDate[type];
+  const bloomDay = choice ? buildAtmosphere(computeTime(new Date(2026, choice[0], choice[1], 12).getTime())) : day;
   const bloomNight = { ...bloomDay, time: computeTime(new Date(new Date(bloomDay.time.now).setHours(23)).getTime()) };
   const d = { ctx: dc, x: 600, y: 420, atm: bloomDay, g: 1, obj, time: 1000, wind: 0, alpha: 1 };
   assert.notEqual(flowerCycleKey(type, day), flowerCycleKey(type, brightNight));
@@ -214,15 +222,27 @@ if (process.argv.includes('--preview')) {
     writeFileSync(`preview-ground-${name}.png`, cv.toBuffer('image/png'));
   }
   // Identical daylight palette makes closed/open corollas readable at a glance.
-  const cv = createCanvas(1200, 580),
+  const cv = createCanvas(1900, 580),
     cx = cv.getContext('2d');
   cx.fillStyle = '#eee9da';
-  cx.fillRect(0, 0, 1200, 580);
+  cx.fillRect(0, 0, 1900, 580);
   cx.fillStyle = '#504f43';
   cx.font = '19px sans-serif';
   cx.fillText('День: раскрытые цветы', 24, 30);
   cx.fillText('Ночь: бутоны — цвет оставлен дневным для сравнения формы', 24, 325);
-  const names = ['Ландыши', 'Ирисы', 'Лотос', 'Сакура', 'Азалия', 'Глициния', 'Камелия'];
+  const names = [
+    'Умэ',
+    'Наши',
+    'Персик',
+    'Юдзу',
+    'Ландыши',
+    'Ирисы',
+    'Лотос',
+    'Сакура',
+    'Азалия',
+    'Глициния',
+    'Камелия',
+  ];
   [...FLOWERING_TYPES].forEach((type, i) => {
     for (const [row, atm] of [day, brightNight].entries())
       drawObject({

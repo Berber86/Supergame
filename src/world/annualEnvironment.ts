@@ -1,3 +1,4 @@
+import { isFruitTree, orchardPetals } from './orchard';
 /** Second annual stage: independent flowering, litter, snow and freeze/thaw curves.
  * Calendar-derived, not saved simulation state: scrubbing time never changes a garden save.
  */
@@ -52,7 +53,11 @@ export function litterYear(type: string, seed: number, now: number): LitterYear 
   // In autumn, the missing drawn leaf area becomes litter. In spring it belongs to
   // last year's crown, not the new buds. No integration/history required for offline time.
   const fall = plant.phase < 0.5 ? 1 : 1 - canopyLeafDensity(type, seed, now);
-  const petals = type === 'sakura' ? pulse(plant.phase, 0.25, 0.32, 0.345, 0.435) : 0;
+  const petals = isFruitTree(type)
+    ? orchardPetals(type, seed, now)
+    : type === 'sakura'
+      ? pulse(plant.phase, 0.25, 0.32, 0.345, 0.435)
+      : 0;
   // About half remains in March, a thin residue in April, gone by the end of May
   // even for the latest seeded tree. Snow hides the winter stock; it doesn't erase it.
   const old = 1 - smoothstep(0.97, 1.35, q);

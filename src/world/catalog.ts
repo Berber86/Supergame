@@ -281,6 +281,52 @@ export const ITEMS: CatalogItem[] = [
     tab: 'trees',
   },
 
+  // Плодовый сад: взрослые силуэты, собственные сроки цветения и созревания.
+  {
+    id: 'ume',
+    name: 'Умэ',
+    hint: 'цветы на изогнутых ветвях, плоды в начале лета',
+    kind: 'tree',
+    w: 1,
+    h: 1,
+    step: 0.5,
+    growDays: 7,
+    tab: 'trees',
+  },
+  {
+    id: 'nashi',
+    name: 'Груша наши',
+    hint: 'белое цветение и золотистые круглые груши',
+    kind: 'tree',
+    w: 1,
+    h: 1,
+    step: 0.5,
+    growDays: 8,
+    tab: 'trees',
+  },
+  {
+    id: 'peach',
+    name: 'Персик',
+    hint: 'розовые цветы, узкие листья, бархатистые плоды',
+    kind: 'tree',
+    w: 1,
+    h: 1,
+    step: 0.5,
+    growDays: 7,
+    tab: 'trees',
+  },
+  {
+    id: 'yuzu',
+    name: 'Юдзу',
+    hint: 'тёмная вечная зелень и жёлтые плоды среди снега',
+    kind: 'tree',
+    w: 1,
+    h: 1,
+    step: 0.5,
+    growDays: 8,
+    tab: 'trees',
+  },
+
   // Камни
   {
     id: 'rock_big',

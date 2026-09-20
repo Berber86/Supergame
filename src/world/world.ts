@@ -1,3 +1,4 @@
+import { FRUIT_TREE_TYPES } from './orchard';
 /** Состояние усадьбы: рельеф, вода, объекты, вехи. */
 
 import { GRID, inBounds } from '../core/iso';
@@ -124,6 +125,7 @@ export class World {
     this.unlocked = new Set();
     this.fresh = new Set();
     if (lenient) {
+      for (const id of FRUIT_TREE_TYPES) this.unlocked.add(id);
       for (const o of this.objects) if (ITEM_BY_ID.has(o.type)) this.unlocked.add(o.type);
       for (const b of TERRAIN_BRUSHES) this.unlocked.add(b.id);
       this.unlockInteriorIfHoused();
@@ -1268,6 +1270,7 @@ export class World {
     // Expose the interior kit in established free gardens, without moving/adding a single object.
     // Growing gardens retain their existing discovery progression.
     this.unlockInteriorIfHoused();
+    if (!this.grow) for (const id of FRUIT_TREE_TYPES) this.unlocked.add(id);
     this.noteObjectsChanged();
   }
 

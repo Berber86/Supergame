@@ -1,9 +1,19 @@
+import { FRUIT_TREE_TYPES } from '../world/orchard';
 /** A garden-wide daily rhythm, independent of lamps, exposure, weather tint or placement. */
 import { smoothstep } from '../core/rng';
 import type { Atmosphere } from '../world/palette';
 import { blobPath, type Ctx } from './paint';
 
-export const FLOWERING_TYPES = new Set(['lily', 'iris', 'lotus', 'sakura', 'azalea', 'wisteria', 'camellia']);
+export const FLOWERING_TYPES = new Set([
+  ...FRUIT_TREE_TYPES,
+  'lily',
+  'iris',
+  'lotus',
+  'sakura',
+  'azalea',
+  'wisteria',
+  'camellia',
+]);
 /** Closed throughout astronomical garden night; a soft transition at dawn and dusk. */
 export function flowerOpenness(atm: Atmosphere): number {
   return smoothstep(0.22, 0.78, atm.time.daylight);

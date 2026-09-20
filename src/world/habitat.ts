@@ -1,3 +1,4 @@
+import { isFruitTree, fruitYear } from './orchard';
 import { ecologyYear, wildlifeActivity, nectarBloom } from './ecology';
 /**
  * Среда обитания: что именно в саду приглашает жителей.
@@ -72,6 +73,7 @@ export interface Habitat {
   beeSpots: (Vec & { type?: string; seed?: number })[];
   /** Ульи — зовут пчёл. */
   beehives: Vec[];
+  fruitSpots: (Vec & { type: string; seed: number })[];
   /** Бельчатники — зовут белок. */
   squirrelFeeders: Vec[];
   /** Сколько в саду кошек-резидентов (предметов «кот»). */
@@ -112,6 +114,7 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
     lizardShelters: [],
     beeSpots: [],
     beehives: [],
+    fruitSpots: [],
     squirrelFeeders: [],
     shelters: [],
     cushions: [],
@@ -227,12 +230,16 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
       h.trees.push(c);
       // Старые высокие деревья — насест для совы и дом для белки
       h.owlSpots.push({ x: c.x, y: c.y });
-      if (['pine', 'maple', 'ginkgo', 'persimmon', 'sakura', 'willow'].includes(o.type)) {
+      if (isFruitTree(o.type) || ['pine', 'maple', 'ginkgo', 'persimmon', 'sakura', 'willow'].includes(o.type)) {
         h.squirrelSpots.push(c);
       }
     }
     if (item.kind === 'shrub' || o.type === 'hedge') h.shrubs.push(c);
-    if (['lily', 'iris', 'azalea', 'lotus', 'wisteria', 'camellia'].includes(o.type)) {
+    if (isFruitTree(o.type)) {
+      const tile = world.at(Math.floor(c.x), Math.floor(c.y));
+      if (tile && !tile.water && !tile.indoor && !tile.veranda) h.fruitSpots.push({ ...c, type: o.type, seed: o.seed });
+    }
+    if (isFruitTree(o.type) || ['lily', 'iris', 'azalea', 'lotus', 'wisteria', 'camellia'].includes(o.type)) {
       h.beeSpots.push({ ...c, type: o.type, seed: o.seed });
     }
     if (['rock_mid', 'rock_big', 'water_stone'].includes(o.type)) {
@@ -445,6 +452,9 @@ export function floweringHabitat(h: Habitat, now: number): Habitat {
   const time = (key + 0.5) * 21_600_000;
   const habitat = {
     ...h,
+    fruitSpots: h.fruitSpots.filter(
+      (p) => (p.type === 'peach' || p.type === 'nashi') && fruitYear(p.type, p.seed, time).ground > 0.2,
+    ),
     beeSpots: h.beeSpots.filter((p) => nectarBloom(p.type ?? 'wildflowers', p.seed ?? 17, time) > 0.12),
   };
   nectarCache.set(h, { key, habitat });

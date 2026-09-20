@@ -1,3 +1,5 @@
+import { isFruitTree, fruitYear, orchardFlowerTint } from '../world/orchard';
+import { paintOrchardFruit } from './orchardFruit';
 import { rainField, rainShade } from './afterRain';
 import { flowerYear, litterYear, winterYear } from '../world/annualEnvironment';
 import { crownCacheKey, crownCacheTime } from '../world/phenology';
@@ -14,7 +16,8 @@ import { blobPath, type Ctx } from './paint';
 import { flowerHeadPath, flowerOpenness } from './flowerCycle';
 import { waterSurfaces, waterSurfacePath } from './waterSurface';
 
-export type GroundLifeKind = 'grass' | 'soil' | 'moss' | 'leaves' | 'needles' | 'roots' | 'flowers' | 'mushrooms';
+export type GroundLifeKind =
+  'grass' | 'soil' | 'moss' | 'leaves' | 'needles' | 'roots' | 'flowers' | 'mushrooms' | 'fruits';
 export interface GroundPatch {
   x: number;
   y: number;
@@ -160,6 +163,21 @@ export function groundLifeField(world: World): GroundField {
         add({ ...base, kind });
       }
     }
+  // A fixed small windfall patch per parent. It is clipped by the same dry-ground/shore mask as litter.
+  for (const h of habitats) {
+    if (!isFruitTree(h.type) || !groundEligible(world.at(Math.floor(h.x), Math.floor(h.y)))) continue;
+    add({
+      x: h.x,
+      y: h.y,
+      level: h.level,
+      seed: h.seed,
+      shade: 0,
+      damp: 0.4,
+      kind: 'fruits',
+      treeType: h.type,
+      treeSeed: h.seed,
+    });
+  }
   // Small exposed root fans begin at real trunks, never arbitrary spots across the lawn.
   for (const h of habitats) {
     if (!h.tree || h.type === 'bamboo' || !groundEligible(world.at(Math.floor(h.x), Math.floor(h.y)))) continue;
@@ -213,7 +231,7 @@ function paintLeafLitter(
 ): void {
   if (state.amount <= 0.001) return;
   const q = isoToScreen(p.x, p.y, p.level),
-    dense = !!TREE_CROWNS[p.treeType ?? ''],
+    dense = p.treeType !== 'yuzu' && !!TREE_CROWNS[p.treeType ?? ''],
     density = dense ? (p.litterDensity ?? 1) : 1,
     color = lit(litterColor(p.treeType ?? 'maple', state.fresh)),
     coarse = groundDetailAlpha('soil', zoom);
@@ -283,7 +301,14 @@ function paintLeafLitter(
   }
   // Fresh blossom fall is a separate sparse layer, never recolouring the old brown leaf carpet.
   if (state.petals > 0) {
-    ctx.fillStyle = css(lit({ r: 232, g: 191, b: 196 }), 0.8);
+    ctx.fillStyle = css(
+      lit(
+        isFruitTree(p.treeType ?? '')
+          ? orchardFlowerTint(p.treeType as import('../world/orchard').FruitTree, p.treeSeed ?? p.seed)
+          : { r: 232, g: 191, b: 196 },
+      ),
+      0.8,
+    );
     for (let i = 0; i < 26; i++) {
       const r = hash2(i, p.seed, 1621),
         present = smoothstep(r * 0.7, r * 0.7 + 0.3, state.petals);
@@ -325,6 +350,20 @@ function paintPatch(ctx: Ctx, p: GroundPatch, atm: Atmosphere, zoom: number): vo
   const grass = lit(atm.palette.grassDeep),
     earth = lit(atm.palette.soil),
     litter = lit(litterColor(p.treeType ?? 'maple', litterState.fresh));
+  if (p.kind === 'fruits' && p.treeType && isFruitTree(p.treeType)) {
+    const type = p.treeType;
+    for (let i = 0; i < 7; i++) {
+      const fruit = fruitYear(type, p.treeSeed ?? p.seed, atm.time.now, i);
+      if (fruit.ground < 0.005) continue;
+      const x = q.x + (hash2(i, p.seed, 1941) - 0.5) * 68,
+        y = q.y + (hash2(i, p.seed, 1949) - 0.5) * 28;
+      ctx.save();
+      ctx.globalAlpha *= fruit.ground * groundDetailAlpha('soil', zoom);
+      paintOrchardFruit(ctx, type, x, y, type === 'ume' ? 3 : 4.7, 1, fruit.age, atm, p.seed + i);
+      ctx.restore();
+    }
+    return;
+  }
   if (p.kind === 'leaves') {
     paintLeafLitter(ctx, p, zoom, litterState, lit);
     return;

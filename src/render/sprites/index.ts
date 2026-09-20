@@ -1,3 +1,4 @@
+import { drawOrchard } from './orchard';
 /**
  * Рисованные «акварельные» объекты сада. Всё генерируется кодом, без ассетов.
  * Рисовальщики лежат по смысловым файлам: деревья, камни и мелочь, вода,
@@ -55,6 +56,10 @@ export type { DrawCtx } from './common';
 export { setSkipShadows } from './common';
 
 const DRAWERS: Record<string, Drawer> = {
+  ume: drawOrchard,
+  nashi: drawOrchard,
+  peach: drawOrchard,
+  yuzu: drawOrchard,
   sakura: drawSakura,
   maple: drawMaple,
   pine: drawPine,
@@ -256,6 +261,10 @@ export function objectHeight(type: string): number {
     case 'byobu':
     case 'irori':
       return 64;
+    case 'ume':
+    case 'nashi':
+    case 'peach':
+    case 'yuzu':
     case 'sakura':
     case 'maple':
     case 'ginkgo':
