@@ -375,159 +375,163 @@ export const drawWillow = makeTree({
   droop: 46,
 });
 
-export const drawPine: Drawer = (d) => {
-  const { ctx, atm, g, obj } = d;
-  const scale = lerp(0.2, 1, Math.pow(g, 0.7));
-  // Ели были низенькие — поднимаем с 106 до 148, плюс джиттер по сиду 0.88..1.15
-  const heightJ = 0.88 + hash2(obj.seed, 3, 7) * 0.27;
-  const h = 148 * scale * heightJ;
-  const sway = Math.sin(d.time * 0.0003 + obj.seed) * 2.2 * d.wind * scale;
-  shadowUnder(d, 44 * scale, 19 * scale, 0.9);
+/** Flattened sprays with broken needle fringes, never smooth leaf-cloud ellipses. */
+function pineSpray(
+  d: DrawCtx,
+  x: number,
+  y: number,
+  rx: number,
+  ry: number,
+  seed: number,
+  scale: number,
+  main: RGB,
+  deep: RGB,
+  light: RGB,
+): void {
+  const { ctx } = d;
+  const edge = (w: number, h: number, lift: number) => {
+    ctx.beginPath();
+    for (let i = 0; i <= 16; i++) {
+      const u = i / 8 - 1,
+        xx = x + u * w;
+      const yy = y + lift - h * Math.sqrt(Math.max(0, 1 - u * u)) + (hash2(seed, i, 2903) - 0.5) * h * 0.35;
+      if (i === 0) ctx.moveTo(xx, yy);
+      else ctx.lineTo(xx, yy);
+    }
+    for (let i = 16; i >= 0; i--) {
+      const u = i / 8 - 1;
+      ctx.lineTo(
+        x + u * w,
+        y +
+          lift +
+          h * (0.14 + 0.33 * Math.sqrt(Math.max(0, 1 - u * u))) +
+          (i % 2 ? 1.4 + hash2(seed, i, 2909) * 2.1 : hash2(seed, i, 2911) * 0.7) * scale,
+      );
+    }
+    ctx.closePath();
+  };
+  edge(rx, ry, 1.6 * scale);
+  ctx.fillStyle = css(deep, 0.92);
+  ctx.fill();
+  edge(rx * 0.97, ry * 0.95, 0);
+  ctx.fillStyle = css(main, 0.88);
+  ctx.fill();
+  // Several fans per spray. All needles of one tone share a stroke call.
+  for (let tone = 0; tone < 2; tone++) {
+    ctx.strokeStyle = css(tone ? light : deep, tone ? 0.53 : 0.7);
+    ctx.lineWidth = (tone ? 0.65 : 0.8) * scale;
+    ctx.beginPath();
+    for (let i = 0; i < 19; i++) {
+      const u = ((i + 0.3) / 19) * 2 - 1;
+      const px = x + u * rx * 0.94,
+        py = y - ry * (0.05 + hash2(seed, i, 2917) * 0.6);
+      const len = (3.4 + hash2(seed, i, 2927) * 4.3) * scale;
+      for (let n = 0; n < 3; n++) {
+        const angle = -Math.PI * 0.5 + u * 0.7 + (n - 1) * 0.5;
+        ctx.moveTo(px, py + scale);
+        ctx.lineTo(px + Math.cos(angle) * len, py + Math.sin(angle) * len);
+      }
+    }
+    ctx.stroke();
+  }
+  const snow = winterYear(d.atm.time.now).snow;
+  if (snow > 0.001) {
+    edge(rx * 0.83 * Math.sqrt(snow), ry * 0.48, -ry * 0.5);
+    ctx.fillStyle = css(litc({ r: 237, g: 242, b: 239 }, d.atm), snow * 0.88);
+    ctx.fill();
+  }
+}
 
-  const trunkCol = litc({ r: 108, g: 82, b: 66 }, atm);
-  const leanJ = (hash2(obj.seed, 7, 11) - 0.5) * 0.22;
+export const drawPine: Drawer = (d) => {
+  const { ctx, atm, obj, g } = d;
+  const scale = lerp(0.2, 1, Math.pow(g, 0.7)),
+    heightJ = 0.88 + hash2(obj.seed, 3, 7) * 0.27,
+    h = 148 * scale * heightJ;
+  const sway = Math.sin(d.time * 0.0003 + obj.seed) * 2.2 * d.wind * scale;
+  shadowUnder(d, 48 * scale, 20 * scale, 0.9);
+  const trunkCol = litc({ r: 114, g: 83, b: 66 }, atm);
   const { tx, ty, trunk } = drawTrunk(
     d,
     h,
     Math.max(2.6, 9.2 * scale * (0.9 + heightJ * 0.12)),
     trunkCol,
-    sway * 0.3 + leanJ * h * 0.09,
+    sway * 0.3 + (hash2(obj.seed, 7, 11) - 0.5) * h * 0.08,
   );
-
+  // Short scaly plates, distinct from smooth deciduous bark and bamboo joints.
+  for (let i = 0; i < 18; i++) {
+    const t = 0.07 + i * 0.039 + (hash2(obj.seed, i, 2981) - 0.5) * 0.014,
+      a = woodFrame(trunk, t),
+      b = woodFrame(trunk, t + 0.017 + hash2(obj.seed, i, 2987) * 0.012);
+    const side = hash2(obj.seed, i, 2999) > 0.5 ? 1 : -1;
+    ctx.fillStyle = css(shade(trunkCol, i % 3 ? 0.69 + hash2(obj.seed, i, 3001) * 0.13 : 1.25), 0.26);
+    ctx.beginPath();
+    ctx.moveTo(a.x + a.nx * a.r * side * 0.85, a.y + a.ny * a.r * side * 0.85);
+    ctx.lineTo(a.x - a.nx * a.r * side * 0.1, a.y - a.ny * a.r * side * 0.1);
+    ctx.lineTo(b.x - b.nx * b.r * side * 0.18, b.y - b.ny * b.r * side * 0.18);
+    ctx.lineTo(b.x + b.nx * b.r * side * 0.73, b.y + b.ny * b.r * side * 0.73);
+    ctx.closePath();
+    ctx.fill();
+  }
   const needle = mix(
-    { r: 84, g: 130, b: 92 },
-    { r: 96, g: 124, b: 116 },
-    plantYear(obj.type, obj.seed, atm.time.now).winterTone,
+    { r: 62, g: 103, b: 76 },
+    { r: 74, g: 108, b: 103 },
+    plantYear('pine', obj.seed, atm.time.now).winterTone,
   );
-  // Лёгкий оттенок хвои по сиду
-  const tintP = hash2(obj.seed, 19, 23);
-  const needleTinted = mix(
-    needle,
-    tintP > 0.66 ? { r: 72, g: 118, b: 88 } : tintP < 0.33 ? { r: 92, g: 136, b: 100 } : needle,
-    0.14,
+  const tint = mix(needle, { r: 99, g: 123, b: 77 }, hash2(obj.seed, 19, 23) * 0.22);
+  const main = litc(tint, atm),
+    deep = litc(shade(tint, 0.64), atm),
+    light = litc(mix(tint, { r: 173, g: 185, b: 123 }, 0.38), atm, 0.025);
+  const sprays: { x: number; y: number; rx: number; ry: number; seed: number }[] = [];
+  const tiers = 3 + Math.floor(hash2(obj.seed, 13, 17) * 2);
+  for (let i = 0; i < tiers; i++)
+    for (const side of [-1, 1]) {
+      if (i > 0 && hash2(obj.seed, i * 3 + side, 2939) > 0.84) continue;
+      const u = i / (tiers - 1),
+        join = woodPoint(trunk, 0.4 + u * 0.47 + (side === 1 ? 0.035 : 0));
+      const spread = (45 - u * 20) * scale * (0.84 + hash2(obj.seed, i * 3 + side, 2941) * 0.3);
+      const tip = {
+        x: join.x + side * spread + sway,
+        y: join.y - (6 + hash2(obj.seed, i * 3 + side, 2953) * 7) * scale,
+      };
+      const branch = woodCurve(join, tip, (2.7 - u * 0.8) * scale, 0.38 * scale, -side * 5 * scale, 8 * scale);
+      paintWood(ctx, branch, shade(trunkCol, 0.9), obj.seed, true);
+      for (let k = 0; k < 2; k++) {
+        const p = woodPoint(branch, 0.62 + k * 0.38);
+        const crown = { x: p.x + side * k * 3 * scale, y: p.y - (4 + k * 2) * scale };
+        paintWood(
+          ctx,
+          woodCurve(p, crown, 0.8 * scale, 0.13 * scale, side * 2 * scale, -2 * scale),
+          trunkCol,
+          obj.seed,
+        );
+        sprays.push({
+          ...crown,
+          rx: (13 + hash2(obj.seed, i * 7 + k + side, 2963) * 6) * (1 - u * 0.16) * scale,
+          ry: (6 + hash2(obj.seed, i * 9 + k + side, 2969) * 2) * scale,
+          seed: obj.seed + i * 31 + k * 13 + side,
+        });
+      }
+      if (i === 0 && hash2(obj.seed, side, 2971) > 0.4) {
+        ctx.fillStyle = css(shade(trunkCol, 0.8), 0.93);
+        const p = woodPoint(branch, 0.8);
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y + 3.5 * scale, 1.7 * scale, 3.8 * scale, -side * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = css(shade(trunkCol, 1.5), 0.45);
+        ctx.lineWidth = 0.55 * scale;
+        ctx.beginPath();
+        ctx.moveTo(p.x - 1.3 * scale, p.y + 3 * scale);
+        ctx.lineTo(p.x + 1.3 * scale, p.y + 4 * scale);
+        ctx.stroke();
+      }
+    }
+  sprays.push(
+    { x: tx - 9 * scale + sway, y: ty - 2 * scale, rx: 17 * scale, ry: 8 * scale, seed: obj.seed + 177 },
+    { x: tx + 11 * scale + sway, y: ty + 2 * scale, rx: 14 * scale, ry: 7 * scale, seed: obj.seed + 191 },
   );
-  const main = litc(needleTinted, atm);
-  const deep = litc(shade(needleTinted, 0.76), atm);
-  const light = litc(mix(needleTinted, { r: 200, g: 226, b: 170 }, 0.3), atm, 0.03);
-
-  // Ярусы — 3..6, высота распределения тоже по сиду
-  const tiers = 3 + Math.floor(hash2(obj.seed, 13, 17) * 4); // 3..6
-  const spreadJ = 0.85 + hash2(obj.seed, 31, 7) * 0.32;
-  const sizeJ = 0.88 + hash2(obj.seed, 33, 11) * 0.26;
-  for (let i = 0; i < tiers; i++) {
-    const t = tiers === 1 ? 0 : i / (tiers - 1);
-    // Чередуем стороны, но иногда два подряд с одной — асимметрия
-    const sideBase = i % 2 === 0 ? -1 : 1;
-    const sideFlip = hash2(i, obj.seed, 29) > 0.78 ? -sideBase : sideBase;
-    const side = sideFlip;
-    const tierWob = (hash2(i, obj.seed, 41) - 0.5) * 8 * scale;
-    const cx = tx + side * (18 + 16 * (1 - t) * spreadJ) * scale + sway * (1 + t * 0.6) + tierWob;
-    const cy = ty + t * h * (0.58 + hash2(obj.seed, 43, 13) * 0.12);
-    const rx = (46 - t * 7) * scale * sizeJ * (0.9 + hash2(i, obj.seed, 47) * 0.22);
-    const ry = (18 + t * 5) * scale * (0.9 + hash2(i, obj.seed, 53) * 0.2);
-    const join = woodPoint(trunk, Math.max(0.1, Math.min(0.98, (d.y - cy - 4 * scale) / h)));
-    const bough = woodCurve(
-      join,
-      { x: cx, y: cy + 2 * scale },
-      (3.2 + hash2(i, obj.seed, 59) * 0.8) * scale,
-      1.1 * scale,
-      side * 7 * scale,
-      7 * scale,
-    );
-    paintWood(ctx, bough, shade(trunkCol, 0.92), obj.seed, true);
-    for (const fork of [-1, 1]) {
-      const start = woodPoint(bough, 0.66);
-      paintWood(
-        ctx,
-        woodCurve(
-          start,
-          { x: cx + fork * rx * 0.36, y: cy - ry * 0.3 },
-          1.2 * scale,
-          0.18 * scale,
-          fork * 3 * scale,
-          -4 * scale,
-        ),
-        trunkCol,
-        obj.seed,
-      );
-    }
-    washBlob(ctx, cx, cy + ry * 0.35, rx, ry, deep, obj.seed + i * 5, {
-      layers: 2,
-      alpha: 0.42,
-      edge: 0.14,
-      wobble: 0.3 + hash2(i, obj.seed, 61) * 0.12,
-    });
-    washBlob(ctx, cx, cy, rx * 0.95, ry * 0.9, main, obj.seed + i * 9, {
-      layers: 3,
-      alpha: 0.4,
-      edge: 0.16,
-      wobble: 0.28 + hash2(i, obj.seed, 67) * 0.1,
-    });
-    washBlob(ctx, cx - atm.sunDir.x * rx * 0.2, cy - ry * 0.4, rx * 0.5, ry * 0.4, light, obj.seed + i * 3, {
-      layers: 1,
-      alpha: 0.28,
-      edge: 0,
-    });
-    // Доп. мелкая клякса для лохматости
-    if (hash2(i, obj.seed, 71) > 0.55) {
-      washBlob(
-        ctx,
-        cx + (hash2(i, obj.seed, 73) - 0.5) * rx * 0.6,
-        cy + ry * 0.15,
-        rx * 0.32,
-        ry * 0.55,
-        main,
-        obj.seed + i * 17,
-        {
-          layers: 2,
-          alpha: 0.32,
-          edge: 0.18,
-          wobble: 0.35,
-        },
-      );
-    }
-    const snowAmount = winterYear(atm.time.now).snow;
-    if (snowAmount > 0.001) {
-      washBlob(
-        ctx,
-        cx,
-        cy - ry * 0.5,
-        rx * 0.7 * Math.sqrt(snowAmount),
-        ry * 0.3 * Math.sqrt(snowAmount),
-        litc({ r: 246, g: 247, b: 250 }, atm),
-        obj.seed + i,
-        {
-          layers: 2,
-          alpha: 0.45 * snowAmount,
-          edge: 0.08 * snowAmount,
-        },
-      );
-    }
-  }
-  // Верхушка — тоже с вариацией высоты и размера
-  const topJ = 0.85 + hash2(obj.seed, 79, 3) * 0.3;
-  washBlob(ctx, tx + sway, ty - 8 * scale * topJ, 24 * scale * topJ, 13 * scale * topJ, main, obj.seed + 77, {
-    layers: 3,
-    alpha: 0.42,
-    edge: 0.16,
-  });
-  // Иногда второй маленький ярус на самой верхушке — молодая макушка
-  if (hash2(obj.seed, 83, 7) > 0.62) {
-    washBlob(
-      ctx,
-      tx + sway + (hash2(obj.seed, 89, 11) - 0.5) * 8,
-      ty - 18 * scale * topJ,
-      14 * scale,
-      7 * scale,
-      main,
-      obj.seed + 97,
-      {
-        layers: 2,
-        alpha: 0.36,
-        edge: 0.14,
-      },
-    );
-  }
+  // Back sprays first; the open inner branches remain visible between the needle tips.
+  sprays.sort((a, b) => a.y - b.y);
+  for (const p of sprays) pineSpray(d, p.x, p.y, p.rx, p.ry, p.seed, scale, main, deep, light);
 };
 
 export const drawBamboo: Drawer = (d) => {

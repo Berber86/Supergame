@@ -352,6 +352,8 @@ const gardensPanel = new GardensPanel(app, world, gardens, {
     input.cancelOngoingAction();
     scene.markTerrainDirty();
     life.reset();
+    chronicleToast.clear();
+    snapQueue = [];
     if (isTouchDevice() && !world.grow) scene.fitToView(world);
     ui.select({ kind: 'none' });
     ui.renderTabs();
@@ -885,8 +887,8 @@ let snapQueue: SnapJob[] = [];
 /**
  * Новые строки летописи: всплывающее уведомление с картинкой на 20 секунд.
  * При клике — камера летит к месту события, иначе плавное растворение.
- * Очередь — если несколько событий подряд, показываются по очереди.
- * Фото-ловушка: тост сразу, Polaroid-снимок — после рендера кадра.
+ * Всплытие — не чаще раза в три реальные минуты; записи и снимки сохраняются все.
+ * Фото-ловушка: Polaroid-снимок — после рендера кадра, независимо от задержки тоста.
  */
 function flushChronicle(): void {
   const notes = [...world.pendingNotes];
@@ -1100,6 +1102,8 @@ function enterGrow(): void {
   input.cancelOngoingAction();
   scene.markTerrainDirty();
   life.reset();
+  chronicleToast.clear();
+  snapQueue = [];
   ui.select({ kind: 'none' });
   ui.renderTabs();
   ui.renderItems();
