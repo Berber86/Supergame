@@ -1,3 +1,4 @@
+import { pendantSwing } from '../plantWind';
 /** Интерьер и обитатели: мебель, цубукубай, сисиодоси, кот. */
 
 import { Drawer, WHITE, litc, shadowUnder } from './common';
@@ -92,7 +93,9 @@ export const drawShishi: Drawer = (d) => {
 
 export const drawWindChime: Drawer = (d) => {
   const { ctx, atm, obj } = d;
-  const swing = Math.sin(d.time * 0.0016 + obj.seed) * 5 * (0.3 + d.wind * 0.7);
+  const swing = d.windVector
+    ? pendantSwing(d.windVector, obj.seed, d.time, 5)
+    : Math.sin(d.time * 0.0016 + obj.seed) * 5 * d.wind;
   const x = d.x + swing;
   const y = d.y - 30;
   ctx.strokeStyle = css(litc({ r: 120, g: 96, b: 74 }, atm), 0.7);

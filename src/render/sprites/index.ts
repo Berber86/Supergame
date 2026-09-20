@@ -1,3 +1,4 @@
+import { drawWindDirect } from '../plantWind';
 import { drawOrchard } from './orchard';
 /**
  * Рисованные «акварельные» объекты сада. Всё генерируется кодом, без ассетов.
@@ -208,7 +209,15 @@ export function drawObject(d: DrawCtx): void {
   );
   ctx.translate(-d.x, -d.y);
 
-  fn(d);
+  if (d.plantPose && Math.abs(d.plantPose.slope) > 1e-6) {
+    // Undo the seed transform for the world-space hinge, then let each rigid piece
+    // receive the same seed anatomy. This path is diagnostic; normal play copies cached pixels.
+    ctx.restore();
+    drawWindDirect(ctx, d.x, d.y, d.plantPose, () => drawObject({ ...d, plantPose: undefined, wind: 0 }));
+    ctx.globalAlpha = prev;
+    return;
+  }
+  fn(d.plantPose ? { ...d, wind: 0 } : d);
 
   ctx.restore();
   ctx.globalAlpha = prev;

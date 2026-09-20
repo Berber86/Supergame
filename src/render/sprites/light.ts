@@ -1,3 +1,4 @@
+import { pendantSwing } from '../plantWind';
 /** Свет сада: фонари бумажные и каменные, жаровня. */
 
 import { DrawCtx, Drawer, litc, shadowUnder } from './common';
@@ -76,7 +77,9 @@ export const drawStoneLantern: Drawer = (d) => {
 
 export const drawPaperLantern: Drawer = (d) => {
   const { ctx, atm, obj } = d;
-  const swing = Math.sin(d.time * 0.0012 + obj.seed) * 4 * (0.4 + d.wind * 0.6);
+  const swing = d.windVector
+    ? pendantSwing(d.windVector, obj.seed, d.time, 3)
+    : Math.sin(d.time * 0.0012 + obj.seed) * 4 * d.wind;
   const topY = d.y - 62;
   const x = d.x + swing;
   const y = d.y - 34;

@@ -1,3 +1,6 @@
+import { makeWindSampler, windFronts, type WindSampler } from './wind';
+import type { Gust } from './wind';
+export type { Gust } from './wind';
 import { Lizards } from './lizards';
 import { ecologyYear, wildlifeActivity, treeFallActivity } from './ecology';
 /**
@@ -136,17 +139,6 @@ export interface Fish {
   memoryStrength: number;
 }
 
-/** Порыв ветра — волна, проходящая через сад. */
-export interface Gust {
-  /** Позиция фронта вдоль оси распространения, в тайлах. */
-  pos: number;
-  strength: number;
-  /** Направление распространения. */
-  dx: number;
-  dy: number;
-  width: number;
-}
-
 const rnd = makeRng(20240320);
 
 function tileWalkable(world: World, tx: number, ty: number): boolean {
@@ -246,9 +238,10 @@ export class Life {
   };
   /** Заметки в летопись: игровой цикл забирает их каждый кадр. */
   pendingNotes: ChronicleToastNote[] = [];
-  /** Общая фаза ветра 0..1 — плавный фон поверх порывов. */
-  windBase = 0.45;
-  private gustTimer = 4000;
+  /** Legacy centre-of-garden pressure; local consumers sample windVectorAt instead. */
+  windBase = 0;
+  windTime = 0;
+  private windSample: WindSampler = makeWindSampler(0);
   private birdTimer = 6000;
   private habitatTimer = 0;
   private guestTimer = 45_000;
@@ -272,6 +265,9 @@ export class Life {
     this.flutters = [];
     this.fish = [];
     this.gusts = [];
+    this.windTime = 0;
+    this.windBase = 0;
+    this.windSample = makeWindSampler(0);
     this.emitted = [];
     this.koiKey = '';
     this.dormantSince = new WeakMap();
@@ -360,7 +356,7 @@ export class Life {
 
   update(world: World, t: TimeState, dt: number, now: number, wx?: WeatherState | null): void {
     this.sync(world);
-    this.updateWind(dt, t);
+    this.updateWind(dt, t, wx);
 
     // Среда обитания пересчитывается редко: постройки не двигаются сами,
     // а обход сада каждый кадр был бы чистой тратой.
@@ -455,44 +451,19 @@ export class Life {
 
   // ---------------- Ветер ----------------
 
-  private updateWind(dt: number, t: TimeState): void {
-    const now = performance.now();
-    // ровное «дыхание» + сезонная поправка: осенью и зимой ветрено
-    const seasonK = 1 + 0.2 * (1 - ecologyYear(t.now).green);
-    this.windBase = (0.34 + Math.sin(now * 0.00011) * 0.16 + Math.sin(now * 0.00037) * 0.1) * seasonK;
-
-    this.gustTimer -= dt;
-    if (this.gustTimer <= 0) {
-      this.gustTimer = 5000 + rnd() * 11000;
-      const ang = rnd() * Math.PI * 2;
-      this.gusts.push({
-        pos: -8,
-        strength: 0.5 + rnd() * 0.9,
-        dx: Math.cos(ang),
-        dy: Math.sin(ang),
-        width: 6 + rnd() * 7,
-      });
-    }
-    for (let i = this.gusts.length - 1; i >= 0; i--) {
-      const g = this.gusts[i];
-      g.pos += dt * 0.0075 * (0.7 + g.strength * 0.5);
-      if (g.pos > GRID * 1.6 + g.width) this.gusts.splice(i, 1);
-    }
+  private updateWind(dt: number, t: TimeState, wx?: WeatherState | null): void {
+    this.windTime += Number.isFinite(dt) ? Math.max(0, dt) : 0;
+    const climate = (1 + 0.18 * (1 - ecologyYear(t.now).green)) * (1 + (wx?.rain ?? 0) * 0.28);
+    this.gusts = windFronts(this.windTime, climate);
+    this.windSample = makeWindSampler(this.windTime, climate);
+    this.windBase = this.windSample(GRID / 2, GRID / 2).strength;
   }
-
-  /** Сила ветра в конкретной точке сада — деревья качаются волной, а не разом. */
+  /** Shared pressure and direction, optionally delayed by the receiving material's inertia. */
+  windVectorAt(tx: number, ty: number, lag = 0) {
+    return this.windSample(tx, ty, lag);
+  }
   windAt(tx: number, ty: number): number {
-    let w = this.windBase;
-    for (const g of this.gusts) {
-      // проекция точки на ось распространения порыва
-      const proj = tx * g.dx + ty * g.dy;
-      const d = Math.abs(proj - g.pos);
-      if (d < g.width) {
-        const k = Math.cos((d / g.width) * Math.PI * 0.5);
-        w += g.strength * k * k;
-      }
-    }
-    return clamp(w, 0, 2.4);
+    return this.windVectorAt(tx, ty).strength;
   }
 
   // ---------------- Коты ----------------
@@ -1318,12 +1289,12 @@ export class Life {
   // ---------------- Опадание с деревьев ----------------
 
   private updateFalling(world: World, t: TimeState, dt: number): void {
-    const wind = this.windBase + this.gusts.reduce((a, g) => a + g.strength, 0) * 0.4;
     // First sample a real tree, then its shedding rate; dormant trees cannot emit petals.
-    if (rnd() > 0.004 * wind * dt) return;
+    if (rnd() > 0.008 * dt) return;
     const trees = world.objects.filter((o) => ITEM_BY_ID.get(o.type)?.kind === 'tree');
     if (!trees.length) return;
     const tree = trees[Math.floor(rnd() * trees.length)];
+    if (rnd() > this.windAt(tree.tx + 0.5, tree.ty + 0.5) * 0.6) return;
     const fall = treeFallActivity(tree.type, tree.seed, t.now);
     const isPetal = fall.petals > 0;
     if (rnd() > (isPetal ? fall.petals : fall.leaves)) return;

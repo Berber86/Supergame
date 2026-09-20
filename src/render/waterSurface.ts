@@ -1,3 +1,5 @@
+import { CALM, type WindSampler } from '../world/wind';
+import { plantPose, windLag } from './plantWind';
 /** Continuous pond silhouettes. Geometry is rebuilt with terrain, not every frame. */
 import { LEVEL_H, TILE_H, isoToScreen, type Pt } from '../core/iso';
 import { clamp01, hash2 } from '../core/rng';
@@ -7,7 +9,7 @@ import type { World } from '../world/world';
 import type { Ctx } from './paint';
 import { WaterFlow } from '../world/waterFlow';
 import { cascadeRims, meetCascadeRims } from './cascadeRims';
-import { drawCachedReflection } from './spriteCache';
+import { drawCachedReflection, cachedGrowth } from './spriteCache';
 import { drawBridge, drawPlankBridge } from './sprites/bridges';
 import { prepareWaterDepth, waterDepth } from './waterDepth';
 import type { WaterMotion } from './waterMotion';
@@ -323,6 +325,9 @@ export interface WaterRenderOptions {
   detail?: number;
   reflectionStep?: number;
   objectWind?: number;
+  windField?: WindSampler;
+  plantMotion?: boolean;
+  simpleWind?: boolean;
 }
 function outside(bounds: { minX: number; minY: number; maxX: number; maxY: number }, view: WaterRenderOptions['view']) {
   return (
@@ -392,6 +397,11 @@ function drawReflections(
     // Mirror the same annual sprite and live sway, not a separate seasonal silhouette.
     // Leaf area/opacity already encodes density. Do not multiply the whole reflection
     // by canopy cover: that would double-fade foliage and erase the bare trunk too.
+    const air = options.windField?.(cx, cy, windLag(o.type));
+    const vector = options.plantMotion === false ? CALM : air;
+    const pose = vector
+      ? plantPose(o.type, o.seed, cachedGrowth(world.growth(o, atm.time.now)), time, vector, options.simpleWind)
+      : undefined;
     drawCachedReflection(
       {
         ctx,
@@ -402,6 +412,8 @@ function drawReflections(
         g: world.growth(o, atm.time.now),
         time,
         wind,
+        plantPose: pose,
+        windVector: vector,
         alpha: item.kind === 'tree' ? 0.61 : 0.4,
         reflectionWarp,
       },
@@ -444,8 +456,11 @@ export function drawWaterAnimation(
       const p = isoToScreen(x + 0.24 + hash2(x, y, 187) * 0.5, y + 0.24 + hash2(x, y, 191) * 0.5, surface.level - 0.26);
       if (outside({ minX: p.x - 80, maxX: p.x + 80, minY: p.y - 25, maxY: p.y + 25 }, options.view)) continue;
       if (seed > (options.detail ?? 1)) continue;
-      const phase = time * (0.00045 + breeze * 0.0003) + seed * 24;
-      const drift = Math.sin(phase) * (4 + breeze * 3);
+      const air = options.windField?.(x + 0.5, y + 0.5, 120),
+        force = air?.strength ?? breeze;
+      const along = air ? x * air.x + y * air.y : seed * 24;
+      const phase = time * 0.00065 + along * 0.65;
+      const drift = Math.sin(phase) * (1 + force * 3) + (air?.screenX ?? 0) * 3;
       // Long translucent reflections of the sky; deliberately sparse, never discs.
       if (seed > 0.56) {
         ctx.strokeStyle = css(sky, 0.1 + atm.time.daylight * 0.045);
@@ -459,7 +474,7 @@ export function drawWaterAnimation(
         const pulse = (Math.sin(phase + i * 2.5) + 1) * 0.5;
         const len = 9 + hash2(x + i, y, 211) * 19;
         const yy = p.y + i * 9 + Math.sin(phase * 0.8 + i) * 1.4;
-        ctx.strokeStyle = css(hi, (0.045 + pulse * 0.09) * (0.6 + sun));
+        ctx.strokeStyle = css(hi, (0.035 + pulse * 0.09) * (0.35 + Math.min(1, force)) * (0.6 + sun));
         ctx.lineWidth = i ? 0.6 : 0.85;
         ctx.beginPath();
         ctx.moveTo(p.x - len + drift, yy);

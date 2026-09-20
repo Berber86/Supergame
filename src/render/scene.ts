@@ -1,3 +1,4 @@
+import { CALM, makeWindSampler, type WindSampler } from '../world/wind';
 import { GRAPHICS, isGraphicsQuality, type GraphicsQuality } from './graphics';
 import { crownCacheKey, crownCacheTime } from '../world/phenology';
 import { rainField, rainMaterial, drawRainGround, drawHouseDrips } from './afterRain';
@@ -300,6 +301,9 @@ export class Scene {
       console.warn('[scene] rain update', e);
     }
     const profile = this.graphicsProfile;
+    const windField: WindSampler = this.life
+      ? (x, y, lag) => this.life!.windVectorAt(x, y, lag)
+      : makeWindSampler(time);
     const ctx = this.ctx;
     const W = this.viewW;
     const H = this.viewH;
@@ -379,7 +383,7 @@ export class Scene {
       strength: r.big ? 1.5 : 1,
     }));
     if (this.particles && ws && ws.rain > 0.02) rings.push(...this.rain.waterRipples);
-    const waterMotion = makeWaterMotion(world, this.flow, time, this.wind, rings);
+    const waterMotion = makeWaterMotion(world, this.flow, time, this.wind, rings, windField);
     drawWaterAnimation(
       ctx,
       world,
@@ -397,6 +401,9 @@ export class Scene {
         },
         detail: profile.waterDetail,
         objectWind: this.motion ? this.wind : 0,
+        windField,
+        plantMotion: this.motion,
+        simpleWind: this.graphicsQuality === 'low',
         reflectionStep: Math.max(profile.reflectionStep, 2 / this.camera.zoom),
       },
     );
@@ -415,6 +422,8 @@ export class Scene {
       useSpriteCache: this.useSpriteCache,
       particles: this.particles,
       motion: this.motion,
+      windField,
+      simpleWind: this.graphicsQuality === 'low',
     });
     drawCurrent(ctx, world, this.flow, atm, time);
     drawShoreRipple(ctx, world, this.flow, atm, time);
@@ -453,7 +462,18 @@ export class Scene {
       drawPathPreview(ctx, world, time, this.pathFrom, this.pathPreview, this.camera.zoom);
 
     // подсветка наведённого тайла / призрак объекта
-    if (this.ghost) drawGhost(ctx, world, atm, time, this.ghost, this.wind, this.camera.zoom);
+    if (this.ghost)
+      drawGhost(
+        ctx,
+        world,
+        atm,
+        time,
+        this.ghost,
+        this.motion ? this.wind : 0,
+        this.camera.zoom,
+        this.motion ? windField : () => CALM,
+        this.graphicsQuality === 'low',
+      );
 
     // --- Объекты, отсортированные по глубине ---
     drawObjects(ctx, world, atm, time, {
@@ -473,6 +493,8 @@ export class Scene {
       useSpriteCache: this.useSpriteCache,
       particles: this.particles,
       motion: this.motion,
+      windField,
+      simpleWind: this.graphicsQuality === 'low',
     });
 
     // Кровля поверх интерьера.
@@ -533,14 +555,14 @@ export class Scene {
         const wp = isoToScreen(e.x, e.y, lvl);
         const sp = this.worldToScreen(wp.x, wp.y - 70);
         if (sp.x > -60 && sp.x < W + 60 && sp.y > -60 && sp.y < H + 60) {
-          this.weather.emitAt(sp.x, sp.y, e.kind, e.seed, Math.round(96 * profile.particles));
+          this.weather.emitAt(sp.x, sp.y, e.kind, e.seed, Math.round(96 * profile.particles), { x: e.x, y: e.y });
         }
       }
     }
     // Частицы можно отключить в настройках: кого-то от них укачивает,
     // а сад и без них остаётся садом.
     if (this.particles) {
-      this.weather.update(dt, atm);
+      this.weather.update(dt, atm, windField, this.camera.zoom);
       this.weather.draw(ctx, atm);
     } else this.weather.clear();
 

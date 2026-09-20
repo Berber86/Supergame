@@ -37,7 +37,14 @@ for (const scenario of ['garden', 'dense-night', 'rain']) {
     for (let i = 0; i < 16; i++) {
       cv.width = backingWidth;
       const start = performance.now();
-      scene.render(world, atm, 10000 + i * 16, 16, undefined, weather.state);
+      scene.render(
+        world,
+        atm,
+        (process.argv.includes('--wind-peak') ? 4 * 48000 + 20000 : 10000) + i * 16,
+        16,
+        undefined,
+        weather.state,
+      );
       cv.getContext('2d').getImageData(0, 0, 1, 1);
       const ms = performance.now() - start;
       if (i >= 6) times.push(ms);

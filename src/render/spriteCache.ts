@@ -1,3 +1,4 @@
+import { drawWindImage, windOffset } from './plantWind';
 import { crownCacheKey, crownCacheTime } from '../world/phenology';
 /**
  * Кэш готовых спрайтов.
@@ -168,6 +169,8 @@ function getCachedSprite(d: DrawCtx, relit = false): Entry | null {
       obj,
       time: 0,
       wind: 0,
+      plantPose: undefined,
+      windVector: undefined,
       alpha: 1,
     });
     setSkipShadows(false);
@@ -202,17 +205,21 @@ function drawEntry(d: DrawCtx, e: Entry): void {
   // появится мыло. Округляем в экранных координатах — с учётом текущего
   // преобразования, иначе при зуме округление не совпадёт с пикселями.
   const m = ctx.getTransform ? ctx.getTransform() : null;
-  const dx = d.x - e.ax;
-  const dy = d.y - e.ay;
+  let dx = d.x - e.ax;
+  let dy = d.y - e.ay;
   if (m && m.a !== 0 && m.d !== 0) {
-    const sx = m.a * dx + m.c * dy + m.e;
-    const sy = m.b * dx + m.d * dy + m.f;
-    const rx = Math.round(sx);
-    const ry = Math.round(sy);
-    ctx.drawImage(e.canvas, dx + (rx - sx) / m.a, dy + (ry - sy) / m.d);
+    const sx = m.a * dx + m.c * dy + m.e,
+      sy = m.b * dx + m.d * dy + m.f;
+    dx += (Math.round(sx) - sx) / m.a;
+    dy += (Math.round(sy) - sy) / m.d;
   } else {
-    ctx.drawImage(e.canvas, Math.round(dx), Math.round(dy));
+    dx = Math.round(dx);
+    dy = Math.round(dy);
   }
+  // Keep the very same snapped foot as in calm weather, also at fractional zoom/DPR.
+  if (d.plantPose && Math.abs(d.plantPose.slope) > 1e-6)
+    drawWindImage(ctx, e.canvas, dx + e.ax, dy + e.ay, e.ax, e.ay, e.canvas.width, e.canvas.height, d.plantPose);
+  else ctx.drawImage(e.canvas, dx, dy);
   ctx.globalAlpha = prev;
 }
 
@@ -231,7 +238,7 @@ export function drawCachedReflection(d: DrawCtx, compression = 0.82, stripSize =
   const ctx = d.ctx;
   ctx.save();
   const alpha = ctx.globalAlpha * d.alpha;
-  ctx.translate(d.x + spriteSway(d.obj.type, d.obj.seed, d.g, d.time, d.wind), d.y);
+  ctx.translate(d.x + (d.plantPose || d.windVector ? 0 : spriteSway(d.obj.type, d.obj.seed, d.g, d.time, d.wind)), d.y);
   ctx.scale(1, -compression);
   // Only the part above the object's foot reflects. A fragment is 5 world pixels,
   // not a screen-sized offscreen canvas; reused sprites also bound memory.
@@ -248,7 +255,7 @@ export function drawCachedReflection(d: DrawCtx, compression = 0.82, stripSize =
       y,
       e.canvas.width,
       h,
-      -e.ax + drift,
+      -e.ax + drift + windOffset(d.plantPose, e.ay - y - h * 0.5),
       y - e.ay - (wave?.dy ?? 0) / compression,
       e.canvas.width,
       h + 0.12,
@@ -323,6 +330,8 @@ function measureBox(
       obj: obj as never,
       time: 0,
       wind: 0,
+      plantPose: undefined,
+      windVector: undefined,
       alpha: 1,
     });
   } catch (e) {
@@ -509,6 +518,18 @@ export function paintObjectLight(d: DrawCtx, hits: import('./localLight').LightS
   d.ctx.save();
   d.ctx.globalAlpha = d.alpha;
   d.ctx.globalCompositeOperation = 'source-over';
-  d.ctx.drawImage(lightMask, 0, 0, measured.w, measured.h, dx, dy, measured.w, measured.h);
+  if (d.plantPose && Math.abs(d.plantPose.slope) > 1e-6)
+    drawWindImage(
+      d.ctx,
+      lightMask,
+      dx + measured.ax,
+      dy + measured.ay,
+      measured.ax,
+      measured.ay,
+      measured.w,
+      measured.h,
+      d.plantPose,
+    );
+  else d.ctx.drawImage(lightMask, 0, 0, measured.w, measured.h, dx, dy, measured.w, measured.h);
   d.ctx.restore();
 }

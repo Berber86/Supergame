@@ -1,3 +1,5 @@
+import type { PlantPose } from '../plantWind';
+import type { WindVector } from '../../world/wind';
 /** Общая утварь рисовальщиков: контекст, освещение, тени. */
 
 import { clamp01, hash1, lerp } from '../../core/rng';
@@ -18,8 +20,10 @@ export interface DrawCtx {
   g: number;
   obj: PlacedObject;
   time: number;
-  /** Ветер 0..1 — общая фаза покачивания. */
+  /** Legacy amplitude or signed horizontal projection. Field-driven plants use plantPose. */
   wind: number;
+  plantPose?: PlantPose;
+  windVector?: WindVector;
   /** Прозрачность (для призрака при размещении). */
   alpha: number;
   /** Bridge-only world-height reflection; never a flipped screen-space bitmap. */

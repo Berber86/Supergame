@@ -1,3 +1,4 @@
+import { screenToIso } from '../core/iso';
 import { FrameGate } from '../render/graphics';
 import { cachedCanopyDensity } from '../world/canopy';
 /**
@@ -63,6 +64,8 @@ export function startLoop(deps: LoopDeps): void {
     let trees = 0,
       foliage = 0;
     let hasChime = false;
+    let chimeWind = 0;
+    const ear = screenToIso(scene.camera.x, scene.camera.y);
     let hasShishi = false;
     for (const o of world.objects) {
       const item = ITEM_BY_ID.get(o.type);
@@ -71,7 +74,11 @@ export function startLoop(deps: LoopDeps): void {
         trees++;
         foliage += 0.18 + 0.82 * cachedCanopyDensity(o.type, o.seed, now);
       }
-      if (o.type === 'wind_chime') hasChime = true;
+      if (o.type === 'wind_chime') {
+        hasChime = true;
+        const distance = Math.hypot(o.tx + 0.5 - ear.x, o.ty + 0.5 - ear.y);
+        chimeWind = Math.max(chimeWind, life.windAt(o.tx + 0.5, o.ty + 0.5) * Math.max(0, 1 - distance / 14));
+      }
       if (o.type === 'shishi') hasShishi = true;
     }
     for (let y = 0; y < 26; y += 2) for (let x = 0; x < 26; x += 2) if (world.at(x, y)?.water) water += 0.03;
@@ -80,7 +87,8 @@ export function startLoop(deps: LoopDeps): void {
     return {
       current: loud.stream,
       falling: loud.fall,
-      wind: life.windBase + life.gusts.reduce((a, g) => a + g.strength, 0) * 0.5,
+      wind: life.windAt(ear.x, ear.y),
+      chimeWind,
       waterNearby: Math.min(1, water),
       hasChime,
       hasShishi,

@@ -170,6 +170,7 @@ export class GardenAudio {
     weather: WeatherState,
     ctxInfo: {
       wind: number;
+      chimeWind?: number;
       waterNearby: number;
       hasChime: boolean;
       hasShishi: boolean;
@@ -232,10 +233,11 @@ export class GardenAudio {
 
     // --- Фурин: звенит на ветру ---
     if (ctxInfo.hasChime) {
-      this.chimeTimer -= dt * (0.4 + ctxInfo.wind);
+      const chimeWind = ctxInfo.chimeWind ?? ctxInfo.wind;
+      this.chimeTimer -= dt * chimeWind;
       if (this.chimeTimer <= 0) {
         this.chimeTimer = 2600 + rnd() * 7000;
-        if (ctxInfo.wind > 0.5) this.chime(clamp01(ctxInfo.wind * 0.6));
+        if (chimeWind > 0.25) this.chime(clamp01(chimeWind * 0.6));
       }
     }
 

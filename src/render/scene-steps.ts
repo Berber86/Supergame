@@ -1,3 +1,5 @@
+import { plantPose, windLag } from './plantWind';
+import { CALM, type WindSampler } from '../world/wind';
 import { drawFruitFall } from './fruitFall';
 import { drawLizard } from './lizard';
 import { ecologyYear, wildlifeActivity } from '../world/ecology';
@@ -55,6 +57,8 @@ export interface ObjectsOpts {
   useSpriteCache: boolean;
   particles: boolean;
   motion?: boolean;
+  windField?: WindSampler;
+  simpleWind?: boolean;
   waterMotion?: WaterMotion;
   localLights?: LocalLightField;
   rainReceivers?: RainField;
@@ -369,6 +373,8 @@ export function drawGhost(
   ghost: GhostPreview,
   wind: number,
   zoom: number,
+  windField?: WindSampler,
+  simpleWind = false,
 ): void {
   const gh = ghost;
   const pulse = 0.55 + Math.sin(time * 0.004) * 0.15;
@@ -424,6 +430,7 @@ export function drawGhost(
         rot: gh.rot,
         seed: 777,
       };
+      const vector = windField?.(gh.tx + item.w / 2, gh.ty + item.h / 2, windLag(gh.itemId));
       drawObject({
         ctx,
         x: p.x,
@@ -432,7 +439,9 @@ export function drawGhost(
         g: 1,
         obj: fake,
         time,
-        wind: wind,
+        wind: vector?.screenX ?? wind,
+        windVector: vector,
+        plantPose: vector ? plantPose(gh.itemId, 777, 1, time, vector, simpleWind) : undefined,
         alpha: gh.valid ? 0.62 : 0.3,
       });
     }
@@ -474,7 +483,10 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
       continue;
     const g = world.growth(o, now);
     // ветер берём в точке дерева — порыв проходит волной
-    const wind = opts.motion === false ? 0 : opts.life ? opts.life.windAt(cx, cy) : opts.wind;
+    const air = opts.windField?.(cx, cy, windLag(o.type));
+    const vector = opts.motion === false ? CALM : air;
+    const pose = vector ? plantPose(o.type, o.seed, cachedGrowth(g), time, vector, opts.simpleWind) : undefined;
+    const wind = opts.motion === false ? 0 : air ? air.screenX : opts.life ? opts.life.windAt(cx, cy) : opts.wind;
     const localHits =
       opts.localLights && receivesObjectLight(o.type) ? sampleLocalLight(opts.localLights, cx, cy, lvl, o.id) : [];
     const materialAtm = rainMaterial(atm, opts.rainReceivers, opts.rainWeather, o.type, cx, cy);
@@ -499,7 +511,7 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
           // Тот же огрублённый размер, что у спрайта в кэше: иначе тень
           // будет от дерева другой стадии роста, и края разойдутся.
           const gq = cachedGrowth(g);
-          const sway = spriteSway(o.type, o.seed, g, time, wind);
+          const sway = air ? 0 : spriteSway(o.type, o.seed, g, time, wind);
           // Тень рисуем прямо здесь: она идёт режимом multiply по земле,
           // и в прозрачном холсте кэша ей не на что умножаться.
           drawObjectShadow({
@@ -511,6 +523,8 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
             obj: o,
             time,
             wind,
+            plantPose: pose,
+            windVector: vector,
             alpha: isMoving ? 0.72 : 1,
           });
           const drawn = drawCached({
@@ -522,6 +536,8 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
             obj: o,
             time,
             wind,
+            plantPose: pose,
+            windVector: vector,
             alpha: isMoving ? 0.72 : 1,
           });
           if (drawn) {
@@ -535,6 +551,8 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
                 obj: o,
                 time,
                 wind,
+                plantPose: pose,
+                windVector: vector,
                 alpha: isMoving ? 0.72 : 1,
               },
               localHits,
@@ -542,7 +560,7 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
             if (opts.particles && !isMoving)
               drawSmallHouseDrips({ ctx, x: p.x, y: p.y, atm, g, obj: o, time, wind, alpha: 1 }, opts.rainWeather);
             if (opts.particles && !isMoving)
-              drawFruitFall({ ctx, x: p.x, y: p.y, atm, g, obj: o, time, wind, alpha: 1 }, world);
+              drawFruitFall({ ctx, x: p.x, y: p.y, atm, g, obj: o, time, wind, plantPose: pose, alpha: 1 }, world);
             return;
           }
         }
@@ -556,17 +574,31 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
           obj: o,
           time,
           wind,
+          plantPose: pose,
+          windVector: vector,
           alpha: isMoving ? 0.72 : 1,
         });
         paintObjectLight(
-          { ctx, x: p.x, y: p.y - lift, atm: materialAtm, g, obj: o, time, wind, alpha: isMoving ? 0.72 : 1 },
+          {
+            ctx,
+            x: p.x,
+            y: p.y - lift,
+            atm: materialAtm,
+            g,
+            obj: o,
+            time,
+            wind,
+            plantPose: pose,
+            windVector: vector,
+            alpha: isMoving ? 0.72 : 1,
+          },
           localHits,
           false,
         );
         if (opts.particles && !isMoving)
           drawSmallHouseDrips({ ctx, x: p.x, y: p.y, atm, g, obj: o, time, wind, alpha: 1 }, opts.rainWeather);
         if (opts.particles && !isMoving)
-          drawFruitFall({ ctx, x: p.x, y: p.y, atm, g, obj: o, time, wind, alpha: 1 }, world);
+          drawFruitFall({ ctx, x: p.x, y: p.y, atm, g, obj: o, time, wind, plantPose: pose, alpha: 1 }, world);
       },
     });
   }

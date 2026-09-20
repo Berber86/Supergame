@@ -1,3 +1,4 @@
+import type { WindSampler } from '../world/wind';
 import { ecologyYear } from '../world/ecology';
 /** Windborne litter from actual trees. Rain/snow belong to RainRenderer;
  * fireflies belong to habitat-driven wildlife, not a second screen-space population. */
@@ -7,6 +8,7 @@ import { Atmosphere, RGB, css, mix } from '../world/palette';
 import { Ctx } from './paint';
 
 interface Particle {
+  source?: { x: number; y: number };
   x: number;
   y: number;
   z: number;
@@ -33,7 +35,14 @@ export class Weather {
     this.calendar = undefined;
   }
   /** The source tree has already checked its own seeded flowering/shedding phase. */
-  emitAt(x: number, y: number, kind: 'petal' | 'leaf', seed: number, limit = 96): void {
+  emitAt(
+    x: number,
+    y: number,
+    kind: 'petal' | 'leaf',
+    seed: number,
+    limit = 96,
+    source?: { x: number; y: number },
+  ): void {
     while (this.particles.length >= Math.max(1, limit)) this.particles.shift();
     const r = this.rnd;
     this.particles.push({
@@ -41,6 +50,7 @@ export class Weather {
       y,
       kind,
       seed,
+      source: source ? { ...source } : undefined,
       z: 0.55 + r() * 0.45,
       vx: 0.1 + r() * 0.3,
       vy: 0.12 + r() * 0.16,
@@ -49,16 +59,25 @@ export class Weather {
       age: 0,
     });
   }
-  update(dt: number, atm: Atmosphere): void {
+  update(dt: number, atm: Atmosphere, windField?: WindSampler, zoom = 1): void {
     if (this.calendar !== undefined && Math.abs(atm.time.now - this.calendar) > DAY_MS) this.particles = [];
     this.calendar = atm.time.now;
     const step = Number.isFinite(dt) ? Math.max(0, dt) : 0;
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
       p.age += step;
-      const drift = Math.sin(performance.now() * 0.0008 + p.seed) * 0.34;
-      p.x += (p.vx + drift) * step * 0.09 * p.z;
-      p.y += p.vy * step * 0.09 * p.z;
+      const air = p.source ? windField?.(p.source.x, p.source.y) : undefined;
+      if (air && p.source) {
+        p.vx += (air.screenX * 1.5 - p.vx) * (1 - Math.exp(-step / 220));
+        p.x += p.vx * step * 0.08 * p.z * zoom;
+        p.y += (p.vy * 1.4 + air.screenY * 0.25) * step * 0.09 * p.z * zoom;
+        p.source.x += air.x * step * 0.00035;
+        p.source.y += air.y * step * 0.00035;
+      } else {
+        const drift = Math.sin(p.age * 0.0008 + p.seed) * 0.34;
+        p.x += (p.vx + drift) * step * 0.09 * p.z;
+        p.y += p.vy * step * 0.09 * p.z;
+      }
       p.rot += p.vr * step * 0.06;
       if (p.age > 40000 || p.y > this.h + 40 || p.x > this.w + 120 || p.x < -120) this.particles.splice(i, 1);
     }

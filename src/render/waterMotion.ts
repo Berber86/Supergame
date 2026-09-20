@@ -1,3 +1,4 @@
+import type { WindSampler } from '../world/wind';
 /** Shared, stateless surface displacement for scenery and animated reflections. */
 import { isoToScreen, screenToIso } from '../core/iso';
 import { clamp, clamp01 } from '../core/rng';
@@ -63,6 +64,7 @@ export function makeWaterMotion(
   time: number,
   wind: number,
   rings: readonly WaterRing[] = [],
+  windField?: WindSampler,
 ): WaterMotion {
   const breeze = clamp01(Math.abs(wind));
   const active = flowingWater(world, flow);
@@ -75,6 +77,8 @@ export function makeWaterMotion(
   });
   return (x, y, level) => {
     const tile = screenToIso(x, y, level - 0.26);
+    const air = windField?.(tile.x, tile.y, 120);
+    const localBreeze = air?.strength ?? breeze;
     const tx = Math.floor(tile.x),
       ty = Math.floor(tile.y);
     const carried =
@@ -83,8 +87,9 @@ export function makeWaterMotion(
         : 0;
     const speed = Math.max(flow.at(tx, ty)?.speed ?? 0, carried);
     const phase = time * (0.0009 + speed * 0.0018) + y * 0.13 + x * 0.016;
-    let dx = Math.sin(time * 0.0006 + y * 0.035) * (0.18 + breeze * 0.28) + Math.sin(phase) * speed * 2.8;
-    let dy = Math.cos(phase * 0.83) * speed * 0.65;
+    let dx = Math.sin(time * 0.0006 + y * 0.035) * (0.12 + localBreeze * 0.28) + Math.sin(phase) * speed * 2.8;
+    dx += (air?.screenX ?? 0) * 0.55;
+    let dy = Math.cos(phase * 0.83) * speed * 0.65 + (air?.screenY ?? 0) * 0.25;
     let disturbance = 0;
     for (const wave of waves) {
       if (wave.level !== level || Math.abs(x - wave.x) > wave.radius + 9 || Math.abs(y - wave.y) * 2 > wave.radius + 9)
