@@ -149,3 +149,10 @@ node --max-old-space-size=192 --import tsx tools/bench-graphics.ts --all --wind-
 Повторно прошли целевые graphics, perf, canopy-environment, ecological-year,
 orchard, ground-life, lizard, water, spring-reflections, local-light, startup.
 Реальный телефон и весь `npm test` этим не проверены.
+
+## Переработка камня
+
+Последующий замер с новым материалом и укладкой дорожек приведён в
+[stone-material.md](stone-material.md). Водяные и шаговые камни теперь
+кэшируются; живые круги у валунов вынесены в слой воды. Ограничения
+спрайтов/измерений сохранены, телефонный FPS по native-замеру не заявляется.

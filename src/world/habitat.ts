@@ -1,3 +1,4 @@
+import { stonePerchHeight, STONE_TYPES } from './stone';
 import { isFruitTree, fruitYear } from './orchard';
 import { ecologyYear, wildlifeActivity, nectarBloom } from './ecology';
 /**
@@ -218,9 +219,8 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
     }
     const dry = world.at(Math.floor(c.x), Math.floor(c.y));
     if (dry && !dry.water && !dry.indoor && !dry.veranda) {
-      const lifts: Record<string, number> = { rock_big: 29, rock_mid: 18, rock_trio: 12, step_stone: 3 };
-      if (lifts[o.type] !== undefined) {
-        h.lizardSpots.push({ ...c, lift: lifts[o.type] });
+      if (STONE_TYPES.has(o.type) && o.type !== 'water_stone') {
+        h.lizardSpots.push({ ...c, lift: stonePerchHeight(o.type, o.seed, o.rot) });
         h.lizardShelters.push({ ...c });
       }
       if (item.kind === 'shrub' || o.type === 'fern' || o.type === 'grass_tuft') h.lizardShelters.push(c);

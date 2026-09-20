@@ -367,7 +367,7 @@ export class Scene {
       height: H,
       zoom: this.camera.zoom,
     });
-    const rainReceivers = ws && ws.wetness > 0.015 ? rainField(world) : undefined;
+    const rainReceivers = rainField(world);
 
     // Pond bed is in terrain. Fish must be BELOW reflections, glare and ripples.
     spriteFrame();

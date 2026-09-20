@@ -105,7 +105,16 @@ export const TERRAIN_BRUSHES: TerrainBrush[] = [
     h: 1,
     tab: 'ground',
   },
-  { id: 'g_stone', name: 'Камень', hint: 'плитка дорожки', kind: 'ground', ground: 'stone', w: 1, h: 1, tab: 'ground' },
+  {
+    id: 'g_stone',
+    name: 'Камень',
+    hint: 'плиты и мшистые швы',
+    kind: 'ground',
+    ground: 'stone',
+    w: 1,
+    h: 1,
+    tab: 'ground',
+  },
   {
     id: 'g_soil',
     name: 'Земля',
@@ -331,7 +340,7 @@ export const ITEMS: CatalogItem[] = [
   {
     id: 'rock_big',
     name: 'Валун 2×2',
-    hint: 'сердце сада камней',
+    hint: 'грани, прожилки и влажные расщелины',
     kind: 'rock',
     w: 2,
     h: 2,
@@ -343,7 +352,7 @@ export const ITEMS: CatalogItem[] = [
   {
     id: 'rock_mid',
     name: 'Камень',
-    hint: 'приятная асимметрия',
+    hint: 'своя форма, порода и сколы',
     kind: 'rock',
     w: 1,
     h: 1,
@@ -367,7 +376,7 @@ export const ITEMS: CatalogItem[] = [
   {
     id: 'step_stone',
     name: 'Шаговый камень',
-    hint: 'тропа по мху',
+    hint: 'шероховатая плита среди мха',
     kind: 'micro',
     w: 1,
     h: 1,

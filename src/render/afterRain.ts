@@ -1,3 +1,4 @@
+import { STONE_TYPES } from '../world/stone';
 import { liquidExposure } from '../world/ecology';
 /** Residual rain: receiver-aware drying, small temporary puddles and bounded roof drips. No save mutations. */
 import { isoToScreen, tileDiamond, type Pt } from '../core/iso';
@@ -9,7 +10,7 @@ import { css, mix, shade, type Atmosphere } from '../world/palette';
 import type { WeatherState } from '../world/weatherState';
 import type { World } from '../world/world';
 import type { DrawCtx } from './sprites/common';
-import { wetRoadPath } from './terrain';
+import { wetRoadPath, stoneFlags } from './terrain';
 import { blobPath, type Ctx } from './paint';
 import { findHouse, houseRoofGeometry } from './building';
 import { smallHouseSize } from './sprites/smallHouses';
@@ -25,6 +26,7 @@ interface RainCell {
   sheltered: boolean;
   water: boolean;
   hard: boolean;
+  moisture: number;
   deck: boolean;
 }
 export interface PuddleSite extends RainCell {
@@ -112,6 +114,18 @@ export function rainField(world: World): RainField {
         sheltered,
         water: t.water,
         hard: ['stone', 'gravel', 'deck'].includes(t.ground),
+        moisture: Math.min(
+          1,
+          (t.ground === 'moss' ? 0.45 : t.ground === 'grass' ? 0.22 : 0.06) +
+            ([-1, 0, 1].some((dy) =>
+              [-1, 0, 1].some((dx) => {
+                const n = world.at(x + dx, y + dy);
+                return n?.water && Math.abs(n.level - t.level) <= 1;
+              }),
+            )
+              ? 0.5
+              : 0),
+        ),
         deck: t.ground === 'deck',
       };
       f.cells.push(c);
@@ -202,9 +216,15 @@ export function rainMaterial(
   x: number,
   y: number,
 ): Atmosphere {
-  if (!field || !weather || !WET_MATERIALS.has(type)) return atm;
+  if (!field || !WET_MATERIALS.has(type)) return atm;
   const wet = wetnessAt(field, weather, x, y, atm.time.now) * liquidExposure(atm.time.now);
   const q = Math.round(wet * 12) / 12;
+  if (STONE_TYPES.has(type)) {
+    const index = Math.floor(y) * field.size + Math.floor(x),
+      cell = field.cells[index];
+    const habitat = cell ? Math.min(1, cell.moisture * 0.6 + rainShade(field, atm.time.now)[index] * 0.6) : 0.25;
+    return { ...atm, materialWetness: q, stoneHabitat: Math.round(habitat * 6) / 6 };
+  }
   return q > 0 ? { ...atm, materialWetness: q } : atm;
 }
 interface RainView {
@@ -290,10 +310,25 @@ export function drawRainGround(
   }
   for (const [key, cells] of groups) {
     if (key <= 16) continue;
-    ctx.beginPath();
-    for (const c of cells) wetRoadPath(ctx, world, c.x, c.y, world.at(c.x, c.y)!);
-    ctx.fillStyle = css({ r: 95, g: 102, b: 108 }, ((key - 16) / 12) * 0.21);
-    ctx.fill();
+    const amount = (key - 16) / 12;
+    for (const stone of [false, true]) {
+      ctx.beginPath();
+      let count = 0;
+      for (const c of cells) {
+        const t = world.at(c.x, c.y)!;
+        if ((t.ground === 'stone') !== stone) continue;
+        wetRoadPath(ctx, world, c.x, c.y, t);
+        count++;
+      }
+      if (!count) continue;
+      ctx.fillStyle = css({ r: 83, g: 93, b: 102 }, (stone ? Math.pow(amount, 1.8) : amount) * 0.26);
+      ctx.fill();
+      if (stone) {
+        ctx.strokeStyle = css({ r: 74, g: 86, b: 80 }, Math.pow(amount, 0.55) * 0.22);
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+      }
+    }
   }
   ctx.restore();
   ctx.globalCompositeOperation = 'source-over';
@@ -301,8 +336,21 @@ export function drawRainGround(
     ctx.strokeStyle = css(mix(sky, { r: 225, g: 231, b: 229 }, 0.35), wet * 0.22 * Math.min(1, atm.exposure));
     ctx.lineWidth = 0.8;
     ctx.beginPath();
-    ctx.moveTo(p.x - 15, p.y - 5);
-    ctx.lineTo(p.x + 8, p.y + (c.deck ? 6 : -5));
+    const tile = world.at(c.x, c.y)!;
+    if (tile.ground === 'stone') {
+      const points = stoneFlags(world, c.x, c.y, tile)[0],
+        a = points[0],
+        b = points[1];
+      ctx.strokeStyle = css(
+        mix(sky, { r: 225, g: 231, b: 229 }, 0.35),
+        Math.pow(wet, 1.8) * 0.26 * Math.min(1, atm.exposure),
+      );
+      ctx.moveTo(lerp(a.x, b.x, 0.18), lerp(a.y, b.y, 0.18) + 0.5);
+      ctx.lineTo(lerp(a.x, b.x, 0.7), lerp(a.y, b.y, 0.7) + 0.5);
+    } else {
+      ctx.moveTo(p.x - 15, p.y - 5);
+      ctx.lineTo(p.x + 8, p.y + (c.deck ? 6 : -5));
+    }
     ctx.stroke();
   }
   ctx.globalCompositeOperation = 'source-over';

@@ -1,3 +1,5 @@
+import { STONE_TYPES } from '../world/stone';
+import { winterYear } from '../world/annualEnvironment';
 import { drawWindImage, windOffset } from './plantWind';
 import { crownCacheKey, crownCacheTime } from '../world/phenology';
 /**
@@ -54,7 +56,6 @@ const LIVE = new Set([
   'irori',
   'shishi',
   'wind_chime',
-  'water_stone',
   'tsukubai',
   'table',
 ]);
@@ -130,7 +131,10 @@ function getCachedSprite(d: DrawCtx, relit = false): Entry | null {
   const sunq = quantDown(atm.sunDir.x, 0.4);
   const goldq = quantDown(atm.golden, 0.34);
   const snowKey = SMALL_HOUSE_IDS.has(obj.type) ? roofSnowKey(atm, obj.seed) : '';
-  const key = `${crownCacheKey(obj.type, obj.seed, atm.time.now)}|${Math.round((atm.materialWetness ?? 0) * 12)}|${flowerCycleKey(obj.type, atm)}|${relit ? 'lit' : 'base'}|${snowKey}|${obj.type}|${atm.season}|${gq}|${expq}|${lampq}|${sunq}|${goldq}|${obj.seed}|${obj.rot}`;
+  const mineralKey = STONE_TYPES.has(obj.type)
+    ? `${Math.round((atm.stoneHabitat ?? 0.25) * 6)}:${Math.round(winterYear(atm.time.now).snow * 12)}`
+    : '';
+  const key = `${mineralKey}|${crownCacheKey(obj.type, obj.seed, atm.time.now)}|${Math.round((atm.materialWetness ?? 0) * 12)}|${flowerCycleKey(obj.type, atm)}|${relit ? 'lit' : 'base'}|${snowKey}|${obj.type}|${atm.season}|${gq}|${expq}|${lampq}|${sunq}|${goldq}|${obj.seed}|${obj.rot}`;
 
   let e = cache.get(key);
   if (!e) {

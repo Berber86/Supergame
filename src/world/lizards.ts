@@ -167,6 +167,15 @@ export class Lizards {
         a.alpha = easePose(a.alpha, a.inactive ? 1 - a.inactive / 5000 : 1, dt, 350);
       }
       const speed = lizardSpeed(a.state);
+      if (!speed && a.perchLift > 0 && a.state !== 'hide') {
+        // A rotated/moved/removed stone must not leave its resident at the old height.
+        const support = h.lizardSpots.find((p) => Math.hypot(p.x - a.tx, p.y - a.ty) < 0.16);
+        a.perchLift = support?.lift ?? 0;
+      }
+      if (a.target?.lift !== undefined && !a.prey) {
+        const support = h.lizardSpots.find((p) => Math.hypot(p.x - a.target!.x, p.y - a.target!.y) < 0.16);
+        a.target = { ...a.target, lift: support?.lift ?? 0 };
+      }
       if (!speed || !a.target) a.lift = easePose(a.lift, a.perchLift, dt, 220);
       a.motion = easePose(a.motion, speed && a.target ? 1 : 0, dt, 100);
       if (speed && a.target) {

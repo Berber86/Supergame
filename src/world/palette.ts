@@ -128,6 +128,8 @@ function mixPalette(a: SeasonPalette, b: SeasonPalette, t: number): SeasonPalett
 export interface Atmosphere {
   /** Receiver-local material moisture, never changes the flower clock or global lighting. */
   materialWetness?: number;
+  /** Local shade / ground dampness; stable habitat, not overnight moss growth. */
+  stoneHabitat?: number;
   palette: SeasonPalette;
   /** Цвет, которым тонируется всё под светом. */
   lightTint: RGB;

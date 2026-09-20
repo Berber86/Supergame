@@ -81,7 +81,20 @@ perched.alpha = 1;
 perched.target = h.lizardSpots[0];
 pop.agents = [perched];
 for (let i = 0; i < 25; i++) pop.update(world, h, { ...inv, lizard: 1 }, summer, 100, [], [], []);
-assert.ok(perched.lift > 17, 'visible on the rock, not inside it');
+assert.ok(
+  Math.abs(perched.lift - h.lizardSpots[0].lift!) < 0.8 && perched.lift > 5,
+  'climbs to this seeded rock surface, not a universal 18px height',
+);
+// A live edit changes the support plane; a resting animal follows it instead of hovering.
+const supportHeight = h.lizardSpots[0].lift!;
+const raised = { ...h, lizardSpots: h.lizardSpots.map((p, i) => (i ? p : { ...p, lift: supportHeight + 6 })) };
+perched.timer = 50000;
+perched.hunger = 50000;
+for (let i = 0; i < 20; i++) pop.update(world, raised, { ...inv, lizard: 1 }, summer, 100, [], [], []);
+assert.ok(Math.abs(perched.lift - supportHeight - 6) < 0.8);
+const removed = { ...h, lizardSpots: h.lizardSpots.slice(1) };
+for (let i = 0; i < 20; i++) pop.update(world, removed, { ...inv, lizard: 1 }, summer, 100, [], [], []);
+assert.ok(perched.lift < 0.8, 'removing the support settles the animal onto the ground');
 // Cat/ground-bird threat -> flee -> hidden, with a finite retirement in winter even while hidden.
 pop.update(world, h, inv, summer, 50, [{ x: perched.tx + 0.1, y: perched.ty, r: 2.1 }], [], []);
 assert.ok(['flee', 'hide'].includes(perched.state));

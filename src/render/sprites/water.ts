@@ -1,11 +1,11 @@
+import { paintStone } from '../stone';
 import { flowerYear, winterYear } from '../../world/annualEnvironment';
 /** Жители пруда и водяные растения. */
 
 import { flowerOpenness } from '../flowerCycle';
-import { Drawer, WHITE, litc } from './common';
+import { Drawer, litc } from './common';
 import { hash2, lerp } from '../../core/rng';
 import { css, mix, shade } from '../../world/palette';
-import { blobPath, washBlob } from '../paint';
 
 // ---------------- Вода ----------------
 
@@ -257,36 +257,23 @@ export const drawHorsetail: Drawer = (d) => {
 /** Камень, стоящий в воде: с мокрой полосой и кругами у основания. */
 
 export const drawWaterStone: Drawer = (d) => {
-  const { ctx, atm, obj } = d;
-  const rx = 11;
-  const ry = 8;
-  const base = { r: 132, g: 130, b: 126 };
-  const stone = litc(base, atm);
-
-  // Круги на воде вокруг камня — вода его обтекает
-  const ring = litc(mix(atm.palette.water, WHITE, 0.6), atm);
-  for (let i = 0; i < 2; i++) {
-    const ph = (((d.time * 0.0009 + i * 0.5 + obj.seed * 0.01) % 1) + 1) % 1;
-    ctx.strokeStyle = css(ring, 0.22 * (1 - ph));
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.ellipse(d.x, d.y + 2, rx * (0.9 + ph * 0.9), ry * (0.55 + ph * 0.6), 0, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-
-  // Сам камень
-  washBlob(ctx, d.x, d.y - ry * 0.5, rx, ry, stone, obj.seed, { layers: 2, alpha: 0.6, edge: 0.1, wobble: 0.3 });
-  // мокрая полоса у ватерлинии — камень темнее там, где его лижет вода
+  const { ctx } = d;
   ctx.save();
-  ctx.globalCompositeOperation = 'multiply';
-  ctx.fillStyle = css(mix(WHITE, mix(base, atm.palette.waterDeep, 0.5), 0.5), 1);
-  blobPath(ctx, d.x, d.y + 1, rx * 0.95, ry * 0.34, obj.seed + 5, 0.26, 8);
-  ctx.fill();
+  ctx.beginPath();
+  ctx.rect(d.x - 80, d.y - 100, 160, 102);
+  ctx.clip();
+  paintStone(
+    ctx,
+    d.x,
+    d.y,
+    d.obj.seed,
+    0.62,
+    d.obj.rot,
+    { ...d.atm, stoneHabitat: Math.max(0.7, d.atm.stoneHabitat ?? 0) },
+    false,
+    true,
+  );
   ctx.restore();
-  // блик сверху
-  ctx.fillStyle = css(litc(mix(base, WHITE, 0.45), atm, 0.04), 0.4);
-  blobPath(ctx, d.x - atm.sunDir.x * rx * 0.3, d.y - ry * 0.9, rx * 0.42, ry * 0.28, obj.seed + 9, 0.3, 7);
-  ctx.fill();
 };
 
 /** Мостки: простые доски над водой, без изгиба. */

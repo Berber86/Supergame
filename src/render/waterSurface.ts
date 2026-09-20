@@ -1,3 +1,4 @@
+import { liquidExposure } from '../world/ecology';
 import { CALM, type WindSampler } from '../world/wind';
 import { plantPose, windLag } from './plantWind';
 /** Continuous pond silhouettes. Geometry is rebuilt with terrain, not every frame. */
@@ -451,6 +452,40 @@ export function drawWaterAnimation(
     ctx.fillStyle = css(mix(atm.palette.water, atm.skyBottom, 0.28), 0.09);
     ctx.fill('evenodd');
     drawReflections(ctx, world, surface, atm, time, options.objectWind ?? breeze, motion, material, options);
+    // Moving water stays outside the cached mineral body, clipped to the actual pond.
+    const liquid = liquidExposure(atm.time.now);
+    if (liquid > 0.01)
+      for (const o of world.objects) {
+        if (o.type !== 'water_stone') continue;
+        const tx = o.tx + 0.5,
+          ty = o.ty + 0.5,
+          tile = world.at(Math.floor(tx), Math.floor(ty));
+        if (
+          !tile?.water ||
+          tile.level !== surface.level ||
+          !surface.cells.some((c) => c.x === Math.floor(tx) && c.y === Math.floor(ty))
+        )
+          continue;
+        const p = isoToScreen(tx, ty, surface.level - 0.26);
+        if (outside({ minX: p.x - 32, maxX: p.x + 32, minY: p.y - 14, maxY: p.y + 14 }, options.view)) continue;
+        const air = options.windField?.(tx, ty, 120);
+        for (let i = 0; i < 2; i++) {
+          const phase = (((time * 0.00028 + i * 0.5 + o.seed * 0.01) % 1) + 1) % 1;
+          ctx.strokeStyle = css(hi, liquid * (1 - phase) * 0.23);
+          ctx.lineWidth = 0.8;
+          ctx.beginPath();
+          ctx.ellipse(
+            p.x + (air?.screenX ?? 0) * phase * 3,
+            p.y + 2,
+            15 + phase * 12,
+            5 + phase * 6,
+            0,
+            0.12,
+            Math.PI * 1.91,
+          );
+          ctx.stroke();
+        }
+      }
     for (const cell of surface.cells) {
       const { x, y, seed } = cell;
       const p = isoToScreen(x + 0.24 + hash2(x, y, 187) * 0.5, y + 0.24 + hash2(x, y, 191) * 0.5, surface.level - 0.26);

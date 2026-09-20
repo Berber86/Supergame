@@ -1,3 +1,4 @@
+import { paintFlag, stonePath } from './stone';
 import { winterYear } from '../world/annualEnvironment';
 /** Отрисовка земли: непрерывные акварельные заливки, мягкие границы материалов, вода с берегом. */
 
@@ -409,9 +410,9 @@ function isRoad(g: GroundId): boolean {
   return g === 'gravel' || g === 'sand' || g === 'stone';
 }
 
-function sameGround(world: World, x: number, y: number, g: GroundId): boolean {
+function sameGround(world: World, x: number, y: number, g: GroundId, level?: number): boolean {
   const n = world.at(x, y);
-  return !!n && !n.water && !n.indoor && !n.veranda && n.ground === g;
+  return !!n && !n.water && !n.indoor && !n.veranda && n.ground === g && (level === undefined || n.level === level);
 }
 
 const ROAD_CARD: [number, number][] = [
@@ -428,16 +429,18 @@ const ROAD_DIAG: [number, number][] = [
   [-1, -1],
 ];
 
-/** Число соседей-дорог в радиусе одной клетки (все 8 направлений). */
-function roadDeg(world: World, x: number, y: number, g: GroundId): number {
-  let n = 0;
-  for (const [dx, dy] of [...ROAD_CARD, ...ROAD_DIAG]) if (sameGround(world, x + dx, y + dy, g)) n++;
-  return n;
-}
-
-/** Тонкая тропинка: до двух дорожных соседей. Больше — уже двор-площадка. */
+/** Only a filled 2×2 patch becomes a courtyard. T-junctions remain narrow paths. */
 function roadThin(world: World, x: number, y: number, g: GroundId): boolean {
-  return roadDeg(world, x, y, g) <= 2;
+  const level = world.at(x, y)?.level;
+  for (const dx of [-1, 1])
+    for (const dy of [-1, 1])
+      if (
+        sameGround(world, x + dx, y, g, level) &&
+        sameGround(world, x, y + dy, g, level) &&
+        sameGround(world, x + dx, y + dy, g, level)
+      )
+        return false;
+  return true;
 }
 
 /** Что под тропинкой: грунт ближайшего недорожного соседа, иначе трава. */
@@ -469,14 +472,17 @@ function roadSkeleton(world: World, x: number, y: number, t: Tile): RoadSkeleton
   const c = isoToScreen(x + 0.5, y + 0.5, lv);
   const arms: RoadSkeleton['arms'] = [];
   let card = 0;
-  const cardSide = (dx: number, dy: number) => sameGround(world, x + dx, y + dy, t.ground);
+  const cardSide = (dx: number, dy: number) => sameGround(world, x + dx, y + dy, t.ground, t.level);
   for (const [dx, dy] of ROAD_CARD) {
     if (!cardSide(dx, dy)) continue;
     card++;
     arms.push({ m: isoToScreen(x + 0.5 + dx * 0.5, y + 0.5 + dy * 0.5, lv), corner: false });
   }
   for (const [dx, dy] of ROAD_DIAG) {
-    if (!sameGround(world, x + dx, y + dy, t.ground)) continue;
+    if (!sameGround(world, x + dx, y + dy, t.ground, t.level)) continue;
+    const sideA = world.at(x + dx, y),
+      sideB = world.at(x, y + dy);
+    if (!sideA || !sideB || [sideA, sideB].some((n) => n.level !== lv || n.water || n.indoor || n.veranda)) continue;
     // диагональ «просится» только если между ними нет своих же кардинальных
     if (cardSide(dx, 0) || cardSide(0, dy)) continue;
     arms.push({
@@ -534,7 +540,13 @@ function drawTileFill(ctx: Ctx, world: World, x: number, y: number, t: Tile, atm
   }
   tilePath(ctx, x, y, t.level, 0.025);
   const bank = isCascadeBank(world, x, y, t);
-  ctx.fillStyle = css(tileColor(world, x, y, t, atm, bank ? 'moss' : undefined), 1);
+  const fill = tileColor(world, x, y, t, atm, bank ? 'moss' : undefined);
+  ctx.fillStyle = css(
+    !bank && t.ground === 'stone' && !roadThin(world, x, y, t.ground)
+      ? shade(mix(fill, atm.palette.soil, 0.15), 0.81)
+      : fill,
+    1,
+  );
   ctx.fill();
   // Дорожка поверх подстилающего грунта: лента к соседям, а не квадрат.
   if (!bank) drawRoadRibbon(ctx, world, x, y, t, atm);
@@ -560,22 +572,19 @@ function ribbonQuad(
   ctx.lineTo(m.x - px * w1, m.y - py * w1);
   ctx.lineTo(m.x + px * w1, m.y + py * w1);
   ctx.closePath();
-  ctx.closePath();
   if (fill) ctx.fill();
 }
 
 /** Тропинка: узкая лента, обвивающая соседей; перекрёстки шире. */
 function drawRoadRibbon(ctx: Ctx, world: World, x: number, y: number, t: Tile, atm: Atmosphere): void {
-  if (!isRoad(t.ground) || t.water || t.indoor || t.veranda) return;
+  if (!isRoad(t.ground) || t.water || t.indoor || t.veranda || t.ground === 'stone') return;
   const sk = roadSkeleton(world, x, y, t);
   if (!sk) return; // широкий участок — остаётся сплошной плитой
   const col = tileColor(world, x, y, t, atm, t.ground);
   const junc = sk.cardDeg >= 2 || sk.arms.length >= 3;
   const w = TILE_W * 0.15 * (junc ? 1.35 : 1);
-  // Сплошная лента-раствор по всей оси пути; у камня она чуть приглушена —
-  // поверх неё в detail-проходе лягут бутовые плиты дорожки.
-  const stone = t.ground === 'stone';
-  ctx.fillStyle = css(stone ? shade(col, 0.94) : col, stone ? 0.55 : 0.96);
+  // Сыпучие покрытия сохраняют ленту. Каменные плиты лежат отдельно на грунте.
+  ctx.fillStyle = css(col, 0.96);
   for (const arm of sk.arms) {
     ribbonQuad(ctx, sk.c, arm.m, w, w * (arm.corner ? 0.8 : 1));
     if (arm.corner) {
@@ -592,6 +601,10 @@ function drawRoadRibbon(ctx: Ctx, world: World, x: number, y: number, t: Tile, a
 
 /** Same organic road geometry for residual moisture; appends to a batched nonzero-winding path. */
 export function wetRoadPath(ctx: Ctx, world: World, x: number, y: number, t: Tile): void {
+  if (t.ground === 'stone') {
+    for (const points of stoneFlags(world, x, y, t)) stonePath(ctx, points, 0.06, true);
+    return;
+  }
   const sk = roadSkeleton(world, x, y, t);
   if (!sk) {
     const p = tileDiamond(x, y, t.level);
@@ -916,8 +929,27 @@ function drawTileDetail(ctx: Ctx, world: World, x: number, y: number, t: Tile, a
             x * 71 + y * 17 + i * 31,
           );
         }
-      } else if (sk) drawRibbonFlags(ctx, sk, col, x * 29 + y);
-      else drawStoneSlab(ctx, world, x, y, t.level, col);
+      } else {
+        const mineral = mix(col, shade({ r: 146, g: 148, b: 140 }, atm.exposure), 0.6);
+        const damp = ROAD_CARD.some(([dx, dy]) => {
+          const n = world.at(x + dx, y + dy);
+          return n && Math.abs(n.level - t.level) <= 1 && (n.ground === 'moss' || n.water);
+        });
+        stoneFlags(world, x, y, t).forEach((points, i) => {
+          const seed = x * 173 + y * 977 + i * 37;
+          paintFlag(ctx, points, mineral, seed, 1.2);
+          if (damp && !t.indoor && !t.veranda && hash2(seed, 3, 2707) > 0.48) {
+            const a = points[0],
+              b = points[1];
+            ctx.strokeStyle = css(shade(atm.palette.moss, atm.exposure * 0.78), 0.48);
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(lerp(a.x, b.x, 0.17), lerp(a.y, b.y, 0.17) + 0.5);
+            ctx.lineTo(lerp(a.x, b.x, 0.55), lerp(a.y, b.y, 0.55) + 0.5);
+            ctx.stroke();
+          }
+        });
+      }
       break;
     case 'tatami':
       drawTatami(ctx, x, y, t.level, atm);
@@ -950,24 +982,53 @@ function drawRibbonGrain(ctx: Ctx, sk: RoadSkeleton, col: RGB, seed: number, alp
   }
 }
 
-/** Каменная тропка: бутовые плиты вдоль ленты — узор, а не сплошною плита. */
-function drawRibbonFlags(ctx: Ctx, sk: RoadSkeleton, col: RGB, seed: number): void {
-  const slab = (cx: number, cy: number, r: number, s: number, rot: number) => {
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(rot);
-    ctx.fillStyle = css(shade(col, 1.09), 0.85);
-    blobPath(ctx, 0, 0, r, r * 0.62, s, 0.32, 7);
-    ctx.fill();
-    ctx.restore();
-  };
-  const r0 = TILE_W * 0.17;
-  const axis = Math.atan2(sk.arms.length ? sk.arms[0].m.y - sk.c.y : 0, sk.arms.length ? sk.arms[0].m.x - sk.c.x : 1);
-  slab(sk.c.x, sk.c.y, r0, seed, axis * 0.3);
-  for (let i = 0; i < sk.arms.length; i++) {
-    const a = sk.arms[i];
-    slab(lerp(sk.c.x, a.m.x, 0.62), lerp(sk.c.y, a.m.y, 0.62), r0 * 0.68, seed + i * 13, axis * 0.3 + i * 0.5);
+/** Deterministic joints shared by dry paving, rain masks and local edits. No retained geometry history. */
+export function stoneFlags(world: World, x: number, y: number, t: Tile): { x: number; y: number }[][] {
+  const sk = t.indoor || t.veranda ? null : roadSkeleton(world, x, y, t),
+    seed = x * 173 + y * 977;
+  if (sk) {
+    const flags: { x: number; y: number }[][] = [];
+    const slab = (cx: number, cy: number, rx: number, s: number) => {
+      const points = [];
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * Math.PI * 2,
+          r = 0.87 + hash2(s, i, 2647) * 0.13;
+        points.push({ x: cx + Math.cos(a) * rx * r, y: cy + Math.sin(a) * rx * 0.58 * r });
+      }
+      flags.push(points);
+    };
+    slab(sk.c.x, sk.c.y, TILE_W * 0.108, seed);
+    sk.arms.forEach((a, i) => {
+      const length = Math.hypot(a.m.x - sk.c.x, a.m.y - sk.c.y),
+        steps = Math.ceil(length / 33);
+      for (let j = 1; j <= steps; j++) {
+        const u = j / (steps + 0.5);
+        slab(lerp(sk.c.x, a.m.x, u), lerp(sk.c.y, a.m.y, u), TILE_W * 0.09, seed + i * 13 + j * 31);
+      }
+    });
+    return flags;
   }
+  // Four fitted flags around an off-centre joint, inset to preserve earth-filled seams.
+  const p = (u: number, v: number) => isoToScreen(x + u, y + v, t.level);
+  const a = p(0, 0),
+    b = p(1, 0),
+    c = p(1, 1),
+    d = p(0, 1);
+  const e = p(0.3 + hash2(x, y, 2657) * 0.4, 0),
+    f = p(1, 0.3 + hash2(x + 1, y, 2659) * 0.4);
+  const g = p(0.3 + hash2(x, y + 1, 2657) * 0.4, 1),
+    h = p(0, 0.3 + hash2(x, y, 2659) * 0.4);
+  const m = p(0.35 + hash2(x, y, 2663) * 0.3, 0.35 + hash2(x, y, 2671) * 0.3);
+  return [
+    [a, e, m, h],
+    [e, b, f, m],
+    [m, f, c, g],
+    [h, m, g, d],
+  ].map((points) => {
+    const cx = points.reduce((s, q) => s + q.x, 0) / 4,
+      cy = points.reduce((s, q) => s + q.y, 0) / 4;
+    return points.map((q) => ({ x: lerp(cx, q.x, 0.92), y: lerp(cy, q.y, 0.9) }));
+  });
 }
 
 function drawGravel(ctx: Ctx, cx: number, cy: number, col: RGB, seed: number): void {
@@ -980,35 +1041,6 @@ function drawGravel(ctx: Ctx, cx: number, cy: number, col: RGB, seed: number): v
     ctx.quadraticCurveTo(cx, cy + i * 8 + 3, cx + TILE_W * 0.44, cy + i * 8);
     ctx.stroke();
   }
-}
-
-function drawStoneSlab(ctx: Ctx, world: World, x: number, y: number, level: number, col: RGB): void {
-  const c = isoToScreen(x + 0.5, y + 0.5, level);
-  ctx.fillStyle = css(shade(col, 1.07), 0.9);
-  const s = 0.3;
-  const pts = [
-    isoToScreen(x + s, y + s * 0.9, level),
-    isoToScreen(x + 1 - s * 0.7, y + s * 0.75, level),
-    isoToScreen(x + 1 - s * 0.85, y + 1 - s, level),
-    isoToScreen(x + s * 0.75, y + 1 - s * 0.75, level),
-  ];
-  ctx.beginPath();
-  ctx.moveTo(pts[0].x, pts[0].y);
-  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = css(shade(col, 0.68), 0.3);
-  ctx.lineWidth = 1.1;
-  ctx.stroke();
-  // Плиты сшиваются с такими же соседями в общее полотно: перемычки
-  // кромки кромкой, шов уходит под зерно — дорожка выглядит выложенной
-  // за один проход, а не отдельными квадратиками.
-  for (const [dx, dy] of ROAD_CARD) {
-    const n = world.at(x + dx, y + dy);
-    if (!n || n.water || n.ground !== 'stone' || n.level !== level || n.indoor || n.veranda) continue;
-    ribbonQuad(ctx, c, isoToScreen(x + 0.5 + dx * 0.62, y + 0.5 + dy * 0.62, level), TILE_W * 0.17, TILE_W * 0.17);
-  }
-  granulate(ctx, c.x, c.y, TILE_W * 0.22, TILE_H * 0.22, shade(col, 0.74), x * 29 + y, 8, 0.09);
 }
 
 function drawTatami(ctx: Ctx, x: number, y: number, level: number, atm: Atmosphere): void {

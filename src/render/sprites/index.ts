@@ -1,3 +1,4 @@
+import { STONE_TYPES } from '../../world/stone';
 import { drawWindDirect } from '../plantWind';
 import { drawOrchard } from './orchard';
 /**
@@ -188,7 +189,7 @@ export function drawObject(d: DrawCtx): void {
   // Детерминированное разнообразие по сиду: зеркало и лёгкий масштаб.
   // Мосты и мебель исключены: оси и размер должны совпадать с сеткой пола.
   // Тень уже нарисована до этого, зеркало на неё не влияет — тень от солнца, а не от формы.
-  const mirror = mirrorOf(d.obj.seed);
+  const mirror = STONE_TYPES.has(d.obj.type) ? 1 : mirrorOf(d.obj.seed);
   const sc = scaleJitterOf(d.obj.seed);
   const item = ITEM_BY_ID.get(d.obj.type);
   const isTreeLike =
@@ -232,6 +233,7 @@ export function drawObject(d: DrawCtx): void {
  * тоже не бесплатно, и дешёвую мелочь выгоднее рисовать заново.
  */
 export function drawCost(type: string): number {
+  if (type === 'step_stone') return 180;
   if (FURNITURE_IDS.has(type)) return 150;
   const item = ITEM_BY_ID.get(type);
   if (!item) return 0;
