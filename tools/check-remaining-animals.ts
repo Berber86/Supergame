@@ -1,4 +1,4 @@
-/** Остальные 17 страниц: все состояния/окрасы, живые часы и переходы. */
+/** Остальные 18 страниц: все состояния/окрасы, живые часы и переходы. */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createCanvas } from '@napi-rs/canvas';
@@ -193,10 +193,10 @@ pure(owl(), drawOwl);
 pure(bee(), drawBee);
 
 const animals = GUIDE_ANIMALS.filter((a) => !['deer', 'turtle', 'heron', 'hedgehog', 'squirrel'].includes(a.id));
-assert.equal(animals.length, 17);
+assert.equal(animals.length, 18);
 assert.equal(
   animals.reduce((n, a) => n + a.animations.length, 0),
-  93,
+  102,
 );
 let frames = 0;
 for (const hour of [13, 23]) {
@@ -236,4 +236,4 @@ for (const hour of [13, 23]) {
         }
     }
 }
-console.log(`ок: ${frames} кадров, 17 страниц / 93 состояния, все окрасы, день/ночь и оба направления`);
+console.log(`ок: ${frames} кадров, 18 страниц / 102 состояния, все окрасы, день/ночь и оба направления`);

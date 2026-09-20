@@ -1,6 +1,6 @@
 # Chronicle art — web optimized
 
-14 webp 600px q82 21-49K each, total ~500K (was 67M PNG)
+40 webp 600px q82 15-57K each, total ~1.4M (was 67M PNG)
 
 - meet_frog.webp 30K
 - meet_firefly.webp 35K
@@ -18,6 +18,7 @@
 - bird_nest.webp 25K placeholder
 
 Integration:
+
 - public/images/chronicle/ served via Vite
 - CHRONICLE_IMAGES map in chroniclePanel.ts
 - .ch-img CSS: sepia, shadow, border

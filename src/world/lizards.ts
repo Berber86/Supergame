@@ -36,6 +36,7 @@ export function lizardSpeed(state: LizardState): number {
 }
 export function lizardPose(a: Lizard, time: number) {
   const p = clamp01(1 - a.timer / Math.max(1, a.duration));
+  const basking = a.state === 'bask' || a.state === 'look';
   return {
     gait: a.gait,
     motion: a.motion,
@@ -45,6 +46,16 @@ export function lizardPose(a: Lizard, time: number) {
     strike: a.state === 'strike' ? Math.sin(p * Math.PI) : 0,
     tongue: a.state !== 'hide' && (time + a.seed * 137) % 4100 < 150,
     blink: (time + a.seed * 97) % 5300 < 130,
+    /** Territorial push-ups with a pulsing throat, strongest mid-bask. */
+    display: basking
+      ? Math.pow(Math.max(0, Math.sin(time * 0.0042 + a.seed * 2.3)), 3) * (a.state === 'bask' ? 1 : 0.45)
+      : 0,
+    /** Low sprawl on a warm stone versus a raised alert posture. */
+    crouch:
+      a.state === 'bask' || a.state === 'hide' || a.state === 'emerge' ? 1 : basking || a.state === 'hunt' ? 0.35 : 0,
+    /** Lateral spine wave: chest and hips counter-sway while walking. */
+    sway: Math.sin(a.gait) * a.motion,
+    swayMid: Math.sin(a.gait - Math.PI / 2) * a.motion,
   };
 }
 export function makeLizard(seed: number, shelter: Vec): Lizard {

@@ -1,7 +1,7 @@
 /** Real visitors, real routes, four coats and the same animated renderer in the guide and garden. */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, statSync } from 'node:fs';
 import { createCanvas } from '@napi-rs/canvas';
 import { setImmediate as yieldNative } from 'node:timers/promises';
 import { computeTime, DAY_MS } from '../src/core/clock';
@@ -157,6 +157,10 @@ function hunt(escapes: boolean) {
 hunt(false);
 hunt(true);
 assert.ok(world.hasEvent('lizard_hunt'));
+assert.ok(world.milestones.has('lizard_strike'), 'a caught insect raises the strike milestone');
+for (const art of ['meet_lizard', 'cat_lizard', 'lizard_hunt'])
+  for (const dir of ['images/chronicle', 'public/images/chronicle'])
+    assert.ok(statSync(`${dir}/${art}.webp`).size > 8000, `${dir}/${art}.webp ships with the game`);
 // Occupied sites are avoided at birth, not just when choosing the next warm stone.
 const crowded = new Lizards();
 for (let i = 0; i < 700; i++) crowded.update(world, h, inv, summer, 100, [], [], h.lizardShelters);
@@ -174,6 +178,7 @@ Object.assign(skink, { alpha: 1, state: 'bask', timer: 1e6 });
 life.lizards.agents = [skink];
 for (let i = 0; i < 150; i++) life.update(world, summer, 100, i * 100, clear);
 assert.ok(world.hasEvent('cat_lizard'), 'cat behaviour really responds, not only the guide text');
+assert.ok(world.milestones.has('lizard_escape'), 'the stalked skink raises the escape milestone');
 for (let year = 0; year < 6; year++) {
   for (const month of [4, 6, 8, 10, 0]) {
     const t = computeTime(date(month));
@@ -263,7 +268,7 @@ for (const time of [night, computeTime(date(0))]) {
   assert.equal(mass(), false, 'no dormant reflection');
 }
 console.log(
-  'ок: lizard habitat, sun/season/weather, spawn/chronicle/save, rock height, retirement, safe routes/fog, dt gait, hunting/escape, occupied stones, cat interaction, six-year cap, four coats, shared renderer and cold/night gate',
+  'ок: lizard habitat, sun/season/weather, spawn/chronicle/save, rock height, retirement, safe routes/fog, dt gait, hunting/escape, occupied stones, cat interaction, six-year cap, four coats, shared renderer, hunt/escape milestones, chronicle art and cold/night gate',
 );
 if (process.argv.includes('--preview')) {
   const output = createCanvas(1080, 620),

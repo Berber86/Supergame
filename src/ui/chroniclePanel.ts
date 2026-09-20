@@ -54,6 +54,10 @@ export const CHRONICLE_IMAGES: Record<string, string> = {
   meet_squirrel: './images/chronicle/meet_squirrel.webp',
   squirrel_cache: './images/chronicle/squirrel_cache.webp',
   cat_squirrel: './images/chronicle/cat_squirrel.webp',
+  // ящерица
+  meet_lizard: './images/chronicle/meet_lizard.webp',
+  cat_lizard: './images/chronicle/cat_lizard.webp',
+  lizard_hunt: './images/chronicle/lizard_hunt.webp',
   // черепаха
   meet_turtle: './images/chronicle/meet_turtle.webp',
   turtle_bask: './images/chronicle/turtle_bask.webp',
