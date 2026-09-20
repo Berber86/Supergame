@@ -1,3 +1,13 @@
+import {
+  trunkCurve,
+  woodPoint,
+  woodFrame,
+  woodCurve,
+  paintWood,
+  branchSkeleton,
+  type WoodCurve,
+  type WoodPoint,
+} from '../treeWood';
 import { TREE_CROWNS, crownWidth } from '../../world/canopy';
 import { flowerYear, winterYear } from '../../world/annualEnvironment';
 import { plantYear, leafGroup, crownAnchorBlend } from '../../world/phenology';
@@ -31,59 +41,53 @@ function anchorColor(now: number, colors: RGB[]): RGB {
   return mix(colors[b.from], colors[b.to], b.amount);
 }
 
-function drawTrunk(d: DrawCtx, h: number, w: number, col: RGB, bend: number): { tx: number; ty: number } {
-  const { ctx, atm, obj } = d;
-  const topX = d.x + bend;
-  const topY = d.y - h;
-  taperStroke(ctx, d.x, d.y, topX, topY, w, w * 0.34, col, 0.94, bend * 0.6);
-  // фактура коры
-  ctx.strokeStyle = css(shade(col, 0.72), 0.3);
-  ctx.lineWidth = 1;
-  for (let i = 0; i < 3; i++) {
-    const t0 = 0.1 + i * 0.25;
-    ctx.beginPath();
-    ctx.moveTo(lerp(d.x, topX, t0) - w * 0.3, lerp(d.y, topY, t0));
-    ctx.quadraticCurveTo(
-      lerp(d.x, topX, t0 + 0.1),
-      lerp(d.y, topY, t0 + 0.1),
-      lerp(d.x, topX, t0 + 0.2) + w * 0.2,
-      lerp(d.y, topY, t0 + 0.2),
+function drawTrunk(d: DrawCtx, h: number, w: number, col: RGB, bend: number) {
+  const { ctx, atm, obj } = d,
+    scale = lerp(0.18, 1, Math.pow(d.g, 0.72));
+  const trunk = trunkCurve(obj.type, obj.seed, d.x, d.y, h, w, bend);
+  // Short root shoulders merge into a flared base rather than a post cut off at ground level.
+  for (const side of [-1, 1]) {
+    const root = woodCurve(
+      woodPoint(trunk, 0.085),
+      { x: d.x + side * w * (1.7 + hash2(side, obj.seed, 2027) * 0.6), y: d.y + scale },
+      w * 0.48,
+      0.22 * scale,
+      side * w * 0.4,
+      0,
     );
-    ctx.stroke();
+    paintWood(ctx, root, shade(col, 0.92), obj.seed);
   }
-  // северный мох и лишайник на стволе — детерминирован по seed, больше в тени
+  paintWood(ctx, trunk, col, obj.seed, true);
   const mossChance = hash2(obj.seed, 101, 7);
   if (mossChance > 0.48) {
-    const mh = h * (0.22 + hash2(obj.seed, 107, 3) * 0.18);
-    const my = lerp(d.y, topY, 0.18 + hash2(obj.seed, 109, 5) * 0.35);
-    const side = hash2(obj.seed, 103, 13) > 0.5 ? 1 : -1;
-    const mx = lerp(d.x, topX, 0.3) + side * w * 0.18;
-    const mossCol = litc(atm.palette.moss, atm);
-    ctx.fillStyle = css(mossCol, (0.28 + mossChance * 0.12) * (1 - winterYear(atm.time.now).snow));
-    blobPath(ctx, mx, my, w * 0.55, mh * 0.22, obj.seed + 101, 0.3, 7);
+    const t = 0.2 + hash2(obj.seed, 109, 5) * 0.23,
+      f = woodFrame(trunk, t);
+    ctx.fillStyle = css(litc(atm.palette.moss, atm), 0.35 * (1 - winterYear(atm.time.now).snow));
+    blobPath(ctx, f.x - f.nx * f.r * 0.25, f.y, f.r * 0.45, h * 0.036, obj.seed + 101, 0.3, 7);
     ctx.fill();
     if (mossChance > 0.72) {
       ctx.fillStyle = css(litc({ r: 172, g: 188, b: 152 }, atm), 0.26);
-      blobPath(ctx, mx - side * w * 0.15, my - mh * 0.2, w * 0.32, mh * 0.14, obj.seed + 113, 0.28, 6);
+      blobPath(ctx, f.x + f.nx * f.r * 0.25, f.y - h * 0.06, f.r * 0.24, h * 0.019, obj.seed + 113, 0.28, 6);
       ctx.fill();
     }
   }
-  return { tx: topX, ty: topY };
+  return { tx: trunk.d.x, ty: trunk.d.y, trunk };
 }
 
 /** Гнёзда и дупла — детерминированно по seed, сезонно, без кропа. */
-function drawTreeCavity(d: DrawCtx, tx: number, ty: number, _h: number, w: number): void {
+function drawTreeCavity(d: DrawCtx, trunk: WoodCurve, nest: WoodPoint): void {
   const { ctx, atm, obj } = d;
   const cavitySeed = hash2(obj.seed, 151, 7);
   if (cavitySeed < 0.72) return; // ~28% деревьев с фичей
   const typeRoll = hash2(obj.seed, 157, 13);
   const isHollow = typeRoll < 0.5;
   const scale = lerp(0.18, 1, Math.pow(d.g, 0.72));
-  const hy = lerp(d.y, ty, 0.28 + hash2(obj.seed, 153, 11) * 0.45);
-  const hx = lerp(d.x, tx, 0.32 + hash2(obj.seed, 155, 17) * 0.35) + (hash2(obj.seed, 159, 19) - 0.5) * w * 0.6;
+  const position = woodFrame(trunk, 0.28 + hash2(obj.seed, 153, 11) * 0.35);
+  const hx = isHollow ? position.x : nest.x,
+    hy = isHollow ? position.y : nest.y;
   if (isHollow) {
     // дупло — тёмный овал с бликом коры
-    const hrx = (3.2 + hash2(obj.seed, 161, 23) * 1.8) * scale;
+    const hrx = Math.min(position.r * 0.65, (3.2 + hash2(obj.seed, 161, 23) * 1.8) * scale);
     const hry = (5.2 + hash2(obj.seed, 163, 29) * 2.4) * scale;
     ctx.fillStyle = css(litc({ r: 42, g: 32, b: 26 }, atm), 0.88);
     ctx.beginPath();
@@ -167,53 +171,37 @@ function makeTree(style: TreeStyle): Drawer {
     const trunkW = Math.max(2.2, 7 * scale * (0.9 + hash2(obj.seed, 12, 17) * 0.2));
     // Permanent dimensions; shadowUnder applies the shared annual canopy density.
     shadowUnder(d, cw * 0.62, cw * 0.26, 0.9);
-    const { tx, ty } = drawTrunk(d, h, trunkW, trunkCol, sway * 0.35 + leanJ * h * 0.14);
-    drawTreeCavity(d, tx, ty, h, trunkW);
+    const { tx, ty, trunk } = drawTrunk(d, h, trunkW, trunkCol, sway * 0.35 + leanJ * h * 0.14);
     const sites = crownSites(obj.seed, cw, ch, style.layers);
     const point = (p: { x: number; y: number }) => ({ x: tx + p.x + sway, y: ty + p.y });
-    // Identical topology in January and July. Leaves reveal these branches rather than replacing them.
+    const skeleton = branchSkeleton(obj.type, obj.seed, trunk, sites, scale, sway);
+    // Junctions originate on the real curved bole at different heights, not in one broom-like knot.
+    for (const branch of skeleton.branches) paintWood(ctx, branch, branchCol, obj.seed);
+    for (const twig of skeleton.twigs) paintWood(ctx, twig, branchCol, obj.seed);
     for (const site of sites) {
-      const end = point(site),
-        parent = point({ x: site.parentX, y: site.parentY });
-      if (site.index % 3 === 0)
-        taperStroke(
-          ctx,
-          tx,
-          ty + 9 * scale,
-          parent.x,
-          parent.y,
-          2.8 * scale,
-          0.95 * scale,
-          branchCol,
-          0.78,
-          site.x * 0.06,
-        );
-      taperStroke(ctx, parent.x, parent.y, end.x, end.y, 1.15 * scale, 0.38 * scale, branchCol, 0.78, site.x * 0.025);
-      // Fine permanent forks reach into each leaf group, rather than appearing only in winter.
-      ctx.strokeStyle = css(branchCol, 0.7);
-      ctx.lineWidth = 0.58 * scale;
-      ctx.beginPath();
+      const end = point(site);
       for (let k = 0; k < 2; k++) {
-        const dx = (k === 0 ? -1 : 1) * site.rx * (0.28 + hash2(site.index, obj.seed, 1471 + k) * 0.28);
-        const dy = -site.ry * (0.45 + hash2(site.index, obj.seed, 1481 + k) * 0.4);
-        ctx.moveTo(end.x, end.y);
-        ctx.quadraticCurveTo(end.x + dx * 0.7, end.y + dy * 0.3, end.x + dx, end.y + dy);
-      }
-      ctx.stroke();
-      if (style.droop) {
-        ctx.strokeStyle = css(branchCol, 0.42);
-        ctx.lineWidth = 0.65 * scale;
-        ctx.beginPath();
-        ctx.moveTo(end.x, end.y);
-        ctx.quadraticCurveTo(
-          end.x - 2,
-          end.y + style.droop * scale * 0.4,
-          end.x - 4,
-          end.y + style.droop * scale * 0.75,
+        const dx =
+          (k === 0 ? -1 : 1) *
+          site.rx *
+          (0.25 + hash2(site.index, obj.seed, 1471 + k) * 0.25) *
+          (obj.type === 'ginkgo' ? 0.64 : 1);
+        const dy = style.droop
+          ? style.droop * scale * (0.55 + hash2(site.index, obj.seed, 1481 + k) * 0.35)
+          : -site.ry * (0.42 + hash2(site.index, obj.seed, 1481 + k) * 0.36) * (obj.type === 'sakura' ? 0.75 : 1);
+        const start = woodPoint(skeleton.twigs[site.index], k === 0 ? 0.67 : 1);
+        const tip = woodCurve(
+          start,
+          { x: end.x + dx, y: end.y + dy },
+          0.38 * scale,
+          0.09 * scale,
+          dx * 0.18,
+          style.droop ? -12 * scale : 0,
         );
-        ctx.stroke();
+        paintWood(ctx, tip, branchCol, obj.seed);
       }
     }
+    drawTreeCavity(d, trunk, woodPoint(skeleton.branches[skeleton.branches.length - 1], 0.18));
     const fresh = style.blossom ? mix(style.crownSummer, { r: 196, g: 210, b: 137 }, 0.35) : style.crownSpring;
     const green = mix(fresh, style.crownSummer, state.maturity);
     for (const site of sites) {
@@ -398,7 +386,7 @@ export const drawPine: Drawer = (d) => {
 
   const trunkCol = litc({ r: 108, g: 82, b: 66 }, atm);
   const leanJ = (hash2(obj.seed, 7, 11) - 0.5) * 0.22;
-  const { tx, ty } = drawTrunk(
+  const { tx, ty, trunk } = drawTrunk(
     d,
     h,
     Math.max(2.6, 9.2 * scale * (0.9 + heightJ * 0.12)),
@@ -437,17 +425,32 @@ export const drawPine: Drawer = (d) => {
     const cy = ty + t * h * (0.58 + hash2(obj.seed, 43, 13) * 0.12);
     const rx = (46 - t * 7) * scale * sizeJ * (0.9 + hash2(i, obj.seed, 47) * 0.22);
     const ry = (18 + t * 5) * scale * (0.9 + hash2(i, obj.seed, 53) * 0.2);
-    taperStroke(
-      ctx,
-      tx,
-      cy + 4,
-      cx,
-      cy + 2,
+    const join = woodPoint(trunk, Math.max(0.1, Math.min(0.98, (d.y - cy - 4 * scale) / h)));
+    const bough = woodCurve(
+      join,
+      { x: cx, y: cy + 2 * scale },
       (3.2 + hash2(i, obj.seed, 59) * 0.8) * scale,
-      1.4 * scale,
-      shade(trunkCol, 0.92),
-      0.8,
+      1.1 * scale,
+      side * 7 * scale,
+      7 * scale,
     );
+    paintWood(ctx, bough, shade(trunkCol, 0.92), obj.seed, true);
+    for (const fork of [-1, 1]) {
+      const start = woodPoint(bough, 0.66);
+      paintWood(
+        ctx,
+        woodCurve(
+          start,
+          { x: cx + fork * rx * 0.36, y: cy - ry * 0.3 },
+          1.2 * scale,
+          0.18 * scale,
+          fork * 3 * scale,
+          -4 * scale,
+        ),
+        trunkCol,
+        obj.seed,
+      );
+    }
     washBlob(ctx, cx, cy + ry * 0.35, rx, ry, deep, obj.seed + i * 5, {
       layers: 2,
       alpha: 0.42,
@@ -546,38 +549,44 @@ export const drawBamboo: Drawer = (d) => {
     const ox = (s - 1) * 7 * scale + (r - 0.5) * 5;
     const sway = Math.sin(d.time * 0.0008 + obj.seed + s * 1.7) * 5 * d.wind * scale;
     const x0 = d.x + ox;
-    const x1 = x0 + sway;
-    const y1 = d.y - h;
-    taperStroke(ctx, x0, d.y, x1, y1, 3 * scale, 1.8 * scale, stalkCol, 0.95, sway * 0.5);
-    // коленца
-    ctx.strokeStyle = css(shade(stalkCol, 0.78), 0.5);
-    ctx.lineWidth = 1.2;
-    const segs = 5;
-    for (let i = 1; i < segs; i++) {
-      const t = i / segs;
-      const px = lerp(x0, x1, t);
-      const py = lerp(d.y, y1, t);
+    const x1 = x0 + sway + (hash2(s, obj.seed, 2041) - 0.5) * 14 * scale;
+    const culm = woodCurve({ x: x0, y: d.y }, { x: x1, y: d.y - h }, 2.5 * scale, 1.25 * scale, sway * 0.35, -h * 0.03);
+    paintWood(ctx, culm, stalkCol, obj.seed + s, true);
+    // Joint rings and leaf-bearing side shoots share the same curved centreline.
+    for (let i = 1; i <= 5; i++) {
+      const t = i / 6,
+        f = woodFrame(culm, t);
+      ctx.strokeStyle = css(shade(stalkCol, 0.72), 0.7);
+      ctx.lineWidth = 1.05 * scale;
       ctx.beginPath();
-      ctx.moveTo(px - 3.2 * scale, py);
-      ctx.lineTo(px + 3.2 * scale, py);
+      ctx.moveTo(f.x - f.nx * (f.r + 0.55 * scale), f.y - f.ny * (f.r + 0.55 * scale));
+      ctx.quadraticCurveTo(f.x, f.y + scale, f.x + f.nx * (f.r + 0.55 * scale), f.y + f.ny * (f.r + 0.55 * scale));
       ctx.stroke();
-    }
-    // листья
-    for (let i = 0; i < 5; i++) {
-      const rr = hash2(i, obj.seed + s, 21);
-      const t = 0.45 + (i / 5) * 0.55;
-      const px = lerp(x0, x1, t);
-      const py = lerp(d.y, y1, t);
-      const dir = i % 2 === 0 ? 1 : -1;
-      const ll = (14 + rr * 12) * scale;
-      const lw = Math.sin(d.time * 0.001 + i) * 2 * d.wind;
-      ctx.fillStyle = css(leafCol, 0.8);
-      ctx.beginPath();
-      ctx.moveTo(px, py);
-      ctx.quadraticCurveTo(px + dir * ll * 0.5, py - ll * 0.42 + lw, px + dir * ll, py - ll * 0.2 + lw);
-      ctx.quadraticCurveTo(px + dir * ll * 0.5, py - ll * 0.1 + lw, px, py + 1.5);
-      ctx.closePath();
-      ctx.fill();
+      if (i < 2) continue;
+      const dir = (i + s) % 2 === 0 ? 1 : -1,
+        reach = (11 + hash2(i, obj.seed + s, 21) * 10) * scale;
+      const shoot = woodCurve(
+        f,
+        { x: f.x + dir * reach, y: f.y - 8 * scale },
+        0.7 * scale,
+        0.16 * scale,
+        dir * 2 * scale,
+        -3 * scale,
+      );
+      paintWood(ctx, shoot, shade(stalkCol, 0.85), obj.seed);
+      for (let k = 0; k < 3; k++) {
+        const p = woodPoint(shoot, 0.35 + k * 0.29),
+          ll = (12 + hash2(k + i, obj.seed + s, 43) * 10) * scale;
+        const angle = (k === 1 ? -0.65 : 0.12) + dir * 0.12;
+        const ex = p.x + dir * ll,
+          ey = p.y + angle * ll + Math.sin(d.time * 0.001 + i + k) * 1.3 * d.wind * scale;
+        ctx.fillStyle = css(leafCol, 0.82);
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.quadraticCurveTo(lerp(p.x, ex, 0.5), lerp(p.y, ey, 0.5) - 2.6 * scale, ex, ey);
+        ctx.quadraticCurveTo(lerp(p.x, ex, 0.5), lerp(p.y, ey, 0.5) + 2.1 * scale, p.x, p.y);
+        ctx.fill();
+      }
     }
   }
 };
@@ -671,6 +680,33 @@ export const drawWisteria: Drawer = (d) => {
   ctx.lineTo(d.x + w * 0.92, d.y - h + 1);
   ctx.stroke();
 
+  // Living twin vines climb the posts; the pergola itself remains straight timber.
+  for (const side of [-1, 1]) {
+    let previous: WoodPoint = { x: d.x + side * w * 0.8, y: d.y };
+    for (let k = 0; k < 5; k++) {
+      const t = (k + 1) / 5,
+        top = { x: d.x + side * w * 0.8 + Math.sin(t * Math.PI * 4) * 2.7 * scale, y: d.y - h * t };
+      const stem = woodCurve(
+        previous,
+        top,
+        (2.2 - k * 0.21) * scale,
+        (1.99 - k * 0.21) * scale,
+        (k % 2 ? 1 : -1) * 3 * scale,
+        0,
+      );
+      paintWood(ctx, stem, litc({ r: 100, g: 85, b: 68 }, atm), obj.seed + k, true);
+      previous = top;
+    }
+  }
+  const vine = woodCurve(
+    { x: d.x - w * 0.8, y: d.y - h },
+    { x: d.x + w * 0.8, y: d.y - h },
+    1.6 * scale,
+    0.85 * scale,
+    0,
+    4 * scale,
+  );
+  paintWood(ctx, vine, litc({ r: 105, g: 86, b: 66 }, atm), obj.seed, true);
   const state = plantYear(obj.type, obj.seed, atm.time.now);
   const green = mix({ r: 145, g: 177, b: 115 }, { r: 104, g: 146, b: 92 }, state.maturity);
   const leafColor = (index: number) => mix(green, { r: 186, g: 168, b: 96 }, leafGroup(state, obj.seed, index).color);
@@ -681,7 +717,19 @@ export const drawWisteria: Drawer = (d) => {
       py = d.y - h + (2 + r * 5) * scale;
     const leaf = leafGroup(state, obj.seed, i);
     // Woody vine and attachment twigs stay in place under the leaves all year.
-    taperStroke(ctx, d.x - w * 0.8, d.y - h + 2, px, py, 1.2 * scale, 0.6 * scale, post, 0.65, 3 * scale);
+    paintWood(
+      ctx,
+      woodCurve(
+        woodPoint(vine, i / (puffs - 1)),
+        { x: px, y: py },
+        0.75 * scale,
+        0.25 * scale,
+        (r - 0.5) * 4 * scale,
+        0,
+      ),
+      post,
+      obj.seed,
+    );
     if (state.bud > 0.003) {
       ctx.fillStyle = css(litc({ r: 135, g: 158, b: 92 }, atm), state.bud);
       ctx.beginPath();
@@ -710,7 +758,8 @@ export const drawWisteria: Drawer = (d) => {
     ctx.strokeStyle = css(litc({ r: 116, g: 98, b: 84 }, atm), 0.7);
     ctx.lineWidth = 1.1 * scale;
     ctx.beginPath();
-    ctx.moveTo(px, d.y - h + 4 * scale);
+    const attachment = woodPoint(vine, i / (bunches - 1));
+    ctx.moveTo(attachment.x, attachment.y);
     ctx.quadraticCurveTo(px + sway, d.y - h + len * 0.6, px + sway * 1.6, d.y - h + len);
     ctx.stroke();
     const leaf = leafGroup(state, obj.seed, i + 6);
