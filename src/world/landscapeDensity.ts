@@ -17,7 +17,7 @@ export const LANDSCAPE_LIMITS = Object.freeze({
 });
 export type LandscapeGroup = keyof typeof LANDSCAPE_LIMITS;
 /** Расстояние в тайлах, не экранных пикселях: результат не зависит от камеры. */
-export const DUPLICATE_RADIUS = 0.5;
+export const DUPLICATE_RADIUS = 2;
 
 const SMALL_PLANTS = new Set(['moss_clump', 'grass_tuft', 'lilypad']);
 const HABITAT_OBJECTS = new Set(['feeder', 'birdbath', 'beehive', 'squirrel_feeder', 'turtle_log', 'shishi']);
@@ -58,7 +58,7 @@ interface Cluster {
 }
 
 /**
- * Оставляем старейшую посадку на каждом месте, удаляем половину лишних копий
+ * Оставляем старейшую посадку на каждом месте, удаляем две трети лишних копий
  * (с округлением вверх). Не сравниваем сид: каждый повторный клик создаёт новый.
  *
  * Кластеры привязаны к неподвижному якорю, не сливаются транзитивно вдоль
@@ -132,7 +132,7 @@ export function thinLandscape(data: Pick<SaveData, 'objects' | 'tiles'>): Landsc
   }
   const removedIds = new Set<number>();
   for (const cluster of clusters) {
-    const n = Math.ceil((cluster.members.length - 1) / 2);
+    const n = Math.ceil(((cluster.members.length - 1) * 2) / 3);
     if (!n) continue;
     // Members are oldest-first: discard only the newest repetitions, never the original anchor.
     for (let i = cluster.members.length - n; i < cluster.members.length; i++) removedIds.add(cluster.members[i].id);

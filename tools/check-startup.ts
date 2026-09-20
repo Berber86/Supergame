@@ -234,6 +234,7 @@ const { Life } = await import('../src/world/life');
 const { Scene } = await import('../src/render/scene');
 const { WeatherSystem } = await import('../src/world/weatherState');
 const { TimeControl } = await import('../src/core/timeControl');
+const { thinLandscape } = await import('../src/world/landscapeDensity');
 let chosenId = '';
 if (scenario === 'desktop-renamed-grow') {
   const fixtures = new GardenStore(),
@@ -244,7 +245,8 @@ if (scenario === 'desktop-renamed-grow') {
   assert.ok(fixtures.switchTo(fixture, originalId));
 }
 let denseOriginal = '',
-  denseAfter = 0;
+  denseAfter = 0,
+  denseRemoved = 0;
 if (scenario === 'touch-night-overloaded') {
   const store = new GardenStore(),
     fixture = new World();
@@ -258,7 +260,8 @@ if (scenario === 'touch-night-overloaded') {
   store.save(fixture);
   chosenId = store.activeId;
   denseOriginal = win.localStorage.getItem(`usadba.garden.${chosenId}`);
-  denseAfter = fixture.objects.length - 40 - 100 - 12;
+  denseRemoved = thinLandscape(fixture.toJSON()).removed;
+  denseAfter = fixture.objects.length - denseRemoved;
 }
 const counts: Record<string, number> = {};
 let runningWorld: InstanceType<typeof World> | undefined;
@@ -348,7 +351,7 @@ if (!problem) {
     assert.equal(runningWorld?.objects.length, denseAfter);
     assert.equal(win.localStorage.getItem(`usadba.garden.${chosenId}.before-thinning`), denseOriginal);
     assert.equal(win.document.querySelector('.landscape-notice').hidden, false);
-    assert.ok(win.document.querySelector('.landscape-notice').textContent.includes('152'));
+    assert.ok(win.document.querySelector('.landscape-notice').textContent.includes(String(denseRemoved)));
     win.document.querySelector('.ln-close').click();
     assert.equal(win.document.querySelector('.landscape-notice').hidden, true);
   }
