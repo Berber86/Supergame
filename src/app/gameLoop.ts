@@ -1,3 +1,4 @@
+import { FrameGate } from '../render/graphics';
 import { cachedCanopyDensity } from '../world/canopy';
 /**
  * Игровой цикл: время, погода, живность, звук и сам кадр рендера.
@@ -28,6 +29,7 @@ export interface LoopDeps {
   /** Миллисекунды бездействия до растворения интерфейса. */
   idleMs: number;
   isPracticeActive(): boolean;
+  isStartOpen?(): boolean;
   isZenMode(): boolean;
   /** Включить созерцание — по бездействию. */
   igniteZen(): void;
@@ -48,6 +50,9 @@ export function startLoop(deps: LoopDeps): void {
   const { world, scene, life, weatherSys, audio, timeCtl, ui, devPanel } = deps;
 
   let last = performance.now();
+  const simulationGate = new FrameGate(),
+    renderGate = new FrameGate();
+  let renderDt = 0;
   let eveningChecked = '';
   let audioAccum = 0;
   let observeAccum = 1200;
@@ -89,11 +94,24 @@ export function startLoop(deps: LoopDeps): void {
   let frameError = false;
 
   function frame(now: number): void {
+    if (document.hidden) {
+      last = now;
+      simulationGate.reset();
+      renderGate.reset();
+      renderDt = 0;
+      requestAnimationFrame(frame);
+      return;
+    }
+    if (!simulationGate.due(now, 60)) {
+      requestAnimationFrame(frame);
+      return;
+    }
     // dt зажат с обеих сторон: после сна устройства или возврата вкладки
     // метка rAF может прийти раньше прошлой — отрицательный dt отравил бы
     // все возрасты (круги на воде и т.п.) и уронил бы кадр исключением.
     const dt = Math.min(Math.max(now - last, 0), 60);
     last = now;
+    renderDt = Math.min(100, renderDt + dt);
 
     try {
       step(now, dt);
@@ -149,7 +167,7 @@ export function startLoop(deps: LoopDeps): void {
     // Плавное возвращение камеры после входа: сколько бы ни шёл шаг,
     // через порог игрок входит, а не оказывается.
     if (deps.getEntryZoom() > 0) {
-      const k = 1 - Math.pow(0.004, dt / 1000);
+      const k = scene.motion ? 1 - Math.pow(0.004, dt / 1000) : 1;
       scene.camera.zoom += (deps.getEntryZoom() - scene.camera.zoom) * k;
       if (Math.abs(deps.getEntryZoom() - scene.camera.zoom) < 0.002 || !Number.isFinite(scene.camera.zoom)) {
         scene.camera.zoom = deps.getEntryZoom();
@@ -159,9 +177,12 @@ export function startLoop(deps: LoopDeps): void {
     }
 
     // Под листом практики сад не рисуется вовсе; свиток старта непрозрачен,
-    // но за ним сад живёт и греет первый кадр ко входу.
-    if (!deps.isPracticeActive()) scene.render(world, atm, now, dt, life, weatherSys.state);
-    deps.flushChronicleSnaps();
+    // но за ним сад живёт. Двух прогревочных кадров в секунду достаточно.
+    if (!deps.isPracticeActive() && renderGate.due(now, deps.isStartOpen?.() ? 2 : scene.graphicsProfile.fps)) {
+      scene.render(world, atm, now, renderDt, life, weatherSys.state);
+      renderDt = 0;
+      deps.flushChronicleSnaps();
+    }
     ui.tick(t, atm);
     devPanel.tick();
 

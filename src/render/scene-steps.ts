@@ -54,6 +54,7 @@ export interface ObjectsOpts {
   highlightId: number;
   useSpriteCache: boolean;
   particles: boolean;
+  motion?: boolean;
   waterMotion?: WaterMotion;
   localLights?: LocalLightField;
   rainReceivers?: RainField;
@@ -456,16 +457,24 @@ export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: numbe
     const lvl = tile ? (tile.water ? tile.level - 0.28 : tile.level) : 0;
     const p = isoToScreen(cx, cy, lvl);
     const s = { x: (p.x - opts.camX) * opts.zoom + opts.viewW / 2, y: (p.y - opts.camY) * opts.zoom + opts.viewH / 2 };
-    if (s.x < -240 || s.x > opts.viewW + 240 || s.y < -280 || s.y > opts.viewH + 240) continue;
+    const marginX = Math.max(240, 230 * opts.zoom),
+      marginY = Math.max(280, 320 * opts.zoom);
+    if (s.x < -marginX || s.x > opts.viewW + marginX || s.y < -marginY || s.y > opts.viewH + marginY) continue;
 
     // На общем плане мелочь не читается: подушка мха размером в три
     // пикселя стоит столько же, сколько вблизи, но её попросту не видно.
     // На телефоне сад по умолчанию показан целиком, так что это
     // основной режим просмотра, а не редкий случай.
-    if (opts.zoom < 0.42 && (item.kind === 'micro' || item.kind === 'flower')) continue;
+    if (
+      opts.zoom < 0.42 &&
+      o.id !== opts.movingId &&
+      o.id !== opts.highlightId &&
+      (item.kind === 'micro' || item.kind === 'flower')
+    )
+      continue;
     const g = world.growth(o, now);
     // ветер берём в точке дерева — порыв проходит волной
-    const wind = opts.life ? opts.life.windAt(cx, cy) : opts.wind;
+    const wind = opts.motion === false ? 0 : opts.life ? opts.life.windAt(cx, cy) : opts.wind;
     const localHits =
       opts.localLights && receivesObjectLight(o.type) ? sampleLocalLight(opts.localLights, cx, cy, lvl, o.id) : [];
     const materialAtm = rainMaterial(atm, opts.rainReceivers, opts.rainWeather, o.type, cx, cy);
@@ -877,15 +886,10 @@ export function drawPaperGrain(
   if (!paperPattern) return paperPattern;
   ctx.save();
   ctx.globalCompositeOperation = 'overlay';
-  ctx.globalAlpha = 0.14;
-  ctx.fillStyle = paperPattern;
-  ctx.fillRect(0, 0, W, H);
-  ctx.restore();
-
-  // лёгкое размытие краёв кадра — «краска ушла в бумагу»
-  ctx.save();
-  ctx.globalCompositeOperation = 'soft-light';
-  ctx.globalAlpha = 0.1;
+  // The old overlay + soft-light passes reused the same neutral grain. A single
+  // calibrated pass keeps paper texture (tested against colour swatches) and avoids
+  // a second full-resolution blend every frame, especially expensive on HiDPI.
+  ctx.globalAlpha = 0.2;
   ctx.fillStyle = paperPattern;
   ctx.fillRect(0, 0, W, H);
   ctx.restore();

@@ -35,16 +35,24 @@ export class RainRenderer {
   private rippleTimer = 0;
 
   /** The same impacts drive drawn rings and distortion, not unrelated noise. */
-  get waterRipples(): readonly Ripple[] { return this.ripples; }
+  get waterRipples(): readonly Ripple[] {
+    return this.ripples;
+  }
 
   resize(w: number, h: number): void {
     this.w = w;
     this.h = h;
   }
 
-  update(dt: number, weather: WeatherState, world: World): void {
-    const safeDt = Number.isFinite(dt) && dt > 0 ? Math.min(dt, 100) : 16;
-    const rainSafe = Number.isFinite(weather.rain) ? clamp01(weather.rain) : 0;
+  clear(): void {
+    this.drops.length = 0;
+    this.ripples.length = 0;
+    this.splashes.length = 0;
+    this.rippleTimer = 0;
+  }
+  update(dt: number, weather: WeatherState, world: World, density = 1): void {
+    const safeDt = Number.isFinite(dt) ? Math.max(0, Math.min(dt, 100)) : 0;
+    const rainSafe = Number.isFinite(weather.rain) ? clamp01(weather.rain) * clamp01(density) : 0;
     const target = Math.round(rainSafe * 320);
     while (this.drops.length < target) {
       this.drops.push({
@@ -55,7 +63,7 @@ export class RainRenderer {
         z: 0.4 + rnd() * 0.6,
       });
     }
-    while (this.drops.length > target + 30) this.drops.pop();
+    while (this.drops.length > target) this.drops.pop();
 
     const slant = 0.24;
     for (const d of this.drops) {
@@ -69,7 +77,7 @@ export class RainRenderer {
     }
 
     // Круги на воде под дождём
-    if (rainSafe > 0.08) {
+    if (rainSafe > 0.08 && safeDt > 0) {
       this.rippleTimer -= safeDt;
       if (this.rippleTimer <= 0) {
         this.rippleTimer = 40 / (rainSafe + 0.1);

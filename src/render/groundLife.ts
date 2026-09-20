@@ -464,6 +464,7 @@ export interface GroundView {
   width: number;
   height: number;
   zoom: number;
+  detail?: number;
 }
 /** Draw after the terrain but before fish, water animation, lighting and object shadows. */
 export function drawGroundLife(ctx: Ctx, world: World, atm: Atmosphere, view: GroundView): number {
@@ -472,7 +473,7 @@ export function drawGroundLife(ctx: Ctx, world: World, atm: Atmosphere, view: Gr
   const field = groundLifeField(world);
   // One current paint state, at most 400 tiny 100×56 stamps (~8.6 MiB worst case).
   // Local masks are rasterised only on edits/light-state/LOD changes, never once per blade per frame.
-  const lod = view.zoom < 0.36 ? 0 : view.zoom < 0.64 ? 1 : 2,
+  const lod = Math.min(view.detail ?? 2, view.zoom < 0.36 ? 0 : view.zoom < 0.64 ? 1 : 2),
     detailZoom = lod === 0 ? 0.3 : lod === 1 ? 0.55 : 1;
   const key = [
     crownCacheKey('__surface', 0, atm.time.now),

@@ -1,3 +1,4 @@
+import { GRAPHICS, isGraphicsQuality, type GraphicsQuality } from './graphics';
 import { crownCacheKey, crownCacheTime } from '../world/phenology';
 import { rainField, rainMaterial, drawRainGround, drawHouseDrips } from './afterRain';
 import { drawGroundLife } from './groundLife';
@@ -69,6 +70,22 @@ export class Scene {
   private weather = new Weather();
   private paperPattern: CanvasPattern | null = null;
   private dpr = 1;
+  private quality: GraphicsQuality = 'high';
+  motion = true;
+  get graphicsQuality(): GraphicsQuality {
+    return this.quality;
+  }
+  get graphicsProfile() {
+    return GRAPHICS[this.quality];
+  }
+  get pixelRatio(): number {
+    return this.dpr;
+  }
+  setQuality(value: GraphicsQuality): void {
+    if (!isGraphicsQuality(value) || value === this.quality) return;
+    this.quality = value;
+    this.resize();
+  }
   /** Наведённый тайл — подсвечивается только в режиме строительства. */
   hover: { tx: number; ty: number } | null = null;
   ghost: GhostPreview | null = null;
@@ -114,7 +131,7 @@ export class Scene {
   }
 
   resize(): void {
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.dpr = Math.min(window.devicePixelRatio || 1, this.graphicsProfile.dpr);
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
     this.canvas.width = Math.round(w * this.dpr);
@@ -277,10 +294,12 @@ export class Scene {
     if (weatherState) this.weatherState = weatherState;
     const ws = this.weatherState;
     try {
-      if (ws) this.rain.update(dt, ws, world);
+      if (ws && this.particles) this.rain.update(dt, ws, world, this.graphicsProfile.particles);
+      else this.rain.clear();
     } catch (e) {
       console.warn('[scene] rain update', e);
     }
+    const profile = this.graphicsProfile;
     const ctx = this.ctx;
     const W = this.viewW;
     const H = this.viewH;
@@ -334,6 +353,7 @@ export class Scene {
       width: W,
       height: H,
       zoom: this.camera.zoom,
+      detail: profile.groundDetail,
     });
 
     drawRainGround(ctx, world, atm, ws ?? undefined, time, {
@@ -368,6 +388,17 @@ export class Scene {
       this.wind,
       waterMotion,
       rainReceivers ? (type, x, y) => rainMaterial(atm, rainReceivers, ws ?? undefined, type, x, y) : undefined,
+      {
+        view: {
+          minX: this.camera.x - W / (2 * this.camera.zoom) - 8,
+          maxX: this.camera.x + W / (2 * this.camera.zoom) + 8,
+          minY: this.camera.y - H / (2 * this.camera.zoom) - 8,
+          maxY: this.camera.y + H / (2 * this.camera.zoom) + 8,
+        },
+        detail: profile.waterDetail,
+        objectWind: this.motion ? this.wind : 0,
+        reflectionStep: Math.max(profile.reflectionStep, 2 / this.camera.zoom),
+      },
     );
     drawAnimalReflections(ctx, world, atm, time, {
       rainWeather: ws ?? undefined,
@@ -383,6 +414,7 @@ export class Scene {
       highlightId: this.highlightId,
       useSpriteCache: this.useSpriteCache,
       particles: this.particles,
+      motion: this.motion,
     });
     drawCurrent(ctx, world, this.flow, atm, time);
     drawShoreRipple(ctx, world, this.flow, atm, time);
@@ -399,7 +431,7 @@ export class Scene {
     }
 
     const want = this.roofVisible ? 1 : 0;
-    this.roofFade += (want - this.roofFade) * Math.min(1, dt * 0.009);
+    this.roofFade += (want - this.roofFade) * (this.motion ? Math.min(1, dt * 0.009) : 1);
     if (Math.abs(this.roofFade - want) < 0.004) this.roofFade = want;
 
     drawHouseShade(ctx, world, atm, this.roofFade);
@@ -425,7 +457,7 @@ export class Scene {
 
     // --- Объекты, отсортированные по глубине ---
     drawObjects(ctx, world, atm, time, {
-      localLights,
+      localLights: profile.objectLight ? localLights : undefined,
       rainReceivers,
       rainWeather: ws ?? undefined,
       life: this.life,
@@ -440,6 +472,7 @@ export class Scene {
       highlightId: this.highlightId,
       useSpriteCache: this.useSpriteCache,
       particles: this.particles,
+      motion: this.motion,
     });
 
     // Кровля поверх интерьера.
@@ -489,17 +522,18 @@ export class Scene {
     ctx.restore();
 
     // --- Атмосферные слои поверх сцены ---
-    drawSunShafts(ctx, W, H, atm, time);
-    drawMist(ctx, W, H, atm, time);
+    if (profile.shafts) drawSunShafts(ctx, W, H, atm, time);
+    if (profile.mist) drawMist(ctx, W, H, atm, time);
     // лепестки и листья, сорванные ветром с конкретных деревьев
     if (this.life) {
       for (const e of this.life.takeEmitted()) {
+        if (!this.particles) continue;
         const tile = world.at(Math.floor(e.x), Math.floor(e.y));
         const lvl = tile ? tile.level : 0;
         const wp = isoToScreen(e.x, e.y, lvl);
         const sp = this.worldToScreen(wp.x, wp.y - 70);
         if (sp.x > -60 && sp.x < W + 60 && sp.y > -60 && sp.y < H + 60) {
-          this.weather.emitAt(sp.x, sp.y, e.kind, e.seed);
+          this.weather.emitAt(sp.x, sp.y, e.kind, e.seed, Math.round(96 * profile.particles));
         }
       }
     }
@@ -508,7 +542,7 @@ export class Scene {
     if (this.particles) {
       this.weather.update(dt, atm);
       this.weather.draw(ctx, atm);
-    }
+    } else this.weather.clear();
 
     // дождь, туман и молнии — поверх сцены
     if (ws && this.particles) {
@@ -522,7 +556,7 @@ export class Scene {
     drawSunGlow(ctx, W, H, atm);
 
     // --- Пост-обработка ---
-    this.paperPattern = drawPaperGrain(ctx, W, H, this.paperPattern);
+    if (profile.paper) this.paperPattern = drawPaperGrain(ctx, W, H, this.paperPattern);
     drawColorGrade(ctx, W, H, atm);
     vignette(ctx, W, H, mix(atm.shadowTint, { r: 60, g: 50, b: 40 }, 0.4), atm.time.isNight ? 0.5 : 0.35);
 

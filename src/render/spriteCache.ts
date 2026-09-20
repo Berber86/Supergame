@@ -225,7 +225,7 @@ export function spriteSway(type: string, seed: number, g: number, time: number, 
 }
 
 /** The very same painted sprite, mirrored in broken horizontal strips; no shadow. */
-export function drawCachedReflection(d: DrawCtx, compression = 0.82): void {
+export function drawCachedReflection(d: DrawCtx, compression = 0.82, stripSize = 5): void {
   const e = getCachedSprite(d);
   if (!e) return;
   const ctx = d.ctx;
@@ -235,8 +235,9 @@ export function drawCachedReflection(d: DrawCtx, compression = 0.82): void {
   ctx.scale(1, -compression);
   // Only the part above the object's foot reflects. A fragment is 5 world pixels,
   // not a screen-sized offscreen canvas; reused sprites also bound memory.
-  for (let y = 0; y < e.ay; y += 5) {
-    const h = Math.min(5, e.ay - y);
+  const step = Number.isFinite(stripSize) ? Math.max(5, Math.min(24, stripSize)) : 5;
+  for (let y = 0; y < e.ay; y += step) {
+    const h = Math.min(step, e.ay - y);
     const depth = (e.ay - y) / Math.max(1, e.ay);
     const wave = d.reflectionWarp?.(d.x, d.y + (e.ay - y) * compression);
     const drift = wave?.dx ?? Math.sin(d.time * 0.0013 + y * 0.095 + d.obj.seed) * (0.3 + d.wind * 0.6);

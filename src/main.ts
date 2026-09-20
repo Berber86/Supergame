@@ -1,3 +1,4 @@
+import { canvasCrop } from './render/canvasCrop';
 /**
  * «Усадьба Безмятежности» — дзен-песочница.
  * Точка входа: игровой цикл, ввод, связь мира / сцены / интерфейса.
@@ -278,8 +279,17 @@ const chronicle = new ChroniclePanel(app, world);
 const animalGuide = new AnimalGuide(app);
 
 /** Плавный перенос камеры к событию летописи */
+let panSerial = 0;
 function smoothPanTo(tx: number, ty: number): void {
+  const serial = ++panSerial;
   const target = isoToScreen(tx, ty);
+  if (!scene.motion) {
+    scene.camera.x = target.x;
+    scene.camera.y = target.y;
+    scene.clampCamera();
+    wake();
+    return;
+  }
   const startX = scene.camera.x;
   const startY = scene.camera.y;
   const dx = target.x - startX;
@@ -288,6 +298,13 @@ function smoothPanTo(tx: number, ty: number): void {
   const t0 = performance.now();
   const ease = (t: number) => (t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t);
   const step = (now: number) => {
+    if (serial !== panSerial) return;
+    if (!scene.motion) {
+      scene.camera.x = target.x;
+      scene.camera.y = target.y;
+      scene.clampCamera();
+      return;
+    }
     const p = Math.min(1, (now - t0) / dur);
     const k = ease(p);
     scene.camera.x = startX + dx * k;
@@ -317,6 +334,8 @@ const settingsPanel = new SettingsPanel(
   view,
   (v) => {
     scene.particles = v.particles;
+    scene.motion = v.motion;
+    scene.setQuality(v.quality);
   },
   {
     get: () => soundOn,
@@ -836,15 +855,11 @@ function capturePolaroid(tx: number, ty: number): string | null {
     const vw = scene.viewW;
     const vh = scene.viewH;
     if (screen.x < -260 || screen.x > vw + 260 || screen.y < -260 || screen.y > vh + 260) return null;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = scene.pixelRatio;
     const size = 220;
     const finalSize = 160;
-    const sx = Math.round((screen.x - size / 2) * dpr);
-    const sy = Math.round((screen.y - size / 2) * dpr);
-    const sSize = Math.round(size * dpr);
-    const cw = scene.canvas.width;
-    const ch = scene.canvas.height;
-    if (cw < 10 || ch < 10) return null;
+    const crop = canvasCrop(screen.x, screen.y, size, dpr, scene.canvas.width, scene.canvas.height, finalSize);
+    if (!crop) return null;
     const tmp = document.createElement('canvas');
     tmp.width = finalSize;
     tmp.height = finalSize;
@@ -852,16 +867,7 @@ function capturePolaroid(tx: number, ty: number): string | null {
     if (!tctx) return null;
     tctx.fillStyle = '#F7F4EA';
     tctx.fillRect(0, 0, finalSize, finalSize);
-    const srcX = Math.max(0, sx);
-    const srcY = Math.max(0, sy);
-    const srcW = Math.min(sSize, cw - srcX);
-    const srcH = Math.min(sSize, ch - srcY);
-    if (srcW <= 0 || srcH <= 0) return null;
-    const dstX = ((srcX - sx) / sSize) * finalSize;
-    const dstY = ((srcY - sy) / sSize) * finalSize;
-    const dstW = (srcW / sSize) * finalSize;
-    const dstH = (srcH / sSize) * finalSize;
-    tctx.drawImage(scene.canvas, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH);
+    tctx.drawImage(scene.canvas, crop.sx, crop.sy, crop.sw, crop.sh, crop.dx, crop.dy, crop.dw, crop.dh);
     tctx.fillStyle = 'rgba(90,64,40,0.04)';
     tctx.fillRect(0, 0, finalSize, finalSize);
     let url = tmp.toDataURL('image/webp', 0.62);
@@ -1151,6 +1157,7 @@ startLoop({
   devPanel,
   idleMs: IDLE_MS,
   isPracticeActive: () => practiceActive || animalGuide.isOpen,
+  isStartOpen: () => startOpen,
   isZenMode: () => zenMode || animalGuide.isOpen,
   igniteZen: () => setZen(true),
   lastInteractionMs: () => lastInteraction,
@@ -1170,6 +1177,8 @@ scene.roofVisible = loadRoofPref();
 scene.snapRoof();
 ui.setRoofState(scene.roofVisible);
 scene.particles = view.particles;
+scene.motion = view.motion;
+scene.setQuality(view.quality);
 ui.setPaintMode(paintMode);
 syncRoofButton();
 syncGrowRect();

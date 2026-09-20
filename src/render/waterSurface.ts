@@ -318,6 +318,17 @@ export function drawWaterSurface(ctx: Ctx, world: World, atm: Atmosphere): void 
   ctx.restore();
 }
 
+export interface WaterRenderOptions {
+  view?: { minX: number; minY: number; maxX: number; maxY: number };
+  detail?: number;
+  reflectionStep?: number;
+  objectWind?: number;
+}
+function outside(bounds: { minX: number; minY: number; maxX: number; maxY: number }, view: WaterRenderOptions['view']) {
+  return (
+    !!view && (bounds.maxX < view.minX || bounds.minX > view.maxX || bounds.maxY < view.minY || bounds.minY > view.maxY)
+  );
+}
 /** Nearby objects reflect at the water plane; bridges retain their isometric ground axis. */
 function drawReflections(
   ctx: Ctx,
@@ -328,6 +339,7 @@ function drawReflections(
   wind: number,
   motion?: WaterMotion,
   material?: (type: string, x: number, y: number) => Atmosphere,
+  options: WaterRenderOptions = {},
 ): void {
   const reflectionWarp = motion ? (x: number, y: number) => motion(x, y, surface.level) : undefined;
   for (const o of world.objects) {
@@ -355,6 +367,7 @@ function drawReflections(
     const objectLevel = base ? (base.water ? base.level - 0.28 : base.level) : 0;
     const objectAnchor = isoToScreen(cx, cy, objectLevel);
     const p = { x: plane.x, y: 2 * plane.y - objectAnchor.y };
+    if (outside({ minX: p.x - 230, maxX: p.x + 230, minY: p.y - 25, maxY: p.y + 320 }, options.view)) continue;
     const materialAtm = material?.(o.type, cx, cy) ?? atm;
     if (item.kind === 'bridge') {
       ctx.save();
@@ -393,6 +406,7 @@ function drawReflections(
         reflectionWarp,
       },
       1,
+      options.reflectionStep,
     );
   }
 }
@@ -406,6 +420,7 @@ export function drawWaterAnimation(
   wind = 0.5,
   motion?: WaterMotion,
   material?: (type: string, x: number, y: number) => Atmosphere,
+  options: WaterRenderOptions = {},
 ): void {
   const breeze = clamp01(Math.abs(wind));
   const sun = (0.3 + atm.time.daylight * 0.65 + atm.golden * 0.4) * (1 - atm.overcast * 0.85);
@@ -417,15 +432,18 @@ export function drawWaterAnimation(
   ctx.save();
   ctx.lineCap = 'round';
   for (const surface of waterSurfaces(world)) {
+    if (outside(waterSurfaceBounds(surface), options.view)) continue;
     ctx.save();
     waterSurfacePath(ctx, surface);
     ctx.clip('evenodd');
     ctx.fillStyle = css(mix(atm.palette.water, atm.skyBottom, 0.28), 0.09);
     ctx.fill('evenodd');
-    drawReflections(ctx, world, surface, atm, time, breeze, motion, material);
+    drawReflections(ctx, world, surface, atm, time, options.objectWind ?? breeze, motion, material, options);
     for (const cell of surface.cells) {
       const { x, y, seed } = cell;
       const p = isoToScreen(x + 0.24 + hash2(x, y, 187) * 0.5, y + 0.24 + hash2(x, y, 191) * 0.5, surface.level - 0.26);
+      if (outside({ minX: p.x - 80, maxX: p.x + 80, minY: p.y - 25, maxY: p.y + 25 }, options.view)) continue;
+      if (seed > (options.detail ?? 1)) continue;
       const phase = time * (0.00045 + breeze * 0.0003) + seed * 24;
       const drift = Math.sin(phase) * (4 + breeze * 3);
       // Long translucent reflections of the sky; deliberately sparse, never discs.

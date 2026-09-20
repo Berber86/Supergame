@@ -28,9 +28,13 @@ export class Weather {
     this.w = w;
     this.h = h;
   }
+  clear(): void {
+    this.particles.length = 0;
+    this.calendar = undefined;
+  }
   /** The source tree has already checked its own seeded flowering/shedding phase. */
-  emitAt(x: number, y: number, kind: 'petal' | 'leaf', seed: number): void {
-    if (this.particles.length >= 96) this.particles.shift();
+  emitAt(x: number, y: number, kind: 'petal' | 'leaf', seed: number, limit = 96): void {
+    while (this.particles.length >= Math.max(1, limit)) this.particles.shift();
     const r = this.rnd;
     this.particles.push({
       x,

@@ -185,20 +185,17 @@ export { lerp };
  */
 export function annualPhase(now: number): number {
   if (!Number.isFinite(now)) return 0;
-  const year = new Date(now).getFullYear();
-  const anchors = [
-    new Date(year - 1, 9, 15).getTime(),
-    new Date(year, 0, 15).getTime(),
-    new Date(year, 3, 15).getTime(),
-    new Date(year, 6, 15).getTime(),
-    new Date(year, 9, 15).getTime(),
-    new Date(year + 1, 0, 15).getTime(),
-  ];
-  for (let i = 0; i < anchors.length - 1; i++) {
-    if (now < anchors[i + 1]) {
-      const phase = (i - 1) * 0.25 + ((now - anchors[i]) / (anchors[i + 1] - anchors[i])) * 0.25;
-      return (phase + 1) % 1;
-    }
-  }
-  return 0;
+  // Only the enclosing two anchors matter. This hot path used to construct all
+  // six dates on every leaf, shadow, reflection and cache lookup. Keep exact civil
+  // dates (including leap years/DST), without memoised timezone state or quantisation.
+  const date = new Date(now),
+    year = date.getFullYear(),
+    month = date.getMonth();
+  let quarter = Math.floor(month / 3);
+  if (month % 3 === 0 && date.getDate() < 15) quarter--;
+  const start = new Date(year, quarter * 3, 15).getTime(),
+    end = new Date(year, quarter * 3 + 3, 15).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
+  const phase = quarter * 0.25 + ((now - start) / (end - start)) * 0.25;
+  return (phase + 1) % 1;
 }
