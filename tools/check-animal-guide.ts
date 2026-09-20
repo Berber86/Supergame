@@ -187,6 +187,7 @@ if (sheetAt >= 0) {
 register(new URL('./_startup-css-hook.mjs', import.meta.url));
 const dom = new JSDOM('<!doctype html><html><body><button id="opener">Open</button><main></main></body></html>', {
   pretendToBeVisual: true,
+  url: 'https://garden.example/',
 });
 const w = dom.window;
 Object.assign(globalThis, { window: w, document: w.document, HTMLElement: w.HTMLElement });
@@ -231,8 +232,36 @@ assert.equal(w.document.querySelectorAll('.ag-list button').length, 1);
 assert.equal(w.document.querySelector('.ag-page h2')!.textContent, 'Ящерица');
 assert.equal(w.document.querySelectorAll('[data-state]').length, 9);
 assert.equal(w.document.querySelectorAll('.ag-variants option').length, 4);
+assert.equal(w.document.querySelectorAll('.ag-facts dt').length, 3);
+assert.equal(w.document.querySelectorAll('.ag-observation img').length, 5);
+assert.ok(!w.document.querySelector<HTMLElement>('.ag-observations')!.hidden);
+for (const img of w.document.querySelectorAll<HTMLImageElement>('.ag-observation img')) {
+  assert.ok(img.alt.length > 20);
+  assert.equal(img.loading, 'lazy');
+  assert.ok(img.src.endsWith('.webp'));
+}
+const guideSave = JSON.stringify(pondWorld.toJSON());
+w.localStorage.setItem('save-sentinel', guideSave);
+const variant = w.document.querySelector<HTMLSelectElement>('.ag-variants select')!;
+variant.value = '3';
+variant.dispatchEvent(new w.Event('change'));
+assert.equal(variant.value, '3');
+assert.equal(w.document.querySelector('[data-state=bask]')!.getAttribute('aria-pressed'), 'true');
 (w.document.querySelector('[data-state=flee]') as HTMLButtonElement).click();
 assert.equal(w.document.querySelector('[data-state=flee]')!.getAttribute('aria-pressed'), 'true');
+assert.equal(w.localStorage.getItem('save-sentinel'), guideSave);
+assert.equal(JSON.stringify(pondWorld.toJSON()), guideSave, 'the guide never changes the saved world');
+search.value = 'череп';
+search.dispatchEvent(new w.Event('input'));
+(w.document.querySelector('.ag-list button') as HTMLButtonElement).click();
+assert.ok(w.document.querySelector<HTMLElement>('.ag-observations')!.hidden);
+assert.ok(w.document.querySelector<HTMLElement>('.ag-facts')!.hidden);
+assert.equal(w.document.querySelectorAll('.ag-observation img').length, 0, 'no stale lizard cards on other pages');
+search.value = 'сцинк';
+search.dispatchEvent(new w.Event('input'));
+assert.equal(w.document.querySelectorAll('.ag-list button').length, 1);
+(w.document.querySelector('.ag-list button') as HTMLButtonElement).click();
+assert.equal(w.document.querySelectorAll('.ag-observation img').length, 5);
 search.value = 'несуществующий';
 search.dispatchEvent(new w.Event('input'));
 assert.ok(w.document.querySelector('.ag-empty'));
@@ -244,5 +273,15 @@ guide.setOpen(true);
 guide.setOpen(true);
 assert.equal(frames.size, 1, 'reopen must not duplicate frame loops');
 guide.setOpen(false);
+w.matchMedia = () => ({ matches: true }) as unknown as MediaQueryList;
+const reduced = new AnimalGuide(w.document.querySelector('main')!);
+reduced.setOpen(true);
+assert.equal(
+  w.document.querySelector('.animal-guide[open] .ag-play')!.getAttribute('aria-label'),
+  'Воспроизвести анимацию',
+);
+assert.equal(w.document.querySelector('.animal-guide[open] [data-state=bask]')!.getAttribute('aria-pressed'), 'true');
+reduced.setOpen(false);
+assert.equal(frames.size, 0);
 w.close();
 console.log('ок: поиск, страницы, переключение анимаций, Escape из поиска, возврат фокуса и остановка rAF');

@@ -277,6 +277,95 @@
   line-height: 1.45;
   color: #83745f;
 }
+.ag-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  padding: 14px 0;
+  margin: 17px 0 0;
+  border-block: 1px solid var(--ag-line);
+}
+.ag-facts[hidden],
+.ag-observations[hidden] {
+  display: none;
+}
+.ag-facts dt {
+  font:
+    9px Arial,
+    sans-serif;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #7d8466;
+  margin-bottom: 6px;
+}
+.ag-facts dd {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #72644f;
+}
+.ag-observations {
+  margin-top: 28px;
+  border-top: 1px solid var(--ag-line);
+  padding-top: 23px;
+}
+.ag-notes-heading h3 {
+  margin: 6px 0 9px;
+  font-size: 25px;
+  font-weight: 500;
+}
+.ag-notes-lead {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #84755e;
+  max-width: 570px;
+  margin: 0 0 19px;
+}
+.ag-observation-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px 20px;
+}
+.ag-observation {
+  margin: 0;
+  min-width: 0;
+}
+.ag-observation img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 2;
+  object-fit: contain;
+  mix-blend-mode: multiply;
+  border-radius: 3px;
+}
+.ag-observation figcaption {
+  padding: 11px 4px 0;
+}
+.ag-observation h4 {
+  font-size: 20px;
+  font-weight: 500;
+  margin: 0 0 5px;
+  color: #4d5d43;
+}
+.ag-observation p {
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0;
+  color: #83745f;
+}
+.ag-observation:first-child {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 19px;
+  align-items: center;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--ag-line);
+}
+.ag-observation:first-child figcaption {
+  padding-top: 0;
+}
 .ag-motion {
   border-top: 1px solid var(--ag-line);
   padding-top: 13px;
@@ -422,6 +511,30 @@
   }
   .ag-description {
     font-size: 17px;
+  }
+  .ag-facts {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .ag-facts > div {
+    display: grid;
+    grid-template-columns: 60px minmax(0, 1fr);
+    gap: 10px;
+    align-items: baseline;
+  }
+  .ag-facts dt {
+    margin: 0;
+  }
+  .ag-observation-list,
+  .ag-observation:first-child {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .ag-observation-list {
+    gap: 24px;
+  }
+  .ag-notes-heading h3 {
+    font-size: 22px;
   }
 }
 @media (max-width: 480px) {

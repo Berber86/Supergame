@@ -1,4 +1,13 @@
-import { makeLizard, LIZARD_COATS, lizardSpeed, type Lizard } from '../world/lizards';
+import {
+  makeLizard,
+  LIZARD_COATS,
+  LIZARD_STRIDE,
+  LIZARD_STRIKE_MS,
+  LIZARD_EMERGE_MS,
+  lizardSpeed,
+  type Lizard,
+  type LizardState,
+} from '../world/lizards';
 import { drawLizard } from '../render/lizard';
 import { CAT_STRIDE, mouseSpeed, MOUSE_STRIDE } from '../world/creatureMotion';
 import { HERON_STRIKE_MS } from '../world/wildlifeMotion';
@@ -28,6 +37,11 @@ export interface GuideAnimation {
   name: string;
   duration: number;
 }
+export interface GuideObservation {
+  event: string;
+  cue: string;
+  alt: string;
+}
 export interface GuideAnimal {
   id: string;
   name: string;
@@ -37,6 +51,10 @@ export interface GuideAnimal {
   habitat: string;
   scale: number;
   baseline: number;
+  /** Recenter asymmetric silhouettes (a long tail) without moving the garden's anchor. */
+  offsetX?: number;
+  facts?: { label: string; value: string }[];
+  observations?: GuideObservation[];
   /** Камера отъезжает, чтобы распахнутые крылья помещались на странице. */
   flightScale?: number;
   water?: boolean;
@@ -82,13 +100,14 @@ function animal<T extends { state: string }>(
   states: Record<T['state'], string>,
   specimen: (state: T['state'], time: number, variant: number) => T,
   render: (ctx: Ctx, a: T, x: number, y: number, atm: Atmosphere, time: number) => void,
+  duration: (state: T['state']) => number = animationDuration,
 ): GuideAnimal {
   return {
     ...meta,
-    animations: Object.entries<string>(states).map(([id, name]) => ({ id, name, duration: animationDuration(id) })),
+    animations: Object.entries<string>(states).map(([id, name]) => ({ id, name, duration: duration(id) })),
     draw(ctx, atm, state, time, variant) {
       if (!Object.prototype.hasOwnProperty.call(states, state)) return;
-      const p = phase(time, state);
+      const p = (time % duration(state)) / duration(state);
       // Small local trajectories keep flight, approach and retreat visible on the page.
       const travel = ['enter', 'leave', 'arrive', 'fly-in', 'fly-out', 'approach', 'return'].includes(state);
       const offset = travel ? Math.sin((p - 0.5) * Math.PI) * 9 : 0;
@@ -98,7 +117,7 @@ function animal<T extends { state: string }>(
           : 1;
       ctx.save();
       ctx.scale(zoom, zoom);
-      render(ctx, specimen(state as T['state'], time, variant), offset, 0, atm, time);
+      render(ctx, specimen(state as T['state'], time, variant), offset + (meta.offsetX ?? 0), 0, atm, time);
       ctx.restore();
     },
   };
@@ -204,23 +223,59 @@ const deer = animal<Deer>(
   drawDeer,
 );
 
+const lizardDuration = (state: LizardState): number =>
+  state === 'strike' ? LIZARD_STRIKE_MS : state === 'emerge' ? LIZARD_EMERGE_MS : animationDuration(state);
+
 const lizard = animal<Lizard>(
   {
     id: 'lizard',
     name: 'Ящерица',
-    latin: 'Plestiodon · садовый сцинк',
+    latin: 'Plestiodon · японский сцинк',
     group: 'Пресмыкающиеся',
     scale: 8,
-    baseline: 0.6,
+    baseline: 0.58,
+    offsetX: 9,
     description:
-      'Стилизованный японский сцинк: гладкое вытянутое тело, четыре короткие лапы и гибкий хвост. Окрасы закреплены за особью; у молодой формы золотистые полосы и синий хвост.',
+      'Маленький хранитель тёплых камней. По гладкой чешуе бегут золотистые линии; длинный хвост мягко повторяет каждый шаг. Взрослые носят цвета земли, а молодую ящерицу выдаёт яркий синий хвост.',
     habitat:
-      'С конца весны до ранней осени, примерно с 8 до 18 часов в сухую погоду. Утром греется на камнях, в жаркий полдень ищет кусты. Охотится в траве, иногда ловит присевшую бабочку. Кот подкрадывается — ящерица замирает и удирает в щель; избегает птиц, цапли и совы. Уступает занятый камень черепахе и соседям. Ночью, под дождём и зимой уходит в укрытие.',
+      'Оставьте камень на солнце и укрытие рядом: щель, куст или пучок травы. Пруд не нужен. В полуденную жару сцинк ищет тень; ночью, зимой и под дождём прячется. Уступает занятый камень черепахе и соседям.',
+    facts: [
+      { label: 'Сезон', value: 'Поздняя весна — ранняя осень' },
+      { label: 'Время', value: '08–18 ч · сухая погода' },
+      { label: 'Пища', value: 'Мелкие насекомые' },
+    ],
+    observations: [
+      {
+        event: 'meet_lizard',
+        cue: 'Первая встреча в сухом уголке сада. Солнечные камни и соседние укрытия приглашают гостью.',
+        alt: 'Молодой полосатый сцинк с длинным синим хвостом на светлом садовом камне.',
+      },
+      {
+        event: 'lizard_bask',
+        cue: 'Дайте ящерице спокойно прогреться на открытом солнцу камне. Бока тихо дышат, лапы расслаблены.',
+        alt: 'Бронзовая взрослая ящерица отдыхает на камне в полосе золотистого солнечного света.',
+      },
+      {
+        event: 'lizard_hunt',
+        cue: 'После осторожного сближения — короткий бросок. Ловит мелкую добычу в траве, иногда присевшую бабочку; улетевшую не преследует.',
+        alt: 'Синехвостый сцинк бросается к маленькому насекомому среди низкой травы.',
+      },
+      {
+        event: 'cat_lizard',
+        cue: 'Кот замечает гостью и подкрадывается. Ящерица настораживается; впереди всегда должно быть укрытие.',
+        alt: 'Любопытный полосатый кот осторожно подходит к ящерице на камне.',
+      },
+      {
+        event: 'lizard_escape',
+        cue: 'При близкой опасности ящерица удирает в щель. Веха появляется, только когда она добралась до укрытия — не за обычный уход на ночь.',
+        alt: 'Ящерица скрывается в щели между камнями; снаружи ещё виден изогнутый синий хвост.',
+      },
+    ],
     variants: LIZARD_COATS,
   },
   {
-    emerge: 'Выходит из укрытия',
     bask: 'Греется и дышит',
+    emerge: 'Выходит из укрытия',
     look: 'Оглядывается',
     walk: 'Перебегает',
     hunt: 'Подкрадывается',
@@ -230,19 +285,28 @@ const lizard = animal<Lizard>(
     leave: 'Уходит на покой',
   },
   (state, time, variant) => {
-    const p = phase(time, state),
+    const duration = lizardDuration(state),
+      p = (time % duration) / duration,
       a = makeLizard(40 + variant, { x: 0, y: 0 });
     return {
       ...a,
       state,
-      alpha: state === 'hide' ? Math.max(0.03, 1 - p) : state === 'emerge' ? Math.min(1, p * 3) : 1,
-      gait: ((time * lizardSpeed(state)) / 0.22) * Math.PI * 2,
+      alpha:
+        state === 'hide'
+          ? Math.max(0.03, 1 - p)
+          : state === 'emerge'
+            ? Math.min(1, p * 3)
+            : state === 'leave'
+              ? 1 - p * 0.85
+              : 1,
+      gait: ((time * lizardSpeed(state)) / LIZARD_STRIDE) * Math.PI * 2,
       motion: lizardSpeed(state) ? 1 : 0,
-      timer: (1 - p) * animationDuration(state),
-      duration: animationDuration(state),
+      timer: (1 - p) * duration,
+      duration,
     };
   },
   drawLizard,
+  lizardDuration,
 );
 
 const turtle = animal<Turtle>(

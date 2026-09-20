@@ -11,7 +11,16 @@ import { Life, type Flutter } from '../src/world/life';
 import { scanHabitat, invitations, sunnyLizardSpots } from '../src/world/habitat';
 import { wildlifeActivity, ecologyYear } from '../src/world/ecology';
 import { WeatherSystem } from '../src/world/weatherState';
-import { Lizards, makeLizard, lizardGround, lizardRoute, lizardCoat, type LizardState } from '../src/world/lizards';
+import {
+  Lizards,
+  makeLizard,
+  lizardGround,
+  lizardRoute,
+  lizardCoat,
+  lizardPose,
+  LIZARD_STRIKE_MS,
+  type LizardState,
+} from '../src/world/lizards';
 import { buildAtmosphere } from '../src/world/palette';
 import { drawLizard } from '../src/render/lizard';
 import { drawObjects, drawAnimalReflections, type ObjectsOpts } from '../src/render/scene-steps';
@@ -173,6 +182,7 @@ const skink = makeLizard(43, { x: cat.tx + 2.5, y: cat.ty });
 Object.assign(skink, { alpha: 1, state: 'bask', timer: 1e6 });
 life.lizards.agents = [skink];
 for (let i = 0; i < 150; i++) life.update(world, summer, 100, i * 100, clear);
+assert.ok(world.milestones.has('lizard_watch'));
 assert.ok(world.hasEvent('cat_lizard'), 'cat behaviour really responds, not only the guide text');
 for (let year = 0; year < 6; year++) {
   for (const month of [4, 6, 8, 10, 0]) {
@@ -209,6 +219,83 @@ function render(seed: number, state: LizardState, time: number) {
 assert.equal(new Set([40, 41, 42, 43].map((seed) => render(seed, 'bask', 1000))).size, 4);
 assert.notEqual(render(43, 'walk', 100), render(43, 'walk', 900));
 assert.deepEqual([40, 41, 42, 43].map(lizardCoat), [0, 1, 2, 3]);
+// Every coat, pose, direction and light fits both desktop and phone guide framing.
+// Unlike a thumbnail comparison, this also catches lost tails at the horizontal edges.
+const guide = GUIDE_ANIMALS.find((a) => a.id === 'lizard')!;
+let guideFrames = 0;
+for (const [width, height] of [
+  [580, 300],
+  [300, 200],
+]) {
+  const sheet = createCanvas(width, height),
+    c = sheet.getContext('2d');
+  for (const light of [atm, buildAtmosphere(night)])
+    for (let variant = 0; variant < 4; variant++) {
+      for (const animation of guide.animations)
+        for (const fraction of [0.02, 0.5, 0.98])
+          for (const facing of [-1, 1]) {
+            c.resetTransform();
+            c.clearRect(0, 0, width, height);
+            c.save();
+            c.translate(width / 2, guide.baseline * height);
+            const scale = guide.scale * Math.min(width / 580, height / 300);
+            c.scale(scale * facing, scale);
+            c.globalAlpha = 0.85;
+            c.lineWidth = 2.5;
+            c.fillStyle = '#ff00ff';
+            const before = c.getTransform(),
+              beforeAlpha = c.globalAlpha;
+            guide.draw(c as never, light, animation.id, animation.duration * fraction, variant);
+            assert.deepEqual(c.getTransform(), before);
+            assert.equal(c.globalAlpha, beforeAlpha);
+            assert.equal(c.lineWidth, 2.5);
+            // napi's fillStyle getter caches the last assignment even after restore;
+            // probe the actual paint and clipping state instead of that stale getter.
+            c.save();
+            c.resetTransform();
+            c.fillRect(0, 0, 1, 1);
+            assert.deepEqual([...c.getImageData(0, 0, 1, 1).data.slice(0, 3)], [255, 0, 255]);
+            c.clearRect(0, 0, 1, 1);
+            c.restore();
+            c.restore();
+            const pixels = c.getImageData(0, 0, width, height).data;
+            assert.ok(
+              pixels.some((v, i) => i % 4 === 3 && v > 0),
+              `${animation.id}: visible on page`,
+            );
+            const alphaAt = (x: number, y: number) => pixels[(y * width + x) * 4 + 3];
+            for (let x = 0; x < width; x++)
+              assert.ok(alphaAt(x, 0) < 20 && alphaAt(x, height - 1) < 20, `${animation.id}: vertical bounds`);
+            for (let y = 0; y < height; y++)
+              assert.ok(alphaAt(0, y) < 20 && alphaAt(width - 1, y) < 20, `${animation.id}: tail/feet bounds`);
+            guideFrames++;
+          }
+      await yieldNative();
+    }
+}
+const specimen = makeLizard(43, { x: 0, y: 0 });
+Object.assign(specimen, { state: 'strike', alpha: 1, timer: LIZARD_STRIKE_MS, duration: LIZARD_STRIKE_MS });
+assert.equal(lizardPose(specimen, 500).strike, 0);
+specimen.timer /= 2;
+assert.equal(lizardPose(specimen, 500).strike, 1);
+specimen.timer = 0;
+assert.ok(lizardPose(specimen, 500).strike < 1e-10);
+const snapshot = structuredClone(specimen);
+canvas.width = 520;
+drawLizard(ctx as never, specimen, 290, 140, atm, 500);
+const still = digest();
+canvas.width = 520;
+drawLizard(ctx as never, specimen, 290, 140, atm, 500);
+assert.equal(digest(), still, 'deterministic scales and pose');
+assert.deepEqual(specimen, snapshot, 'the renderer must never advance live simulation');
+canvas.width = 520;
+drawLizard(ctx as never, { ...specimen, alpha: 0 }, 290, 140, atm, 500);
+assert.ok(
+  ctx.getImageData(0, 0, 520, 280).data.every((v) => v === 0),
+  'fully hidden lizard draws nothing',
+);
+console.log(`ок: ${guideFrames} кадров ящерицы, день/ночь, 4 окраса, 9 поз, оба направления, телефон и десктоп`);
+
 // Common scene/reflection entry gate: neither winter nor night may leave a ghost silhouette.
 const empty = new World();
 empty.objects = [];

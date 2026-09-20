@@ -3,6 +3,9 @@ import { GUIDE_ANIMALS, GuideAnimal } from './animalGuideData';
 import { buildAtmosphere } from '../world/palette';
 import { computeTime } from '../core/clock';
 import { svgIcon } from './icons';
+import { chronicleText } from '../world/chronicle';
+import { MILESTONES } from '../world/catalog';
+import { CHRONICLE_IMAGES } from './chronicleArt';
 
 /** A modal, independent animation viewer: no writes to the world or localStorage. */
 export class AnimalGuide {
@@ -36,10 +39,15 @@ export class AnimalGuide {
           <div class="ag-page-heading"><div><div class="ag-kicker"></div><h2></h2><div class="ag-latin" lang="la"></div></div><div class="ag-pagination"><button data-page="-1" aria-label="Предыдущее животное">←</button><span></span><button data-page="1" aria-label="Следующее животное">→</button></div></div>
           <div class="ag-stage"><span class="ag-stage-note">ЖИВАЯ ЗАРИСОВКА</span><canvas role="img"></canvas><span class="ag-stage-caption"></span><button class="ag-flip" aria-label="Повернуть животное" title="Повернуть животное">↔</button></div>
           <div class="ag-variants"><label>Облик <select aria-label="Вариант внешности"></select></label></div>
-          <div class="ag-description"></div><div class="ag-habitat"><span>ГДЕ ВСТРЕТИТЬ</span><p></p></div>
+          <div class="ag-description"></div><dl class="ag-facts" hidden></dl><div class="ag-habitat"><span>ГДЕ ВСТРЕТИТЬ</span><p></p></div>
           <section class="ag-motion" aria-label="Анимации животного"><div class="ag-motion-title"><h3>Движения и повадки</h3><span></span></div><div class="ag-animations"></div>
             <div class="ag-player"><button class="ag-play"></button><label class="ag-speed">Скорость <select aria-label="Скорость анимации"><option value="0.25">¼×</option><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label><label class="ag-sequence"><input type="checkbox"> Все подряд</label><button class="ag-restart" title="С начала" aria-label="Начать анимацию заново">↺</button></div>
             <input class="ag-timeline" type="range" min="0" max="1000" value="0" aria-label="Кадр анимации">
+          </section>
+          <section class="ag-observations" aria-labelledby="ag-observations-title" hidden>
+            <div class="ag-notes-heading"><span class="ag-kicker">ПОЛЕВЫЕ НАБЛЮДЕНИЯ</span><h3 id="ag-observations-title">Маленькая жизнь среди камней</h3></div>
+            <p class="ag-notes-lead">Пять иллюстрированных вех. Они запишутся в летопись только после настоящих событий в саду — просмотр книги их не открывает.</p>
+            <div class="ag-observation-list"></div>
           </section>
           <footer class="ag-footnote">Те же модели и движения, что в саду · Масштаб увеличен для наблюдения</footer>
         </article>
@@ -201,6 +209,7 @@ export class AnimalGuide {
       `${String(GUIDE_ANIMALS.indexOf(a) + 1).padStart(2, '0')} / ${GUIDE_ANIMALS.length}`;
     this.root.querySelector('.ag-description')!.textContent = a.description;
     this.root.querySelector('.ag-habitat p')!.textContent = a.habitat;
+    this.renderFieldNotes();
     this.root.querySelector('.ag-motion-title span')!.textContent = `${a.animations.length} анимаций`;
     const variants = this.root.querySelector<HTMLElement>('.ag-variants')!;
     variants.hidden = !a.variants;
@@ -231,6 +240,47 @@ export class AnimalGuide {
     this.updateAnimations();
     this.updatePlay();
     if (this.isOpen) this.draw();
+  }
+
+  private renderFieldNotes(): void {
+    const facts = this.root.querySelector<HTMLDListElement>('.ag-facts')!;
+    facts.hidden = !this.animal.facts?.length;
+    facts.replaceChildren();
+    for (const fact of this.animal.facts ?? []) {
+      const item = document.createElement('div');
+      const label = document.createElement('dt');
+      label.textContent = fact.label;
+      const value = document.createElement('dd');
+      value.textContent = fact.value;
+      item.append(label, value);
+      facts.append(item);
+    }
+    const section = this.root.querySelector<HTMLElement>('.ag-observations')!;
+    const list = this.root.querySelector<HTMLElement>('.ag-observation-list')!;
+    section.hidden = !this.animal.observations?.length;
+    list.replaceChildren();
+    for (const observation of this.animal.observations ?? []) {
+      const entry = chronicleText(observation.event);
+      const src = CHRONICLE_IMAGES[observation.event];
+      if (!entry?.milestone || !src) continue;
+      const card = document.createElement('figure');
+      card.className = 'ag-observation';
+      const image = document.createElement('img');
+      image.src = src;
+      image.alt = observation.alt;
+      image.width = 900;
+      image.height = 600;
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      const caption = document.createElement('figcaption');
+      const title = document.createElement('h4');
+      title.textContent = MILESTONES[entry.milestone].title;
+      const cue = document.createElement('p');
+      cue.textContent = observation.cue;
+      caption.append(title, cue);
+      card.append(image, caption);
+      list.append(card);
+    }
   }
 
   private updateAnimations(): void {

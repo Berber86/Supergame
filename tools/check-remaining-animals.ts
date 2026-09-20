@@ -192,7 +192,9 @@ pure(mouse(), drawMouse);
 pure(owl(), drawOwl);
 pure(bee(), drawBee);
 
-const animals = GUIDE_ANIMALS.filter((a) => !['deer', 'turtle', 'heron', 'hedgehog', 'squirrel'].includes(a.id));
+const animals = GUIDE_ANIMALS.filter(
+  (a) => !['lizard', 'deer', 'turtle', 'heron', 'hedgehog', 'squirrel'].includes(a.id),
+);
 assert.equal(animals.length, 17);
 assert.equal(
   animals.reduce((n, a) => n + a.animations.length, 0),

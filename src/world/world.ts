@@ -16,7 +16,7 @@ import {
   TerrainBrush,
   footprintCells,
 } from './catalog';
-import { ChronicleEntry, noteChronicle } from './chronicle';
+import { ChronicleEntry, chronicleText, noteChronicle } from './chronicle';
 import { GrowRect, GrowState, growOfferReady, growTick, growZones, inGrowRect } from './grow';
 import { DAY_MS } from '../core/clock';
 import { SAVE_VERSION, parseSave, serializeSave } from './saveFormat';
@@ -1093,7 +1093,8 @@ export class World {
     if (id === 'meet_mouse') this.checkMilestone('mouse_guest');
     if (id === 'meet_owl') this.checkMilestone('owl_guest');
     if (id === 'meet_squirrel') this.checkMilestone('squirrel_guest');
-    if (id === 'meet_lizard') this.checkMilestone('lizard_guest');
+    const milestone = chronicleText(id)?.milestone;
+    if (milestone) this.checkMilestone(milestone);
     if (id === 'meet_turtle') this.checkMilestone('turtle_guest');
     if (id === 'meet_bee') this.checkMilestone('bee_guest');
     return true;
@@ -1230,6 +1231,12 @@ export class World {
     this.seasonsSeen = new Set(p.seasons);
     this.seenTabs = new Set(p.seen);
     this.chronicle = (p.chronicle ?? []).map((e) => ({ id: e.id, at: e.at, snap: (e as any).snap }));
+    // Older gardens already remember some lizard encounters. Recover only earned
+    // milestones, silently: no replayed events, notifications, or invented visits.
+    for (const entry of this.chronicle) {
+      const milestone = chronicleText(entry.id)?.milestone;
+      if (milestone && MILESTONES[milestone]) this.milestones.add(milestone);
+    }
     this.grow = p.grow ?? null;
     this.born = p.born ?? this.born;
     // Лягушки из тумана: если в открытом саду нет воды, случайные строки

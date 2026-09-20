@@ -28,23 +28,38 @@ export interface Lizard {
   hunger: number;
   catches: number;
   prey: Flutter | null;
+  /** Continuous, visible rest on a sunny stone; never a saved counter. */
+  basking: number;
 }
+export const LIZARD_STRIDE = 0.22;
+export const LIZARD_STRIKE_MS = 480;
+export const LIZARD_EMERGE_MS = 1400;
+export const LIZARD_BASK_MS = 2200;
 export const LIZARD_COATS = ['Бронзовая', 'Песочно-бурая', 'Оливково-бурая', 'Молодая · синий хвост'];
 export const lizardCoat = (seed: number) => ((Math.floor(seed) % 4) + 4) % 4;
 export function lizardSpeed(state: LizardState): number {
   return state === 'flee' ? 0.0024 : state === 'walk' || state === 'leave' ? 0.0007 : state === 'hunt' ? 0.00038 : 0;
 }
+/** Pure pose shared by the garden and field guide. Texture always follows the skin. */
 export function lizardPose(a: Lizard, time: number) {
   const p = clamp01(1 - a.timer / Math.max(1, a.duration));
+  const strike = a.state === 'strike' ? Math.sin(p * Math.PI) ** 2 : 0;
+  const alert = a.state === 'look' ? 1 : a.state === 'emerge' ? p * 0.6 : 0;
+  const crouch = a.state === 'hunt' ? 0.65 : a.state === 'hide' ? p : a.state === 'flee' ? 0.35 : 0;
   return {
     gait: a.gait,
     motion: a.motion,
-    breath: Math.sin(time * 0.0025 + a.seed) * (a.state === 'bask' ? 0.13 : 0.06),
-    tail: Math.sin(a.gait - 0.8) * a.motion * 2.2 + Math.sin(time * 0.0014 + a.seed) * 0.3,
-    head: a.state === 'look' ? Math.sin(time * 0.003 + a.seed) * 0.18 : a.state === 'hunt' ? 0.1 : 0,
-    strike: a.state === 'strike' ? Math.sin(p * Math.PI) : 0,
-    tongue: a.state !== 'hide' && (time + a.seed * 137) % 4100 < 150,
-    blink: (time + a.seed * 97) % 5300 < 130,
+    breath: Math.sin(time * 0.0025 + a.seed) * (a.state === 'bask' ? 0.14 : 0.055),
+    tail: Math.sin(a.gait - 0.8) * a.motion * 2.6 + Math.sin(time * 0.0014 + a.seed) * 0.4,
+    sway: Math.sin(a.gait) * a.motion * 0.035,
+    head: -alert * (0.12 + Math.sin(time * 0.002 + a.seed) * 0.08) + crouch * 0.07,
+    raise: alert * 0.9 - crouch * 0.55,
+    flatten: a.state === 'bask' ? 0.1 : -crouch * 0.08,
+    crouch,
+    strike,
+    jaw: a.state === 'strike' ? Math.sin(clamp01(p / 0.7) * Math.PI) : 0,
+    tongue: ['bask', 'look', 'emerge', 'hunt'].includes(a.state) && (time + a.seed * 137) % 4100 < 150,
+    blink: a.state !== 'strike' && (time + a.seed * 97) % 5300 < 130,
   };
 }
 export function makeLizard(seed: number, shelter: Vec): Lizard {
@@ -54,8 +69,8 @@ export function makeLizard(seed: number, shelter: Vec): Lizard {
     seed,
     facing: 1,
     state: 'emerge',
-    timer: 1400,
-    duration: 1400,
+    timer: LIZARD_EMERGE_MS,
+    duration: LIZARD_EMERGE_MS,
     age: 0,
     stay: 100000 + hash2(seed, 11, 73) * 80000,
     target: null,
@@ -69,6 +84,7 @@ export function makeLizard(seed: number, shelter: Vec): Lizard {
     hunger: 9000,
     catches: 0,
     prey: null,
+    basking: 0,
   };
 }
 /** No swimming, walls, raised-floor shortcuts, fog crossing or jumping cliffs. */
@@ -105,6 +121,7 @@ export class Lizards {
     a.state = state;
     a.timer = a.duration = duration;
     if (state === 'hide') a.perchLift = 0;
+    if (state !== 'bask') a.basking = 0;
     if (state !== 'hunt' && state !== 'strike') a.prey = null;
   }
   private reachable(a: Lizard, sites: Vec[], world: World): Vec[] {
@@ -162,7 +179,7 @@ export class Lizards {
       }
       if (a.state === 'hide') {
         a.alpha = easePose(a.alpha, 0, dt, 180);
-        if (a.timer <= 0 && !alarm && a.inactive === 0) this.state(a, 'emerge', 1400);
+        if (a.timer <= 0 && !alarm && a.inactive === 0) this.state(a, 'emerge', LIZARD_EMERGE_MS);
       } else {
         a.alpha = easePose(a.alpha, a.inactive ? 1 - a.inactive / 5000 : 1, dt, 350);
       }
@@ -201,25 +218,38 @@ export class Lizards {
         if (Math.abs(dx - dy) > 0.015) a.facing = dx - dy > 0 ? 1 : -1;
         a.tx = next.x;
         a.ty = next.y;
-        a.gait += (step / 0.22) * Math.PI * 2;
+        a.gait += (step / LIZARD_STRIDE) * Math.PI * 2;
         a.lift = easePose(a.lift, d < 0.45 ? (a.target.lift ?? 0) : 0, dt, 220);
-        if (d < 0.07 || a.timer <= 0) {
+        const arrived = d - step < 0.07;
+        if (arrived || a.timer <= 0) {
           const state = a.state;
-          a.perchLift = a.target.lift ?? 0;
+          a.perchLift = arrived ? (a.target.lift ?? 0) : 0;
           a.target = null;
-          if (state === 'hunt') this.state(a, 'strike', 480);
-          else if (state === 'flee' || state === 'leave') this.state(a, 'hide', 4000 + this.rnd() * 4000);
-          else this.state(a, 'bask', 6000 + this.rnd() * 9000);
+          // A timed-out chase is not a catch, nor is a blocked retreat a successful escape.
+          if (state === 'hunt') this.state(a, arrived ? 'strike' : 'look', arrived ? LIZARD_STRIKE_MS : 1500);
+          else if (state === 'flee' || state === 'leave') {
+            if (
+              state === 'flee' &&
+              arrived &&
+              a.inactive === 0 &&
+              h.lizardShelters.some((p) => Math.hypot(p.x - a.tx, p.y - a.ty) < 0.16)
+            )
+              world.noteEvent('lizard_escape', Date.now(), a.tx, a.ty);
+            this.state(a, 'hide', 4000 + this.rnd() * 4000);
+          } else this.state(a, arrived ? 'bask' : 'look', 6000 + this.rnd() * 9000);
         }
       } else if (a.state === 'strike' && a.timer <= 0) {
+        // Local ground-prey vignettes count too, but a butterfly must really be caught.
+        let caught = !a.prey;
         if (a.prey && a.prey.resting > 0 && Math.hypot(a.prey.tx - a.tx, a.prey.ty - a.ty) < 0.35) {
           const index = flutters.indexOf(a.prey);
           if (index >= 0) {
             flutters.splice(index, 1);
             a.catches++;
-            world.noteEvent('lizard_hunt', Date.now(), a.tx, a.ty);
+            caught = true;
           }
         }
+        if (caught) world.noteEvent('lizard_hunt', Date.now(), a.tx, a.ty);
         a.hunger = 25000;
         this.state(a, 'look', 2200);
       } else if (a.timer <= 0 && !['hide', 'strike'].includes(a.state)) {
@@ -258,6 +288,18 @@ export class Lizards {
           } else this.state(a, 'look', 2500);
         } else this.state(a, this.rnd() < 0.55 ? 'look' : 'bask', 2500 + this.rnd() * 6000);
       }
+      const onWarmStone =
+        a.state === 'bask' &&
+        a.alpha > 0.8 &&
+        !alarm &&
+        a.inactive === 0 &&
+        a.perchLift > 0 &&
+        Math.abs(a.lift - a.perchLift) < 0.8 &&
+        sunnyLizardSpots(h).some((p) => Math.hypot(p.x - a.tx, p.y - a.ty) < 0.16);
+      const previousBask = a.basking;
+      a.basking = onWarmStone ? Math.min(LIZARD_BASK_MS, a.basking + dt) : 0;
+      if (previousBask < LIZARD_BASK_MS && a.basking >= LIZARD_BASK_MS)
+        world.noteEvent('lizard_bask', Date.now(), a.tx, a.ty);
     }
     if (this.agents.length < want && this.timer <= 0) {
       this.timer = 25000 + this.rnd() * 25000;

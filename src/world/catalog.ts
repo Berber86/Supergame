@@ -1175,6 +1175,30 @@ export const MILESTONES: Record<string, Milestone> = {
     text: 'В сухом уголке сада поселилась проворная ящерица.',
     unlocks: 'Жизнь среди камней',
   },
+  lizard_bask: {
+    id: 'lizard_bask',
+    title: 'Впитать солнце',
+    text: 'Ящерица отдохнула на прогретом камне. Иногда достаточно просто согреться.',
+    unlocks: 'Тепло камня',
+  },
+  lizard_hunter: {
+    id: 'lizard_hunter',
+    title: 'Маленький охотник',
+    text: 'Ящерица поймала насекомое коротким точным броском.',
+    unlocks: 'Жизнь в траве',
+  },
+  lizard_watch: {
+    id: 'lizard_watch',
+    title: 'Кошачье любопытство',
+    text: 'Кот подкрался к ящерице. В саду встретились два внимательных взгляда.',
+    unlocks: 'Тихая встреча',
+  },
+  lizard_escape: {
+    id: 'lizard_escape',
+    title: 'Быстрее тени',
+    text: 'Почувствовав опасность, ящерица добралась до спасительной щели.',
+    unlocks: 'Надёжное укрытие',
+  },
   turtle_guest: {
     id: 'turtle_guest',
     title: 'Камень ожил',

@@ -6,7 +6,7 @@
 
 import './chronicleToast.css';
 import { chronicleText } from '../world/chronicle';
-import { CHRONICLE_IMAGES } from './chroniclePanel';
+import { CHRONICLE_IMAGES } from './chronicleArt';
 import type { ChronicleToastNote } from '../world/world';
 
 interface Queued {
