@@ -10,6 +10,8 @@ export interface PlantYear {
   maturity: number;
   autumn: number;
   leafFall: number;
+  /** Sparse early turnover as colouring starts, before the main shedding wave. */
+  earlyLeafFall: number;
   foliage: number;
   bloom: number;
   winterTone: number;
@@ -44,6 +46,8 @@ export function plantYear(type: string, seed: number, now: number): PlantYear {
   const leafOut = evergreen ? 1 : smoothstep(...p.out, phase);
   const leafFall = evergreen ? 0 : smoothstep(...p.fall, phase);
   const maturity = evergreen ? 1 : smoothstep(...p.mature, phase);
+  const autumn = evergreen ? 0 : smoothstep(...p.color, phase);
+  const earlyLeafFall = autumn * 0.08;
   const bud = smoothstep(...p.bud, phase) * (1 - smoothstep(p.out[0], p.out[1] + 0.025, phase));
   const bloom = isFruitTree(type)
     ? orchardBloom(type, seed, now)
@@ -57,9 +61,10 @@ export function plantYear(type: string, seed: number, now: number): PlantYear {
     bud,
     leafOut,
     maturity,
-    autumn: evergreen ? 0 : smoothstep(...p.color, phase),
+    autumn,
     leafFall,
-    foliage: leafOut * (1 - leafFall),
+    earlyLeafFall,
+    foliage: leafOut * (1 - leafFall) * (1 - earlyLeafFall),
     bloom,
     winterTone,
     evergreen,
@@ -74,7 +79,9 @@ export function leafGroup(
   const r = hash2(index, seed, 1327),
     c = hash2(index, seed, 1361);
   const growth = state.evergreen ? 1 : smoothstep(r * 0.28, 0.52 + r * 0.43, state.leafOut);
-  const retained = state.evergreen ? 1 : 1 - smoothstep(0.04 + r * 0.48, 0.45 + r * 0.5, state.leafFall);
+  const retained = state.evergreen
+    ? 1
+    : (1 - state.earlyLeafFall) * (1 - smoothstep(0.04 + r * 0.48, 0.45 + r * 0.5, state.leafFall));
   return {
     growth,
     retained,

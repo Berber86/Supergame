@@ -63,9 +63,10 @@ export function nectarBloom(type: string, seed: number, now: number): number {
 }
 export function treeFallActivity(type: string, seed: number, now: number): { petals: number; leaves: number } {
   const state = plantYear(type, seed, now);
+  const fallen = 1 - (1 - state.earlyLeafFall) * (1 - state.leafFall);
   return {
     petals: type === 'sakura' ? state.bloom * smoothstep(0.245, 0.28, state.phase) : 0,
-    leaves: state.evergreen ? 0 : 4 * state.leafFall * (1 - state.leafFall),
+    leaves: state.evergreen ? 0 : 4 * fallen * (1 - fallen),
   };
 }
 /** Display text follows development, not a promise of petals on every March morning. */

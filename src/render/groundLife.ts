@@ -256,17 +256,19 @@ function paintLeafLitter(
     }
   }
   const fine = groundDetailAlpha('leaves', zoom);
-  if (fine <= 0) return;
+  // At phone/low-detail scale keep a few readable flecks, not just a translucent wash.
+  const markAlpha = fine > 0 ? fine : coarse * 0.8;
+  if (markAlpha <= 0) return;
   const colors = Array.from({ length: 5 }, (_, i) => css(shade(color, 0.79 + i * 0.09), 0.58 + state.fresh * 0.16));
-  const count = dense ? Math.round(84 * density) : 13;
+  const count = dense ? Math.round((fine > 0 ? 84 : 16) * density) : fine > 0 ? 13 : 5;
   for (let i = 0; i < count && state.leaves > 0; i++) {
     const r = hash2(i, p.seed, 47),
-      present = smoothstep(r * 0.72, r * 0.72 + 0.28, state.leaves);
+      present = smoothstep(r * 0.95, r * 0.95 + 0.05, state.leaves);
     if (present <= 0.001) continue;
     const x = q.x + (hash2(i, p.seed, 17) - 0.5) * (dense ? 78 : 34),
       y = q.y + (hash2(i, p.seed, 23) - 0.5) * (dense ? 32 : 14);
     ctx.save();
-    ctx.globalAlpha *= fine * present;
+    ctx.globalAlpha *= markAlpha * present;
     ctx.translate(x, y);
     ctx.rotate(hash2(i, p.seed, 1613) * Math.PI * 2);
     // Weathered leaves shrivel as well as fade, before disappearing completely in late May.

@@ -26,6 +26,13 @@ const rnd = makeRng(4021);
 
 export type FrogState = 'emerge' | 'sit' | 'call' | 'hop' | 'dive';
 
+/** Short real-time shore hops, independent of season speed and display refresh rate. */
+export const FROG_HOP_DISTANCE = 1.1;
+const FROG_HOP_SPEED = 0.0006; // tiles/ms average; easing peaks at twice this speed
+export function frogHopDuration(from: Vec | null, target: Vec | null): number {
+  return Math.max(1400, from && target ? Math.hypot(target.x - from.x, target.y - from.y) / FROG_HOP_SPEED : 0);
+}
+
 export interface Frog {
   id: number;
   tx: number;
@@ -207,7 +214,7 @@ export class Residents {
           continue;
         }
         if (f.hidden <= 0) {
-          const spot = this.frogSpotNear(h, f.pond);
+          const spot = this.frogSpot(h, f.pond);
           if (spot) {
             f.from = this.waterEdgeNear(world, spot) ?? spot;
             f.tx = f.from.x;
@@ -246,14 +253,14 @@ export class Residents {
               f.phase = 0;
               this.scheduleAnswer(f);
             } else if (rnd() < 0.32) {
-              // Лёгкие прыжки: реже и медленнее, с паузой до и после
-              const spot = this.frogSpotNear(h, f.pond, 2.4);
+              // Distance is measured from THIS frog, never from the pond's centre.
+              const spot = this.frogHopTarget(world, h, f);
               if (spot) {
                 f.from = { x: f.tx, y: f.ty };
                 f.target = spot;
                 f.state = 'hop';
                 f.phase = 0;
-                f.timer = 1100;
+                f.timer = frogHopDuration(f.from, spot);
                 f.facing = spot.x > f.tx ? 1 : -1;
               } else f.timer = 4000 + rnd() * 6000;
             } else {
@@ -275,8 +282,8 @@ export class Residents {
           break;
         }
         case 'hop': {
-          // Лёгкий прыжок: медленнее (1100мс) и с дугой — в середине чуть выше
-          f.phase = Math.min(1, f.phase + dt / 1100);
+          // A longer span also takes longer: the speed cannot spike on a large pond.
+          f.phase = Math.min(1, f.phase + dt / frogHopDuration(f.from, f.target));
           if (f.target && f.from) {
             const t = f.phase;
             // easeInOut для мягкости
@@ -355,7 +362,7 @@ export class Residents {
         }
       }
       pond = ponds[best].id;
-      spot = this.frogSpotNear(h, pond);
+      spot = this.frogSpot(h, pond);
     } else if (h.baths.length) {
       const b = h.baths[Math.floor(rnd() * h.baths.length)];
       spot = { x: b.x + 0.55, y: b.y + 0.45 };
@@ -386,15 +393,33 @@ export class Residents {
     if (water) this.splash(water.x, water.y, false);
   }
 
-  private frogSpotNear(h: Habitat, pond: number, radius = 7): Vec | null {
-    if (pond === -2) {
-      const baths = h.frogSpots.slice(-Math.max(1, h.baths.length));
-      return baths.length ? baths[Math.floor(rnd() * baths.length)] : null;
-    }
-    const c = this.pondCenter(h, pond);
-    const spots = h.frogSpots.filter((s) => Math.hypot(s.x - c.x, s.y - c.y) < radius + 3);
-    if (!spots.length) return null;
-    return spots[Math.floor(rnd() * spots.length)];
+  private frogSpots(h: Habitat, pond: number): Vec[] {
+    if (pond === -2) return h.baths.map((b) => ({ x: b.x + 0.6, y: b.y + 0.4 }));
+    const shore = h.ponds.find((p) => p.id === pond)?.shores ?? [];
+    // Nearby ponds may share a centre-radius neighbourhood, but not their actual banks.
+    const onShore = new Set(shore.map((s) => `${s.x},${s.y}`));
+    return h.frogSpots.filter((s) => onShore.has(`${s.x},${s.y}`));
+  }
+
+  private frogSpot(h: Habitat, pond: number): Vec | null {
+    const spots = this.frogSpots(h, pond);
+    return spots.length ? spots[Math.floor(rnd() * spots.length)] : null;
+  }
+
+  private frogHopTarget(world: World, h: Habitat, f: Frog): Vec | null {
+    const level = world.at(Math.floor(f.tx), Math.floor(f.ty))?.level;
+    const spots = this.frogSpots(h, f.pond).filter((s) => {
+      const distance = Math.hypot(s.x - f.tx, s.y - f.ty);
+      if (distance < 0.2 || distance > FROG_HOP_DISTANCE) return false;
+      // Keep the whole tiny trajectory on one bank/level: sampling just the
+      // endpoints could produce a vertical snap over a raised corner or wall.
+      for (let i = 1; i <= 8; i++) {
+        const tile = world.at(Math.floor(lerp(f.tx, s.x, i / 8)), Math.floor(lerp(f.ty, s.y, i / 8)));
+        if (!tile || tile.water || tile.indoor || tile.veranda || tile.level !== level) return false;
+      }
+      return true;
+    });
+    return spots.length ? spots[Math.floor(rnd() * spots.length)] : null;
   }
 
   private pondCenter(h: Habitat, id: number): Vec {

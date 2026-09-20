@@ -151,7 +151,7 @@ function makeTree(style: TreeStyle): Drawer {
     if (!profile) return;
     const scale = lerp(0.18, 1, Math.pow(g, 0.72));
     const sway = Math.sin(d.time * 0.0004 + obj.seed) * 3 * d.wind * scale;
-    const { h, cw, w, trunk, sites, skeleton } = treeGeometry(profile, obj.seed, g, d.x, d.y, sway);
+    const { h, cw, w, trunk, sites, skeleton, curtains } = treeGeometry(profile, obj.seed, g, d.x, d.y, sway);
     const trunkCol = litc(style.trunk, atm),
       branchCol = shade(trunkCol, 0.92);
     shadowUnder(d, cw * 0.62, cw * 0.26, 0.9);
@@ -160,27 +160,23 @@ function makeTree(style: TreeStyle): Drawer {
     // Junctions originate on the real curved bole at different heights, not in one broom-like knot.
     for (const branch of skeleton.branches) paintWood(ctx, branch, branchCol, obj.seed);
     for (const twig of skeleton.twigs) paintWood(ctx, twig, branchCol, obj.seed);
-    for (const site of sites) {
-      const end = point(site);
-      for (let k = 0; k < 2; k++) {
-        const dx =
-          (k === 0 ? -1 : 1) *
-          site.rx *
-          (0.25 + hash2(site.index, obj.seed, 1471 + k) * 0.25) *
-          (obj.type === 'ginkgo' ? 0.64 : 1);
-        const dy = profile.droop
-          ? profile.droop * scale * (0.55 + hash2(site.index, obj.seed, 1481 + k) * 0.35)
-          : -site.ry * (0.42 + hash2(site.index, obj.seed, 1481 + k) * 0.36) * (obj.type === 'sakura' ? 0.75 : 1);
-        const start = woodPoint(skeleton.twigs[site.index], k === 0 ? 0.67 : 1);
-        const tip = woodCurve(
-          start,
-          { x: end.x + dx, y: end.y + dy },
-          0.38 * scale,
-          0.09 * scale,
-          dx * 0.18,
-          profile.droop ? -12 * scale : 0,
-        );
-        paintWood(ctx, tip, branchCol, obj.seed);
+    if (curtains.length) {
+      for (const shoot of curtains) paintWood(ctx, shoot, branchCol, obj.seed);
+    } else {
+      for (const site of sites) {
+        const end = point(site);
+        for (let k = 0; k < 2; k++) {
+          const dx =
+            (k === 0 ? -1 : 1) *
+            site.rx *
+            (0.25 + hash2(site.index, obj.seed, 1471 + k) * 0.25) *
+            (obj.type === 'ginkgo' ? 0.64 : 1);
+          const dy =
+            -site.ry * (0.42 + hash2(site.index, obj.seed, 1481 + k) * 0.36) * (obj.type === 'sakura' ? 0.75 : 1);
+          const start = woodPoint(skeleton.twigs[site.index], k === 0 ? 0.67 : 1);
+          const tip = woodCurve(start, { x: end.x + dx, y: end.y + dy }, 0.38 * scale, 0.09 * scale, dx * 0.18, 0);
+          paintWood(ctx, tip, branchCol, obj.seed);
+        }
       }
     }
     drawTreeCavity(d, trunk, woodPoint(skeleton.branches[skeleton.branches.length - 1], 0.18));
@@ -239,21 +235,44 @@ function makeTree(style: TreeStyle): Drawer {
           obj.seed + site.index * 17 + 7,
           { layers: 1, alpha: 0.26 * opacity, edge: 0, wobble: 0.3 },
         );
-        if (profile.droop) {
-          ctx.strokeStyle = css(main, 0.62 * opacity);
-          ctx.lineWidth = 1.8 * scale * leaf.size;
-          for (let strand = 0; strand < 3; strand++) {
-            const sx = p.x + (strand - 1) * rx * 0.55;
-            const len = Math.min(
-              d.y - p.y - 5 * scale,
-              profile.droop * scale * leaf.size * (0.64 + hash2(site.index, obj.seed, 3419 + strand) * 0.42),
-            );
-            const wob = Math.sin(d.time * 0.0007 + site.index) * 4 * d.wind;
-            ctx.beginPath();
-            ctx.moveTo(sx, p.y);
-            ctx.quadraticCurveTo(sx + wob, p.y + len * 0.6, sx + wob - 3 * scale, p.y + len);
-            ctx.stroke();
+        if (curtains.length) {
+          const shoots = curtains.slice(site.index * 3, site.index * 3 + 3);
+          ctx.strokeStyle = css(main, 0.75 * opacity);
+          ctx.lineWidth = 1.05 * scale * leaf.size;
+          ctx.beginPath();
+          for (const shoot of shoots) {
+            ctx.moveTo(shoot.a.x, shoot.a.y);
+            ctx.bezierCurveTo(shoot.b.x, shoot.b.y, shoot.c.x, shoot.c.y, shoot.d.x, shoot.d.y);
           }
+          ctx.stroke();
+          // A curtain is foliage, not three naked lines: tapered leaf pairs follow
+          // the same shoots. One fill per crown site, baked in the normal sprite cache.
+          ctx.fillStyle = css(main, 0.82 * opacity);
+          ctx.beginPath();
+          for (const shoot of shoots) {
+            const pairs = Math.min(12, Math.max(4, Math.ceil((shoot.d.y - shoot.a.y) / (7 * scale))));
+            for (let k = 0; k < pairs; k++) {
+              const t = 0.12 + ((k + 0.2 + hash2(k, site.index + obj.seed, 3463) * 0.6) / pairs) * 0.8,
+                at = woodPoint(shoot, t);
+              const size = Math.min(
+                scale * leaf.size * (0.72 + hash2(k, site.index + obj.seed, 3461) * 0.36),
+                Math.max(0, (d.y - at.y - scale) / 7.6),
+              );
+              for (const side of [-1, 1]) {
+                const y = at.y + (side === 1 ? 1.2 * size : 0);
+                ctx.moveTo(at.x, y);
+                ctx.quadraticCurveTo(
+                  at.x + side * 4.2 * size,
+                  y + 1.8 * size,
+                  at.x + side * 2.1 * size,
+                  y + 6.4 * size,
+                );
+                ctx.quadraticCurveTo(at.x + side * 0.25 * size, y + 3.3 * size, at.x, y);
+                ctx.closePath();
+              }
+            }
+          }
+          ctx.fill();
         }
       }
       // Sakura's pink crown is part of its canopy: blossom and leaf emergence overlap, not a season switch.

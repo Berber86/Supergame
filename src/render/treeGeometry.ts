@@ -2,7 +2,7 @@
 import { clamp01, hash2, lerp } from '../core/rng';
 import type { TreeProfile } from '../world/treeHabits';
 import type { CrownSite } from './crownGeometry';
-import { branchSkeleton, type WoodCurve } from './treeWood';
+import { branchSkeleton, woodCurve, woodPoint, type WoodCurve } from './treeWood';
 
 export function treeGeometry(profile: TreeProfile, seed: number, g: number, x = 0, y = 0, sway = 0) {
   const scale = lerp(0.18, 1, Math.pow(clamp01(g), 0.72));
@@ -50,5 +50,28 @@ export function treeGeometry(profile: TreeProfile, seed: number, g: number, x = 
     }
   }
   const skeleton = branchSkeleton(profile.type, seed, trunk, sites, scale, sway, profile.branchBase);
-  return { profile, scale, h, cw, ch, w, trunk, sites, skeleton };
+  // Real pendent shoots, shared by bare wood and their narrow leaf pairs. Their
+  // endpoints stay above the soil even on the low/upright seeded silhouettes.
+  const curtains: WoodCurve[] = [];
+  if (profile.droop)
+    for (const site of sites) {
+      for (let strand = 0; strand < 3; strand++) {
+        const start = woodPoint(skeleton.twigs[site.index], 0.64 + strand * 0.18);
+        const length = Math.min(
+          y - start.y - (6 + hash2(site.index, seed, 3433 + strand) * 22) * scale,
+          profile.droop * scale * (0.65 + hash2(site.index, seed, 3419 + strand) * 0.43),
+        );
+        const end = {
+          x:
+            trunk.d.x +
+            site.x +
+            sway +
+            (strand - 1) * site.rx * 0.58 +
+            (hash2(site.index, seed, 3449 + strand) - 0.5) * 6 * scale,
+          y: start.y + Math.max(0, length),
+        };
+        curtains.push(woodCurve(start, end, 0.4 * scale, 0.075 * scale, (end.x - start.x) * 0.2, -5 * scale));
+      }
+    }
+  return { profile, scale, h, cw, ch, w, trunk, sites, skeleton, curtains };
 }

@@ -51,6 +51,6 @@ export function treeProfile(type: string, seed: number): TreeProfile | undefined
     lean: form === 'leaning' ? 0.17 + hash2(seed, 15, 3331) * 0.12 : (hash2(seed, 15, 3331) - 0.5) * 0.1,
     bow: (hash2(seed, 17, 3343) - 0.3) * (form === 'upright' ? 0.055 : 0.22),
     branchBase: (form === 'upright' ? 0.5 : form === 'low' ? 0.3 : 0.4) + (hash2(seed, 19, 3347) - 0.5) * 0.09,
-    droop: type === 'willow' ? 46 * curtain * (0.86 + hash2(seed, 21, 3359) * 0.28) : 0,
+    droop: type === 'willow' ? 82 * curtain * (0.86 + hash2(seed, 21, 3359) * 0.28) : 0,
   };
 }

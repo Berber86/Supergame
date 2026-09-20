@@ -55,6 +55,21 @@ for (const [row, type] of LEAFY_TREES.entries()) {
     const young = treeGeometry(p, seed, 0.2);
     assert.ok(young.h < geometry.h);
     assert.equal(young.sites.length, geometry.sites.length);
+    for (const geo of [geometry, young]) {
+      if (type === 'willow') {
+        assert.ok(p.droop > p.height * 0.65, 'long weeping shoots, not a short fringe');
+        assert.equal(geo.curtains.length, geo.sites.length * 3);
+        geo.curtains.forEach((shoot, i) => {
+          const attach = woodPoint(geo.skeleton.twigs[Math.floor(i / 3)], 0.64 + (i % 3) * 0.18);
+          assert.deepEqual(shoot.a, attach, 'leafy curtains start on their real supporting twigs');
+          assert.ok(shoot.d.y <= -6 * geo.scale + 1e-9, 'curtains do not penetrate the ground');
+          for (let k = 0; k <= 12; k++) {
+            const point = woodFrame(shoot, k / 12);
+            assert.ok(Object.values(point).every(Number.isFinite) && point.r > 0);
+          }
+        });
+      } else assert.equal(geo.curtains.length, 0, 'other broadleaf silhouettes do not gain willow curtains');
+    }
     const state = plantYear(type, seed, date(9));
     const area =
       geometry.sites.reduce((sum, site) => {
