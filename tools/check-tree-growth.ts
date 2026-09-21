@@ -80,6 +80,11 @@ for (const type of TREES) {
   const growth = world.growth(fresh.get(type)!, now);
   assert.ok(Math.abs(growth - 16 / 72) < 1e-9, `${type}: 16 часов из 72 — ещё растёт`);
 }
+// Рост пересчитывается не чаще раза в час: внутри часа стадия прежняя,
+// после часа — честно продолжается.
+const snap = world.growth(fresh.get('sakura')!, now);
+assert.equal(world.growth(fresh.get('sakura')!, now + 59 * 60_000), snap, 'внутри часа рост не пересчитывается');
+assert.ok(world.growth(fresh.get('sakura')!, now + 61 * 60_000) > snap, 'спустя час рост продолжается');
 // Без флага «саженец» дерево навсегда взрослое — так выглядят старые сохранения.
 for (const type of TREES) fresh.get(type)!.young = undefined;
 for (const type of TREES) assert.equal(world.growth(fresh.get(type)!, now), 1, `${type}: старое дерево взрослое`);

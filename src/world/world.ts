@@ -33,6 +33,9 @@ export interface ChronicleToastNote {
   at?: number;
 }
 
+/** Как часто саженец честно пересчитывает свою стадию роста. */
+const GROWTH_RECOMPUTE_MS = 3_600_000; // раз в час
+
 export class World {
   /** Сторона сада в тайлах — чтобы рендер не импортировал GRID отдельно. */
   readonly size = GRID;
@@ -53,6 +56,12 @@ export class World {
   pendingNotes: ChronicleToastNote[] = [];
   /** Границы последней правки земли — для частичной перерисовки. */
   lastTouched: { x0: number; y0: number; x1: number; y1: number } | null = null;
+  /**
+   * Кэш стадии роста саженцев: кадр дёргает рост каждого дерева, но сама
+   * модель пересчитывается не чаще раза в час — глазу час незаметен,
+   * а кадр освобождается от постоянной арифметики по всем деревьям.
+   */
+  private growthCache = new Map<number, { at: number; g: number; growing: boolean }>();
 
   constructor() {
     this.reset();
@@ -95,6 +104,7 @@ export class World {
     }
     this.objects = [];
     this.nextId = 1;
+    this.growthCache.clear();
     // Вольный сад: режима роста нет
     this.grow = null;
     this.growRefused = false;
@@ -1010,6 +1020,7 @@ export class World {
 
   removeObject(obj: PlacedObject): void {
     this.objects = this.objects.filter((o) => o !== obj);
+    this.growthCache.delete(obj.id);
     this.noteObjectsChanged();
   }
 
@@ -1116,8 +1127,15 @@ export class World {
    * навсегда остаются в своём выросшем виде.
    */
   growth(o: PlacedObject, now: number): number {
-    if (o.young) return treeGrowthAt(o.planted, now, !!this.grow);
-    return 1;
+    if (!o.young) return 1;
+    const growing = !!this.grow;
+    const hit = this.growthCache.get(o.id);
+    // Часовая выдержка: внутри часа отдаём прежнюю стадию; взрослое
+    // дерево (1) и смена режима сада пересчитываются сразу.
+    if (hit && hit.growing === growing && (hit.g >= 1 || now - hit.at < GROWTH_RECOMPUTE_MS)) return hit.g;
+    const g = treeGrowthAt(o.planted, now, growing);
+    this.growthCache.set(o.id, { at: now, g, growing });
+    return g;
   }
 
   // ---- Сохранение ----
@@ -1228,6 +1246,7 @@ export class World {
       veranda: t.veranda,
     }));
     this.objects = p.objects.map((o) => ({ ...o }));
+    this.growthCache.clear();
     // Repair only the identifiable original starter pine, not arbitrary player plantings.
     const legacyPine = this.objects.find((o) => o.type === 'pine' && o.tx === 3.5 && o.ty === 8.5);
     const starter =
