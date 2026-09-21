@@ -25,7 +25,13 @@ const HABITAT_OBJECTS = new Set(['feeder', 'birdbath', 'beehive', 'squirrel_feed
 /** Явно исключены дом, мебель, мосты, дорожки, коты и карпы (включая их миски/подушки). */
 export function landscapeGroup(type: string): LandscapeGroup | null {
   const item = ITEM_BY_ID.get(type);
-  if (!item || item.tab === 'house' || item.tab === 'cat' || ['bridge', 'pavilion', 'creature'].includes(item.kind))
+  if (
+    !item ||
+    item.tab === 'house' ||
+    type === 'cushion' ||
+    type === 'bowl' ||
+    ['bridge', 'pavilion', 'creature'].includes(item.kind)
+  )
     return null;
   if (HABITAT_OBJECTS.has(type)) return 'habitat';
   if (item.kind === 'tree') return 'trees';
