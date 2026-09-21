@@ -14,6 +14,7 @@ import {
   TAB_BY_ID,
   TERRAIN_BRUSHES,
   TerrainBrush,
+  WILD_INVITATION_IDS,
   footprintCells,
 } from './catalog';
 import { ChronicleEntry, chronicleText, noteChronicle } from './chronicle';
@@ -118,8 +119,9 @@ export class World {
    * открытие, всё остальное впереди. Мягкий (вольный сад-витрина): доступно
    * то, что уже стоит, и земные кисти, плюс одно открытие впереди.
    * Дикие постройки (улей, бельчатник, бревно черепахи, кормушка, поилка)
-   * должны быть видны сразу — иначе вкладка Гости не появляется вовсе,
-   * т.к. tabHasContent требует unlocked.
+   * в вольном саду видны сразу — иначе вкладка Гости не появляется вовсе,
+   * т.к. tabHasContent требует unlocked. Растущий сад получает их по одному,
+   * как любой другой предмет.
    */
   initUnlocks(lenient: boolean): void {
     this.unlocked = new Set();
@@ -130,9 +132,7 @@ export class World {
       for (const b of TERRAIN_BRUSHES) this.unlocked.add(b.id);
       this.unlockInteriorIfHoused();
       // Всегда открыты базовые приглашения дикой жизни
-      for (const id of ['feeder', 'birdbath', 'beehive', 'squirrel_feeder', 'turtle_log']) {
-        this.unlocked.add(id);
-      }
+      for (const id of WILD_INVITATION_IDS) this.unlocked.add(id);
     }
     this.unlockRandomItem();
   }
@@ -386,7 +386,7 @@ export class World {
     this.milestones.add('first_cat');
     this.seenTabs.add('pond');
     this.seenTabs.add('house');
-    this.seenTabs.add('cat');
+    this.seenTabs.add('guests');
 
     this.place('pavilion', 20, 18, 0, old);
     this.place('torii', 22.5, 20.5, 0, old);
@@ -1264,10 +1264,12 @@ export class World {
     if (p.unlocked) {
       this.unlocked = new Set(p.unlocked);
       this.fresh = new Set(p.fresh ?? []);
-      // Миграция: старые сохранения не имели улья/бельчатника/бревна в unlocked,
-      // из-за чего вкладка Гости не появлялась. Добавляем их принудительно.
-      for (const id of ['feeder', 'birdbath', 'beehive', 'squirrel_feeder', 'turtle_log']) {
-        if (ITEM_BY_ID.has(id)) this.unlocked.add(id);
+      // Миграция для вольных садов: старые сохранения не имели улья/бельчатника/
+      // бревна в unlocked, из-за чего вкладка Гости не появлялась вовсе.
+      // Растущий сад трогать нельзя: там Гости открываются по одному, как и всё
+      // остальное, иначе загрузка одним махом вываливала целую вкладку.
+      if (!this.grow) {
+        for (const id of WILD_INVITATION_IDS) if (ITEM_BY_ID.has(id)) this.unlocked.add(id);
       }
     } else {
       // Старое сохранение: растущий сад начинает путь заново с одного открытия,

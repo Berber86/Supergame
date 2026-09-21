@@ -46,6 +46,7 @@ async function main(): Promise<void> {
   const { serializeSave, parseSave } = await import('../src/world/saveFormat');
   const { scanHabitat } = await import('../src/world/habitat');
   const { GRID } = await import('../src/core/iso');
+  const { ITEMS, ITEM_BY_ID, TABS, WILD_INVITATION_IDS } = await import('../src/world/catalog');
 
   console.log('геометрия и пороги');
   {
@@ -302,6 +303,50 @@ async function main(): Promise<void> {
     check(
       'прямоугольник вне листа отклоняется',
       parseSave(bad)?.grow === undefined || parseSave(bad) === null || parseSave(bad)!.grow === null,
+    );
+  }
+
+  console.log('открытия каталога');
+  {
+    // Вся живность — в одной вкладке: отдельной вкладки «Коту» больше нет
+    check('вкладки Коту нет', !TABS.some((t) => t.id === 'cat'));
+    check('ни один предмет не висит на вкладке Коту', !ITEMS.some((i) => i.tab === 'cat'));
+    check(
+      'кот, подушка и миска переехали в Гости',
+      ['cat', 'cushion', 'bowl'].every((id) => ITEM_BY_ID.get(id)?.tab === 'guests'),
+      ['cat', 'cushion', 'bowl'].map((id) => `${id}→${ITEM_BY_ID.get(id)?.tab}`).join(' '),
+    );
+
+    const w = new World();
+    w.reset();
+    seedGrowWorld(w, 42);
+    w.grow = newGrowState(42, 1234);
+    w.initUnlocks(false);
+    check('растущий сад начинает с одного открытия', w.unlocked.size === 1, [...w.unlocked].join(','));
+
+    // Загрузка не должна вываливать вкладку целиком: только то, что уже открыто
+    const packed = serializeSave(w.toJSON());
+    const parsed = parseSave(JSON.parse(packed));
+    const w2 = new World();
+    if (parsed) w2.applySave(parsed);
+    check(
+      'загрузка не открывает всех гостей разом',
+      [...w2.unlocked].sort().join(',') === [...w.unlocked].sort().join(','),
+      [...w2.unlocked].join(','),
+    );
+
+    // Каждое строительство открывает ровно одно новое — в том числе из гостей
+    const before = w2.unlocked.size;
+    w2.onBuiltItem([...w2.unlocked][0]);
+    check('постройка открывает ровно одно', w2.unlocked.size === before + 1, `${before} → ${w2.unlocked.size}`);
+
+    // Вольный сад миграцию сохраняет: базовые приглашения видны сразу
+    const free = new World();
+    if (parsed) free.applySave({ ...parsed, grow: null, unlocked: ['maple'] });
+    check(
+      'вольный сад по-прежнему видит приглашения дикой жизни',
+      WILD_INVITATION_IDS.every((id) => free.unlocked.has(id)),
+      WILD_INVITATION_IDS.filter((id) => !free.unlocked.has(id)).join(',') || '—',
     );
   }
 
