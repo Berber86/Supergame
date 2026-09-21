@@ -224,6 +224,13 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
         h.lizardSpots.push({ ...c, lift: stonePerchHeight(o.type, o.seed, o.rot) });
         h.lizardShelters.push({ ...c });
       }
+      // Замшелое бревно — тёплый насест ящерице и укрытие в жару.
+      if (o.type === 'moss_log') {
+        h.lizardSpots.push({ ...c, lift: 6 });
+        h.lizardShelters.push({ ...c });
+      }
+      // Пень и поленница — тихие укрытия мышам и ежам.
+      if (o.type === 'stump' || o.type === 'woodpile') h.shelters.push(c);
       if (item.kind === 'shrub' || o.type === 'fern' || o.type === 'grass_tuft') h.lizardShelters.push(c);
     }
     if (PERCH_TYPES.includes(o.type)) h.perches.push(c);

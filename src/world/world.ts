@@ -359,6 +359,17 @@ export class World {
     this.place('rock_mid', 4.25, 14.5, 2, old);
     this.place('rock_trio', 18.5, 12, 0, old);
 
+    // Обустройство: бревно и пень в роще, поленница у дома,
+    // заборчик вдоль двора, дзидзо у тропы, скамья у пруда
+    this.place('moss_log', 7, 19.5, 0, old);
+    this.place('stump', 3.5, 18, 0, old);
+    this.place('mushrooms', 4.5, 17.25, 0, old);
+    this.place('woodpile', 2.5, 9.5, 0, old);
+    this.place('fence_wood', 10, 9, 1, old);
+    this.place('fence_wood', 10, 11, 1, old);
+    this.place('jizo', 12, 8, 0, old);
+    this.place('garden_bench', 16, 9, 0, old);
+
     // Мостик через залив
     this.place('bridge', 17, 10, 0, old);
 

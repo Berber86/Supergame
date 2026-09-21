@@ -169,6 +169,9 @@ const dvor: Preset = {
     world.place('lotus', 12, 9, 0, old);
     world.place('lilypad', 13, 10, 0, old);
     world.place('koi', 12.5, 9.5, 0, old);
+    world.place('fence_stone', 5, 12, 0, old);
+    world.place('fence_stone', 7, 12, 0, old);
+    world.place('moss_log', 14, 13, 1, old);
     // южная пустошь — территория вдвое меньше карты
     world.place('pine', 6, 18, 0, old);
     world.place('maple', 12, 20, 0, old);
@@ -241,6 +244,8 @@ const zavod: Preset = {
     world.place('bamboo', 2.5, 10, 0, old);
     world.place('azalea', 9, 8, 0, old);
     world.place('hedge', 6, 14, 0, old);
+    world.place('garden_bench', 10, 16, 0, old);
+    world.place('jizo', 10, 7, 0, old);
     scatter(world, old, 3, 16, 18, 10, 9);
   },
 };
@@ -384,6 +389,8 @@ const klyuch: Preset = {
     }
     world.place('koi', 12, 17, 0, old);
     world.place('koi', 14, 18, 0, old);
+    world.place('garden_bench', 9, 11, 0, old);
+    world.place('jizo', 17, 12, 0, old);
   },
 };
 
@@ -432,6 +439,9 @@ const kare: Preset = {
     scatter(world, old, 4, 17, 17, 10, 21);
     world.place('maple', 10, 20, 0, old);
     world.place('pine', 20, 20, 0, old);
+    world.place('moss_log', 13, 17, 1, old);
+    world.place('stump', 7, 17, 0, old);
+    world.place('mushrooms', 8, 17.5, 0, old);
   },
 };
 
@@ -465,6 +475,9 @@ const wild: Preset = {
     world.place('sakura', 12, 9, 0, old);
     world.place('maple', 9, 15, 0, old);
     world.place('ume', 16, 11, 0, old);
+    world.place('stump', 7.5, 10, 0, old);
+    world.place('moss_log', 17, 8, 0, old);
+    world.place('mushrooms', 11.5, 15.5, 0, old);
     scatter(world, old, 6, 7, 14, 12, 33);
   },
 };
@@ -536,6 +549,10 @@ const sad: Preset = {
     world.place('bowl', 8.5, 7.5, 0, old);
     world.place('wind_chime', 7.5, 2.5, 0, old);
     world.place('tsukubai', 9.5, 8.5, 0, old);
+    world.place('fence_wood', 11, 6, 1, old);
+    world.place('fence_wood', 11, 8, 1, old);
+    world.place('well', 14, 18, 0, old);
+    world.place('woodpile', 9, 19, 0, old);
     world.place('pine', 4, 14, 0, old);
     world.place('maple', 6, 20, 0, old);
     world.place('ginkgo', 14, 20, 0, old);
