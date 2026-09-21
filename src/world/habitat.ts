@@ -231,7 +231,7 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
       h.trees.push(c);
       // Старые высокие деревья — насест для совы и дом для белки.
       // Саженец сосны ещё не дом: сперва дорастёт (три игровых дня).
-      if (world.growth(o, Date.now()) >= 1) {
+      if (world.growth(o, world.now()) >= 1) {
         grownTrees.push(c);
         h.owlSpots.push({ x: c.x, y: c.y });
         if (isFruitTree(o.type) || ['pine', 'maple', 'ginkgo', 'persimmon', 'sakura', 'willow'].includes(o.type)) {

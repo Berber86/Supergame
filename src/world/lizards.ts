@@ -234,7 +234,7 @@ export class Lizards {
               a.inactive === 0 &&
               h.lizardShelters.some((p) => Math.hypot(p.x - a.tx, p.y - a.ty) < 0.16)
             )
-              world.noteEvent('lizard_escape', Date.now(), a.tx, a.ty);
+              world.noteEvent('lizard_escape', world.now(), a.tx, a.ty);
             this.state(a, 'hide', 4000 + this.rnd() * 4000);
           } else this.state(a, arrived ? 'bask' : 'look', 6000 + this.rnd() * 9000);
         }
@@ -249,7 +249,7 @@ export class Lizards {
             caught = true;
           }
         }
-        if (caught) world.noteEvent('lizard_hunt', Date.now(), a.tx, a.ty);
+        if (caught) world.noteEvent('lizard_hunt', world.now(), a.tx, a.ty);
         a.hunger = 25000;
         this.state(a, 'look', 2200);
       } else if (a.timer <= 0 && !['hide', 'strike'].includes(a.state)) {
@@ -299,7 +299,7 @@ export class Lizards {
       const previousBask = a.basking;
       a.basking = onWarmStone ? Math.min(LIZARD_BASK_MS, a.basking + dt) : 0;
       if (previousBask < LIZARD_BASK_MS && a.basking >= LIZARD_BASK_MS)
-        world.noteEvent('lizard_bask', Date.now(), a.tx, a.ty);
+        world.noteEvent('lizard_bask', world.now(), a.tx, a.ty);
     }
     if (this.agents.length < want && this.timer <= 0) {
       this.timer = 25000 + this.rnd() * 25000;
@@ -313,7 +313,7 @@ export class Lizards {
       if (sites.length) {
         const site = sites[Math.floor(this.rnd() * sites.length)];
         this.agents.push(makeLizard(Math.floor(this.rnd() * 100000), site));
-        world.noteEvent('meet_lizard', Date.now(), site.x, site.y);
+        world.noteEvent('meet_lizard', world.now(), site.x, site.y);
       }
     }
   }

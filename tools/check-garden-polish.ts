@@ -23,7 +23,7 @@ Object.assign(globalThis, {
   window: { devicePixelRatio: 1, innerWidth: 430, innerHeight: 800 },
 });
 const w = new World();
-applyPreset(w, 'spring');
+applyPreset(w, 'klyuch');
 const day = buildAtmosphere(computeTime(new Date(2026, 8, 19, 13).getTime()));
 let longest = 0;
 for (const swap of [false, true])

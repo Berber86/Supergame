@@ -143,6 +143,7 @@ const life = new Life();
 const timeCtl = new TimeControl(
   () => world.grow,
   () => queueMicrotask(saveWorld),
+  () => world.timeShift,
 );
 const weatherSys = new WeatherSystem();
 const audio = new GardenAudio();

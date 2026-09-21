@@ -456,7 +456,7 @@ export class Life {
     if (world.grow && x != null && y != null) {
       if (!inGrowRect(world.grow.rect, Math.floor(x), Math.floor(y))) return;
     }
-    world.noteEvent(id, Date.now(), x, y);
+    world.noteEvent(id, world.now(), x, y);
   }
 
   // ---------------- Ветер ----------------

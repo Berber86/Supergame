@@ -158,7 +158,7 @@ export function startLoop(deps: LoopDeps): void {
       observeAccum = 2500;
       // Возраст деревьев меряется от даты посадки: нужны настоящие
       // миллисекунды, а не счётчик кадров (иначе «старое дерево» не созрело бы).
-      world.observe(Date.now(), t.season, atm.lampGlow > 0.55, weatherSys.state.rain > 0.3);
+      world.observe(t.now, t.season, atm.lampGlow > 0.55, weatherSys.state.rain > 0.3);
       deps.flushMilestones();
     }
 

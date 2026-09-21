@@ -426,7 +426,7 @@ export function drawGhost(
         type: gh.itemId,
         tx: gh.tx,
         ty: gh.ty,
-        planted: Date.now(),
+        planted: world.now(),
         rot: gh.rot,
         seed: 777,
       };
@@ -451,7 +451,7 @@ export function drawGhost(
 }
 
 export function drawObjects(ctx: Ctx, world: World, atm: Atmosphere, time: number, opts: ObjectsOpts): void {
-  const now = Date.now();
+  const now = world.now();
   // Единый список: статичные объекты и живность сортируются вместе,
   // иначе кот будет проходить «сквозь» дерево.
   type Entry = { depth: number; draw: () => void };

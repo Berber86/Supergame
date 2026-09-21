@@ -262,7 +262,7 @@ for (const form of TREE_FORMS) {
   );
 }
 // Culling does not change any visible water pixels.
-const surface = prepareWaterSurface(world)[0],
+const surface = prepareWaterSurface(world).reduce((a, b) => (a.cells.length >= b.cells.length ? a : b)),
   bounds = waterSurfaceBounds(surface);
 const waterX = (bounds.minX + bounds.maxX) / 2,
   waterY = (bounds.minY + bounds.maxY) / 2;
