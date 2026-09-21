@@ -60,9 +60,14 @@ export const TABS: CatalogTab[] = [
   { id: 'light', name: 'Свет', icon: 'lantern', requires: 'first_evening' },
   { id: 'house', name: 'Усадьба', icon: 'house', requires: 'first_deck' },
   { id: 'shore', name: 'Берег', icon: 'water', requires: 'running_water' },
-  { id: 'cat', name: 'Коту', icon: 'cat', requires: 'first_cat' },
   { id: 'guests', name: 'Гости', icon: 'bird', requires: null },
 ];
+
+/**
+ * Всё, что зовёт жителей: кормушки, поилки, улей, бельчатник, бревно черепахи.
+ * Вольный сад видит их сразу, растущий открывает по одному — как любой предмет.
+ */
+export const WILD_INVITATION_IDS = ['feeder', 'birdbath', 'beehive', 'squirrel_feeder', 'turtle_log'] as const;
 
 export const TERRAIN_BRUSHES: TerrainBrush[] = [
   {
@@ -853,10 +858,19 @@ export const ITEMS: CatalogItem[] = [
     tab: 'house',
   },
 
-  // Коту
-  { id: 'cat', name: 'Кот', hint: 'приходит сам', kind: 'creature', w: 1, h: 1, step: 0.5, growDays: 0, tab: 'cat' },
-
-  // Гости: жители открываются через постройки, а не через задания
+  // Гости: сами жители и всё, что их зовёт — подушки, миски, кормушки.
+  // Открываются через постройки, а не через задания.
+  {
+    id: 'cat',
+    name: 'Кот',
+    hint: 'приходит сам',
+    kind: 'creature',
+    w: 1,
+    h: 1,
+    step: 0.5,
+    growDays: 0,
+    tab: 'guests',
+  },
   {
     id: 'feeder',
     name: 'Кормушка',
@@ -888,7 +902,7 @@ export const ITEMS: CatalogItem[] = [
     h: 1,
     step: 0.5,
     growDays: 0,
-    tab: 'cat',
+    tab: 'guests',
   },
   {
     id: 'bowl',
@@ -899,7 +913,7 @@ export const ITEMS: CatalogItem[] = [
     h: 1,
     step: 0.25,
     growDays: 0,
-    tab: 'cat',
+    tab: 'guests',
   },
   {
     id: 'beehive',
@@ -1003,7 +1017,7 @@ export const MILESTONES: Record<string, Milestone> = {
     id: 'first_cat',
     title: 'Гость',
     text: 'Кот пришёл сам и остался. Ему нужны подушки и миски.',
-    unlocks: 'Коту',
+    unlocks: 'Подушки и миски',
   },
   running_water: {
     id: 'running_water',

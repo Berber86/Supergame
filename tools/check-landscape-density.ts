@@ -92,9 +92,11 @@ for (const [group, type] of Object.entries(representatives) as [LandscapeGroup, 
   ]);
 }
 for (const item of ITEMS) {
-  if (item.tab === 'house' || item.tab === 'cat' || ['bridge', 'pavilion', 'creature'].includes(item.kind))
+  if (item.tab === 'house' || ['bridge', 'pavilion', 'creature'].includes(item.kind))
     assert.equal(landscapeGroup(item.id), null, item.id);
 }
+// Кот и его подушки с мисками живут во вкладке Гости, но прореживание их не трогает.
+for (const id of ['cat', 'cushion', 'bowl']) assert.equal(landscapeGroup(id), null, `cat belongings: ${id}`);
 assert.equal(landscapeGroup('step_stone'), null, 'paths are construction, not clutter');
 assert.equal(landscapeGroup('unknown_future_item'), null);
 for (const id of ['feeder', 'birdbath', 'beehive', 'squirrel_feeder', 'turtle_log', 'shishi'])

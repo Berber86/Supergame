@@ -874,7 +874,7 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
 export function drawAnimalReflections(ctx: Ctx, world: World, atm: Atmosphere, time: number, opts: ObjectsOpts): void {
   if (!opts.life) return;
   // Shadows are lighting on the shore, not part of an animal's reflected body.
-  const entries = animalEntries(ctx, world, { ...atm, shadowAmount: 0 }, time, opts);
+  const entries = animalEntries(ctx, world, { ...atm, shadowAmount: 0, exposure: atm.exposure * 0.55 }, time, opts);
   if (!entries.length) return;
   entries.sort((a, b) => a.depth - b.depth);
   for (const surface of waterSurfaces(world)) {
@@ -896,7 +896,7 @@ export function drawAnimalReflections(ctx: Ctx, world: World, atm: Atmosphere, t
       const drift = Math.sin(time * 0.0013 + plane.y * 0.07) * 0.65;
       const wave = opts.waterMotion?.(plane.x, reflectedY + (entry.alt ?? 12), surface.level);
       ctx.save();
-      ctx.globalAlpha *= 0.32 * (wave?.alpha ?? 1);
+      ctx.globalAlpha *= 0.5 * (wave?.alpha ?? 1);
       ctx.transform(1, 0, 0, -1, wave?.dx ?? drift, 2 * plane.y + (wave?.dy ?? 0));
       entry.draw();
       ctx.restore();

@@ -21,11 +21,18 @@ export const DUPLICATE_RADIUS = 2;
 
 const SMALL_PLANTS = new Set(['moss_clump', 'grass_tuft', 'lilypad']);
 const HABITAT_OBJECTS = new Set(['feeder', 'birdbath', 'beehive', 'squirrel_feeder', 'turtle_log', 'shishi']);
+/** Подушка и миска кота — обустройство, а не ландшафт: прореживать их не за что. */
+const CAT_BELONGINGS = new Set(['cushion', 'bowl']);
 
 /** Явно исключены дом, мебель, мосты, дорожки, коты и карпы (включая их миски/подушки). */
 export function landscapeGroup(type: string): LandscapeGroup | null {
   const item = ITEM_BY_ID.get(type);
-  if (!item || item.tab === 'house' || item.tab === 'cat' || ['bridge', 'pavilion', 'creature'].includes(item.kind))
+  if (
+    !item ||
+    item.tab === 'house' ||
+    CAT_BELONGINGS.has(type) ||
+    ['bridge', 'pavilion', 'creature'].includes(item.kind)
+  )
     return null;
   if (HABITAT_OBJECTS.has(type)) return 'habitat';
   if (item.kind === 'tree') return 'trees';

@@ -314,16 +314,32 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
   for (const f of h.feeders) h.mouseSpots.push(f);
   for (const b of h.bowls) h.mouseSpots.push(b);
   for (const s of h.shelters) if (h.mouseSpots.length < 24) h.mouseSpots.push(s);
-  // Камни и бревна — тоже укрытия
+  // Камни и бревна — тоже укрытия. Мышка прячется у подножия с юга
+  // («под камнем»), а не в центре отпечатка: там она оказывалась
+  // погребена внутри валуна.
   for (const o of world.objects) {
     if (h.mouseSpots.length >= 24) break;
     if (!['rock_mid', 'rock_big', 'rock_trio', 'pebbles'].includes(o.type)) continue;
     const item = ITEM_BY_ID.get(o.type);
     if (!item) continue;
-    const c: Vec = { x: o.tx + item.w / 2, y: o.ty + item.h / 2 };
+    const cx = o.tx + item.w / 2;
+    const front = world.at(Math.floor(cx), Math.floor(o.ty + item.h + 0.2));
+    const c: Vec =
+      front && !front.water && !front.indoor && !front.veranda
+        ? { x: cx, y: o.ty + item.h + 0.2 }
+        : { x: cx, y: o.ty + item.h / 2 };
     if (!inside(Math.floor(c.x), Math.floor(c.y))) continue;
+    // Камень на воде укрытием не бывает: мышь не должна идти вброд
+    const ct = world.at(Math.floor(c.x), Math.floor(c.y));
+    if (!ct || ct.water || ct.indoor) continue;
     h.mouseSpots.push(c);
   }
+  // Мышь не идёт в воду: камыши и отмели на водяных клетках отсеиваем,
+  // иначе зверёк «бегает по воде» в попытке спрятаться в укрытии.
+  h.mouseSpots = h.mouseSpots.filter((s) => {
+    const t = world.at(Math.floor(s.x), Math.floor(s.y));
+    return !!t && !t.water && !t.indoor;
+  });
   // Если совсем пусто — хоть где-то у края мха
   if (h.mouseSpots.length === 0) {
     for (let y = 1; y < GRID - 1 && h.mouseSpots.length < 6; y += 4) {
