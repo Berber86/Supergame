@@ -135,9 +135,9 @@ export class UI {
     this.els.btnSettings = mk('settings', 'Настройки (S)');
     const guideButton = this.el<HTMLButtonElement>('button', 'tool-btn wood');
     guideButton.type = 'button';
-    guideButton.setAttribute('aria-label', 'Энциклопедия животных');
-    guideButton.title = 'Энциклопедия животных';
-    guideButton.innerHTML = `${svgIcon('book', 23)}<span class="label">Энциклопедия животных</span>`;
+    guideButton.setAttribute('aria-label', 'Энциклопедия');
+    guideButton.title = 'Энциклопедия';
+    guideButton.innerHTML = `${svgIcon('book', 23)}<span class="label">Энциклопедия</span>`;
     guideButton.addEventListener('click', () => this.hooks.onAnimalGuide());
     tools.appendChild(guideButton);
     this.els.btnHelp = mk('scroll', 'Свиток (H)');

@@ -8,7 +8,7 @@ import { plantYear, leafGroup, crownAnchorBlend } from '../../world/phenology';
 
 import { flowerOpenness, flowerHeadPath } from '../flowerCycle';
 import { DrawCtx, Drawer, WHITE, litc, shadowUnder } from './common';
-import { hash2, lerp, smoothstep } from '../../core/rng';
+import { clamp01, hash2, lerp, smoothstep } from '../../core/rng';
 import { RGB, css, mix, shade } from '../../world/palette';
 import { blobPath, granulate, taperStroke, washBlob } from '../paint';
 
@@ -46,7 +46,7 @@ function drawTrunk(d: DrawCtx, h: number, w: number, col: RGB, bend: number, ana
   }
   paintWood(ctx, trunk, col, obj.seed, true);
   const mossChance = hash2(obj.seed, 101, 7);
-  if (mossChance > 0.48) {
+  if (mossChance > 0.48 && (d.g ?? 1) >= 0.65) {
     const t = 0.2 + hash2(obj.seed, 109, 5) * 0.23,
       f = woodFrame(trunk, t);
     ctx.fillStyle = css(litc(atm.palette.moss, atm), 0.35 * (1 - winterYear(atm.time.now).snow));
@@ -442,16 +442,38 @@ function pineSpray(
 
 export const drawPine: Drawer = (d) => {
   const { ctx, atm, obj, g } = d;
+  const growth = clamp01(g);
   const sway = Math.sin(d.time * 0.0003 + obj.seed) * 2.2 * d.wind;
-  const geometry = pineGeometry(obj.seed, g, d.x, d.y, sway);
+  const geometry = pineGeometry(obj.seed, growth, d.x, d.y, sway);
   const { profile, scale, sprays } = geometry;
   shadowUnder(d, (profile.spread + 7) * scale, (16 + profile.spread * 0.08) * scale, 0.9);
-  const trunkCol = litc({ r: 114, g: 83, b: 66 }, atm);
+
+  // Цвет коры: у саженца нежный зеленовато-оливковый, у взрослой сосны тёплый охристо-красный
+  const matureCol = { r: 114, g: 83, b: 66 };
+  const youngShootCol = { r: 92, g: 118, b: 66 };
+  const barkTint = mix(youngShootCol, matureCol, clamp01(0.15 + growth * 0.85));
+  const trunkCol = litc(barkTint, atm);
+
+  // Приствольный круг молодой посадки для саженцев
+  if (growth < 0.4) {
+    const soilCol = litc({ r: 88, g: 72, b: 52 }, atm);
+    ctx.fillStyle = css(soilCol, 0.45 * (1 - growth / 0.4));
+    ctx.beginPath();
+    ctx.ellipse(d.x, d.y + 0.5, 4.8 * scale, 2.3 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = css(litc({ r: 112, g: 138, b: 72 }, atm), 0.32 * (1 - growth / 0.4));
+    ctx.beginPath();
+    ctx.ellipse(d.x + 0.8 * scale, d.y + 0.2, 2.4 * scale, 1.2 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   drawTrunk(d, geometry.height, geometry.width, trunkCol, 0, geometry.trunks[0]);
   for (const trunk of geometry.trunks.slice(1)) paintWood(ctx, trunk, trunkCol, obj.seed + 997, true);
-  // Short scaly plates follow each actual leader, including the second fork.
+
+  // Чешуйчатые пластины коры: появляются по мере взросления дерева (на саженце кора гладкая)
+  const plateCount = Math.floor(clamp01((growth - 0.28) / 0.72) * 18);
   for (const trunk of geometry.trunks)
-    for (let i = 0; i < 18; i++) {
+    for (let i = 0; i < plateCount; i++) {
       const t = 0.07 + i * 0.039 + (hash2(obj.seed, i, 2981) - 0.5) * 0.014,
         a = woodFrame(trunk, t),
         b = woodFrame(trunk, t + 0.017 + hash2(obj.seed, i, 2987) * 0.012);
@@ -465,35 +487,80 @@ export const drawPine: Drawer = (d) => {
       ctx.closePath();
       ctx.fill();
     }
+
+  // Окрас хвои: молодой саженец имеет яркую свежую зелень, взрослая сосна — глубокую хвою
   const needle = mix(
     { r: 62, g: 103, b: 76 },
     { r: 74, g: 108, b: 103 },
     plantYear('pine', obj.seed, atm.time.now).winterTone,
   );
-  const tint = mix(needle, { r: 99, g: 123, b: 77 }, hash2(obj.seed, 19, 23) * 0.22);
+  const matureTint = mix(needle, { r: 99, g: 123, b: 77 }, hash2(obj.seed, 19, 23) * 0.22);
+  const youngNeedle = { r: 102, g: 168, b: 72 };
+  const tint = mix(youngNeedle, matureTint, clamp01(Math.pow(growth, 0.65)));
   const main = litc(tint, atm),
     deep = litc(shade(tint, 0.64), atm),
     light = litc(mix(tint, { r: 173, g: 185, b: 123 }, 0.38), atm, 0.025);
+
   for (const bough of geometry.boughs) {
     paintWood(ctx, bough.curve, shade(trunkCol, 0.9), obj.seed, true);
-    if (bough.cone) {
+    // Шишки созревают только на зрелой сосне
+    if (bough.cone && growth >= 0.85) {
+      const coneScale = scale * clamp01((growth - 0.82) / 0.18);
       const p = woodPoint(bough.curve, 0.8);
       ctx.fillStyle = css(shade(trunkCol, 0.8), 0.93);
       ctx.beginPath();
-      ctx.ellipse(p.x, p.y + 3.5 * scale, 1.7 * scale, 3.8 * scale, -bough.side * 0.2, 0, Math.PI * 2);
+      ctx.ellipse(p.x, p.y + 3.5 * scale, 1.7 * coneScale, 3.8 * coneScale, -bough.side * 0.2, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = css(shade(trunkCol, 1.5), 0.45);
-      ctx.lineWidth = 0.55 * scale;
+      ctx.lineWidth = 0.55 * coneScale;
       ctx.beginPath();
-      ctx.moveTo(p.x - 1.3 * scale, p.y + 3 * scale);
-      ctx.lineTo(p.x + 1.3 * scale, p.y + 4 * scale);
+      ctx.moveTo(p.x - 1.3 * coneScale, p.y + 3 * scale);
+      ctx.lineTo(p.x + 1.3 * coneScale, p.y + 4 * scale);
       ctx.stroke();
     }
   }
+
   for (const twig of geometry.twigs) paintWood(ctx, twig, trunkCol, obj.seed);
+
+  // Верхушечная свечка и молодые побеги на стволе саженца
+  if (growth < 0.45) {
+    const leader = geometry.trunks[0];
+    const topT = 1 - growth / 0.45;
+    const candleCol = litc({ r: 162, g: 194, b: 108 }, atm);
+    ctx.fillStyle = css(candleCol, 0.92);
+    ctx.beginPath();
+    ctx.ellipse(leader.d.x, leader.d.y - 3.2 * scale, 1.3 * scale, 3.4 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = css(main, 0.75 * topT);
+    ctx.lineWidth = 0.7 * scale;
+    ctx.beginPath();
+    for (let a = -2; a <= 2; a++) {
+      const ang = -Math.PI * 0.5 + a * 0.28;
+      ctx.moveTo(leader.d.x + a * 0.7 * scale, leader.d.y - scale);
+      ctx.lineTo(
+        leader.d.x + a * 0.7 * scale + Math.cos(ang) * 5.2 * scale,
+        leader.d.y - scale + Math.sin(ang) * 5.2 * scale,
+      );
+    }
+    ctx.stroke();
+  }
+
+  // У молодых деревьев ветви устремлены к солнцу, крона компактнее;
+  // у взрослого дерева (growth = 1) liftFactor = 0 и координаты строго исходные
+  const liftFactor = 1 - clamp01(growth / 0.75);
+  const adjustedSprays = sprays.map((p) => {
+    if (liftFactor <= 0.001) return p;
+    return {
+      ...p,
+      x: d.x + (p.x - d.x) * (1 - liftFactor * 0.25),
+      y: p.y - liftFactor * 3.5 * scale,
+    };
+  });
+
   // Back sprays first; the open inner branches remain visible between the needle tips.
-  sprays.sort((a, b) => a.y - b.y);
-  for (const p of sprays) pineSpray(d, p.x, p.y, p.rx, p.ry, p.seed, scale, main, deep, light);
+  adjustedSprays.sort((a, b) => a.y - b.y);
+  for (const p of adjustedSprays) pineSpray(d, p.x, p.y, p.rx, p.ry, p.seed, scale, main, deep, light);
 };
 
 export const drawBamboo: Drawer = (d) => {

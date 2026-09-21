@@ -6,7 +6,17 @@ import { drawObject, setSkipShadows } from '../src/render/sprites';
 import { drawCached, clearSprites, spriteStats } from '../src/render/spriteCache';
 import { computeTime } from '../src/core/clock';
 import { buildAtmosphere } from '../src/world/palette';
-import { pineProfile, pineGrowth, PINE_FORMS, PINE_FORM_NAMES } from '../src/world/pine';
+import {
+  pineProfile,
+  pineGrowth,
+  PINE_FORMS,
+  PINE_FORM_NAMES,
+  PINE_STAGES,
+  pineStage,
+  calculatePineGrowth,
+  PINE_GROW_NORMAL_MS,
+  PINE_GROW_GARDEN_MS,
+} from '../src/world/pine';
 import { pineGeometry } from '../src/render/pineGeometry';
 import { woodPoint, woodFrame } from '../src/render/treeWood';
 import { plantPose, windOffset } from '../src/render/plantWind';
@@ -184,6 +194,52 @@ assert.deepEqual(
   identities,
 );
 assert.equal(serializeSave(world.toJSON()), saved);
+
+// Growth calculations and stages
+const now0 = 100000000;
+assert.equal(calculatePineGrowth(0, now0, false), 1, 'legacy / unspecified trees are fully mature');
+assert.equal(calculatePineGrowth(-1, now0, false), 1, 'negative timestamps are fully mature');
+// Normal garden (72 hours = 3 days)
+assert.equal(calculatePineGrowth(now0, now0, false), 0, 'freshly planted pine in normal garden is a sapling');
+assert.ok(Math.abs(calculatePineGrowth(now0, now0 + 24 * 3600 * 1000, false) - 1 / 3) < 1e-6, 'day 1 = 1/3 growth');
+assert.ok(Math.abs(calculatePineGrowth(now0, now0 + 48 * 3600 * 1000, false) - 2 / 3) < 1e-6, 'day 2 = 2/3 growth');
+assert.equal(calculatePineGrowth(now0, now0 + 72 * 3600 * 1000, false), 1, 'day 3 = mature pine');
+assert.equal(calculatePineGrowth(now0, now0 + 96 * 3600 * 1000, false), 1, 'older pine remains mature');
+
+// Growing garden (15 hours = 3 days at 5h/day)
+assert.equal(calculatePineGrowth(now0, now0, true), 0, 'freshly planted pine in growing garden is a sapling');
+assert.ok(
+  Math.abs(calculatePineGrowth(now0, now0 + 5 * 3600 * 1000, true) - 1 / 3) < 1e-6,
+  '5h in growing garden = 1/3 growth',
+);
+assert.ok(
+  Math.abs(calculatePineGrowth(now0, now0 + 10 * 3600 * 1000, true) - 2 / 3) < 1e-6,
+  '10h in growing garden = 2/3 growth',
+);
+assert.equal(calculatePineGrowth(now0, now0 + 15 * 3600 * 1000, true), 1, '15h in growing garden = mature pine');
+assert.equal(calculatePineGrowth(now0, now0 + 20 * 3600 * 1000, true), 1, 'older pine remains mature');
+
+// Stages
+assert.equal(pineStage(0).id, 'sapling');
+assert.equal(pineStage(0.2).id, 'sapling');
+assert.equal(pineStage(0.35).id, 'young');
+assert.equal(pineStage(0.5).id, 'young');
+assert.equal(pineStage(0.7).id, 'maturing');
+assert.equal(pineStage(0.95).id, 'maturing');
+assert.equal(pineStage(1.0).id, 'adult');
+assert.equal(PINE_STAGES.length, 4);
+
+// World integration
+const testWorld = new World();
+const oldTree = testWorld.objects.find((o) => o.type === 'pine')!;
+assert.equal(testWorld.growth(oldTree, Date.now()), 1, 'existing/preset pine is fully grown');
+const maple = testWorld.place('maple', 2, 2, 0, Date.now())!;
+assert.equal(testWorld.growth(maple, Date.now()), 1, 'non-pine trees look fully grown');
+const newPine = testWorld.place('pine', 3, 3, 0, now0)!;
+assert.equal(testWorld.growth(newPine, now0), 0, 'newly planted pine is at growth 0');
+assert.ok(Math.abs(testWorld.growth(newPine, now0 + 24 * 3600 * 1000) - 1 / 3) < 1e-6);
+assert.equal(testWorld.growth(newPine, now0 + 72 * 3600 * 1000), 1);
+
 console.log('ок: все формы, крайние размеры, рост/сезоны, границы, холодный/прогретый кэш и прежние сохранения');
 if (process.argv.includes('--preview')) {
   writeFileSync('preview-pine.png', cv.toBuffer('image/png'));

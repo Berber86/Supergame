@@ -400,8 +400,9 @@ function drawReflections(
     // by canopy cover: that would double-fade foliage and erase the bare trunk too.
     const air = options.windField?.(cx, cy, windLag(o.type));
     const vector = options.plantMotion === false ? CALM : air;
+    const objGrowth = world.growth(o, Date.now());
     const pose = vector
-      ? plantPose(o.type, o.seed, cachedGrowth(world.growth(o, atm.time.now)), time, vector, options.simpleWind)
+      ? plantPose(o.type, o.seed, cachedGrowth(objGrowth), time, vector, options.simpleWind)
       : undefined;
     drawCachedReflection(
       {
@@ -410,7 +411,7 @@ function drawReflections(
         y: p.y,
         atm: materialAtm,
         obj: o,
-        g: world.growth(o, atm.time.now),
+        g: objGrowth,
         time,
         wind,
         plantPose: pose,

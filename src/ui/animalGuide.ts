@@ -31,10 +31,10 @@ export class AnimalGuide {
     this.root.className = 'animal-guide';
     this.root.setAttribute('aria-labelledby', 'guide-title');
     this.root.innerHTML = `
-      <header class="ag-header"><div class="ag-seal" aria-hidden="true">${svgIcon('book', 26)}</div><div><span class="ag-eyebrow">ПОЛЕВОЙ ДНЕВНИК УСАДЬБЫ</span><h1 id="guide-title">Энциклопедия животных</h1></div>
+      <header class="ag-header"><div class="ag-seal" aria-hidden="true">${svgIcon('book', 26)}</div><div><span class="ag-eyebrow">ПОЛЕВОЙ ДНЕВНИК УСАДЬБЫ</span><h1 id="guide-title">Энциклопедия</h1></div>
         <button class="ag-close" aria-label="Закрыть энциклопедию" title="Закрыть · Esc">${svgIcon('close', 20)}</button></header>
       <div class="ag-book">
-        <aside class="ag-index"><label class="ag-search"><span>Найти жителя</span><input type="search" placeholder="Имя или вид…" aria-label="Поиск животного"></label><nav class="ag-list" aria-label="Страницы животных"></nav><div class="ag-index-note">Все жители открыты с первой страницы.<br>Для встречи не нужно ждать сезона.</div></aside>
+        <aside class="ag-index"><label class="ag-search"><span>Найти статью</span><input type="search" placeholder="Имя, вид или растение…" aria-label="Поиск по энциклопедии"></label><nav class="ag-list" aria-label="Страницы энциклопедии"></nav><div class="ag-index-note">Все статьи открыты с первой страницы.<br>Для встречи не нужно ждать сезона.</div></aside>
         <article class="ag-page">
           <div class="ag-page-heading"><div><div class="ag-kicker"></div><h2></h2><div class="ag-latin" lang="la"></div></div><div class="ag-pagination"><button data-page="-1" aria-label="Предыдущее животное">←</button><span></span><button data-page="1" aria-label="Следующее животное">→</button></div></div>
           <div class="ag-stage"><span class="ag-stage-note">ЖИВАЯ ЗАРИСОВКА</span><canvas role="img"></canvas><span class="ag-stage-caption"></span><button class="ag-flip" aria-label="Повернуть животное" title="Повернуть животное">↔</button></div>
@@ -177,7 +177,7 @@ export class AnimalGuide {
       `${a.name} ${a.latin} ${a.group}`.toLocaleLowerCase('ru').includes(query),
     );
     this.list.replaceChildren();
-    for (const group of ['Звери', 'Пресмыкающиеся', 'Птицы', 'У воды', 'Насекомые']) {
+    for (const group of ['Деревья', 'Звери', 'Пресмыкающиеся', 'Птицы', 'У воды', 'Насекомые']) {
       const animals = matches.filter((a) => a.group === group);
       if (!animals.length) continue;
       const heading = document.createElement('h3');

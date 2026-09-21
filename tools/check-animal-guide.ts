@@ -15,7 +15,7 @@ import type { Turtle } from '../src/world/wildlife';
 import type { Deer } from '../src/world/wildlife';
 
 const day = buildAtmosphere(computeTime(new Date(2026, 5, 15, 13).getTime()));
-assert.equal(GUIDE_ANIMALS.length, 23);
+assert.equal(GUIDE_ANIMALS.length, 24);
 assert.equal(new Set(GUIDE_ANIMALS.map((a) => a.id)).size, GUIDE_ANIMALS.length);
 const expected: Record<string, string[]> = {
   lizard: ['emerge', 'bask', 'look', 'walk', 'hunt', 'strike', 'flee', 'hide', 'leave'],

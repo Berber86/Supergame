@@ -36,6 +36,84 @@ export function pineGrowth(g: number): number {
   return lerp(0.2, 1, Math.pow(clamp01(g), 0.7));
 }
 
+/** Длительность роста сосны в обычном саду: 3 игровых дня = 72 часа реального времени. */
+export const PINE_GROW_NORMAL_MS = 72 * 60 * 60 * 1000;
+/** Длительность роста сосны в растущем саду: 3 игровых дня = 15 часов реального времени (день = 5 ч). */
+export const PINE_GROW_GARDEN_MS = 15 * 60 * 60 * 1000;
+
+export type PineStageId = 'sapling' | 'young' | 'maturing' | 'adult';
+
+export interface PineStageInfo {
+  id: PineStageId;
+  name: string;
+  dayLabel: string;
+  description: string;
+  minG: number;
+  maxG: number;
+}
+
+export const PINE_STAGES: readonly PineStageInfo[] = [
+  {
+    id: 'sapling',
+    name: 'Саженец',
+    dayLabel: 'День 1',
+    description:
+      'Нежный зелёный росток с верхушечной свечкой и первой мутовкой мягкой хвои. Стволик гладкий, корневая шейка только закрепляется в грунте.',
+    minG: 0,
+    maxG: 0.33,
+  },
+  {
+    id: 'young',
+    name: 'Молодое деревце',
+    dayLabel: 'День 2',
+    description:
+      'Ствол набирает силу и начинает деревенеть. Появляется первый ярус боковых ветвей, начинает проступать будущий силуэт.',
+    minG: 0.33,
+    maxG: 0.67,
+  },
+  {
+    id: 'maturing',
+    name: 'Формирование кроны',
+    dayLabel: 'День 3',
+    description:
+      'Ветви ярусами раскрываются в стороны. Кора покрывается характерными чешуйками, крона обретает выразительную природную форму.',
+    minG: 0.67,
+    maxG: 0.99,
+  },
+  {
+    id: 'adult',
+    name: 'Взрослая сосна',
+    dayLabel: 'Зрелость',
+    description:
+      'Могучее вечнозелёное дерево с глубоко растрескавшейся охристой корой, густыми хвойными лапами и смолистыми шишками.',
+    minG: 1,
+    maxG: 1,
+  },
+] as const;
+
+export function pineStage(g: number): PineStageInfo {
+  const clamped = clamp01(g);
+  if (clamped >= 1) return PINE_STAGES[3];
+  if (clamped >= 0.67) return PINE_STAGES[2];
+  if (clamped >= 0.33) return PINE_STAGES[1];
+  return PINE_STAGES[0];
+}
+
+/**
+ * Вычисляет стадию роста сосны 0..1 по времени посадки и текущему моменту.
+ * В обычных садах сосна вырастает за 72 часа (3 игровых дня),
+ * в растущем саду — за 15 часов (3 игровых дня по 5 часов).
+ * Старые деревья (старые сохранения, пресеты или время вышло) возвращают 1.
+ */
+export function calculatePineGrowth(planted: number, now: number, isGrowingGarden: boolean): number {
+  if (!Number.isFinite(planted) || planted <= 0) return 1;
+  const duration = isGrowingGarden ? PINE_GROW_GARDEN_MS : PINE_GROW_NORMAL_MS;
+  const elapsed = now - planted;
+  if (elapsed >= duration) return 1;
+  if (elapsed <= 0) return 0;
+  return clamp01(elapsed / duration);
+}
+
 export function pineProfile(seed: number): PineProfile {
   const form = PINE_FORMS[Math.floor(hash2(seed, 17, 3109) * PINE_FORMS.length)];
   const [height, spread, trunkWidth, tiers, crownStart, taper, foliage] = FORMS[form];

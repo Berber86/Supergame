@@ -205,7 +205,7 @@ export const ITEMS: CatalogItem[] = [
     growDays: 7,
     tab: 'trees',
   },
-  { id: 'pine', name: 'Сосна', hint: 'вечная зелень', kind: 'tree', w: 1, h: 1, step: 0.5, growDays: 9, tab: 'trees' },
+  { id: 'pine', name: 'Сосна', hint: 'вечная зелень', kind: 'tree', w: 1, h: 1, step: 0.5, growDays: 3, tab: 'trees' },
   {
     id: 'bamboo',
     name: 'Бамбук',

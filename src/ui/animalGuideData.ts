@@ -1,3 +1,5 @@
+import { clamp01 } from '../core/rng';
+import { drawObject } from '../render/sprites';
 import {
   makeLizard,
   LIZARD_COATS,
@@ -46,7 +48,7 @@ export interface GuideAnimal {
   id: string;
   name: string;
   latin: string;
-  group: 'Пресмыкающиеся' | 'Звери' | 'Птицы' | 'У воды' | 'Насекомые';
+  group: 'Деревья' | 'Пресмыкающиеся' | 'Звери' | 'Птицы' | 'У воды' | 'Насекомые';
   description: string;
   habitat: string;
   scale: number;
@@ -706,6 +708,66 @@ const bee = animal<Bee>(
   drawBee,
 );
 
+const PINE_SEEDS = [7, 1, 4, 2, 14];
+
+const pineGuide: GuideAnimal = {
+  id: 'pine',
+  name: 'Сосна',
+  latin: 'Pinus densiflora',
+  group: 'Деревья',
+  scale: 0.88,
+  baseline: 0.84,
+  description:
+    'Японская красная сосна — вечнозелёное сердце усадьбы и символ стойкости. Взрослые сосны удивляют ярусными лапами хвои, рельефной чешуйчатой корой и смолистыми шишками. Саженцы развиваются постепенно: за три игровых дня (72 часа в обычном саду или 15 часов в растущем) сосна вырастает от крошечного нежного ростка до статного дерева.',
+  habitat: 'Песчаные берега водоёмов, каменистые террасы и сосновые рощицы усадьбы.',
+  facts: [
+    { label: 'Срок роста', value: '3 игровых дня (72 ч в обычном / 15 ч в растущем саду)' },
+    { label: 'Стадии', value: 'Саженец (день 1) → Молодое (день 2) → Формирование (день 3) → Взрослая' },
+    { label: 'Формы', value: '5 силуэтов: приземистая, стройная, на ветру, зонтичная, раздвоенная' },
+    { label: 'Зрелые черты', value: 'Чешуйчатая кора и смолистые шишки' },
+    { label: 'Хвоя', value: 'Вечнозелёная, сохраняет плотный покров круглый год' },
+  ],
+  variants: ['Приземистая', 'Стройная', 'Склонённая ветром', 'Зонтичная', 'Раздвоенная'],
+  animations: [
+    { id: 'sapling', name: '1. Саженец', duration: 4000 },
+    { id: 'young', name: '2. Молодое деревце', duration: 4000 },
+    { id: 'maturing', name: '3. Формирование кроны', duration: 4000 },
+    { id: 'adult', name: '4. Взрослая сосна', duration: 4000 },
+    { id: 'grow', name: 'Цикл роста', duration: 9000 },
+  ],
+  draw(ctx, atm, state, time, variant) {
+    const seed = PINE_SEEDS[variant % PINE_SEEDS.length] ?? 7;
+    let g = 1;
+    if (state === 'sapling') g = 0.1;
+    else if (state === 'young') g = 0.45;
+    else if (state === 'maturing') g = 0.78;
+    else if (state === 'adult') g = 1.0;
+    else if (state === 'grow') {
+      const p = (time % 9000) / 9000;
+      g = clamp01(p < 0.82 ? p / 0.82 : 1.0);
+    }
+    drawObject({
+      ctx,
+      x: 0,
+      y: 0,
+      atm,
+      g,
+      obj: {
+        id: 99999,
+        type: 'pine',
+        seed,
+        rot: 0,
+        tx: 0,
+        ty: 0,
+        planted: 0,
+      },
+      time,
+      wind: 0.35,
+      alpha: 1,
+    });
+  },
+};
+
 export const GUIDE_ANIMALS: GuideAnimal[] = [
   lizard,
   deer,
@@ -724,4 +786,5 @@ export const GUIDE_ANIMALS: GuideAnimal[] = [
   bee,
   firefly,
   moth,
+  pineGuide,
 ];

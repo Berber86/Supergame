@@ -1,3 +1,4 @@
+import { calculatePineGrowth } from './pine';
 import { FRUIT_TREE_TYPES } from './orchard';
 /** Состояние усадьбы: рельеф, вода, объекты, вехи. */
 
@@ -1104,9 +1105,14 @@ export class World {
     return this.chronicle.some((e) => e.id === id);
   }
 
-  /** Стадия роста 0..1 для объекта — рост убран, всё сажается сразу взрослым. */
-  growth(_o: PlacedObject, _now: number): number {
-    return 1;
+  /**
+   * Стадия роста 0..1 для объекта.
+   * Все старые деревья и другие культуры выглядят взрослыми (1).
+   * Новые сосны вырастают за 3 игровых дня (72 ч в обычном саду или 15 ч в растущем).
+   */
+  growth(o: PlacedObject, now = Date.now()): number {
+    if (o.type !== 'pine') return 1;
+    return calculatePineGrowth(o.planted, now, !!this.grow);
   }
 
   // ---- Сохранение ----
