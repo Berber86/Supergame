@@ -48,7 +48,7 @@ export interface UIHooks {
   onSit(): void;
   /** Открыть летопись сада. */
   onChronicle(): void;
-  /** Энциклопедия всех жителей и их анимаций. */
+  /** Энциклопедия сада: все жители, деревья и стадии роста. */
   onAnimalGuide(): void;
   /** Растущий сад: открыть выбор, куда расти. */
   onGrowLine(): void;
@@ -135,9 +135,9 @@ export class UI {
     this.els.btnSettings = mk('settings', 'Настройки (S)');
     const guideButton = this.el<HTMLButtonElement>('button', 'tool-btn wood');
     guideButton.type = 'button';
-    guideButton.setAttribute('aria-label', 'Энциклопедия животных');
-    guideButton.title = 'Энциклопедия животных';
-    guideButton.innerHTML = `${svgIcon('book', 23)}<span class="label">Энциклопедия животных</span>`;
+    guideButton.setAttribute('aria-label', 'Энциклопедия сада');
+    guideButton.title = 'Энциклопедия сада';
+    guideButton.innerHTML = `${svgIcon('book', 23)}<span class="label">Энциклопедия сада</span>`;
     guideButton.addEventListener('click', () => this.hooks.onAnimalGuide());
     tools.appendChild(guideButton);
     this.els.btnHelp = mk('scroll', 'Свиток (H)');
@@ -338,7 +338,7 @@ export class UI {
       <dl>
         <dt>Вехи</dt><dd>Новые вкладки открываются от ваших же дел: выкопали пруд — пришли лотосы</dd>
       </dl>
-      <button class="guide-help-link">生 · Энциклопедия животных — все жители и их движения</button>
+      <button class="guide-help-link">生 · Энциклопедия сада — жители, деревья и стадии роста</button>
       <div class="scroll-chron" role="button" tabindex="0"><span lang="ja">記</span>Летопись сада — первые встречи и редкие события</div>
       <div class="scroll-sit" role="button" tabindex="0"><span lang="ja">坐</span>Сесть в тишине — практики и школа дзена</div>`;
     layer.appendChild(help);

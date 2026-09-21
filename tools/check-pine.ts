@@ -46,9 +46,28 @@ for (const seed of seeds) {
       radius = f.r;
     }
   }
+  // Саженец — не уменьшенная копия: меньше ярусов, пучки хвои на стебле.
+  // Взрослый силуэт (g = 1) остаётся прежним; промежуточные ступени растут.
   const young = pineGeometry(seed, 0.2);
-  assert.equal(young.profile.form, skeleton.profile.form);
-  assert.ok(young.height < skeleton.height && young.sprays.length === skeleton.sprays.length);
+  assert.equal(young.profile.form, skeleton.profile.form, 'habit is fixed at the seed, not at the age');
+  assert.ok(young.height < skeleton.height, 'a sapling is shorter than the mature pine');
+  assert.ok(young.sprays.length < skeleton.sprays.length, 'a sapling carries fewer needle pads');
+  assert.ok(young.sprays.length >= 2, 'the first tier is already there');
+  assert.ok(young.tufts.length > 0, 'juvenile needle tufts on the young stem');
+  assert.equal(skeleton.tufts.length, 0, 'no tufts left on a mature pine');
+  let prev = young;
+  for (const step of [0.35, 0.55, 0.75, 0.92]) {
+    const next = pineGeometry(seed, step);
+    assert.equal(next.profile.form, skeleton.profile.form);
+    assert.ok(next.height > prev.height, `height climbs at ${step}`);
+    assert.ok(next.sprays.length >= prev.sprays.length, `crown only thickens at ${step}`);
+    prev = next;
+  }
+  assert.deepEqual(pineGeometry(seed, 1), skeleton, 'full growth returns exactly the mature silhouette');
+  if (skeleton.profile.form === 'forked') {
+    assert.equal(pineGeometry(seed, 0.3).trunks.length, 1, 'the fork sprouts after the trunk stands alone');
+    assert.equal(pineGeometry(seed, 0.95).trunks.length, 2, 'the fork is back before full growth');
+  }
   const air = { x: 1, y: -1, strength: Math.SQRT2, screenX: 1, screenY: 0 };
   const pose = plantPose('pine', seed, 1, 1000, air)!;
   assert.equal(windOffset(pose, 0), 0);

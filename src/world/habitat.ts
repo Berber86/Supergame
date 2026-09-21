@@ -180,6 +180,7 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
   }
 
   // --- Предметы: насесты, укрытия, кормушки, кошачье хозяйство ---
+  const grownTrees: Vec[] = [];
   for (const o of world.objects) {
     const item = ITEM_BY_ID.get(o.type);
     if (!item) continue;
@@ -228,10 +229,14 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
     if (PERCH_TYPES.includes(o.type)) h.perches.push(c);
     if (item.kind === 'tree') {
       h.trees.push(c);
-      // Старые высокие деревья — насест для совы и дом для белки
-      h.owlSpots.push({ x: c.x, y: c.y });
-      if (isFruitTree(o.type) || ['pine', 'maple', 'ginkgo', 'persimmon', 'sakura', 'willow'].includes(o.type)) {
-        h.squirrelSpots.push(c);
+      // Старые высокие деревья — насест для совы и дом для белки.
+      // Саженец сосны ещё не дом: сперва дорастёт (три игровых дня).
+      if (world.growth(o, Date.now()) >= 1) {
+        grownTrees.push(c);
+        h.owlSpots.push({ x: c.x, y: c.y });
+        if (isFruitTree(o.type) || ['pine', 'maple', 'ginkgo', 'persimmon', 'sakura', 'willow'].includes(o.type)) {
+          h.squirrelSpots.push(c);
+        }
       }
     }
     if (item.kind === 'shrub' || o.type === 'hedge') h.shrubs.push(c);
@@ -353,18 +358,19 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
   }
 
   // --- Совы: высокие точки — беседка, тории, старые деревья ---
-  // Уже наполнены в обходе предметов, но если пусто — берём поляны у деревьев
-  if (h.owlSpots.length === 0) {
+  // Уже наполнены в обходе предметов; запасные поляны — лишь когда деревьев нет вовсе.
+  if (h.owlSpots.length === 0 && h.trees.length === 0) {
     for (const g of h.glades) if (h.owlSpots.length < 8) h.owlSpots.push(g);
   }
 
-  // --- Белки: деревья + бельчатники ---
-  if (h.squirrelSpots.length === 0) {
+  // --- Белки: взрослые деревья + бельчатники ---
+  if (h.squirrelSpots.length === 0 && h.trees.length === 0) {
     for (const tr of h.trees) h.squirrelSpots.push(tr);
   }
-  // Добавим ещё немного точек у деревьев для прыжков
-  for (const g of h.glades)
-    if (h.squirrelSpots.length < 24) h.squirrelSpots.push({ x: g.x + (Math.random() - 0.5), y: g.y });
+  // Добавим ещё немного точек у деревьев для прыжков — когда есть взрослое дерево
+  if (grownTrees.length)
+    for (const g of h.glades)
+      if (h.squirrelSpots.length < 24) h.squirrelSpots.push({ x: g.x + (Math.random() - 0.5), y: g.y });
 
   // --- Черепахи: камни у воды ---
   // Фильтруем камни, оставляем только те, что в 2.5 тайла от воды

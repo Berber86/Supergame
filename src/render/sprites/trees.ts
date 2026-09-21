@@ -385,6 +385,7 @@ function pineSpray(
   main: RGB,
   deep: RGB,
   light: RGB,
+  m = 1,
 ): void {
   const { ctx } = d;
   const edge = (w: number, h: number, lift: number) => {
@@ -415,15 +416,18 @@ function pineSpray(
   ctx.fillStyle = css(main, 0.88);
   ctx.fill();
   // Several fans per spray. All needles of one tone share a stroke call.
+  // Юная подушечка хвои реже и короче; взрослая — та же, что всегда (19 вееров).
+  const fans = m >= 1 ? 19 : 8 + Math.round(11 * m);
+  const needleK = m >= 1 ? 1 : 0.6 + 0.4 * m;
   for (let tone = 0; tone < 2; tone++) {
     ctx.strokeStyle = css(tone ? light : deep, tone ? 0.53 : 0.7);
     ctx.lineWidth = (tone ? 0.65 : 0.8) * scale;
     ctx.beginPath();
-    for (let i = 0; i < 19; i++) {
-      const u = ((i + 0.3) / 19) * 2 - 1;
+    for (let i = 0; i < fans; i++) {
+      const u = ((i + 0.3) / fans) * 2 - 1;
       const px = x + u * rx * 0.94,
         py = y - ry * (0.05 + hash2(seed, i, 2917) * 0.6);
-      const len = (3.4 + hash2(seed, i, 2927) * 4.3) * scale;
+      const len = (3.4 + hash2(seed, i, 2927) * 4.3) * scale * needleK;
       for (let n = 0; n < 3; n++) {
         const angle = -Math.PI * 0.5 + u * 0.7 + (n - 1) * 0.5;
         ctx.moveTo(px, py + scale);
@@ -440,18 +444,44 @@ function pineSpray(
   }
 }
 
+/** Мягкий пучок молодой хвои на стебле саженца — веер иголок из одной почки. */
+function pineTuft(d: DrawCtx, x: number, y: number, r: number, seed: number, light: RGB, deep: RGB): void {
+  if (r <= 0.4) return;
+  const { ctx } = d;
+  const n = 6 + Math.floor(hash2(seed, 3, 3221) * 3);
+  ctx.lineWidth = Math.max(0.5, r * 0.13);
+  for (let tone = 0; tone < 2; tone++) {
+    ctx.strokeStyle = css(tone ? light : deep, tone ? 0.9 : 0.8);
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      if (i % 2 !== tone) continue;
+      const ang = -Math.PI / 2 + (i / Math.max(1, n - 1) - 0.5) * 2.1 + (hash2(seed, i, 3229) - 0.5) * 0.3;
+      const len = r * (0.8 + hash2(seed, i, 3251) * 0.55);
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len);
+    }
+    ctx.stroke();
+  }
+  ctx.fillStyle = css(deep, 0.55);
+  ctx.beginPath();
+  ctx.arc(x, y, Math.max(0.7, r * 0.2), 0, Math.PI * 2);
+  ctx.fill();
+}
+
 export const drawPine: Drawer = (d) => {
   const { ctx, atm, obj, g } = d;
   const sway = Math.sin(d.time * 0.0003 + obj.seed) * 2.2 * d.wind;
   const geometry = pineGeometry(obj.seed, g, d.x, d.y, sway);
-  const { profile, scale, sprays } = geometry;
+  const { profile, scale, sprays, tufts } = geometry;
   shadowUnder(d, (profile.spread + 7) * scale, (16 + profile.spread * 0.08) * scale, 0.9);
   const trunkCol = litc({ r: 114, g: 83, b: 66 }, atm);
   drawTrunk(d, geometry.height, geometry.width, trunkCol, 0, geometry.trunks[0]);
   for (const trunk of geometry.trunks.slice(1)) paintWood(ctx, trunk, trunkCol, obj.seed + 997, true);
   // Short scaly plates follow each actual leader, including the second fork.
+  // Молодому стволу хватает пары чешуек; полная кора — у взрослой сосны.
+  const plates = g >= 1 ? 18 : Math.round(6 + 12 * g);
   for (const trunk of geometry.trunks)
-    for (let i = 0; i < 18; i++) {
+    for (let i = 0; i < plates; i++) {
       const t = 0.07 + i * 0.039 + (hash2(obj.seed, i, 2981) - 0.5) * 0.014,
         a = woodFrame(trunk, t),
         b = woodFrame(trunk, t + 0.017 + hash2(obj.seed, i, 2987) * 0.012);
@@ -476,7 +506,8 @@ export const drawPine: Drawer = (d) => {
     light = litc(mix(tint, { r: 173, g: 185, b: 123 }, 0.38), atm, 0.025);
   for (const bough of geometry.boughs) {
     paintWood(ctx, bough.curve, shade(trunkCol, 0.9), obj.seed, true);
-    if (bough.cone) {
+    // Шишки — примета почти взрослого дерева: саженцу они не по годам.
+    if (bough.cone && g >= 0.8) {
       const p = woodPoint(bough.curve, 0.8);
       ctx.fillStyle = css(shade(trunkCol, 0.8), 0.93);
       ctx.beginPath();
@@ -493,7 +524,9 @@ export const drawPine: Drawer = (d) => {
   for (const twig of geometry.twigs) paintWood(ctx, twig, trunkCol, obj.seed);
   // Back sprays first; the open inner branches remain visible between the needle tips.
   sprays.sort((a, b) => a.y - b.y);
-  for (const p of sprays) pineSpray(d, p.x, p.y, p.rx, p.ry, p.seed, scale, main, deep, light);
+  for (const p of sprays) pineSpray(d, p.x, p.y, p.rx, p.ry, p.seed, scale, main, deep, light, p.m);
+  // Юные пучки хвои на стебле — пока крона не сомкнулась.
+  for (const t of tufts) pineTuft(d, t.x, t.y, t.r, t.seed, light, deep);
 };
 
 export const drawBamboo: Drawer = (d) => {

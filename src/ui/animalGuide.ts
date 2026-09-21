@@ -1,5 +1,6 @@
 import './animalGuide.css';
 import { GUIDE_ANIMALS, GuideAnimal } from './animalGuideData';
+import { GUIDE_TREES, GuidePlant, type GuideStage } from './plantGuideData';
 import { buildAtmosphere } from '../world/palette';
 import { computeTime } from '../core/clock';
 import { svgIcon } from './icons';
@@ -7,13 +8,22 @@ import { chronicleText } from '../world/chronicle';
 import { MILESTONES } from '../world/catalog';
 import { CHRONICLE_IMAGES } from './chronicleArt';
 
+type GuideEntry = GuideAnimal | GuidePlant;
+const GUIDE_ALL: GuideEntry[] = [...GUIDE_ANIMALS, ...GUIDE_TREES];
+const isPlant = (entry: GuideEntry): entry is GuidePlant => 'stages' in entry;
+/** Полное взросление сосны на странице — за пятнадцать секунд просмотра. */
+const GUIDE_GROW_MS = 15000;
+
 /** A modal, independent animation viewer: no writes to the world or localStorage. */
 export class AnimalGuide {
   private root = document.createElement('dialog');
-  private animal = GUIDE_ANIMALS[0];
-  private state = this.animal.animations[0];
+  private entry: GuideEntry = GUIDE_ALL[0];
+  private state = GUIDE_ANIMALS[0].animations[0];
+  /** Рост просматриваемого дерева, 0..1 — саженец до взрослой сосны. */
+  private growth = 0;
   private elapsed = 0;
-  private playing = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  private reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  private playing = !this.reduced;
   private speed = 1;
   private facing = 1;
   private variant = 0;
@@ -31,10 +41,10 @@ export class AnimalGuide {
     this.root.className = 'animal-guide';
     this.root.setAttribute('aria-labelledby', 'guide-title');
     this.root.innerHTML = `
-      <header class="ag-header"><div class="ag-seal" aria-hidden="true">${svgIcon('book', 26)}</div><div><span class="ag-eyebrow">ПОЛЕВОЙ ДНЕВНИК УСАДЬБЫ</span><h1 id="guide-title">Энциклопедия животных</h1></div>
+      <header class="ag-header"><div class="ag-seal" aria-hidden="true">${svgIcon('book', 26)}</div><div><span class="ag-eyebrow">ПОЛЕВОЙ ДНЕВНИК УСАДЬБЫ</span><h1 id="guide-title">Энциклопедия сада</h1></div>
         <button class="ag-close" aria-label="Закрыть энциклопедию" title="Закрыть · Esc">${svgIcon('close', 20)}</button></header>
       <div class="ag-book">
-        <aside class="ag-index"><label class="ag-search"><span>Найти жителя</span><input type="search" placeholder="Имя или вид…" aria-label="Поиск животного"></label><nav class="ag-list" aria-label="Страницы животных"></nav><div class="ag-index-note">Все жители открыты с первой страницы.<br>Для встречи не нужно ждать сезона.</div></aside>
+        <aside class="ag-index"><label class="ag-search"><span>Найти жителя</span><input type="search" placeholder="Имя или вид…" aria-label="Поиск по энциклопедии"></label><nav class="ag-list" aria-label="Страницы энциклопедии"></nav><div class="ag-index-note">Все страницы открыты с первой.<br>Жителей не нужно ждать по сезонам.</div></aside>
         <article class="ag-page">
           <div class="ag-page-heading"><div><div class="ag-kicker"></div><h2></h2><div class="ag-latin" lang="la"></div></div><div class="ag-pagination"><button data-page="-1" aria-label="Предыдущее животное">←</button><span></span><button data-page="1" aria-label="Следующее животное">→</button></div></div>
           <div class="ag-stage"><span class="ag-stage-note">ЖИВАЯ ЗАРИСОВКА</span><canvas role="img"></canvas><span class="ag-stage-caption"></span><button class="ag-flip" aria-label="Повернуть животное" title="Повернуть животное">↔</button></div>
@@ -75,13 +85,13 @@ export class AnimalGuide {
     this.search.addEventListener('input', () => this.renderIndex());
     this.root.querySelectorAll<HTMLButtonElement>('[data-page]').forEach((button) =>
       button.addEventListener('click', () => {
-        const i = GUIDE_ANIMALS.indexOf(this.animal);
-        this.selectAnimal(
-          GUIDE_ANIMALS[(i + Number(button.dataset.page) + GUIDE_ANIMALS.length) % GUIDE_ANIMALS.length],
-        );
+        const i = GUIDE_ALL.indexOf(this.entry);
+        this.selectEntry(GUIDE_ALL[(i + Number(button.dataset.page) + GUIDE_ALL.length) % GUIDE_ALL.length]);
       }),
     );
     this.root.querySelector('.ag-play')!.addEventListener('click', () => {
+      // Взрослую сосну проигрываем заново: от саженца.
+      if (!this.playing && isPlant(this.entry) && this.growth >= 1) this.growth = 0;
       this.playing = !this.playing;
       this.updatePlay();
     });
@@ -90,7 +100,8 @@ export class AnimalGuide {
       this.draw();
     });
     this.root.querySelector('.ag-restart')!.addEventListener('click', () => {
-      this.elapsed = 0;
+      if (isPlant(this.entry)) this.growth = 0;
+      else this.elapsed = 0;
       this.draw();
     });
     this.root.querySelector<HTMLSelectElement>('.ag-speed select')!.addEventListener('change', (e) => {
@@ -105,8 +116,10 @@ export class AnimalGuide {
     });
     this.root.querySelector<HTMLInputElement>('.ag-timeline')!.addEventListener('input', (e) => {
       this.playing = false;
-      this.elapsed = (Number((e.target as HTMLInputElement).value) / 1000) * (this.state.duration - 1);
+      if (isPlant(this.entry)) this.growth = Number((e.target as HTMLInputElement).value) / 1000;
+      else this.elapsed = (Number((e.target as HTMLInputElement).value) / 1000) * (this.state.duration - 1);
       this.updatePlay();
+      this.updateAnimations();
       this.draw();
     });
     if (typeof ResizeObserver !== 'undefined') {
@@ -149,23 +162,40 @@ export class AnimalGuide {
     const dt = Math.min(Math.max(0, now - this.last), 80);
     this.last = now;
     if (!document.hidden && this.playing) {
-      const previousCycle = Math.floor(this.elapsed / this.state.duration);
-      this.elapsed += dt * this.speed;
-      if (this.sequence && Math.floor(this.elapsed / this.state.duration) > previousCycle) {
-        this.state =
-          this.animal.animations[(this.animal.animations.indexOf(this.state) + 1) % this.animal.animations.length];
-        this.elapsed = 0;
+      if (isPlant(this.entry)) {
+        // Три игровых дня сосны — одной плавной зарисовкой.
+        this.growth = Math.min(1, this.growth + (dt * this.speed) / GUIDE_GROW_MS);
+        if (this.growth >= 1) {
+          this.playing = false;
+          this.updatePlay();
+        }
         this.updateAnimations();
+        this.draw();
+      } else {
+        const previousCycle = Math.floor(this.elapsed / this.state.duration);
+        this.elapsed += dt * this.speed;
+        if (this.sequence && Math.floor(this.elapsed / this.state.duration) > previousCycle) {
+          this.state =
+            this.entry.animations[(this.entry.animations.indexOf(this.state) + 1) % this.entry.animations.length];
+          this.elapsed = 0;
+          this.updateAnimations();
+        }
+        this.draw();
       }
-      this.draw();
     }
     this.frame = requestAnimationFrame(this.tick);
   };
 
-  private selectAnimal(animal: GuideAnimal): void {
-    this.animal = animal;
-    this.state = animal.animations[0];
-    this.elapsed = 0;
+  private selectEntry(entry: GuideEntry): void {
+    this.entry = entry;
+    if (isPlant(entry)) {
+      // Страница дерева сама показывает путь саженца до взрослой сосны.
+      this.growth = 0;
+      this.playing = !this.reduced;
+    } else {
+      this.state = entry.animations[0];
+      this.elapsed = 0;
+    }
     this.variant = 0;
     this.renderPage();
     this.root.querySelector('.ag-page')!.scrollTop = 0;
@@ -173,11 +203,9 @@ export class AnimalGuide {
 
   private renderIndex(): void {
     const query = this.search.value.toLocaleLowerCase('ru').trim();
-    const matches = GUIDE_ANIMALS.filter((a) =>
-      `${a.name} ${a.latin} ${a.group}`.toLocaleLowerCase('ru').includes(query),
-    );
+    const matches = GUIDE_ALL.filter((a) => `${a.name} ${a.latin} ${a.group}`.toLocaleLowerCase('ru').includes(query));
     this.list.replaceChildren();
-    for (const group of ['Звери', 'Пресмыкающиеся', 'Птицы', 'У воды', 'Насекомые']) {
+    for (const group of ['Звери', 'Пресмыкающиеся', 'Птицы', 'У воды', 'Насекомые', 'Деревья']) {
       const animals = matches.filter((a) => a.group === group);
       if (!animals.length) continue;
       const heading = document.createElement('h3');
@@ -186,9 +214,9 @@ export class AnimalGuide {
       for (const animal of animals) {
         const button = document.createElement('button');
         button.textContent = animal.name;
-        button.classList.toggle('active', animal === this.animal);
-        if (animal === this.animal) button.setAttribute('aria-current', 'page');
-        button.addEventListener('click', () => this.selectAnimal(animal));
+        button.classList.toggle('active', animal === this.entry);
+        if (animal === this.entry) button.setAttribute('aria-current', 'page');
+        button.addEventListener('click', () => this.selectEntry(animal));
         this.list.append(button);
       }
     }
@@ -201,16 +229,21 @@ export class AnimalGuide {
   }
 
   private renderPage(): void {
-    const a = this.animal;
+    const a = this.entry;
+    const plant = isPlant(a);
     this.root.querySelector('h2')!.textContent = a.name;
     this.root.querySelector('.ag-kicker')!.textContent = a.group;
     this.root.querySelector('.ag-latin')!.textContent = a.latin;
     this.root.querySelector('.ag-pagination span')!.textContent =
-      `${String(GUIDE_ANIMALS.indexOf(a) + 1).padStart(2, '0')} / ${GUIDE_ANIMALS.length}`;
+      `${String(GUIDE_ALL.indexOf(a) + 1).padStart(2, '0')} / ${GUIDE_ALL.length}`;
     this.root.querySelector('.ag-description')!.textContent = a.description;
     this.root.querySelector('.ag-habitat p')!.textContent = a.habitat;
     this.renderFieldNotes();
-    this.root.querySelector('.ag-motion-title span')!.textContent = `${a.animations.length} анимаций`;
+    this.root.querySelector('.ag-motion-title h3')!.textContent = plant ? 'Стадии роста' : 'Движения и повадки';
+    this.root.querySelector('.ag-motion-title span')!.textContent = plant
+      ? `${a.stages.length} стадий · саженец до взрослой сосны`
+      : `${a.animations.length} анимаций`;
+    this.root.querySelector<HTMLElement>('.ag-sequence')!.hidden = plant;
     const variants = this.root.querySelector<HTMLElement>('.ag-variants')!;
     variants.hidden = !a.variants;
     const select = variants.querySelector('select')!;
@@ -224,18 +257,35 @@ export class AnimalGuide {
     );
     const animations = this.root.querySelector('.ag-animations')!;
     animations.replaceChildren();
-    a.animations.forEach((state) => {
-      const button = document.createElement('button');
-      button.textContent = state.name;
-      button.dataset.state = state.id;
-      button.addEventListener('click', () => {
-        this.state = state;
-        this.elapsed = 0;
-        this.updateAnimations();
-        this.draw();
+    if (plant) {
+      a.stages.forEach((stage) => {
+        const button = document.createElement('button');
+        button.textContent = stage.name;
+        button.dataset.state = stage.id;
+        button.addEventListener('click', () => {
+          // Кнопка стадии ставит сосну на её середину; «Взрослая» — в полный рост.
+          this.playing = false;
+          this.growth = stage.to >= 1 ? 1 : (stage.from + stage.to) / 2;
+          this.updatePlay();
+          this.updateAnimations();
+          this.draw();
+        });
+        animations.append(button);
       });
-      animations.append(button);
-    });
+    } else {
+      a.animations.forEach((state) => {
+        const button = document.createElement('button');
+        button.textContent = state.name;
+        button.dataset.state = state.id;
+        button.addEventListener('click', () => {
+          this.state = state;
+          this.elapsed = 0;
+          this.updateAnimations();
+          this.draw();
+        });
+        animations.append(button);
+      });
+    }
     this.renderIndex();
     this.updateAnimations();
     this.updatePlay();
@@ -243,10 +293,11 @@ export class AnimalGuide {
   }
 
   private renderFieldNotes(): void {
+    const entry = this.entry;
     const facts = this.root.querySelector<HTMLDListElement>('.ag-facts')!;
-    facts.hidden = !this.animal.facts?.length;
+    facts.hidden = !entry.facts?.length;
     facts.replaceChildren();
-    for (const fact of this.animal.facts ?? []) {
+    for (const fact of entry.facts ?? []) {
       const item = document.createElement('div');
       const label = document.createElement('dt');
       label.textContent = fact.label;
@@ -257,9 +308,9 @@ export class AnimalGuide {
     }
     const section = this.root.querySelector<HTMLElement>('.ag-observations')!;
     const list = this.root.querySelector<HTMLElement>('.ag-observation-list')!;
-    section.hidden = !this.animal.observations?.length;
+    section.hidden = !('observations' in entry) ? true : !entry.observations?.length;
     list.replaceChildren();
-    for (const observation of this.animal.observations ?? []) {
+    for (const observation of 'observations' in entry ? (entry.observations ?? []) : []) {
       const entry = chronicleText(observation.event);
       const src = CHRONICLE_IMAGES[observation.event];
       if (!entry?.milestone || !src) continue;
@@ -283,14 +334,30 @@ export class AnimalGuide {
     }
   }
 
+  /** Текущая стадия роста — для кнопок, подписи и ползунка. */
+  private currentStage(): GuideStage {
+    const plant = this.entry as GuidePlant;
+    return plant.stages.find((s) => this.growth < s.to) ?? plant.stages[plant.stages.length - 1];
+  }
+
   private updateAnimations(): void {
+    const plant = isPlant(this.entry);
+    const activeId = plant ? this.currentStage().id : this.state.id;
     this.root.querySelectorAll<HTMLButtonElement>('[data-state]').forEach((b) => {
-      const active = b.dataset.state === this.state.id;
+      const active = b.dataset.state === activeId;
       b.classList.toggle('active', active);
       b.setAttribute('aria-pressed', String(active));
     });
-    this.root.querySelector('.ag-stage-caption')!.textContent = this.state.name;
-    this.canvas.setAttribute('aria-label', `${this.animal.name}: ${this.state.name}`);
+    if (plant) {
+      const stage = this.currentStage();
+      const day = Math.min(3, Math.floor(this.growth * 3) + 1);
+      this.root.querySelector('.ag-stage-caption')!.textContent =
+        this.growth >= 1 ? `${stage.name} · полный рост` : `${stage.name} · день ${day} из 3`;
+      this.canvas.setAttribute('aria-label', `${this.entry.name}: ${stage.name}`);
+    } else {
+      this.root.querySelector('.ag-stage-caption')!.textContent = this.state.name;
+      this.canvas.setAttribute('aria-label', `${this.entry.name}: ${this.state.name}`);
+    }
   }
   private updatePlay(): void {
     const button = this.root.querySelector<HTMLButtonElement>('.ag-play')!;
@@ -310,15 +377,17 @@ export class AnimalGuide {
     const ctx = this.canvas.getContext('2d')!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
-    const a = this.animal;
-    const water = a.water || this.state.id === 'swim';
-    this.root.querySelector('.ag-stage')!.classList.toggle('night', !!a.night);
+    const a = this.entry;
+    const plant = isPlant(a);
+    const night = plant ? false : !!a.night;
+    const water = !plant && (a.water || this.state.id === 'swim');
+    this.root.querySelector('.ag-stage')!.classList.toggle('night', night);
     const ground = ctx.createRadialGradient(width / 2, height * 0.76, 2, width / 2, height * 0.76, width * 0.43);
-    ground.addColorStop(0, a.night ? '#99bc8020' : water ? '#91b9b64a' : '#9da77430');
+    ground.addColorStop(0, night ? '#99bc8020' : water ? '#91b9b64a' : '#9da77430');
     ground.addColorStop(1, '#c0c9a000');
     ctx.fillStyle = ground;
     ctx.fillRect(0, 0, width, height);
-    ctx.strokeStyle = a.night ? '#a4bc8640' : water ? '#739b9640' : '#92977140';
+    ctx.strokeStyle = night ? '#a4bc8640' : water ? '#739b9640' : '#92977140';
     ctx.lineWidth = 0.8;
     const baseline = height * a.baseline;
     ctx.beginPath();
@@ -328,12 +397,16 @@ export class AnimalGuide {
     ctx.translate(width / 2, baseline);
     const scale = a.scale * Math.min(width / 580, height / 300);
     ctx.scale(scale * this.facing, scale);
-    // The simulation's hide state is mostly positional; illustrate the deeper water.
-    if (a.id === 'koi' && this.state.id === 'hide') ctx.globalAlpha = 0.4 + Math.cos(this.elapsed * 0.001) * 0.15;
-    a.draw(ctx, a.night ? this.night : this.day, this.state.id, this.elapsed, this.variant);
+    if (plant) {
+      a.draw(ctx, night ? this.night : this.day, this.growth, this.variant, this.elapsed);
+    } else {
+      // The simulation's hide state is mostly positional; illustrate the deeper water.
+      if (a.id === 'koi' && this.state.id === 'hide') ctx.globalAlpha = 0.4 + Math.cos(this.elapsed * 0.001) * 0.15;
+      a.draw(ctx, night ? this.night : this.day, this.state.id, this.elapsed, this.variant);
+    }
     ctx.restore();
     this.root.querySelector<HTMLInputElement>('.ag-timeline')!.value = String(
-      ((this.elapsed % this.state.duration) / this.state.duration) * 1000,
+      plant ? this.growth * 1000 : ((this.elapsed % this.state.duration) / this.state.duration) * 1000,
     );
   }
 }

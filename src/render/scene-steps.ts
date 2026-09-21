@@ -431,17 +431,19 @@ export function drawGhost(
         seed: 777,
       };
       const vector = windField?.(gh.tx + item.w / 2, gh.ty + item.h / 2, windLag(gh.itemId));
+      // Сосна сажается саженцем — призрак показывает то, что реально появится.
+      const ghostG = gh.itemId === 'pine' ? 0 : 1;
       drawObject({
         ctx,
         x: p.x,
         y: p.y,
         atm,
-        g: 1,
+        g: ghostG,
         obj: fake,
         time,
         wind: vector?.screenX ?? wind,
         windVector: vector,
-        plantPose: vector ? plantPose(gh.itemId, 777, 1, time, vector, simpleWind) : undefined,
+        plantPose: vector ? plantPose(gh.itemId, 777, ghostG, time, vector, simpleWind) : undefined,
         alpha: gh.valid ? 0.62 : 0.3,
       });
     }

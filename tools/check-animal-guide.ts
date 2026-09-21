@@ -5,6 +5,7 @@ import { writeFileSync } from 'node:fs';
 import { register } from 'node:module';
 import { JSDOM } from 'jsdom';
 import { GUIDE_ANIMALS } from '../src/ui/animalGuideData';
+import { GUIDE_TREES } from '../src/ui/plantGuideData';
 import { buildAtmosphere } from '../src/world/palette';
 import { computeTime } from '../src/core/clock';
 import { advanceAnimal, easePose } from '../src/world/animalMotion';
@@ -67,6 +68,36 @@ for (const animal of GUIDE_ANIMALS) {
   }
 }
 console.log(`ок: ${GUIDE_ANIMALS.length} страниц, ${poses} кадров без ошибок, холст сбалансирован`);
+
+// Страницы деревьев: саженец → взрослая сосна во всех формах; те же отрисовщики, что в саду.
+let plantPoses = 0;
+for (const plant of GUIDE_TREES) {
+  assert.ok(plant.description && plant.habitat && plant.stages.length >= 3 && plant.variants?.length);
+  for (const growth of [0.02, 0.15, 0.35, 0.6, 0.85, 1])
+    for (let variant = 0; variant < (plant.variants?.length ?? 1); variant++) {
+      ctx.resetTransform();
+      ctx.clearRect(0, 0, 580, 300);
+      ctx.save();
+      ctx.translate(290, plant.baseline * 300);
+      ctx.scale(plant.scale, plant.scale);
+      const before = ctx.getTransform();
+      plant.draw(ctx as unknown as CanvasRenderingContext2D, day, growth, variant, 1000);
+      assert.deepEqual(ctx.getTransform(), before, `${plant.id}: leaked canvas transform`);
+      ctx.restore();
+      const pixels = ctx.getImageData(0, 0, 580, 300).data;
+      assert.ok(
+        pixels.some((v, i) => i % 4 === 3 && v > 0),
+        `${plant.id} g=${growth} v=${variant}: пусто`,
+      );
+      for (let x = 0; x < 580; x++)
+        assert.ok(
+          pixels[x * 4 + 3] < 20 && pixels[(299 * 580 + x) * 4 + 3] < 20,
+          `${plant.id} g=${growth} v=${variant}: обрезано по вертикали`,
+        );
+      plantPoses++;
+    }
+}
+console.log(`ок: ${GUIDE_TREES.length} страница деревьев, ${plantPoses} кадров роста без ошибок`);
 
 const makeDeer = (): Deer => ({
   tx: 0,
@@ -215,7 +246,7 @@ opener.focus();
 guide.setOpen(true);
 assert.ok(guide.isOpen);
 assert.equal(frames.size, 1);
-assert.equal(w.document.querySelectorAll('.ag-list button').length, GUIDE_ANIMALS.length);
+assert.equal(w.document.querySelectorAll('.ag-list button').length, GUIDE_ANIMALS.length + GUIDE_TREES.length);
 const search = w.document.querySelector<HTMLInputElement>('input[type=search]')!;
 search.value = 'череп';
 search.dispatchEvent(new w.Event('input'));
@@ -262,6 +293,28 @@ search.dispatchEvent(new w.Event('input'));
 assert.equal(w.document.querySelectorAll('.ag-list button').length, 1);
 (w.document.querySelector('.ag-list button') as HTMLButtonElement).click();
 assert.equal(w.document.querySelectorAll('.ag-observation img').length, 5);
+// Страница сосны: стадии роста вместо анимаций, пять форм, поле факты.
+search.value = 'сосна';
+search.dispatchEvent(new w.Event('input'));
+assert.equal(w.document.querySelectorAll('.ag-list button').length, 1);
+(w.document.querySelector('.ag-list button') as HTMLButtonElement).click();
+assert.equal(w.document.querySelector('.ag-page h2')!.textContent, 'Сосна');
+assert.equal(w.document.querySelectorAll('[data-state]').length, 5);
+assert.equal(w.document.querySelectorAll('.ag-variants option').length, 5);
+assert.equal(w.document.querySelectorAll('.ag-facts dt').length, 3);
+assert.ok(w.document.querySelector<HTMLElement>('.ag-observations')!.hidden);
+assert.ok(w.document.querySelector<HTMLElement>('.ag-sequence')!.hidden);
+(w.document.querySelector('[data-state=mature]') as HTMLButtonElement).click();
+assert.equal(w.document.querySelector('[data-state=mature]')!.getAttribute('aria-pressed'), 'true');
+assert.ok(w.document.querySelector('.ag-stage-caption')!.textContent!.includes('полный рост'));
+(w.document.querySelector('[data-state=sprout]') as HTMLButtonElement).click();
+assert.equal(w.document.querySelector('[data-state=sprout]')!.getAttribute('aria-pressed'), 'true');
+assert.ok(w.document.querySelector('.ag-stage-caption')!.textContent!.includes('Саженец'));
+const plantVariant = w.document.querySelector<HTMLSelectElement>('.ag-variants select')!;
+plantVariant.value = '4';
+plantVariant.dispatchEvent(new w.Event('change'));
+assert.equal(plantVariant.value, '4');
+assert.equal(JSON.stringify(pondWorld.toJSON()), guideSave, 'страница сосны не трогает сохранённый мир');
 search.value = 'несуществующий';
 search.dispatchEvent(new w.Event('input'));
 assert.ok(w.document.querySelector('.ag-empty'));

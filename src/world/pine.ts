@@ -1,4 +1,6 @@
 /** Permanent pine habit. Derived only from the existing object seed; nothing new is saved. */
+import { DAY_MS } from '../core/clock';
+import { GROW_DAY_MS } from '../core/growClock';
 import { clamp01, hash2, lerp } from '../core/rng';
 
 export const PINE_FORMS = ['compact', 'tall', 'windswept', 'umbrella', 'forked'] as const;
@@ -34,6 +36,81 @@ const FORMS: Record<PineForm, [number, number, number, number, number, number, n
 
 export function pineGrowth(g: number): number {
   return lerp(0.2, 1, Math.pow(clamp01(g), 0.7));
+}
+
+// ---- Рост саженца ----
+// Новая сосна сажается саженцем и взрослеет за три игровых дня:
+// сутки вольного сада идут в реальном времени (72 часа), а в растущем
+// саду игровой день короче — три дня укладываются в 15 часов.
+
+/** Игровых дней от саженца до взрослой сосны. */
+export const PINE_GROW_DAYS = 3;
+/** Срок роста в вольном саду, мс реального времени. */
+export const PINE_GROW_MS_FREE = PINE_GROW_DAYS * DAY_MS;
+/** Срок роста в растущем саду, мс реального времени. */
+export const PINE_GROW_MS_GROWING = PINE_GROW_DAYS * GROW_DAY_MS;
+
+/** Стадия роста 0..1 сосны, посаженной саженцем. Старым деревьям всегда 1. */
+export function pineGrowthAt(planted: number, now: number, growingGarden: boolean): number {
+  if (!Number.isFinite(planted) || !Number.isFinite(now)) return 1;
+  const span = growingGarden ? PINE_GROW_MS_GROWING : PINE_GROW_MS_FREE;
+  return clamp01((now - planted) / span);
+}
+
+export interface PineStage {
+  id: string;
+  name: string;
+  /** Границы стадии по росту 0..1. */
+  from: number;
+  to: number;
+  /** Что видно в саду на этой ступени. */
+  note: string;
+}
+
+/** Пять ступеней от саженца до взрослой сосны — те же, что в энциклопедии. */
+export const PINE_STAGES: PineStage[] = [
+  {
+    id: 'sprout',
+    name: 'Саженец',
+    from: 0,
+    to: 0.2,
+    note: 'Тонкий стебель с пучками мягких иголок и почкой на макушке.',
+  },
+  {
+    id: 'first-boughs',
+    name: 'Первые ветви',
+    from: 0.2,
+    to: 0.45,
+    note: 'Нижний ярус ветвей раскрывается, на макушке появляется первая подушечка хвои.',
+  },
+  {
+    id: 'young-pine',
+    name: 'Молодая сосна',
+    from: 0.45,
+    to: 0.7,
+    note: 'Ярусы прибавляются один за другим, крона густеет и начинает набирать характер.',
+  },
+  {
+    id: 'sapling-tree',
+    name: 'Деревце',
+    from: 0.7,
+    to: 0.92,
+    note: 'Ствол крепнет, ветви вытягиваются — силуэт будущей сосны уже угадывается.',
+  },
+  {
+    id: 'mature',
+    name: 'Взрослая сосна',
+    from: 0.92,
+    to: 1,
+    note: 'Полный рост и своя форма: от приземистой до раздвоенной ветром.',
+  },
+];
+
+/** Ступень роста для стадии 0..1. */
+export function pineStageOf(g: number): PineStage {
+  const v = clamp01(g);
+  for (const stage of PINE_STAGES) if (v < stage.to) return stage;
+  return PINE_STAGES[PINE_STAGES.length - 1];
 }
 
 export function pineProfile(seed: number): PineProfile {

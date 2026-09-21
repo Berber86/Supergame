@@ -205,7 +205,17 @@ export const ITEMS: CatalogItem[] = [
     growDays: 7,
     tab: 'trees',
   },
-  { id: 'pine', name: 'Сосна', hint: 'вечная зелень', kind: 'tree', w: 1, h: 1, step: 0.5, growDays: 9, tab: 'trees' },
+  {
+    id: 'pine',
+    name: 'Сосна',
+    hint: 'саженец взрослеет за три дня',
+    kind: 'tree',
+    w: 1,
+    h: 1,
+    step: 0.5,
+    growDays: 3,
+    tab: 'trees',
+  },
   {
     id: 'bamboo',
     name: 'Бамбук',
@@ -1101,7 +1111,7 @@ export const MILESTONES: Record<string, Milestone> = {
   old_tree: {
     id: 'old_tree',
     title: 'Старое дерево',
-    text: 'Одно из ваших деревьев выросло полностью. Это заняло неделю.',
+    text: 'Одно из ваших деревьев выросло полностью. Сосне на это нужно три игровых дня.',
     unlocks: 'Время',
   },
   hundred: {

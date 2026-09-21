@@ -19,6 +19,7 @@ import {
 } from './catalog';
 import { ChronicleEntry, chronicleText, noteChronicle } from './chronicle';
 import { GrowRect, GrowState, growOfferReady, growTick, growZones, inGrowRect } from './grow';
+import { pineGrowthAt } from './pine';
 import { DAY_MS } from '../core/clock';
 import { SAVE_VERSION, parseSave, serializeSave } from './saveFormat';
 import { GroundId, PlacedObject, SaveData, Tile } from './types';
@@ -915,6 +916,9 @@ export class World {
       planted,
       rot,
       seed: Math.floor(Math.random() * 100000),
+      // Сосна сажается саженцем и растёт три игровых дня. Деревья из
+      // старых сохранений и пресетов высажены давно и потому сразу взрослые.
+      ...(type === 'pine' ? { young: 1 as const } : {}),
     };
     this.objects.push(obj);
     this.noteObjectsChanged();
@@ -1104,8 +1108,15 @@ export class World {
     return this.chronicle.some((e) => e.id === id);
   }
 
-  /** Стадия роста 0..1 для объекта — рост убран, всё сажается сразу взрослым. */
-  growth(_o: PlacedObject, _now: number): number {
+  /**
+   * Стадия роста 0..1 для объекта. Всё сажается сразу взрослым — кроме
+   * сосны: новая сосна приходит саженцем и взрослеет за три игровых дня
+   * (72 часа в вольном саду, 15 часов в растущем). Старые деревья —
+   * из прежних сохранений и пресетов — поля «саженец» не имеют и
+   * навсегда остаются в своём выросшем виде.
+   */
+  growth(o: PlacedObject, now: number): number {
+    if (o.type === 'pine' && o.young) return pineGrowthAt(o.planted, now, !!this.grow);
     return 1;
   }
 
@@ -1334,7 +1345,7 @@ export class World {
    * игрок застал снег, остался под дождём, дождался взрослого дерева.
    * Поэтому проверка живёт здесь, а не в местах постройки.
    */
-  observe(_now: number, season: string, night: boolean, raining: boolean): void {
+  observe(now: number, season: string, night: boolean, raining: boolean): void {
     // Круг года: сезоны накапливаются между сессиями
     if (!this.seasonsSeen.has(season)) {
       this.seasonsSeen.add(season);
@@ -1369,8 +1380,9 @@ export class World {
         seenIndoor.add(o.type);
         indoorKinds++;
       }
-      // Рост убран: дерево сразу взрослое, веха даётся за наличие крупного дерева
-      if (!grown && item && item.kind === 'tree') grown = true;
+      // Дерево выросло полностью. Сосна, посаженная саженцем, взрослеет
+      // три игровых дня; остальные деревья готовы сразу.
+      if (!grown && item && item.kind === 'tree' && this.growth(o, now) >= 1) grown = true;
     }
     if (lanterns >= 5) this.checkMilestone('lantern_path');
     if (koi >= 3) this.checkMilestone('koi_pond');
