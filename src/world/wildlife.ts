@@ -29,6 +29,7 @@ import {
 } from './wildlifeMotion';
 import { mouseSpeed, MOUSE_STRIDE, owlAltitude, owlFlight } from './creatureMotion';
 import { advanceAnimal, easePose } from './animalMotion';
+import { findPath } from './paths';
 import { GRID } from '../core/iso';
 import { clamp, lerp, makeRng } from '../core/rng';
 import { TimeState } from '../core/clock';
@@ -152,6 +153,10 @@ export interface Hedgehog {
   born: number;
   stay: number;
   curl: number;
+  /** Промежуточные точки обхода воды; пустая очередь — цель близка. */
+  route?: Vec[] | null;
+  /** Куда пойти, когда текущий прямой отрезок завершится. */
+  next?: Vec | null;
 }
 
 // ---------------- Мышка ----------------
@@ -175,6 +180,65 @@ export interface Mouse {
   panicX: number;
   panicY: number;
   panic: number;
+  /** Промежуточные точки обхода воды; пустая очередь — цель близка. */
+  route?: Vec[] | null;
+  /** Куда пойти, когда текущий прямой отрезок завершится. */
+  next?: Vec | null;
+}
+
+interface Routed {
+  tx: number;
+  ty: number;
+  from: Vec | null;
+  target: Vec | null;
+  phase: number;
+  route?: Vec[] | null;
+  next?: Vec | null;
+}
+
+/**
+ * Маршрут в обход воды: клетки берёт из поиска троп, но идёт по центрам,
+ * последняя точка — точная цель. Нет пути (остров, кромка тумана) —
+ * идёт напрямик, как раньше: вброд лучше, чем никогда.
+ */
+function routeTo(world: World | undefined, a: Routed, to: Vec): void {
+  a.from = { x: a.tx, y: a.ty };
+  a.route = null;
+  a.target = { x: to.x, y: to.y };
+  a.phase = 0;
+  if (!world) return;
+  const path = findPath(world, a.from, to);
+  if (path && path.length > 1) {
+    const wps = path.slice(1).map((c) => ({ x: c.x + 0.5, y: c.y + 0.5 }));
+    wps[wps.length - 1] = { x: to.x, y: to.y };
+    a.route = wps;
+    a.target = a.route.shift()!;
+  }
+}
+
+/**
+ * Сегмент закончился: следующая точка маршрута, отложенная цель или «пришёл».
+ * Возвращает true, если зверёк продолжает идти.
+ */
+function nextSegment(world: World | undefined, a: Routed): boolean {
+  if (a.route && a.route.length) {
+    a.from = { x: a.tx, y: a.ty };
+    a.target = a.route.shift()!;
+    a.phase = 0;
+    return true;
+  }
+  if (a.next) {
+    const to = a.next;
+    a.next = null;
+    routeTo(world, a, to);
+    return true;
+  }
+  return false;
+}
+
+/** Точка входа в лист: снаружи бежим напрямик к кромке, дальше — маршрутом. */
+function clampInner(p: Vec): Vec {
+  return { x: clamp(p.x, 0.5, GRID - 0.5), y: clamp(p.y, 0.5, GRID - 0.5) };
 }
 
 // ---------------- Сова ----------------
@@ -350,8 +414,8 @@ export class Wildlife {
     this.updateMoths(h, inv, t, wx, dt);
     this.updateHeron(h, inv, t, dt, now, threats);
     this.updateDeer(h, inv, t, dt, now, threats, world, wx);
-    this.updateHedgehogs(h, inv, t, dt, now, threats);
-    this.updateMice(h, inv, t, dt, now, threats);
+    this.updateHedgehogs(h, inv, t, dt, now, threats, world);
+    this.updateMice(h, inv, t, dt, now, threats, world);
     this.updateOwls(h, inv, t, dt, now, threats);
     this.updateSquirrels(h, inv, t, dt, now, threats);
     this.updateTurtles(h, inv, t, dt, now, threats, world);
@@ -810,7 +874,15 @@ export class Wildlife {
 
   // ---------------- Ёжик ----------------
 
-  private updateHedgehogs(h: Habitat, inv: Invitation, t: TimeState, dt: number, now: number, threats: Threat[]): void {
+  private updateHedgehogs(
+    h: Habitat,
+    inv: Invitation,
+    t: TimeState,
+    dt: number,
+    now: number,
+    threats: Threat[],
+    world?: World,
+  ): void {
     for (let i = this.hedgehogs.length - 1; i >= 0; i--) {
       const e = this.hedgehogs[i];
       e.timer -= dt;
@@ -823,10 +895,10 @@ export class Wildlife {
         if (rnd() < 0.4) this.pushNote('hedgehog_curl', e.tx, e.ty);
       }
       if (now - e.born > e.stay && e.state !== 'leave' && e.state !== 'curl') {
+        const out = this.exitFrom(e.tx, e.ty);
         e.state = 'leave';
-        e.target = this.exitFrom(e.tx, e.ty);
-        e.from = { x: e.tx, y: e.ty };
-        e.phase = 0;
+        routeTo(world, e, clampInner(out));
+        e.next = out;
       }
       switch (e.state) {
         case 'enter':
@@ -834,6 +906,7 @@ export class Wildlife {
           if (!e.target || (e.roll ?? 0) > 0.08) break;
           advanceAnimal(e, dt, hedgehogSpeed(e.state), HEDGEHOG_STRIDE);
           if (e.phase >= 1) {
+            if (nextSegment(world, e)) break;
             e.state = rnd() < 0.5 ? 'forage' : 'sniff';
             e.timer = 4000 + rnd() * 8000;
           }
@@ -844,9 +917,7 @@ export class Wildlife {
             const r = rnd();
             if (r < 0.45 && h.hedgehogSpots.length) {
               const g = h.hedgehogSpots[Math.floor(rnd() * h.hedgehogSpots.length)];
-              e.from = { x: e.tx, y: e.ty };
-              e.target = { x: g.x, y: g.y };
-              e.phase = 0;
+              routeTo(world, e, { x: g.x, y: g.y });
               e.state = 'walk';
             } else if (r < 0.7) {
               e.state = 'sniff';
@@ -881,7 +952,9 @@ export class Wildlife {
         case 'leave': {
           if (!e.target || (e.roll ?? 0) > 0.08) break;
           advanceAnimal(e, dt, hedgehogSpeed(e.state), HEDGEHOG_STRIDE);
-          if (e.phase >= 1 || e.tx < -4 || e.tx > GRID + 4 || e.ty < -4 || e.ty > GRID + 4) {
+          if (e.tx < -4 || e.tx > GRID + 4 || e.ty < -4 || e.ty > GRID + 4) {
+            this.hedgehogs.splice(i, 1);
+          } else if (e.phase >= 1 && !nextSegment(world, e)) {
             this.hedgehogs.splice(i, 1);
           }
           break;
@@ -906,7 +979,9 @@ export class Wildlife {
       tx: edge.x,
       ty: edge.y,
       from: null,
-      target: { x: spot.x, y: spot.y },
+      target: clampInner(edge),
+      next: { x: spot.x, y: spot.y },
+      route: null,
       state: 'enter',
       timer: 0,
       facing: edge.x < spot.x ? 1 : -1,
@@ -921,7 +996,15 @@ export class Wildlife {
 
   // ---------------- Мышка ----------------
 
-  private updateMice(h: Habitat, inv: Invitation, _t: TimeState, dt: number, now: number, threats: Threat[]): void {
+  private updateMice(
+    h: Habitat,
+    inv: Invitation,
+    _t: TimeState,
+    dt: number,
+    now: number,
+    threats: Threat[],
+    world?: World,
+  ): void {
     for (let i = this.mice.length - 1; i >= 0; i--) {
       const m = this.mice[i];
       m.timer -= dt;
@@ -933,9 +1016,7 @@ export class Wildlife {
         const shelter = this.nearestMouseSpot(h, m.tx, m.ty);
         if (shelter) {
           m.state = 'flee';
-          m.from = { x: m.tx, y: m.ty };
-          m.target = shelter;
-          m.phase = 0;
+          routeTo(world, m, shelter);
           m.panic = 2500;
           m.panicX = danger.x;
           m.panicY = danger.y;
@@ -944,10 +1025,11 @@ export class Wildlife {
         }
       }
       if (now - m.born > m.stay && m.state !== 'leave' && m.state !== 'flee') {
+        const out = this.exitFrom(m.tx, m.ty);
         m.state = 'leave';
-        m.target = this.exitFrom(m.tx, m.ty);
-        m.from = { x: m.tx, y: m.ty };
-        m.phase = 0;
+        // До кромки — маршрутом в обход воды, последний шаг за лист — напрямик
+        routeTo(world, m, clampInner(out));
+        m.next = out;
       }
       switch (m.state) {
         case 'enter':
@@ -955,6 +1037,7 @@ export class Wildlife {
           if (!m.target) break;
           advanceAnimal(m, dt, mouseSpeed(m.state), MOUSE_STRIDE);
           if (m.phase >= 1) {
+            if (nextSegment(world, m)) break;
             m.state = rnd() < 0.6 ? 'forage' : 'hide';
             m.timer = m.state === 'forage' ? 3000 + rnd() * 6000 : 2000 + rnd() * 4000;
           }
@@ -965,9 +1048,7 @@ export class Wildlife {
             const r = rnd();
             if (r < 0.5 && h.mouseSpots.length) {
               const g = h.mouseSpots[Math.floor(rnd() * h.mouseSpots.length)];
-              m.from = { x: m.tx, y: m.ty };
-              m.target = { x: g.x, y: g.y };
-              m.phase = 0;
+              routeTo(world, m, { x: g.x, y: g.y });
               m.state = 'walk';
             } else if (r < 0.75) {
               m.state = 'hide';
@@ -990,6 +1071,7 @@ export class Wildlife {
           if (!m.target) break;
           advanceAnimal(m, dt, mouseSpeed(m.state), MOUSE_STRIDE);
           if (m.phase >= 1) {
+            if (nextSegment(world, m)) break;
             m.state = 'hide';
             m.timer = 3000 + rnd() * 7000;
             m.panic = 0;
@@ -999,7 +1081,9 @@ export class Wildlife {
         case 'leave': {
           if (!m.target) break;
           advanceAnimal(m, dt, mouseSpeed(m.state), MOUSE_STRIDE);
-          if (m.phase >= 1 || m.tx < -4 || m.tx > GRID + 4 || m.ty < -4 || m.ty > GRID + 4) {
+          if (m.tx < -4 || m.tx > GRID + 4 || m.ty < -4 || m.ty > GRID + 4) {
+            this.mice.splice(i, 1);
+          } else if (m.phase >= 1 && !nextSegment(world, m)) {
             this.mice.splice(i, 1);
           }
           break;
@@ -1019,7 +1103,10 @@ export class Wildlife {
       tx: edge.x,
       ty: edge.y,
       from: null,
-      target: { x: spot.x, y: spot.y },
+      // До кромки листа напрямик, оттуда к укрытию — маршрутом в обход воды
+      target: clampInner(edge),
+      next: { x: spot.x, y: spot.y },
+      route: null,
       state: 'enter',
       timer: 0,
       facing: edge.x < spot.x ? 1 : -1,
