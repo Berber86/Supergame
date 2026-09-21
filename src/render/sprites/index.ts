@@ -50,6 +50,9 @@ import {
   drawWell,
   drawGardenBench,
   drawWoodpile,
+  drawNestbox,
+  drawHammock,
+  drawMatatabi,
 } from './decor';
 import {
   drawTable,
@@ -144,6 +147,9 @@ const DRAWERS: Record<string, Drawer> = {
   well: drawWell,
   garden_bench: drawGardenBench,
   woodpile: drawWoodpile,
+  nestbox: drawNestbox,
+  hammock: drawHammock,
+  matatabi: drawMatatabi,
 };
 
 /**

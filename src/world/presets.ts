@@ -172,6 +172,7 @@ const dvor: Preset = {
     world.place('fence_stone', 5, 12, 0, old);
     world.place('fence_stone', 7, 12, 0, old);
     world.place('moss_log', 14, 13, 1, old);
+    world.place('nestbox', 15, 5, 0, old);
     // южная пустошь — территория вдвое меньше карты
     world.place('pine', 6, 18, 0, old);
     world.place('maple', 12, 20, 0, old);
@@ -246,6 +247,7 @@ const zavod: Preset = {
     world.place('hedge', 6, 14, 0, old);
     world.place('garden_bench', 10, 16, 0, old);
     world.place('jizo', 10, 7, 0, old);
+    world.place('hammock', 8, 13, 1, old);
     scatter(world, old, 3, 16, 18, 10, 9);
   },
 };
@@ -391,6 +393,7 @@ const klyuch: Preset = {
     world.place('koi', 14, 18, 0, old);
     world.place('garden_bench', 9, 11, 0, old);
     world.place('jizo', 17, 12, 0, old);
+    world.place('nestbox', 6, 10, 0, old);
   },
 };
 
@@ -442,6 +445,7 @@ const kare: Preset = {
     world.place('moss_log', 13, 17, 1, old);
     world.place('stump', 7, 17, 0, old);
     world.place('mushrooms', 8, 17.5, 0, old);
+    world.place('matatabi', 12, 17, 0, old);
   },
 };
 
@@ -478,6 +482,7 @@ const wild: Preset = {
     world.place('stump', 7.5, 10, 0, old);
     world.place('moss_log', 17, 8, 0, old);
     world.place('mushrooms', 11.5, 15.5, 0, old);
+    world.place('matatabi', 10, 12, 0, old);
     scatter(world, old, 6, 7, 14, 12, 33);
   },
 };
@@ -552,6 +557,8 @@ const sad: Preset = {
     world.place('fence_wood', 11, 6, 1, old);
     world.place('fence_wood', 11, 8, 1, old);
     world.place('well', 14, 18, 0, old);
+    world.place('nestbox', 18, 4, 0, old);
+    world.place('hammock', 12, 16, 0, old);
     world.place('woodpile', 9, 19, 0, old);
     world.place('pine', 4, 14, 0, old);
     world.place('maple', 6, 20, 0, old);

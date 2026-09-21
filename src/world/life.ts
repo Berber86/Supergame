@@ -487,7 +487,7 @@ export class Life {
   // ---------------- Коты ----------------
 
   private updateCats(world: World, t: TimeState, dt: number, now: number, wx: WeatherState | null): void {
-    const cushions = findObjects(world, ['cushion']);
+    const cushions = findObjects(world, ['cushion', 'hammock', 'matatabi']);
     const all = this.cats.concat(this.guests);
     this.catCompany.update(
       world,

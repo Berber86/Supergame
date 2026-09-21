@@ -194,7 +194,10 @@ export function scanHabitat(world: World, bounds?: { x: number; y: number; w: nu
       case 'birdbath':
         h.baths.push(c);
         break;
+      // Гамак и мататаби — кошачьи магниты: коты дремлют и трутся.
       case 'cushion':
+      case 'hammock':
+      case 'matatabi':
         h.cushions.push(c);
         break;
       case 'bowl':

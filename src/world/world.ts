@@ -369,6 +369,9 @@ export class World {
     this.place('fence_wood', 10, 11, 1, old);
     this.place('jizo', 12, 8, 0, old);
     this.place('garden_bench', 16, 9, 0, old);
+    this.place('nestbox', 21, 6, 0, old);
+    this.place('hammock', 1.5, 11, 1, old);
+    this.place('matatabi', 7.5, 8, 0, old);
 
     // Мостик через залив
     this.place('bridge', 17, 10, 0, old);

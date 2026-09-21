@@ -468,3 +468,186 @@ export const drawWoodpile: Drawer = (d) => {
     ctx.stroke();
   }
 };
+
+/** Скворечник на столбике; весной синицы таскают подстилку. */
+export const drawNestbox: Drawer = (d) => {
+  const { ctx, atm, obj } = d;
+  shadowUnder(d, 7, 4, 1);
+  const wood = litc({ r: 148, g: 116, b: 82 }, atm);
+  const woodDark = litc(BARK_DARK, atm);
+  const roof = litc({ r: 104, g: 96, b: 84 }, atm);
+  const snow = winterYear(atm.time.now).snow;
+  // столбик
+  ctx.fillStyle = css(woodDark, 0.95);
+  ctx.fillRect(d.x - 1.4, d.y - 26, 2.8, 26);
+  // домик
+  ctx.fillStyle = css(wood, 0.96);
+  ctx.fillRect(d.x - 6, d.y - 38, 12, 12);
+  // крыша
+  ctx.fillStyle = css(roof, 0.96);
+  ctx.beginPath();
+  ctx.moveTo(d.x - 8, d.y - 38);
+  ctx.lineTo(d.x, d.y - 43);
+  ctx.lineTo(d.x + 8, d.y - 38);
+  ctx.closePath();
+  ctx.fill();
+  // леток
+  ctx.fillStyle = css({ r: 36, g: 30, b: 26 }, 0.95);
+  ctx.beginPath();
+  ctx.arc(d.x, d.y - 32, 2.6, 0, Math.PI * 2);
+  ctx.fill();
+  // шесток
+  ctx.strokeStyle = css(woodDark, 0.9);
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(d.x, d.y - 28.6);
+  ctx.lineTo(d.x, d.y - 26.6);
+  ctx.stroke();
+  if (snow > 0.05) {
+    ctx.strokeStyle = css(SNOW, 0.9 * snow);
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(d.x - 6.6, d.y - 38.6);
+    ctx.lineTo(d.x, d.y - 42.4);
+    ctx.lineTo(d.x + 6.6, d.y - 38.6);
+    ctx.stroke();
+  }
+  // синица у летка: приходит волнами, весной с травинкой
+  const season = atm.season;
+  const visit = (season === 'spring' || season === 'summer') && Math.floor((d.time + obj.seed * 977) / 9000) % 3 === 0;
+  if (visit) {
+    const bx = d.x + 1.6,
+      by = d.y - 27.6;
+    ctx.fillStyle = css(litc({ r: 186, g: 196, b: 178 }, atm), 0.95);
+    ctx.beginPath();
+    ctx.ellipse(bx, by, 2.6, 2, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = css(litc({ r: 70, g: 78, b: 86 }, atm), 0.95);
+    ctx.beginPath();
+    ctx.arc(bx - 2, by - 1.6, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = css(litc({ r: 210, g: 190, b: 120 }, atm), 0.9);
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(bx - 3.4, by - 1.8);
+    ctx.lineTo(bx - 5.4, by - 2.6);
+    ctx.stroke();
+  }
+};
+
+/** Гамак на стойках — коты уже знают, чей он. */
+export const drawHammock: Drawer = (d) => {
+  const { ctx, atm, obj } = d;
+  shadowUnder(d, 24, 8, 0.9);
+  const [ux, uy] = dirOf(obj.rot);
+  const woodDark = litc(BARK_DARK, atm);
+  const cloth = litc({ r: 228, g: 218, b: 198 }, atm);
+  const stripe = litc({ r: 176, g: 96, b: 84 }, atm);
+  const snow = winterYear(atm.time.now).snow;
+  const L = 24;
+  // стойки-рогатины
+  for (const t of [-1, 1]) {
+    const x = d.x + ux * L * t,
+      y = d.y + uy * L * t;
+    ctx.strokeStyle = css(woodDark, 0.95);
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(x - 4, y + 1);
+    ctx.lineTo(x, y - 17);
+    ctx.lineTo(x + 4, y + 1);
+    ctx.stroke();
+  }
+  // провисшее полотнище
+  const ax = d.x - ux * (L - 2),
+    ay = d.y - uy * (L - 2) - 14,
+    bx = d.x + ux * (L - 2),
+    by = d.y + uy * (L - 2) - 14;
+  ctx.fillStyle = css(cloth, 0.95);
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  ctx.quadraticCurveTo(d.x, d.y - 6, bx, by);
+  ctx.lineTo(bx, by + 3);
+  ctx.quadraticCurveTo(d.x, d.y - 2.6, ax, ay + 3);
+  ctx.closePath();
+  ctx.fill();
+  // кайма
+  ctx.strokeStyle = css(stripe, 0.8);
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(ax + (bx - ax) * 0.12, ay + 3.4 - uy * 0.4);
+  ctx.quadraticCurveTo(d.x, d.y - 3.6, bx - (bx - ax) * 0.12, by + 3.4);
+  ctx.stroke();
+  // верёвки к стойкам
+  ctx.strokeStyle = css(woodDark, 0.7);
+  ctx.lineWidth = 0.9;
+  for (const t of [-1, 1]) {
+    const x = d.x + ux * (L - 2) * t,
+      y = d.y + uy * (L - 2) * t - 11;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(d.x + ux * L * t, d.y + uy * L * t - 16.4);
+    ctx.stroke();
+  }
+  if (snow > 0.05) {
+    ctx.strokeStyle = css(SNOW, 0.7 * snow);
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(ax + 4, ay + 1.4);
+    ctx.quadraticCurveTo(d.x, d.y - 7.4, bx - 4, by + 1.4);
+    ctx.stroke();
+  }
+};
+
+/** Мататаби — кошачья радость; в начале лета в белых звёздочках. */
+export const drawMatatabi: Drawer = (d) => {
+  const { ctx, atm, g, obj } = d;
+  const scale = 0.4 + 0.6 * Math.pow(g, 0.7);
+  shadowUnder(d, 12 * scale, 6 * scale, 0.8);
+  const leaf = litc({ r: 118, g: 152, b: 96 }, atm);
+  const leafDeep = litc({ r: 92, g: 124, b: 78 }, atm);
+  const snow = winterYear(atm.time.now).snow;
+  if (snow > 0.5) {
+    // зимой — голые прутья под снегом
+    ctx.strokeStyle = css(litc(BARK_DARK, atm), 0.9);
+    ctx.lineWidth = 1.1;
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(d.x + i * 2.4, d.y);
+      ctx.quadraticCurveTo(d.x + i * 3.4, d.y - 7, d.x + i * 4.4, d.y - 11);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = css(SNOW, 0.7 * snow);
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(d.x - 8, d.y - 10);
+    ctx.quadraticCurveTo(d.x, d.y - 13, d.x + 8, d.y - 10);
+    ctx.stroke();
+    return;
+  }
+  // летняя листва двумя мазками
+  for (const [ox, oy, r, c] of [
+    [-4, -8, 8, leafDeep],
+    [3, -10, 9, leaf],
+  ] as const) {
+    ctx.fillStyle = css(c, 0.85);
+    ctx.beginPath();
+    ctx.ellipse(d.x + ox * scale, d.y + oy * scale, r * scale, r * 0.72 * scale, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // белые звёздочки в начале лета и весной
+  if (atm.season === 'summer' || atm.season === 'spring') {
+    ctx.fillStyle = css({ r: 250, g: 250, b: 240 }, 0.95);
+    for (let i = 0; i < 6; i++) {
+      const a = hash1(obj.seed, i) * Math.PI * 2;
+      const r = 3 + hash1(obj.seed, 10 + i) * 6;
+      const x = d.x + Math.cos(a) * r * scale,
+        y = d.y - 9 * scale + Math.sin(a) * r * 0.5 * scale;
+      for (let p = 0; p < 5; p++) {
+        const pa = (p / 5) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.ellipse(x + Math.cos(pa) * 1.4, y + Math.sin(pa) * 1.4, 1.1, 0.7, pa, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+};
