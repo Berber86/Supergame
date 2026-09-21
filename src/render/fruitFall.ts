@@ -14,6 +14,8 @@ export function drawFruitFall(d: DrawCtx, world: World): void {
   if (!frame) return;
   const geom = orchardGeometry(type, d.obj.seed, d.g),
     s = geom.sites[frame.index * 2];
+  // Молодое дерево ещё растит крону — точка падения может отсутствовать.
+  if (!s) return;
   const sc = 0.92 + (scaleJitterOf(d.obj.seed) - 0.88) * 0.5,
     mirror = mirrorOf(d.obj.seed);
   const topX = type === 'ume' ? 9 * geom.scale : type === 'peach' ? 0 : -3 * geom.scale;

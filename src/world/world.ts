@@ -19,7 +19,7 @@ import {
 } from './catalog';
 import { ChronicleEntry, chronicleText, noteChronicle } from './chronicle';
 import { GrowRect, GrowState, growOfferReady, growTick, growZones, inGrowRect } from './grow';
-import { pineGrowthAt } from './pine';
+import { treeGrowthAt } from './treeGrowth';
 import { DAY_MS } from '../core/clock';
 import { SAVE_VERSION, parseSave, serializeSave } from './saveFormat';
 import { GroundId, PlacedObject, SaveData, Tile } from './types';
@@ -916,9 +916,9 @@ export class World {
       planted,
       rot,
       seed: Math.floor(Math.random() * 100000),
-      // Сосна сажается саженцем и растёт три игровых дня. Деревья из
+      // Дерево сажается саженцем и растёт три игровых дня. Деревья из
       // старых сохранений и пресетов высажены давно и потому сразу взрослые.
-      ...(type === 'pine' ? { young: 1 as const } : {}),
+      ...(item.kind === 'tree' ? { young: 1 as const } : {}),
     };
     this.objects.push(obj);
     this.noteObjectsChanged();
@@ -1110,13 +1110,13 @@ export class World {
 
   /**
    * Стадия роста 0..1 для объекта. Всё сажается сразу взрослым — кроме
-   * сосны: новая сосна приходит саженцем и взрослеет за три игровых дня
-   * (72 часа в вольном саду, 15 часов в растущем). Старые деревья —
+   * деревьев: новое дерево приходит саженцем и взрослеет за три игровых
+   * дня (72 часа в вольном саду, 15 часов в растущем). Старые деревья —
    * из прежних сохранений и пресетов — поля «саженец» не имеют и
    * навсегда остаются в своём выросшем виде.
    */
   growth(o: PlacedObject, now: number): number {
-    if (o.type === 'pine' && o.young) return pineGrowthAt(o.planted, now, !!this.grow);
+    if (o.young) return treeGrowthAt(o.planted, now, !!this.grow);
     return 1;
   }
 

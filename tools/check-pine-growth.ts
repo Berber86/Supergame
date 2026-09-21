@@ -46,7 +46,7 @@ assert.equal(pineGrowthAt(now - 7.5 * HOUR, now, true), 0.5);
 assert.equal(pineGrowthAt(now - 15 * HOUR, now, true), 1);
 assert.equal(pineGrowthAt(NaN, now, false), 1, 'битые метки не ломают рост');
 
-// Мир: новая сосна растёт, старые деревья и прочие породы — сразу взрослые.
+// Мир: новая сосна растёт, старые деревья и кусты — сразу взрослые.
 const world = new World();
 world.objects = [];
 world.milestones = new Set();
@@ -58,9 +58,9 @@ assert.ok(Math.abs(world.growth(fresh, now) - 16 / 72) < 1e-9, 'вольный �
 const old = world.place('pine', 14, 12, 0, now - 30 * DAY_MS)!;
 old.young = undefined; // так выглядит сосна из прежнего сохранения
 assert.equal(world.growth(old, now), 1, 'старая сосна навсегда в своём выросшем виде');
-const maple = world.place('maple', 16, 12)!;
-assert.equal(maple.young, undefined);
-assert.equal(world.growth(maple, now), 1, 'остальные породы растут сразу взрослыми');
+const azalea = world.place('azalea', 16, 12)!;
+assert.equal(azalea.young, undefined);
+assert.equal(world.growth(azalea, now), 1, 'кусты саженцами не сажаются');
 
 // Растущий сад: те же посадки взрослеют за 15 часов.
 world.grow = {

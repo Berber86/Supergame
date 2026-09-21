@@ -5,6 +5,12 @@ export const LEAFY_TREES = ['maple', 'sakura', 'ginkgo', 'willow', 'persimmon'] 
 export type LeafyTree = (typeof LEAFY_TREES)[number];
 export const TREE_FORMS = ['spreading', 'upright', 'low', 'leaning'] as const;
 export type TreeForm = (typeof TREE_FORMS)[number];
+export const TREE_FORM_NAMES: Record<TreeForm, string> = {
+  spreading: 'Раскидистое',
+  upright: 'Колонновидное',
+  low: 'Низкое',
+  leaning: 'Наклонное',
+};
 export const LEAFY_BASE: Record<LeafyTree, { height: number; crownW: number; crownH: number; layers: number }> = {
   maple: { height: 92, crownW: 96, crownH: 72, layers: 5 },
   sakura: { height: 96, crownW: 98, crownH: 74, layers: 5 },

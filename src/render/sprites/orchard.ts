@@ -3,7 +3,7 @@ import { ORCHARD_SHAPES, fruitYear, orchardFlowerTint, type FruitTree } from '..
 import { plantYear, leafGroup } from '../../world/phenology';
 import { winterYear } from '../../world/annualEnvironment';
 import { crownWidth } from '../../world/canopy';
-import { hash2, lerp } from '../../core/rng';
+import { clamp01, hash2, lerp } from '../../core/rng';
 import { css, mix, shade, type RGB } from '../../world/palette';
 import { washBlob, taperStroke } from '../paint';
 import { crownSites } from '../crownGeometry';
@@ -25,17 +25,38 @@ const AUTUMN: Record<FruitTree, RGB> = {
 export function orchardGeometry(type: FruitTree, seed: number, g = 1) {
   const shape = ORCHARD_SHAPES[type],
     scale = lerp(0.18, 1, Math.pow(g, 0.72));
+  const mature = clamp01(g) >= 1;
   const width = crownWidth(shape.crownW, seed) * scale;
-  const sites = crownSites(seed, width, shape.crownH * scale, shape.layers).map((s) => {
-    const x = s.x * (type === 'nashi' ? 1.12 : 1),
-      y = s.y * (type === 'nashi' ? 0.76 : 1);
-    return {
-      ...s,
-      x,
-      y,
-      parentX: type === 'peach' ? Math.sign(x) * width * 0.24 : s.parentX,
-      parentY: type === 'peach' ? -18 * scale : s.parentY,
-    };
+  const groups = shape.layers + 2;
+  const all = crownSites(seed, width, shape.crownH * scale, shape.layers);
+  const sites: typeof all = [];
+  for (let i = 0; i < groups; i++) {
+    // Саженец: крона растёт сверху вниз — сперва пучок на макушке,
+    // нижние ветви присоединяются позже. Взрослому дереву видно всё сразу.
+    const topness = i / (groups - 1);
+    const age = mature ? 1 : clamp01((g - (0.08 + 0.5 * topness)) / 0.3);
+    if (age <= 0) continue;
+    const reachK = mature ? 1 : 0.35 + 0.65 * age,
+      leafK = mature ? 1 : 0.3 + 0.7 * age;
+    for (let k = 0; k < 3; k++) {
+      const s = all[i * 3 + k];
+      const x = s.x * (type === 'nashi' ? 1.12 : 1) * reachK,
+        y = s.y * (type === 'nashi' ? 0.76 : 1) * reachK;
+      sites.push({
+        ...s,
+        index: i * 3 + k,
+        x,
+        y,
+        parentX: (type === 'peach' ? Math.sign(x) * width * 0.24 : s.parentX) * reachK,
+        parentY: (type === 'peach' ? -18 * scale : s.parentY) * reachK,
+        rx: s.rx * leafK,
+        ry: s.ry * leafK,
+      });
+    }
+  }
+  // Ветви и листва строятся только по живым площадкам; нумеруем их заново.
+  sites.forEach((s, j) => {
+    s.index = j;
   });
   return { scale, width, height: shape.height * scale, sites };
 }
@@ -153,13 +174,13 @@ export const drawOrchard: Drawer = (d) => {
         ctx.restore();
       }
     }
-    if (state.bud > 0.02) {
+    if (state.bud > 0.02 && d.g >= 0.6) {
       ctx.fillStyle = css(litc(mix(bloomColor, bark, 0.3), atm), state.bud);
       ctx.beginPath();
       ctx.ellipse(p.x, p.y, 1.5 * scale, 2.2 * scale, 0, 0, Math.PI * 2);
       ctx.fill();
     }
-    if (state.bloom > 0.003) {
+    if (state.bloom > 0.003 && d.g >= 0.6) {
       const open = flowerOpenness(atm),
         r = (type === 'yuzu' ? 2.7 : 3.7) * scale * Math.sqrt(state.bloom);
       for (let k = 0; k < (type === 'yuzu' ? 2 : 4); k++) {
@@ -212,15 +233,19 @@ export const drawOrchard: Drawer = (d) => {
         { layers: 2, alpha: snow * 0.73, edge: 0.045, wobble: 0.46 },
       );
     }
+  // Урожай набирает вес лишь у почти взрослого дерева; молодые площадки могут ещё отсутствовать.
+  const fruitG = clamp01((d.g - 0.85) / 0.15);
   for (let i = 0; i < 9; i++) {
-    const s = sites[i * 2],
-      p = point(s),
+    const s = sites[i * 2];
+    if (!s || fruitG <= 0) continue;
+    const p = point(s),
       fruit = fruitYear(type, seed, atm.time.now, i);
     if (fruit.retained < 0.003) continue;
     const r =
       (type === 'ume' ? 3.5 : type === 'nashi' ? 5.3 : type === 'peach' ? 5.5 : 5) *
       scale *
-      (0.22 + 0.78 * Math.sqrt(fruit.size));
+      (0.22 + 0.78 * Math.sqrt(fruit.size)) *
+      fruitG;
     const y = p.y + (type === 'nashi' ? 8 : 7) * scale;
     ctx.save();
     ctx.globalAlpha *= Math.min(1, fruit.retained * 1.5);

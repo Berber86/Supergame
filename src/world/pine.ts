@@ -1,7 +1,6 @@
 /** Permanent pine habit. Derived only from the existing object seed; nothing new is saved. */
-import { DAY_MS } from '../core/clock';
-import { GROW_DAY_MS } from '../core/growClock';
 import { clamp01, hash2, lerp } from '../core/rng';
+import { TREE_GROW_DAYS, TREE_GROW_MS_FREE, TREE_GROW_MS_GROWING, treeGrowthAt, type TreeStage } from './treeGrowth';
 
 export const PINE_FORMS = ['compact', 'tall', 'windswept', 'umbrella', 'forked'] as const;
 export type PineForm = (typeof PINE_FORMS)[number];
@@ -39,33 +38,20 @@ export function pineGrowth(g: number): number {
 }
 
 // ---- Рост саженца ----
-// Новая сосна сажается саженцем и взрослеет за три игровых дня:
-// сутки вольного сада идут в реальном времени (72 часа), а в растущем
-// саду игровой день короче — три дня укладываются в 15 часов.
+// Новая сосна сажается саженцем и взрослеет за три игровых дня —
+// как и всякое дерево (общая модель в treeGrowth.ts).
 
 /** Игровых дней от саженца до взрослой сосны. */
-export const PINE_GROW_DAYS = 3;
+export const PINE_GROW_DAYS = TREE_GROW_DAYS;
 /** Срок роста в вольном саду, мс реального времени. */
-export const PINE_GROW_MS_FREE = PINE_GROW_DAYS * DAY_MS;
+export const PINE_GROW_MS_FREE = TREE_GROW_MS_FREE;
 /** Срок роста в растущем саду, мс реального времени. */
-export const PINE_GROW_MS_GROWING = PINE_GROW_DAYS * GROW_DAY_MS;
+export const PINE_GROW_MS_GROWING = TREE_GROW_MS_GROWING;
 
 /** Стадия роста 0..1 сосны, посаженной саженцем. Старым деревьям всегда 1. */
-export function pineGrowthAt(planted: number, now: number, growingGarden: boolean): number {
-  if (!Number.isFinite(planted) || !Number.isFinite(now)) return 1;
-  const span = growingGarden ? PINE_GROW_MS_GROWING : PINE_GROW_MS_FREE;
-  return clamp01((now - planted) / span);
-}
+export const pineGrowthAt = treeGrowthAt;
 
-export interface PineStage {
-  id: string;
-  name: string;
-  /** Границы стадии по росту 0..1. */
-  from: number;
-  to: number;
-  /** Что видно в саду на этой ступени. */
-  note: string;
-}
+export type PineStage = TreeStage;
 
 /** Пять ступеней от саженца до взрослой сосны — те же, что в энциклопедии. */
 export const PINE_STAGES: PineStage[] = [

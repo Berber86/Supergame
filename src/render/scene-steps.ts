@@ -431,8 +431,8 @@ export function drawGhost(
         seed: 777,
       };
       const vector = windField?.(gh.tx + item.w / 2, gh.ty + item.h / 2, windLag(gh.itemId));
-      // Сосна сажается саженцем — призрак показывает то, что реально появится.
-      const ghostG = gh.itemId === 'pine' ? 0 : 1;
+      // Дерево сажается саженцем — призрак показывает то, что реально появится.
+      const ghostG = item.kind === 'tree' ? 0 : 1;
       drawObject({
         ctx,
         x: p.x,

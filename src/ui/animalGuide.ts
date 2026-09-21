@@ -241,7 +241,7 @@ export class AnimalGuide {
     this.renderFieldNotes();
     this.root.querySelector('.ag-motion-title h3')!.textContent = plant ? 'Стадии роста' : 'Движения и повадки';
     this.root.querySelector('.ag-motion-title span')!.textContent = plant
-      ? `${a.stages.length} стадий · саженец до взрослой сосны`
+      ? `${a.stages.length} стадий · саженец до взрослого дерева`
       : `${a.animations.length} анимаций`;
     this.root.querySelector<HTMLElement>('.ag-sequence')!.hidden = plant;
     const variants = this.root.querySelector<HTMLElement>('.ag-variants')!;
