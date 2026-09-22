@@ -28,6 +28,7 @@ import { drawCost, drawObject, drawObjectShadow } from './sprites';
 import { cacheable, cachedGrowth, drawCached } from './spriteCache';
 import { drawBird, drawButterfly, drawCat } from './creatures';
 import { drawDragonfly, drawFrog } from './residents';
+import { drawDuckBody } from './pondAnimals';
 import {
   drawBee,
   drawDeer,
@@ -930,15 +931,37 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
 export function drawAnimalReflections(ctx: Ctx, world: World, atm: Atmosphere, time: number, opts: ObjectsOpts): void {
   if (!opts.life) return;
   // Shadows are lighting on the shore, not part of an animal's reflected body.
-  const entries = animalEntries(ctx, world, { ...atm, shadowAmount: 0, exposure: atm.exposure * 0.55 }, time, opts);
-  if (!entries.length) return;
-  entries.sort((a, b) => a.depth - b.depth);
+  const dim = { ...atm, shadowAmount: 0, exposure: atm.exposure * 0.55 };
+  const entries = animalEntries(ctx, world, dim, time, opts);
+  // Утки идут в собственном проходе (поверх воды, под бликами), поэтому в
+  // общем списке животных их нет — отражение собираем отдельно.
+  const duckEntries: AnimalEntry[] = [];
+  // На общем плане сама утка не рисуется (см. проход объектов) —
+  // отражение без тела было бы призраком.
+  if (opts.zoom >= 0.42) {
+    for (const d of opts.life.ducks) {
+      const tile = world.at(Math.floor(d.tx), Math.floor(d.ty));
+      if (!tile?.water) continue;
+      const lvl = tile.level - 0.04;
+      const p = isoToScreen(d.tx, d.ty, lvl);
+      duckEntries.push({
+        tx: d.tx,
+        ty: d.ty,
+        level: lvl,
+        depth: (d.tx + d.ty) * 100 + lvl * 20 + 7,
+        draw: () => drawDuckBody(ctx, d, p.x, p.y, dim, time),
+      });
+    }
+  }
+  const all = duckEntries.length ? entries.concat(duckEntries) : entries;
+  if (!all.length) return;
+  all.sort((a, b) => a.depth - b.depth);
   for (const surface of waterSurfaces(world)) {
     const { minX, maxX, minY, maxY } = waterSurfaceBounds(surface);
     ctx.save();
     waterSurfacePath(ctx, surface);
     ctx.clip('evenodd');
-    for (const entry of entries) {
+    for (const entry of all) {
       if (surface.level > entry.level + 0.3) continue;
       const plane = isoToScreen(entry.tx, entry.ty, surface.level - 0.26);
       const base = isoToScreen(entry.tx, entry.ty, entry.level);
