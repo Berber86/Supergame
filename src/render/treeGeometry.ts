@@ -23,6 +23,7 @@ export function treeGeometry(profile: TreeProfile, seed: number, g: number, x = 
   };
   const sites: CrownSite[] = [];
   const groups = profile.layers + 2;
+  const mature = clamp01(g) >= 1;
   for (let i = 0; i < groups; i++) {
     const u = i / (groups - 1),
       roll = hash2(seed, i, 3371);
@@ -33,22 +34,34 @@ export function treeGeometry(profile: TreeProfile, seed: number, g: number, x = 
     const px = upright ? (i % 2 ? -1 : 1) * cw * (0.12 + taper * 0.27) : Math.cos(angle) * cw * (0.32 + roll * 0.13);
     const py = upright ? ch * (-0.54 + u * 0.93) : ch * (-0.2 + Math.sin(angle) * 0.27);
     const breadth = upright ? 0.74 + taper * 0.26 : 1;
+    // Саженец: крона растёт сверху вниз — сперва пучок листвы на макушке,
+    // нижние ветви присоединяются позже. Взрослому дереву видно всё сразу.
+    const topness = clamp01((py / ch + 0.55) / 0.95);
+    const age = mature ? 1 : clamp01((g - (0.08 + 0.5 * topness)) / 0.3);
+    if (age <= 0) continue;
+    const reachK = mature ? 1 : 0.35 + 0.65 * age,
+      leafK = mature ? 1 : 0.3 + 0.7 * age;
     for (let k = 0; k < 3; k++) {
       const index = i * 3 + k,
         a = (k / 3) * Math.PI * 2 + hash2(seed, index, 3373);
-      const dx = Math.cos(a) * cw * (0.07 + hash2(seed, index, 3389) * 0.045);
-      const dy = Math.sin(a) * ch * (0.08 + hash2(seed, index, 3391) * 0.06);
+      const dx = Math.cos(a) * cw * (0.07 + hash2(seed, index, 3389) * 0.045) * reachK;
+      const dy = Math.sin(a) * ch * (0.08 + hash2(seed, index, 3391) * 0.06) * reachK;
       sites.push({
         index,
-        parentX: px * 0.7,
-        parentY: py * 0.7 + 4 * scale,
-        x: px + dx,
-        y: py + dy,
-        rx: cw * (0.23 + hash2(seed, index, 3407) * 0.075) * breadth,
-        ry: ch * (0.23 + hash2(seed, index, 3413) * 0.07),
+        parentX: px * 0.7 * reachK,
+        parentY: py * 0.7 * reachK + 4 * scale,
+        x: px * reachK + dx,
+        y: py * reachK + dy,
+        rx: cw * (0.23 + hash2(seed, index, 3407) * 0.075) * breadth * leafK,
+        ry: ch * (0.23 + hash2(seed, index, 3413) * 0.07) * leafK,
       });
     }
   }
+  // Скелет ветвей строится только по живым площадкам; нумеруем их заново,
+  // чтобы ветви, листва и серёжки ивы всегда сходились в одни узлы.
+  sites.forEach((site, j) => {
+    site.index = j;
+  });
   const skeleton = branchSkeleton(profile.type, seed, trunk, sites, scale, sway, profile.branchBase);
   // Real pendent shoots, shared by bare wood and their narrow leaf pairs. Their
   // endpoints stay above the soil even on the low/upright seeded silhouettes.

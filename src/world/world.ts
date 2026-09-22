@@ -19,7 +19,8 @@ import {
 } from './catalog';
 import { ChronicleEntry, chronicleText, noteChronicle } from './chronicle';
 import { GrowRect, GrowState, growOfferReady, growTick, growZones, inGrowRect } from './grow';
-import { DAY_MS } from '../core/clock';
+import { treeGrowthAt } from './treeGrowth';
+import { computeTime } from '../core/clock';
 import { SAVE_VERSION, parseSave, serializeSave } from './saveFormat';
 import { GroundId, PlacedObject, SaveData, Tile } from './types';
 
@@ -30,6 +31,16 @@ export interface ChronicleToastNote {
   x: number;
   y: number;
   at?: number;
+}
+
+/** Как часто саженец честно пересчитывает свою стадию роста. */
+const GROWTH_RECOMPUTE_MS = 3_600_000; // раз в час
+
+/** Месяц назад по календарю — возраст заложенных садов. */
+function monthsAgo(m: number): number {
+  const d = new Date();
+  d.setMonth(d.getMonth() - m);
+  return d.getTime();
 }
 
 export class World {
@@ -52,6 +63,12 @@ export class World {
   pendingNotes: ChronicleToastNote[] = [];
   /** Границы последней правки земли — для частичной перерисовки. */
   lastTouched: { x0: number; y0: number; x1: number; y1: number } | null = null;
+  /**
+   * Кэш стадии роста саженцев: кадр дёргает рост каждого дерева, но сама
+   * модель пересчитывается не чаще раза в час — глазу час незаметен,
+   * а кадр освобождается от постоянной арифметики по всем деревьям.
+   */
+  private growthCache = new Map<number, { at: number; g: number; growing: boolean }>();
 
   constructor() {
     this.reset();
@@ -84,6 +101,7 @@ export class World {
 
   reset(): void {
     this.born = Date.now();
+    this.timeShift = 0;
     this.tiles = [];
     for (let y = 0; y < GRID; y++) {
       for (let x = 0; x < GRID; x++) {
@@ -94,6 +112,7 @@ export class World {
     }
     this.objects = [];
     this.nextId = 1;
+    this.growthCache.clear();
     // Вольный сад: режима роста нет
     this.grow = null;
     this.growRefused = false;
@@ -109,7 +128,7 @@ export class World {
     // их не заслужил, и вываливать ему пачку наград на первой секунде
     // нечестно. Засчитываем молча то, что уже верно на старте: наградой
     // остаётся только то, что он сделает сам.
-    this.observe(Date.now(), 'spring', false, false);
+    this.observe(Date.now(), computeTime(Date.now()).season, false, false);
     this.pendingMilestones.length = 0;
     this.initUnlocks(true);
   }
@@ -211,176 +230,209 @@ export class World {
 
   /** Начальная композиция: небольшая усадьба, чтобы сцена сразу выглядела как картина. */
   private seedStarterGarden(): void {
-    const now = Date.now();
-    const old = now - DAY_MS * 9; // деревья уже взрослые
+    // Усадьбе около полутора лет: дом и деревья высажены в тот месяц,
+    // когда сад был заложен, и давно выросли.
+    const founded = monthsAgo(16);
+    const old = founded;
+    this.born = founded;
 
-    // Дом в северо-западном углу: татами + веранда вокруг
-    for (let y = 3; y <= 8; y++) {
-      for (let x = 3; x <= 9; x++) {
+    // Дом 5×4 в северо-западном углу: татами + энгава кольцом
+    for (let y = 3; y <= 6; y++) {
+      for (let x = 3; x <= 7; x++) {
         const t = this.at(x, y)!;
         t.ground = 'tatami';
         t.indoor = true;
         t.level = 1;
       }
     }
-    // Энгава — веранда по южной и восточной кромке
-    for (let x = 2; x <= 10; x++) {
-      const t = this.at(x, 9);
-      if (t) {
-        t.ground = 'deck';
-        t.veranda = true;
-        t.level = 1;
+    for (let x = 2; x <= 8; x++)
+      for (const yy of [2, 7]) {
+        const t = this.at(x, yy);
+        if (t && !t.indoor) {
+          t.ground = 'deck';
+          t.veranda = true;
+          t.level = 1;
+        }
       }
-    }
-    for (let y = 2; y <= 9; y++) {
-      const t = this.at(10, y);
-      if (t) {
-        t.ground = 'deck';
-        t.veranda = true;
-        t.level = 1;
+    for (let y = 2; y <= 7; y++)
+      for (const xx of [2, 8]) {
+        const t = this.at(xx, y);
+        if (t && !t.indoor) {
+          t.ground = 'deck';
+          t.veranda = true;
+          t.level = 1;
+        }
       }
-      const t2 = this.at(2, y);
-      if (t2) {
-        t2.ground = 'deck';
-        t2.veranda = true;
-        t2.level = 1;
-      }
-    }
-    for (let x = 2; x <= 10; x++) {
-      const t = this.at(x, 2);
-      if (t) {
-        t.ground = 'deck';
-        t.veranda = true;
-        t.level = 1;
-      }
-    }
 
-    // Пруд на юго-востоке
-    this.applyWaterBlock(14, 12, 6, 5);
-    this.applyWaterBlock(12, 15, 3, 3);
+    // Пруд на юго-востоке с заливом у каменистого мыса
+    this.applyWaterBlock(14, 11, 6, 5);
+    this.applyWaterBlock(12, 14, 3, 3);
+
+    // Широкая восточная терраса — смотровая площадка на луг
+    for (let y = 2; y <= 7; y++)
+      for (let x = 9; x <= 10; x++) {
+        const t = this.at(x, y);
+        if (t && !t.indoor) {
+          t.ground = 'deck';
+          t.veranda = true;
+          t.level = 1;
+        }
+      }
 
     // Холм на северо-востоке
     this.applyHill(18, 3, 4, 4, 1);
     this.applyHill(19, 4, 2, 2, 1);
 
-    // Гравийный сад перед верандой
-    for (let y = 11; y <= 14; y++) {
-      for (let x = 3; x <= 8; x++) {
+    // Гравийный дворик перед верандой
+    for (let y = 9; y <= 12; y++) {
+      for (let x = 3; x <= 9; x++) {
         const t = this.at(x, y);
         if (t && !t.water) t.ground = 'gravel';
       }
     }
 
-    // Дорожка
+    // Дорожка: веранда → мостик → беседка
     const path: [number, number][] = [
-      [11, 9],
+      [9, 8],
+      [10, 9],
       [11, 10],
-      [12, 11],
-      [13, 11],
-      [14, 11],
-      [15, 10],
-      [16, 10],
-      [17, 9],
-      [17, 8],
-      [18, 7],
+      [12, 10],
+      [13, 10],
+      [18, 16],
+      [19, 17],
+      [20, 17],
+      [21, 18],
+      [21, 19],
+      [22, 20],
     ];
     for (const [x, y] of path) {
       const t = this.at(x, y);
       if (t && !t.water) t.ground = 'stone';
     }
 
-    // Деревья
+    // Деревья: север — хвоя и цвет, юг — роща
     const trees: [string, number, number][] = [
-      ['sakura', 13.5, 6.5],
-      ['sakura', 16, 5],
-      ['maple', 20.5, 9.5],
-      ['maple', 21.5, 14],
-      ['pine', 19, 3.5],
-      ['pine', 6, 17.5],
-      ['willow', 12.5, 13.5],
-      ['ginkgo', 17.5, 17],
-      ['bamboo', 22.5, 5.5],
-      ['bamboo', 22.75, 6.5],
-      ['bamboo', 23.25, 5],
-      ['bamboo', 22.25, 7.25],
-      ['azalea', 11.5, 11.25],
-      ['azalea', 9.5, 15.5],
+      ['sakura', 12.5, 5.5],
+      ['sakura', 15.5, 3.5],
+      ['maple', 20.5, 8.5],
+      ['maple', 22, 13],
+      ['pine', 19, 2.5],
+      ['pine', 5.5, 16.5],
+      ['willow', 12.5, 12.5],
+      ['willow', 19.5, 14.5],
+      ['ginkgo', 17.5, 17.5],
+      ['persimmon', 10.5, 13.5],
+      ['bamboo', 22.5, 4.5],
+      ['bamboo', 22.75, 5.5],
+      ['bamboo', 23.25, 4],
+      ['azalea', 10.5, 11.25],
+      ['azalea', 9.5, 14.5],
       ['azalea', 14.25, 17.75],
-      ['hedge', 4.5, 16.25],
-      ['hedge', 7.75, 19.5],
-      ['sakura', 8.5, 21.5],
+      ['hedge', 4.5, 15.25],
+      ['hedge', 7.75, 18.5],
+      ['sakura', 8.5, 20.5],
       ['maple', 4.5, 21.75],
+      ['maple', 2.5, 12.5],
+      ['pine', 1, 8.5],
+      ['sakura', 2.5, 19],
+      ['ginkgo', 11.5, 20.5],
+      ['maple', 13.5, 22.5],
+      ['pine', 17.5, 21.5],
+      ['sakura', 20.5, 22.5],
+      ['maple', 22.5, 11.5],
+      ['pine', 23.5, 16.5],
+      ['ginkgo', 6.5, 23],
+      ['sakura', 16.5, 19.5],
+      ['hedge', 15.25, 7.5],
+      ['hedge', 18.75, 19.25],
+      ['azalea', 21.25, 16.75],
+      ['azalea', 3.25, 10.5],
+      ['bamboo', 23.5, 8.5],
+      ['bamboo', 23, 9.75],
+      ['bamboo', 22.5, 22.5],
     ];
     for (const [type, tx, ty] of trees) this.place(type, tx, ty, 0, old);
 
     // Камни
-    this.place('rock_big', 5, 12, 0, old);
+    this.place('rock_big', 5, 13, 0, old);
     this.place('rock_mid', 7.25, 13.75, 1, old);
     this.place('rock_mid', 4.25, 14.5, 2, old);
     this.place('rock_trio', 18.5, 12, 0, old);
 
-    // Мостик через пруд: северо-западный конец у каменистого мысика,
-    // юго-восточный — на песчаной кромке под скальным трио. Раньше дуга
-    // стояла посреди воды и «висела в воздухе».
-    this.place('bridge', 17, 11, 0, old);
+    // Обустройство: бревно и пень в роще, поленница у дома,
+    // заборчик вдоль двора, дзидзо у тропы, скамья у пруда
+    this.place('moss_log', 7, 19.5, 0, old);
+    this.place('stump', 3.5, 18, 0, old);
+    this.place('mushrooms', 4.5, 17.25, 0, old);
+    this.place('woodpile', 2.5, 9.5, 0, old);
+    this.place('fence_wood', 10, 9, 1, old);
+    this.place('fence_wood', 10, 11, 1, old);
+    this.place('jizo', 12, 8, 0, old);
+    this.place('garden_bench', 16, 9, 0, old);
+    this.place('nestbox', 21, 6, 0, old);
+    this.place('hammock', 1.5, 11, 1, old);
+    this.place('matatabi', 7.5, 8, 0, old);
+
+    // Мостик через залив
+    this.place('bridge', 17, 10, 0, old);
 
     // Фонари
-    this.place('lantern_stone', 11.5, 10.5, 0, old);
+    this.place('lantern_stone', 11.5, 9.5, 0, old);
     this.place('lantern_stone', 17.5, 14.5, 0, old);
     this.place('lantern_path', 12.25, 11.75, 0, old);
-    this.place('lantern_path', 14.75, 10.25, 0, old);
-    this.place('lantern_paper', 10.5, 5.5, 0, old);
+    this.place('lantern_path', 14.75, 9.25, 0, old);
+    this.place('lantern_paper', 8.5, 4.5, 0, old);
 
-    // Мелочи
+    // Мелочь по лугу
     for (let i = 0; i < 34; i++) {
       const r1 = hash2(i, 3, 77);
       const r2 = hash2(i, 9, 91);
       const tx = Math.round((2 + r1 * 22) * 4) / 4;
-      const ty = Math.round((10 + r2 * 13) * 4) / 4;
+      const ty = Math.round((9 + r2 * 14) * 4) / 4;
       const t = this.at(Math.floor(tx), Math.floor(ty));
       if (!t || t.water || t.indoor) continue;
       const kind = r1 > 0.66 ? 'moss_clump' : r1 > 0.4 ? 'grass_tuft' : r1 > 0.22 ? 'fern' : 'lily';
       this.place(kind, tx, ty, 0, old);
     }
 
-    // Водные растения
-    this.place('lilypad', 15.25, 13.25, 0, old);
-    this.place('lilypad', 16.75, 14.5, 0, old);
-    this.place('lilypad', 18, 13.75, 0, old);
-    this.place('lotus', 15.75, 14.75, 0, old);
-    this.place('lotus', 17.25, 12.75, 0, old);
-    this.place('koi', 16.5, 13.5, 0, old);
-    this.place('koi', 13.5, 16, 0, old);
+    // Водные растения и карпы
+    this.place('lilypad', 15.25, 12.25, 0, old);
+    this.place('lilypad', 16.75, 13.5, 0, old);
+    this.place('lilypad', 18, 12.75, 0, old);
+    this.place('lotus', 15.75, 13.75, 0, old);
+    this.place('lotus', 17.25, 11.75, 0, old);
+    this.place('reed', 12.5, 15.5, 0, old);
+    this.place('reed', 13, 16.5, 0, old);
+    this.place('reed', 19.5, 15.8, 0, old);
+    this.place('koi', 16.5, 12.5, 0, old);
+    this.place('koi', 13.5, 15, 0, old);
 
-    // Дом внутри
-    this.place('table', 6.5, 5.5, 0, old);
-    this.place('cushion', 5.5, 6.5, 0, old);
-    this.place('cushion', 7.5, 6.5, 0, old);
-    // New gardens only. Keep the tea area open; partition off a quiet sleeping nook.
+    // Дом внутри: чай у окна, тихий угол с футоном, ирори у края
+    this.place('table', 5.5, 4.5, 0, old);
+    this.place('cushion', 4.5, 5, 0, old);
+    this.place('cushion', 6.5, 4.5, 0, old);
     const furnishings: [string, number, number, number][] = [
       ['tokonoma', 3.5, 3, 0],
-      ['tansu', 6, 3, 0],
-      ['indoor_plant', 9, 3, 0],
-      ['futon', 3.5, 6.5, 1],
-      ['byobu', 5, 6, 1],
-      ['byobu', 5, 7, 1],
-      ['irori', 8.5, 7.5, 0],
-      ['bonsai', 8, 3, 0],
       ['bookshelf', 4.5, 3, 0],
+      ['tansu', 6, 3, 0],
+      ['indoor_plant', 7, 3, 0],
+      ['bonsai', 7, 4.5, 0],
       ['kotatsu', 3.5, 4.5, 0],
-      ['engawa_bench', 10, 5, 1],
+      ['futon', 3.5, 6, 1],
+      ['byobu', 5.5, 6, 1],
+      ['irori', 7, 5.5, 0],
+      ['engawa_bench', 8, 4.5, 1],
     ];
     for (const [type, x, y, rot] of furnishings) {
       if (this.canPlace(type, x, y, rot)) this.place(type, x, y, rot, old);
     }
-    this.place('cat', 7.5, 7.5, 0, old);
-    // Миска у кота: второму коту будет зачем остаться
-    this.place('bowl', 9.5, 7.5, 0, old);
-    this.place('wind_chime', 9.5, 8.5, 0, old);
-    this.place('tsukubai', 11.5, 8.25, 0, old);
-    this.place('shishi', 12.5, 12.5, 0, old);
+    this.place('cat', 6.5, 6.5, 0, old);
+    this.place('bowl', 8.5, 6.5, 0, old);
+    this.place('wind_chime', 7.5, 2.5, 0, old);
+    this.place('tsukubai', 9.5, 7.5, 0, old);
+    this.place('shishi', 12.5, 11.5, 0, old);
 
-    // Стартовые вехи уже открыты — сад «прожил» какое-то время
+    // Стартовые вехи уже открыты — сад «прожил» своё
     this.milestones.add('first_pond');
     this.milestones.add('first_deck');
     this.milestones.add('first_cat');
@@ -391,56 +443,11 @@ export class World {
     this.place('pavilion', 20, 18, 0, old);
     this.place('torii', 22.5, 20.5, 0, old);
 
-    // Южная роща и дальний берег — чтобы кадр был наполнен во все стороны
-    const more: [string, number, number][] = [
-      ['maple', 2.5, 12.5],
-      ['pine', 1, 8.5],
-      ['sakura', 2.5, 19],
-      ['ginkgo', 11.5, 20.5],
-      ['maple', 13.5, 22.5],
-      ['pine', 17.5, 21.5],
-      ['sakura', 20.5, 22.5],
-      ['willow', 19.5, 15.5],
-      ['maple', 22.5, 11.5],
-      ['pine', 23.5, 16.5],
-      ['ginkgo', 6.5, 23],
-      ['sakura', 16.5, 19.5],
-      ['hedge', 15.25, 8.5],
-      ['hedge', 18.75, 19.25],
-      ['azalea', 21.25, 16.75],
-      ['azalea', 3.25, 10.5],
-      ['azalea', 12.75, 18.5],
-      ['hedge', 9.25, 12.25],
-      ['bamboo', 23.5, 8.5],
-      ['bamboo', 23, 9.75],
-      ['bamboo', 22.5, 22.5],
-    ];
-    for (const [type, tx, ty] of more) this.place(type, tx, ty, 0, old);
-
-    // Камни-акценты
-    this.place('rock_mid', 10.75, 19.25, 1, old);
-    this.place('rock_mid', 21.5, 13.25, 2, old);
-    this.place('rock_big', 7, 21, 0, old);
-    this.place('rock_trio', 4, 17.5, 1, old);
-
     // Свет вдоль южной тропы
     this.place('lantern_stone', 9.5, 18.5, 0, old);
     this.place('lantern_stone', 19.5, 20.5, 0, old);
     this.place('lantern_path', 15.25, 20.75, 0, old);
     this.place('brazier', 18.5, 17.5, 0, old);
-
-    // Каменная тропа к беседке
-    for (const [x, y] of [
-      [18, 16],
-      [19, 17],
-      [20, 17],
-      [21, 18],
-      [21, 19],
-      [22, 20],
-    ] as [number, number][]) {
-      const t = this.at(x, y);
-      if (t && !t.water && !t.indoor) t.ground = 'stone';
-    }
 
     // Ковёр мха и цветов в южной части
     for (let i = 0; i < 46; i++) {
@@ -459,7 +466,7 @@ export class World {
       const r1 = hash2(i, 31, 211);
       const r2 = hash2(i, 37, 223);
       const tx = Math.round((11 + r1 * 10) * 4) / 4;
-      const ty = Math.round((11 + r2 * 7) * 4) / 4;
+      const ty = Math.round((10 + r2 * 8) * 4) / 4;
       const t = this.at(Math.floor(tx), Math.floor(ty));
       if (!t || t.water || t.indoor) continue;
       if (!this.hasWaterNear(tx, ty, 2)) continue;
@@ -595,6 +602,12 @@ export class World {
   grow: GrowState | null = null;
   /** Когда сад родился: годы летописи считаем отсюда. */
   born = Date.now();
+  /** Сдвиг календаря территории в мс: у пресетов свой стартовый месяц. */
+  timeShift = 0;
+  /** Календарное «сейчас» этого сада: настоящее время плюс сдвиг территории. */
+  now(): number {
+    return Date.now() + this.timeShift;
+  }
   /** Действие кончилось: последний отказ, чтобы интерфейс тихо пояснил. */
   growRefused = false;
   private strokeCharged = false;
@@ -900,9 +913,10 @@ export class World {
     return true;
   }
 
-  place(type: string, tx: number, ty: number, rot = 0, planted = Date.now()): PlacedObject | null {
+  place(type: string, tx: number, ty: number, rot = 0, planted?: number): PlacedObject | null {
     const item = ITEM_BY_ID.get(type);
     if (!item) return null;
+    planted ??= this.now();
     // В растущем саду каждое посаженное стоит действия,
     // а за туманом сажать нечего: сперва открой землю
     if (this.grow && !inGrowRect(this.grow.rect, tx, ty)) return null;
@@ -915,6 +929,9 @@ export class World {
       planted,
       rot,
       seed: Math.floor(Math.random() * 100000),
+      // Дерево сажается саженцем и растёт три игровых дня. Деревья из
+      // старых сохранений и пресетов высажены давно и потому сразу взрослые.
+      ...(item.kind === 'tree' ? { young: 1 as const } : {}),
     };
     this.objects.push(obj);
     this.noteObjectsChanged();
@@ -1006,6 +1023,7 @@ export class World {
 
   removeObject(obj: PlacedObject): void {
     this.objects = this.objects.filter((o) => o !== obj);
+    this.growthCache.delete(obj.id);
     this.noteObjectsChanged();
   }
 
@@ -1104,9 +1122,23 @@ export class World {
     return this.chronicle.some((e) => e.id === id);
   }
 
-  /** Стадия роста 0..1 для объекта — рост убран, всё сажается сразу взрослым. */
-  growth(_o: PlacedObject, _now: number): number {
-    return 1;
+  /**
+   * Стадия роста 0..1 для объекта. Всё сажается сразу взрослым — кроме
+   * деревьев: новое дерево приходит саженцем и взрослеет за три игровых
+   * дня (72 часа в вольном саду, 15 часов в растущем). Старые деревья —
+   * из прежних сохранений и пресетов — поля «саженец» не имеют и
+   * навсегда остаются в своём выросшем виде.
+   */
+  growth(o: PlacedObject, now: number): number {
+    if (!o.young) return 1;
+    const growing = !!this.grow;
+    const hit = this.growthCache.get(o.id);
+    // Часовая выдержка: внутри часа отдаём прежнюю стадию; взрослое
+    // дерево (1) и смена режима сада пересчитываются сразу.
+    if (hit && hit.growing === growing && (hit.g >= 1 || now - hit.at < GROWTH_RECOMPUTE_MS)) return hit.g;
+    const g = treeGrowthAt(o.planted, now, growing);
+    this.growthCache.set(o.id, { at: now, g, growing });
+    return g;
   }
 
   // ---- Сохранение ----
@@ -1190,6 +1222,7 @@ export class World {
         ? { ...this.grow, rect: { ...this.grow.rect }, ...(this.grow.clock ? { clock: { ...this.grow.clock } } : {}) }
         : null,
       born: this.born,
+      timeShift: this.timeShift,
       unlocked: [...this.unlocked],
       fresh: [...this.fresh],
     };
@@ -1217,12 +1250,13 @@ export class World {
       veranda: t.veranda,
     }));
     this.objects = p.objects.map((o) => ({ ...o }));
+    this.growthCache.clear();
     // Repair only the identifiable original starter pine, not arbitrary player plantings.
     const legacyPine = this.objects.find((o) => o.type === 'pine' && o.tx === 3.5 && o.ty === 8.5);
     const starter =
       this.objects.some((o) => o.type === 'torii' && o.tx === 22.5 && o.ty === 20.5) &&
-      this.objects.some((o) => o.type === 'table' && o.tx === 6.5 && o.ty === 5.5) &&
-      Array.from({ length: 42 }, (_, i) => this.at(3 + (i % 7), 3 + Math.floor(i / 7))?.indoor).every(Boolean);
+      this.objects.some((o) => o.type === 'table' && o.tx === 5.5 && o.ty === 4.5) &&
+      Array.from({ length: 20 }, (_, i) => this.at(3 + (i % 5), 3 + Math.floor(i / 5))?.indoor).every(Boolean);
     if (legacyPine && starter && this.canPlace('pine', 1, 8.5, legacyPine.rot)) legacyPine.tx = 1;
 
     this.nextId = p.nextId;
@@ -1239,6 +1273,7 @@ export class World {
     }
     this.grow = p.grow ?? null;
     this.born = p.born ?? this.born;
+    this.timeShift = Number.isFinite(p.timeShift) ? (p.timeShift as number) : 0;
     // Лягушки из тумана: если в открытом саду нет воды, случайные строки
     // прежних ошибок не остаются в книге
     if (this.grow) {
@@ -1334,7 +1369,7 @@ export class World {
    * игрок застал снег, остался под дождём, дождался взрослого дерева.
    * Поэтому проверка живёт здесь, а не в местах постройки.
    */
-  observe(_now: number, season: string, night: boolean, raining: boolean): void {
+  observe(now: number, season: string, night: boolean, raining: boolean): void {
     // Круг года: сезоны накапливаются между сессиями
     if (!this.seasonsSeen.has(season)) {
       this.seasonsSeen.add(season);
@@ -1369,8 +1404,9 @@ export class World {
         seenIndoor.add(o.type);
         indoorKinds++;
       }
-      // Рост убран: дерево сразу взрослое, веха даётся за наличие крупного дерева
-      if (!grown && item && item.kind === 'tree') grown = true;
+      // Дерево выросло полностью. Сосна, посаженная саженцем, взрослеет
+      // три игровых дня; остальные деревья готовы сразу.
+      if (!grown && item && item.kind === 'tree' && this.growth(o, now) >= 1) grown = true;
     }
     if (lanterns >= 5) this.checkMilestone('lantern_path');
     if (koi >= 3) this.checkMilestone('koi_pond');

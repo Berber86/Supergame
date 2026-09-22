@@ -41,6 +41,20 @@ import {
 } from './furniture';
 import { drawTeaHouse, drawShed, drawTinyHouse, drawPavilion } from './smallHouses';
 import {
+  drawMossLog,
+  drawStump,
+  drawMushrooms,
+  drawFenceWood,
+  drawFenceStone,
+  drawJizo,
+  drawWell,
+  drawGardenBench,
+  drawWoodpile,
+  drawNestbox,
+  drawHammock,
+  drawMatatabi,
+} from './decor';
+import {
   drawTable,
   drawCushion,
   drawTsukubai,
@@ -124,6 +138,18 @@ const DRAWERS: Record<string, Drawer> = {
   cushion: drawCushion,
   bowl: drawBowl,
   cat: drawCat,
+  moss_log: drawMossLog,
+  stump: drawStump,
+  mushrooms: drawMushrooms,
+  fence_wood: drawFenceWood,
+  fence_stone: drawFenceStone,
+  jizo: drawJizo,
+  well: drawWell,
+  garden_bench: drawGardenBench,
+  woodpile: drawWoodpile,
+  nestbox: drawNestbox,
+  hammock: drawHammock,
+  matatabi: drawMatatabi,
 };
 
 /**

@@ -43,6 +43,8 @@ const rnd = makeRng(9173);
 // ---------------- Светлячки ----------------
 
 export interface Firefly {
+  /** Мираж: стена реального времени, когда растает. */
+  mirage?: number;
   tx: number;
   ty: number;
   ax: number;
@@ -66,6 +68,8 @@ export function fireflyGlow(f: Firefly, now: number): number {
 // ---------------- Мотыльки (спутники светлячков) ----------------
 
 export interface Moth {
+  /** Мираж: стена реального времени, когда растает. */
+  mirage?: number;
   tx: number;
   ty: number;
   ax: number;
@@ -84,6 +88,8 @@ export interface Moth {
 export type HeronState = 'fly-in' | 'stand' | 'stalk' | 'strike' | 'preen' | 'fly-out';
 
 export interface Heron {
+  /** Мираж: стена реального времени, когда растает. */
+  mirage?: number;
   gait?: number;
   flightPose?: number;
   preenPose?: number;
@@ -114,6 +120,8 @@ export interface DeerCoat {
 }
 
 export interface Deer {
+  /** Мираж: стена реального времени, когда растает. */
+  mirage?: number;
   company?: CompanyPose;
   /** Continuous gait in radians and smoothed grazing pose. */
   gait?: number;
@@ -137,6 +145,8 @@ export interface Deer {
 export type HedgehogState = 'enter' | 'walk' | 'forage' | 'sniff' | 'curl' | 'leave';
 
 export interface Hedgehog {
+  /** Мираж: стена реального времени, когда растает. */
+  mirage?: number;
   /** Непрерывный шаг и плавное сворачивание, отдельно от таймера curl. */
   gait?: number;
   roll?: number;
@@ -164,6 +174,8 @@ export interface Hedgehog {
 export type MouseState = 'enter' | 'forage' | 'walk' | 'hide' | 'flee' | 'leave';
 
 export interface Mouse {
+  /** Мираж: стена реального времени, когда растает. */
+  mirage?: number;
   gait?: number;
   cover?: number;
   tx: number;
@@ -246,6 +258,8 @@ function clampInner(p: Vec): Vec {
 export type OwlState = 'fly-in' | 'perch' | 'hoot' | 'look' | 'hunt' | 'fly-out';
 
 export interface Owl {
+  /** Мираж: стена реального времени, когда растает. */
+  mirage?: number;
   altitude?: number;
   wingOpen?: number;
   tx: number;
@@ -269,6 +283,8 @@ export interface Owl {
 export type SquirrelState = 'enter' | 'jump' | 'forage' | 'cache' | 'look' | 'flee' | 'leave';
 
 export interface Squirrel {
+  /** Мираж: стена реального времени, когда растает. */
+  mirage?: number;
   gait?: number;
   motion?: number;
   upright?: number;
@@ -294,6 +310,8 @@ export interface Squirrel {
 export type TurtleState = 'enter' | 'bask' | 'walk' | 'swim' | 'hide' | 'look' | 'leave';
 
 export interface Turtle {
+  /** Мираж: стена реального времени, когда растает. */
+  mirage?: number;
   /** Continuous gait and retraction (0 = extended, 1 = hidden). */
   gait?: number;
   retract?: number;
@@ -316,6 +334,8 @@ export interface Turtle {
 // ---------------- Пчёлы ----------------
 
 export interface Bee {
+  /** Мираж: стена реального времени, когда растает. */
+  mirage?: number;
   tx: number;
   ty: number;
   ax: number;
@@ -429,7 +449,8 @@ export class Wildlife {
     if (t.daylight > 0.4) this.danced = false;
     for (let i = this.fireflies.length - 1; i >= 0; i--) {
       const f = this.fireflies[i];
-      if (i >= want) {
+      // Мираж не считается лишним: его время решает особая кнопка
+      if (i >= want && !f.mirage) {
         f.alpha -= dt / 2600;
         if (f.alpha <= 0) {
           this.fireflies.splice(i, 1);
@@ -521,7 +542,8 @@ export class Wildlife {
     const want = inv.moths;
     for (let i = this.moths.length - 1; i >= 0; i--) {
       const m = this.moths[i];
-      if (i >= want) {
+      // Мираж не считается лишним: его время решает особая кнопка
+      if (i >= want && !m.mirage) {
         m.alpha -= dt / 2600;
         if (m.alpha <= 0) {
           this.moths.splice(i, 1);
@@ -1627,7 +1649,8 @@ export class Wildlife {
 
     for (let i = this.bees.length - 1; i >= 0; i--) {
       const b = this.bees[i];
-      if (i >= want) {
+      // Мираж не считается лишним: его время решает особая кнопка
+      if (i >= want && !b.mirage) {
         b.alpha -= dt / 2200;
         if (b.alpha <= 0) {
           this.bees.splice(i, 1);

@@ -54,7 +54,8 @@ for (const [row, type] of LEAFY_TREES.entries()) {
     }
     const young = treeGeometry(p, seed, 0.2);
     assert.ok(young.h < geometry.h);
-    assert.equal(young.sites.length, geometry.sites.length);
+    // Саженец: крона набирается по ступеням — площадок не больше, чем у взрослого.
+    assert.ok(young.sites.length <= geometry.sites.length);
     for (const geo of [geometry, young]) {
       if (type === 'willow') {
         assert.ok(p.droop > p.height * 0.65, 'long weeping shoots, not a short fringe');

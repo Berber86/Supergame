@@ -8,6 +8,8 @@ import type { Flutter } from './life';
 import { easePose } from './animalMotion';
 export type LizardState = 'emerge' | 'bask' | 'look' | 'walk' | 'hunt' | 'strike' | 'flee' | 'hide' | 'leave';
 export interface Lizard {
+  /** Мираж: стена реального времени, когда растает. */
+  mirage?: number;
   tx: number;
   ty: number;
   seed: number;
@@ -124,6 +126,24 @@ export class Lizards {
     if (state !== 'bask') a.basking = 0;
     if (state !== 'hunt' && state !== 'strike') a.prey = null;
   }
+
+  /** Мираж-ящерица: выходит прямо на месте и живёт по реальным часам. */
+  spawnMirage(x: number, y: number, until: number): boolean {
+    const a = makeLizard(Math.floor(this.rnd() * 100000), { x, y });
+    a.mirage = until;
+    a.alpha = 1;
+    a.state = 'bask';
+    a.timer = a.duration = 4000;
+    a.stay = Number.MAX_SAFE_INTEGER;
+    this.agents.push(a);
+    return true;
+  }
+
+  /** Миражи тают по стене реального времени. */
+  pruneMirages(wall: number): void {
+    if (!this.agents.some((a) => a.mirage !== undefined)) return;
+    this.agents = this.agents.filter((a) => a.mirage === undefined || a.mirage > wall);
+  }
   private reachable(a: Lizard, sites: Vec[], world: World): Vec[] {
     return sites.filter((p) => Math.hypot(p.x - a.tx, p.y - a.ty) < 4 && lizardRoute(world, { x: a.tx, y: a.ty }, p));
   }
@@ -160,7 +180,8 @@ export class Lizards {
         continue;
       }
       // Sunset, winter, rain and surplus population all have a strict retirement bound.
-      a.inactive = i >= want || a.age > a.stay ? a.inactive + dt : 0;
+      // Миражи не уходят по счётчику: их время — особая кнопка, не сезон
+      a.inactive = !a.mirage && (i >= want || a.age > a.stay) ? a.inactive + dt : 0;
       if (a.inactive >= 5000) {
         this.agents.splice(i, 1);
         continue;
@@ -234,7 +255,7 @@ export class Lizards {
               a.inactive === 0 &&
               h.lizardShelters.some((p) => Math.hypot(p.x - a.tx, p.y - a.ty) < 0.16)
             )
-              world.noteEvent('lizard_escape', Date.now(), a.tx, a.ty);
+              world.noteEvent('lizard_escape', world.now(), a.tx, a.ty);
             this.state(a, 'hide', 4000 + this.rnd() * 4000);
           } else this.state(a, arrived ? 'bask' : 'look', 6000 + this.rnd() * 9000);
         }
@@ -249,7 +270,7 @@ export class Lizards {
             caught = true;
           }
         }
-        if (caught) world.noteEvent('lizard_hunt', Date.now(), a.tx, a.ty);
+        if (caught) world.noteEvent('lizard_hunt', world.now(), a.tx, a.ty);
         a.hunger = 25000;
         this.state(a, 'look', 2200);
       } else if (a.timer <= 0 && !['hide', 'strike'].includes(a.state)) {
@@ -299,7 +320,7 @@ export class Lizards {
       const previousBask = a.basking;
       a.basking = onWarmStone ? Math.min(LIZARD_BASK_MS, a.basking + dt) : 0;
       if (previousBask < LIZARD_BASK_MS && a.basking >= LIZARD_BASK_MS)
-        world.noteEvent('lizard_bask', Date.now(), a.tx, a.ty);
+        world.noteEvent('lizard_bask', world.now(), a.tx, a.ty);
     }
     if (this.agents.length < want && this.timer <= 0) {
       this.timer = 25000 + this.rnd() * 25000;
@@ -313,7 +334,7 @@ export class Lizards {
       if (sites.length) {
         const site = sites[Math.floor(this.rnd() * sites.length)];
         this.agents.push(makeLizard(Math.floor(this.rnd() * 100000), site));
-        world.noteEvent('meet_lizard', Date.now(), site.x, site.y);
+        world.noteEvent('meet_lizard', world.now(), site.x, site.y);
       }
     }
   }

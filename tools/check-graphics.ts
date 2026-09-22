@@ -213,6 +213,8 @@ w.objects = [];
 for (const tile of w.tiles)
   Object.assign(tile, { water: false, level: 0, ground: 'soil', indoor: false, veranda: false });
 const tree = w.place('maple', 12, 12)!;
+// Старое дерево из прежнего сохранения — сразу взрослое, рост здесь не при чём.
+tree.young = undefined;
 // The old hard-coded camera assumed seed 441 was broad. Derive the crop from real foliage
 // for every form: the root stays 300 screen pixels off-screen, beyond the old fixed margin.
 for (const form of TREE_FORMS) {
@@ -260,7 +262,7 @@ for (const form of TREE_FORMS) {
   );
 }
 // Culling does not change any visible water pixels.
-const surface = prepareWaterSurface(world)[0],
+const surface = prepareWaterSurface(world).reduce((a, b) => (a.cells.length >= b.cells.length ? a : b)),
   bounds = waterSurfaceBounds(surface);
 const waterX = (bounds.minX + bounds.maxX) / 2,
   waterY = (bounds.minY + bounds.maxY) / 2;

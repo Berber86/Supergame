@@ -5,6 +5,20 @@ import { crownCacheKey, crownCacheTime } from '../world/phenology';
 import { buildAtmosphere, Atmosphere } from '../world/palette';
 import { drawObject, hasDrawer } from '../render/sprites';
 import { PlacedObject } from '../world/types';
+import type { MirageKind } from '../world/mirages';
+import type { Bird, Cat, Flutter } from '../world/life';
+import type { Frog, PondDragonfly } from '../world/residents';
+import type { Lizard } from '../world/lizards';
+import type { Bee, Deer, Firefly, Hedgehog, Heron, Moth, Mouse, Owl, Squirrel, Turtle } from '../world/wildlife';
+import { drawBird } from '../render/smallBirds';
+import { drawCat } from '../render/cats';
+import { drawBee, drawButterfly, drawDragonfly, drawFirefly, drawMoth } from '../render/insects';
+import { drawFrog } from '../render/pondAnimals';
+import { drawLizard } from '../render/lizard';
+import { drawDeer, drawTurtle } from '../render/deerTurtle';
+import { drawHeron } from '../render/heron';
+import { drawHedgehog, drawSquirrel } from '../render/forestAnimals';
+import { drawMouse, drawOwl } from '../render/nocturnalAnimals';
 
 const cache = new Map<string, string>();
 
@@ -130,6 +144,395 @@ export function clearIconCache(): void {
   boxCache.clear();
 }
 
+/** Статичный агент для миниатюры: поза выбрана самой выразительной. */
+function mirageDraw(kind: MirageKind, ctx: CanvasRenderingContext2D, atm: Atmosphere): void {
+  const t = 900;
+  switch (kind) {
+    case 'butterfly': {
+      const f: Flutter = {
+        tx: 0,
+        ty: 0,
+        alt: 12,
+        vx: 1,
+        vy: 0,
+        valt: 0,
+        target: null,
+        timer: 0,
+        seed: 4,
+        phase: 2,
+        resting: 0,
+      };
+      drawButterfly(ctx, f, 0, 0, atm, t);
+      break;
+    }
+    case 'firefly': {
+      const f: Firefly = {
+        tx: 0,
+        ty: 0,
+        ax: 0,
+        ay: 0,
+        dir: 0.4,
+        seed: 1,
+        period: 1600,
+        phase: 0.2,
+        state: 'fly',
+        timer: 0,
+        alpha: 1,
+      };
+      drawFirefly(ctx, f, 0, 0, atm, 0);
+      break;
+    }
+    case 'moth': {
+      const m: Moth = {
+        tx: 0,
+        ty: 0,
+        ax: 0,
+        ay: 0,
+        dir: 0.3,
+        seed: 2,
+        phase: 1,
+        timer: 0,
+        alpha: 1,
+        state: 'fly',
+        flutter: 1,
+      };
+      drawMoth(ctx, m, 0, 0, atm, t);
+      break;
+    }
+    case 'bee': {
+      const b: Bee = {
+        tx: 0,
+        ty: 0,
+        ax: 0,
+        ay: 0,
+        alt: 8,
+        dir: 0,
+        vx: 0,
+        vy: 0,
+        seed: 3,
+        timer: 0,
+        phase: 1,
+        state: 'fly',
+        target: null,
+        carrying: true,
+        alpha: 1,
+      };
+      drawBee(ctx, b, 0, 0, atm, t);
+      break;
+    }
+    case 'dragonfly': {
+      const d: PondDragonfly = {
+        id: 1,
+        kind: 'hawker',
+        tx: 0,
+        ty: 0,
+        alt: 9,
+        vx: 0,
+        vy: 0,
+        facing: 1,
+        seed: 1,
+        state: 'hover',
+        timer: 0,
+        phase: 1,
+        pond: -1,
+        target: null,
+        perch: null,
+      };
+      drawDragonfly(ctx, d, 0, 0, atm, t);
+      break;
+    }
+    case 'frog': {
+      const f: Frog = {
+        id: 1,
+        tx: 0,
+        ty: 0,
+        facing: 1,
+        seed: 1,
+        state: 'sit',
+        timer: 0,
+        phase: 0,
+        from: null,
+        target: null,
+        pond: 0,
+        species: 'green',
+        size: 1.05,
+        throat: 0,
+        hidden: 0,
+        gone: false,
+        answer: 0,
+      };
+      drawFrog(ctx, f, 0, 0, atm, t);
+      break;
+    }
+    case 'bird': {
+      const b: Bird = {
+        tx: 0,
+        ty: 0,
+        facing: 1,
+        seed: 1,
+        state: 'hop',
+        timer: 0,
+        target: null,
+        alt: 0,
+        hop: 0.4,
+        scale: 1,
+        species: 'tit',
+        place: 'ground',
+        slot: 0,
+      };
+      drawBird(ctx, b, 0, 0, atm, t);
+      break;
+    }
+    case 'owl': {
+      const o: Owl = {
+        tx: 0,
+        ty: 0,
+        from: null,
+        target: null,
+        state: 'perch',
+        timer: 0,
+        facing: 1,
+        phase: 0,
+        seed: 1,
+        born: 0,
+        stay: Number.MAX_SAFE_INTEGER,
+        huntX: 0,
+        huntY: 0,
+        hoot: 0,
+      };
+      drawOwl(ctx, o, 0, 0, atm, t);
+      break;
+    }
+    case 'squirrel': {
+      const s: Squirrel = {
+        tx: 0,
+        ty: 0,
+        from: null,
+        target: null,
+        state: 'look',
+        timer: 0,
+        facing: 1,
+        phase: 0,
+        seed: 1,
+        born: 0,
+        stay: Number.MAX_SAFE_INTEGER,
+        hasNut: true,
+        panic: 0,
+      };
+      drawSquirrel(ctx, s, 0, 0, atm, t);
+      break;
+    }
+    case 'hedgehog': {
+      const h: Hedgehog = {
+        tx: 0,
+        ty: 0,
+        from: null,
+        target: null,
+        state: 'sniff',
+        timer: 0,
+        facing: 1,
+        phase: 0,
+        seed: 1,
+        born: 0,
+        stay: Number.MAX_SAFE_INTEGER,
+        curl: 0,
+      };
+      drawHedgehog(ctx, h, 0, 0, atm, t);
+      break;
+    }
+    case 'mouse': {
+      const m: Mouse = {
+        tx: 0,
+        ty: 0,
+        from: null,
+        target: null,
+        state: 'forage',
+        timer: 0,
+        facing: 1,
+        phase: 0,
+        seed: 1,
+        born: 0,
+        stay: Number.MAX_SAFE_INTEGER,
+        panicX: 0,
+        panicY: 0,
+        panic: 0,
+      };
+      drawMouse(ctx, m, 0, 0, atm, t);
+      break;
+    }
+    case 'lizard': {
+      const a: Lizard = {
+        tx: 0,
+        ty: 0,
+        seed: 1,
+        facing: 1,
+        state: 'bask',
+        timer: 0,
+        duration: 1,
+        age: 0,
+        stay: Number.MAX_SAFE_INTEGER,
+        target: null,
+        shelter: { x: 0, y: 0 },
+        lift: 0,
+        perchLift: 0,
+        gait: 0,
+        motion: 0,
+        alpha: 1,
+        inactive: 0,
+        hunger: 9000,
+        catches: 0,
+        prey: null,
+        basking: 1,
+      };
+      drawLizard(ctx, a, 0, 0, atm, t);
+      break;
+    }
+    case 'turtle': {
+      const tt: Turtle = {
+        tx: 0,
+        ty: 0,
+        from: null,
+        target: null,
+        state: 'bask',
+        timer: 0,
+        facing: 1,
+        phase: 0,
+        seed: 1,
+        born: 0,
+        stay: Number.MAX_SAFE_INTEGER,
+        hide: 0,
+      };
+      drawTurtle(ctx, tt, 0, 0, atm, t);
+      break;
+    }
+    case 'heron': {
+      const h: Heron = {
+        tx: 0,
+        ty: 0,
+        from: null,
+        target: null,
+        state: 'stand',
+        timer: 0,
+        facing: 1,
+        phase: 0,
+        fish: 0,
+        struck: false,
+        born: 0,
+        stay: Number.MAX_SAFE_INTEGER,
+        seed: 1,
+      };
+      drawHeron(ctx, h, 0, 0, atm, t);
+      break;
+    }
+    case 'deer': {
+      const d: Deer = {
+        tx: 0,
+        ty: 0,
+        from: null,
+        target: null,
+        state: 'look',
+        timer: 0,
+        facing: 1,
+        phase: 0,
+        seed: 1,
+        coat: { spots: false, antlers: true, winter: false },
+        born: 0,
+        stay: Number.MAX_SAFE_INTEGER,
+      };
+      drawDeer(ctx, d, 0, 0, atm, t);
+      break;
+    }
+    case 'cat': {
+      const c: Cat = {
+        tx: 0,
+        ty: 0,
+        facing: 1,
+        seed: 7,
+        id: 1,
+        state: 'sit',
+        timer: 0,
+        target: null,
+        phase: 0,
+        speed: 0,
+        home: null,
+        guest: false,
+        coat: 'grey',
+        greet: 0,
+        leaveAt: 0,
+        stayAt: 0,
+      };
+      drawCat(ctx, c, 0, 0, atm, t);
+      break;
+    }
+  }
+}
+
+const mirageCache = new Map<string, string>();
+
+/** Миниатюра миража: та же живность, что в саду, в маленьком квадрате. */
+export function mirageIcon(kind: MirageKind, atm: Atmosphere, size = 56): string {
+  const key = `${kind}|${atm.season}|${size}`;
+  const hit = mirageCache.get(key);
+  if (hit) return hit;
+
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const iconTime = { ...atm.time, dayT: 0.5, hours: 12, minutes: 0, daylight: 1, isNight: false, golden: 0 };
+  const iconAtm: Atmosphere = { ...buildAtmosphere(iconTime), exposure: 1, lightAmount: 0.06, shadowAmount: 0.16 };
+
+  // Пробный кадр: замеряем занятый прямоугольник и вписываем его в иконку
+  const S = 220;
+  const probe = document.createElement('canvas');
+  probe.width = S;
+  probe.height = S;
+  const pc = probe.getContext('2d')!;
+  pc.translate(S / 2, S * 0.66);
+  mirageDraw(kind, pc, iconAtm);
+  const px = pc.getImageData(0, 0, S, S).data;
+  let top = S,
+    bottom = -1,
+    left = S,
+    right = -1;
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      if (px[(y * S + x) * 4 + 3] > 12) {
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+        if (x < left) left = x;
+        if (x > right) right = x;
+      }
+    }
+  }
+  probe.width = probe.height = 1;
+
+  const box =
+    bottom < 0
+      ? { w: 60, h: 60, cx: 0, cy: -30 }
+      : {
+          w: right - left + 1,
+          h: bottom - top + 1,
+          cx: (left + right) / 2 - S / 2,
+          cy: (top + bottom) / 2 - S * 0.66,
+        };
+
+  const c = document.createElement('canvas');
+  c.width = size * dpr;
+  c.height = size * dpr;
+  const ctx = c.getContext('2d')!;
+  ctx.scale(dpr, dpr);
+  const pad = size * 0.1;
+  const avail = size - pad * 2;
+  const scale = Math.min(avail / box.w, avail / box.h);
+  ctx.translate(size / 2 - box.cx * scale, size / 2 - box.cy * scale);
+  ctx.scale(scale, scale);
+  mirageDraw(kind, ctx, iconAtm);
+
+  const url = c.toDataURL();
+  mirageCache.set(key, url);
+  if (mirageCache.size > 64) mirageCache.delete(mirageCache.keys().next().value!);
+  c.width = c.height = 1;
+  return url;
+}
+
 /** SVG-иконки для вкладок и кнопок — тонкая «тушь». */
 export const GLYPHS: Record<string, string> = {
   ground: '<path d="M3 17c3-3 6-3 9 0s6 3 9 0" /><path d="M3 12c3-2.5 6-2.5 9 0s6 2.5 9 0" opacity=".5"/>',
@@ -153,6 +556,8 @@ export const GLYPHS: Record<string, string> = {
   book: '<path d="M12 6C9 4 5 4 2 5v14c3-1 7-1 10 1 3-2 7-2 10-1V5c-3-1-7-1-10 1v14"/><path d="M5 8h4M5 11h4M15 8h4M15 11h4"/>',
   scroll: '<path d="M6 4h12v16H6z"/><path d="M9 8h6M9 12h6M9 16h4"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  mirage:
+    '<path d="M12 3.5l1.7 4.8 4.8 1.7-4.8 1.7L12 16.5l-1.7-4.8-4.8-1.7 4.8-1.7z"/><path d="M18.6 15.2l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" opacity=".7"/><path d="M5.4 16.4l.5 1.4 1.4.5-1.4.5-.5 1.4-.5-1.4-1.4-.5 1.4-.5z" opacity=".55"/>',
   check: '<path d="M5.5 12.5l4.3 4.6L19 7.5"/>',
   'sound-on':
     '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M16 9.2a4 4 0 010 5.6"/><path d="M18.6 6.6a7.6 7.6 0 010 10.8"/>',

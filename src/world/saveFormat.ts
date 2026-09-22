@@ -22,7 +22,7 @@ import { ITEM_BY_ID } from './catalog';
 import { GroundId, PlacedObject, SaveData, Tile } from './types';
 
 /** Версия формата, которую пишет текущая игра. */
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 
 /**
  * Земли в порядке их знака в упаковке. Порядок — часть формата:
@@ -126,11 +126,15 @@ function parseLegacyTiles(arr: unknown[]): Tile[] | null {
 
 // ---- Предметы ----
 
-/** Упакованный предмет: [id, тип, tx, ty, посажен мс, поворот, сид]. */
-type PackedObject = [number, string, number, number, number, number, number];
+/** Упакованный предмет: [id, тип, tx, ty, посажен мс, поворот, сид].
+ * Восьмой знак — необязательный: 1 у посаженных саженцем (растут по часам).
+ * Старые сохранения семи знаков остаются верными: без знака дерево взрослое. */
+type PackedObject = [number, string, number, number, number, number, number, number?];
 
 function packObject(o: PlacedObject): PackedObject {
-  return [o.id, o.type, o.tx, o.ty, Math.round(o.planted), o.rot & 3, o.seed >>> 0];
+  const row: PackedObject = [o.id, o.type, o.tx, o.ty, Math.round(o.planted), o.rot & 3, o.seed >>> 0];
+  if (o.young) row.push(1);
+  return row;
 }
 
 function validSpot(n: unknown): n is number {
@@ -157,8 +161,9 @@ function checkFields(
 }
 
 function unpackObject(raw: unknown[]): PlacedObject | null {
-  const [id, type, tx, ty, planted, rot, seed] = raw;
-  if (raw.length !== 7 || !checkFields(id, type, tx, ty, planted, rot, seed)) return null;
+  const [id, type, tx, ty, planted, rot, seed, young] = raw;
+  if ((raw.length !== 7 && raw.length !== 8) || !checkFields(id, type, tx, ty, planted, rot, seed)) return null;
+  if (raw.length === 8 && young !== 1) return null;
   return {
     id,
     type: type as string,
@@ -167,6 +172,7 @@ function unpackObject(raw: unknown[]): PlacedObject | null {
     planted: planted as number,
     rot: rot as number,
     seed: seed as number,
+    ...(raw.length === 8 ? { young: 1 as const } : {}),
   };
 }
 
@@ -181,6 +187,7 @@ function parseLegacyObject(raw: Record<string, unknown>): PlacedObject | null {
     planted: planted as number,
     rot: rot as number,
     seed: seed as number,
+    ...(raw.young === 1 ? { young: 1 as const } : {}),
   };
 }
 

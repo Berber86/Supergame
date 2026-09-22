@@ -87,6 +87,36 @@ export function glow(ctx: Ctx, cx: number, cy: number, r: number, color: RGB, st
 }
 
 /** Мягкая эллиптическая тень под объектом. */
+/**
+ * Тень раньше собирала радиальный градиент на каждом кадре для каждого
+ * объекта: создание градиента плюс заливка съедали заметную долю кадра.
+ * Теперь профиль тени выпекается один раз в маленький спрайт на пару
+ * «оттенок × сила», а в кадре это обычный drawImage — мягкое пятно
+ * масштабируется трансформацией, как и раньше.
+ */
+const shadowSprites = new Map<string, HTMLCanvasElement>();
+const SHADOW_STRENGTH_STEP = 0.125;
+function shadowSprite(color: RGB, strength: number): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const q = Math.max(1, Math.round(strength / SHADOW_STRENGTH_STEP));
+  const key = `${color.r >> 3}:${color.g >> 3}:${color.b >> 3}:${q}`;
+  let c = shadowSprites.get(key);
+  if (!c) {
+    c = makeCanvas(128, 128);
+    const x = c.getContext('2d')!;
+    const s = q * SHADOW_STRENGTH_STEP;
+    const g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, css(color, 0.55 * s));
+    g.addColorStop(0.55, css(color, 0.3 * s));
+    g.addColorStop(1, css(color, 0));
+    x.fillStyle = g;
+    x.fillRect(0, 0, 128, 128);
+    shadowSprites.set(key, c);
+    if (shadowSprites.size > 256) shadowSprites.delete(shadowSprites.keys().next().value!);
+  }
+  return c;
+}
+
 export function softShadow(
   ctx: Ctx,
   cx: number,
@@ -105,14 +135,20 @@ export function softShadow(
   ctx.save();
   ctx.translate(cx, cy);
   ctx.scale(1, ry / R);
-  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
-  g.addColorStop(0, css(color, 0.55 * strength));
-  g.addColorStop(0.55, css(color, 0.3 * strength));
-  g.addColorStop(1, css(color, 0));
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(0, 0, R, 0, Math.PI * 2);
-  ctx.fill();
+  const sprite = shadowSprite(color, strength);
+  if (sprite) {
+    ctx.drawImage(sprite, -R, -R, 2 * R, 2 * R);
+  } else {
+    // Вне браузера (проверки без document) — прежний градиент напрямую.
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
+    g.addColorStop(0, css(color, 0.55 * strength));
+    g.addColorStop(0.55, css(color, 0.3 * strength));
+    g.addColorStop(1, css(color, 0));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.restore();
 }
 

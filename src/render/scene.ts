@@ -46,7 +46,7 @@ export interface Camera {
 }
 
 export interface GhostPreview {
-  kind: 'item' | 'brush' | 'erase';
+  kind: 'item' | 'brush' | 'erase' | 'mirage';
   itemId?: string;
   brushId?: string;
   tx: number;

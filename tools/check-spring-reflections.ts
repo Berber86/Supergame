@@ -23,7 +23,7 @@ Object.assign(globalThis, {
 });
 Math.random = makeRng(477);
 const world = new World();
-applyPreset(world, 'spring');
+applyPreset(world, 'klyuch');
 const water = world.tiles.flatMap((t, i) => (t.water ? [i] : []));
 const seen = new Set<number>(),
   queue = [16];
@@ -258,12 +258,12 @@ if (process.argv.includes('--preview')) {
   displayLife.flutters = [{ ...flutter, tx: 11, ty: 17, alt: 15 }];
   displayLife.residents.dragonflies = [{ ...dragonfly, tx: 14, ty: 18, alt: 10 }];
   for (const [name, width, height, zoom, tx, ty] of [
-    ['preview-spring-map.png', 1200, 900, 0.64, 14, 10],
-    ['preview-spring-bridges.png', 1000, 760, 1.7, 12.5, 12.5],
-    ['preview-spring-mobile.png', 430, 800, 0.25, 14, 10],
-    ['preview-spring-wildlife.png', 1000, 760, 2.2, 12.5, 17],
-    ['preview-spring-night.png', 1200, 900, 0.64, 14, 10],
-    ['preview-spring-rain.png', 1200, 900, 0.64, 14, 10],
+    ['preview-klyuch-map.png', 1200, 900, 0.64, 14, 10],
+    ['preview-klyuch-bridges.png', 1000, 760, 1.7, 12.5, 12.5],
+    ['preview-klyuch-mobile.png', 430, 800, 0.25, 14, 10],
+    ['preview-klyuch-wildlife.png', 1000, 760, 2.2, 12.5, 17],
+    ['preview-klyuch-night.png', 1200, 900, 0.64, 14, 10],
+    ['preview-klyuch-rain.png', 1200, 900, 0.64, 14, 10],
   ] as const) {
     const canvas = createCanvas(width, height);
     Object.assign(canvas, { clientWidth: width, clientHeight: height });

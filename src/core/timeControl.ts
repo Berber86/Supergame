@@ -35,6 +35,8 @@ export class TimeControl {
   constructor(
     private readonly growSource?: () => GrowState | null,
     private readonly onGrowMigration?: () => void,
+    /** Календарный сдвиг открытой территории: пресеты стартуют в своём месяце. */
+    private readonly shiftSource?: () => number,
   ) {
     this.load();
     this.syncGrow();
@@ -63,7 +65,8 @@ export class TimeControl {
   /** Вычисляет момент времени: либо настоящий, либо сконструированный. */
   now(): number {
     const grow = this.syncGrow();
-    if (!this.state.active) return grow ? growTime(grow.clock!, Date.now()).now : Date.now();
+    if (!this.state.active)
+      return grow ? growTime(grow.clock!, Date.now()).now : Date.now() + (this.shiftSource?.() ?? 0);
 
     const d = new Date(midMonthMs(this.state.monthIndex));
     // Задаём именно местный час, а не число миллисекунд после полуночи.

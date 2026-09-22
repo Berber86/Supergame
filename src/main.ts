@@ -143,6 +143,7 @@ const life = new Life();
 const timeCtl = new TimeControl(
   () => world.grow,
   () => queueMicrotask(saveWorld),
+  () => world.timeShift,
 );
 const weatherSys = new WeatherSystem();
 const audio = new GardenAudio();
@@ -639,6 +640,20 @@ function updateGhost(): void {
     return;
   }
 
+  // Мираж ставится одной клеткой: кольцо покажет, куда он придёт
+  if (selection.kind === 'mirage') {
+    scene.ghost = {
+      kind: 'mirage',
+      tx: Math.floor(p.tx),
+      ty: Math.floor(p.ty),
+      rot: 0,
+      valid: inBounds(Math.floor(p.tx), Math.floor(p.ty)),
+      w: 1,
+      h: 1,
+    };
+    return;
+  }
+
   if (selection.kind === 'item') {
     const item = selection.item;
     const valid = inBounds(Math.floor(s.tx), Math.floor(s.ty)) && world.canPlace(item.id, s.tx, s.ty, ghostRot);
@@ -701,6 +716,19 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
     } else {
       history.abort();
       if (isClick) ui.toast('Здесь уже этот материал');
+    }
+    return;
+  }
+
+  // Мираж: никакая клетка не занята, живность приходит сама и тает сама
+  if (selection.kind === 'mirage') {
+    if (!isClick) return;
+    const m = selection.mirage;
+    if (life.spawnMirage(m.id, p.tx, p.ty)) {
+      audio.place();
+      ui.toast(`${m.name}: мираж откликнулся и проживёт десять минут`);
+    } else {
+      ui.toast('Этот мираж уже здесь — пусть пока будет один');
     }
     return;
   }

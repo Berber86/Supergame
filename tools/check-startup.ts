@@ -322,7 +322,7 @@ if (!problem) {
     win.document.querySelector('.splash-new').click();
     const mode = win.document.querySelector('.splash-template');
     mode.value =
-      scenario === 'touch-night-grow' ? 'grow' : scenario === 'desktop-day-preset' ? 'preset:moss' : 'classic';
+      scenario === 'touch-night-grow' ? 'grow' : scenario === 'desktop-day-preset' ? 'preset:wild' : 'classic';
     mode.dispatchEvent(new win.Event('change'));
     assert.deepEqual(counts, waitingCounts, 'editing the creation form does not wake the garden');
     win.document
@@ -343,7 +343,7 @@ if (!problem) {
     assert.equal(store.active?.name, 'Камышовая заводь');
   }
   if (scenario === 'desktop-day-preset')
-    assert.ok(!runningWorld?.tiles.some((t) => t.indoor), 'moss preset, not the starter house');
+    assert.ok(!runningWorld?.tiles.some((t) => t.indoor), 'wild preset, not the starter house');
   if (scenario === 'touch-night-overloaded') {
     assert.equal(runningWorld?.objects.length, denseAfter);
     assert.equal(win.localStorage.getItem(`usadba.garden.${chosenId}.before-thinning`), denseOriginal);

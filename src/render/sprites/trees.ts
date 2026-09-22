@@ -8,7 +8,7 @@ import { plantYear, leafGroup, crownAnchorBlend } from '../../world/phenology';
 
 import { flowerOpenness, flowerHeadPath } from '../flowerCycle';
 import { DrawCtx, Drawer, WHITE, litc, shadowUnder } from './common';
-import { hash2, lerp, smoothstep } from '../../core/rng';
+import { clamp01, hash2, lerp, smoothstep } from '../../core/rng';
 import { RGB, css, mix, shade } from '../../world/palette';
 import { blobPath, granulate, taperStroke, washBlob } from '../paint';
 
@@ -179,7 +179,8 @@ function makeTree(style: TreeStyle): Drawer {
         }
       }
     }
-    drawTreeCavity(d, trunk, woodPoint(skeleton.branches[skeleton.branches.length - 1], 0.18));
+    // Дупло с гнездами — только у почти взрослых деревьев.
+    if (d.g >= 0.8) drawTreeCavity(d, trunk, woodPoint(skeleton.branches[skeleton.branches.length - 1], 0.18));
     const fresh = style.blossom ? mix(style.crownSummer, { r: 196, g: 210, b: 137 }, 0.35) : style.crownSpring;
     const green = mix(fresh, style.crownSummer, state.maturity);
     for (const site of sites) {
@@ -276,7 +277,7 @@ function makeTree(style: TreeStyle): Drawer {
         }
       }
       // Sakura's pink crown is part of its canopy: blossom and leaf emergence overlap, not a season switch.
-      if (style.blossom && state.bloom > 0.003) {
+      if (style.blossom && state.bloom > 0.003 && d.g >= 0.6) {
         const bloom = state.bloom * (0.85 + hash2(site.index, obj.seed, 1459) * 0.15);
         const petal = litc(style.blossom, atm, 0.04);
         washBlob(
@@ -301,7 +302,7 @@ function makeTree(style: TreeStyle): Drawer {
         );
         ctx.fill();
       }
-      if (style.fruit && site.index % 2 === 0) {
+      if (style.fruit && site.index % 2 === 0 && d.g >= 0.85) {
         // Fruit also stays attached to its twig when the surrounding leaves fall.
         const q = state.phase < 0.3 ? state.phase + 1 : state.phase;
         const autumn = smoothstep(0.6, 0.73, q),
@@ -385,6 +386,7 @@ function pineSpray(
   main: RGB,
   deep: RGB,
   light: RGB,
+  m = 1,
 ): void {
   const { ctx } = d;
   const edge = (w: number, h: number, lift: number) => {
@@ -415,15 +417,18 @@ function pineSpray(
   ctx.fillStyle = css(main, 0.88);
   ctx.fill();
   // Several fans per spray. All needles of one tone share a stroke call.
+  // Юная подушечка хвои реже и короче; взрослая — та же, что всегда (19 вееров).
+  const fans = m >= 1 ? 19 : 8 + Math.round(11 * m);
+  const needleK = m >= 1 ? 1 : 0.6 + 0.4 * m;
   for (let tone = 0; tone < 2; tone++) {
     ctx.strokeStyle = css(tone ? light : deep, tone ? 0.53 : 0.7);
     ctx.lineWidth = (tone ? 0.65 : 0.8) * scale;
     ctx.beginPath();
-    for (let i = 0; i < 19; i++) {
-      const u = ((i + 0.3) / 19) * 2 - 1;
+    for (let i = 0; i < fans; i++) {
+      const u = ((i + 0.3) / fans) * 2 - 1;
       const px = x + u * rx * 0.94,
         py = y - ry * (0.05 + hash2(seed, i, 2917) * 0.6);
-      const len = (3.4 + hash2(seed, i, 2927) * 4.3) * scale;
+      const len = (3.4 + hash2(seed, i, 2927) * 4.3) * scale * needleK;
       for (let n = 0; n < 3; n++) {
         const angle = -Math.PI * 0.5 + u * 0.7 + (n - 1) * 0.5;
         ctx.moveTo(px, py + scale);
@@ -440,18 +445,44 @@ function pineSpray(
   }
 }
 
+/** Мягкий пучок молодой хвои на стебле саженца — веер иголок из одной почки. */
+function pineTuft(d: DrawCtx, x: number, y: number, r: number, seed: number, light: RGB, deep: RGB): void {
+  if (r <= 0.4) return;
+  const { ctx } = d;
+  const n = 6 + Math.floor(hash2(seed, 3, 3221) * 3);
+  ctx.lineWidth = Math.max(0.5, r * 0.13);
+  for (let tone = 0; tone < 2; tone++) {
+    ctx.strokeStyle = css(tone ? light : deep, tone ? 0.9 : 0.8);
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      if (i % 2 !== tone) continue;
+      const ang = -Math.PI / 2 + (i / Math.max(1, n - 1) - 0.5) * 2.1 + (hash2(seed, i, 3229) - 0.5) * 0.3;
+      const len = r * (0.8 + hash2(seed, i, 3251) * 0.55);
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len);
+    }
+    ctx.stroke();
+  }
+  ctx.fillStyle = css(deep, 0.55);
+  ctx.beginPath();
+  ctx.arc(x, y, Math.max(0.7, r * 0.2), 0, Math.PI * 2);
+  ctx.fill();
+}
+
 export const drawPine: Drawer = (d) => {
   const { ctx, atm, obj, g } = d;
   const sway = Math.sin(d.time * 0.0003 + obj.seed) * 2.2 * d.wind;
   const geometry = pineGeometry(obj.seed, g, d.x, d.y, sway);
-  const { profile, scale, sprays } = geometry;
+  const { profile, scale, sprays, tufts } = geometry;
   shadowUnder(d, (profile.spread + 7) * scale, (16 + profile.spread * 0.08) * scale, 0.9);
   const trunkCol = litc({ r: 114, g: 83, b: 66 }, atm);
   drawTrunk(d, geometry.height, geometry.width, trunkCol, 0, geometry.trunks[0]);
   for (const trunk of geometry.trunks.slice(1)) paintWood(ctx, trunk, trunkCol, obj.seed + 997, true);
   // Short scaly plates follow each actual leader, including the second fork.
+  // Молодому стволу хватает пары чешуек; полная кора — у взрослой сосны.
+  const plates = g >= 1 ? 18 : Math.round(6 + 12 * g);
   for (const trunk of geometry.trunks)
-    for (let i = 0; i < 18; i++) {
+    for (let i = 0; i < plates; i++) {
       const t = 0.07 + i * 0.039 + (hash2(obj.seed, i, 2981) - 0.5) * 0.014,
         a = woodFrame(trunk, t),
         b = woodFrame(trunk, t + 0.017 + hash2(obj.seed, i, 2987) * 0.012);
@@ -476,7 +507,8 @@ export const drawPine: Drawer = (d) => {
     light = litc(mix(tint, { r: 173, g: 185, b: 123 }, 0.38), atm, 0.025);
   for (const bough of geometry.boughs) {
     paintWood(ctx, bough.curve, shade(trunkCol, 0.9), obj.seed, true);
-    if (bough.cone) {
+    // Шишки — примета почти взрослого дерева: саженцу они не по годам.
+    if (bough.cone && g >= 0.8) {
       const p = woodPoint(bough.curve, 0.8);
       ctx.fillStyle = css(shade(trunkCol, 0.8), 0.93);
       ctx.beginPath();
@@ -493,13 +525,17 @@ export const drawPine: Drawer = (d) => {
   for (const twig of geometry.twigs) paintWood(ctx, twig, trunkCol, obj.seed);
   // Back sprays first; the open inner branches remain visible between the needle tips.
   sprays.sort((a, b) => a.y - b.y);
-  for (const p of sprays) pineSpray(d, p.x, p.y, p.rx, p.ry, p.seed, scale, main, deep, light);
+  for (const p of sprays) pineSpray(d, p.x, p.y, p.rx, p.ry, p.seed, scale, main, deep, light, p.m);
+  // Юные пучки хвои на стебле — пока крона не сомкнулась.
+  for (const t of tufts) pineTuft(d, t.x, t.y, t.r, t.seed, light, deep);
 };
 
 export const drawBamboo: Drawer = (d) => {
   const { ctx, atm, g, obj } = d;
   const scale = lerp(0.3, 1, Math.pow(g, 0.6));
-  const stalks = 2 + Math.floor(hash2(obj.seed, 21, 29) * 3); // 2..4 стебля
+  const culms = 2 + Math.floor(hash2(obj.seed, 21, 29) * 3); // 2..4 стебля
+  // Саженец: сперва один тонкий стебель, новые добавляются по мере роста.
+  const stalks = g >= 1 ? culms : Math.max(1, Math.ceil(culms * clamp01(g / 0.7)));
   shadowUnder(d, 16 * scale, 7 * scale, 0.6);
   const stalkCol = litc(
     mix({ r: 158, g: 186, b: 116 }, { r: 168, g: 176, b: 150 }, plantYear(obj.type, obj.seed, atm.time.now).winterTone),
@@ -511,7 +547,9 @@ export const drawBamboo: Drawer = (d) => {
   );
   for (let s = 0; s < stalks; s++) {
     const r = hash2(s, obj.seed, 13);
-    const h = (82 + r * 54) * scale;
+    // Новый стебель вытягивается не сразу — сперва на треть высоты.
+    const culmAge = g >= 1 ? 1 : clamp01((g - (s * 0.7) / culms) / 0.3);
+    const h = (82 + r * 54) * scale * (0.35 + 0.65 * culmAge);
     const ox = (s - 1) * 7 * scale + (r - 0.5) * 5;
     const sway = Math.sin(d.time * 0.0008 + obj.seed + s * 1.7) * 5 * d.wind * scale;
     const x0 = d.x + ox;
@@ -647,10 +685,13 @@ export const drawWisteria: Drawer = (d) => {
   ctx.stroke();
 
   // Living twin vines climb the posts; the pergola itself remains straight timber.
+  // Саженец глицинии сперва взбирается по опорам — листва и кисти приходят позже.
+  const climb = g >= 1 ? 1 : clamp01(g / 0.45);
+  const segments = Math.max(1, Math.ceil(5 * climb));
   for (const side of [-1, 1]) {
     let previous: WoodPoint = { x: d.x + side * w * 0.8, y: d.y };
-    for (let k = 0; k < 5; k++) {
-      const t = (k + 1) / 5,
+    for (let k = 0; k < segments; k++) {
+      const t = Math.min((k + 1) / 5, climb),
         top = { x: d.x + side * w * 0.8 + Math.sin(t * Math.PI * 4) * 2.7 * scale, y: d.y - h * t };
       const stem = woodCurve(
         previous,
@@ -664,103 +705,114 @@ export const drawWisteria: Drawer = (d) => {
       previous = top;
     }
   }
-  const vine = woodCurve(
-    { x: d.x - w * 0.8, y: d.y - h },
-    { x: d.x + w * 0.8, y: d.y - h },
-    1.6 * scale,
-    0.85 * scale,
-    0,
-    4 * scale,
-  );
-  paintWood(ctx, vine, litc({ r: 105, g: 86, b: 66 }, atm), obj.seed, true);
-  const state = plantYear(obj.type, obj.seed, atm.time.now);
-  const green = mix({ r: 145, g: 177, b: 115 }, { r: 104, g: 146, b: 92 }, state.maturity);
-  const leafColor = (index: number) => mix(green, { r: 186, g: 168, b: 96 }, leafGroup(state, obj.seed, index).color);
-  const puffs = 6;
-  for (let i = 0; i < puffs; i++) {
-    const r = hash2(i, obj.seed, 13),
-      px = d.x + (i / (puffs - 1) - 0.5) * w * 1.7,
-      py = d.y - h + (2 + r * 5) * scale;
-    const leaf = leafGroup(state, obj.seed, i);
-    // Woody vine and attachment twigs stay in place under the leaves all year.
-    paintWood(
-      ctx,
-      woodCurve(
-        woodPoint(vine, i / (puffs - 1)),
-        { x: px, y: py },
-        0.75 * scale,
-        0.25 * scale,
-        (r - 0.5) * 4 * scale,
-        0,
-      ),
-      post,
-      obj.seed,
+  // Горизонтальная лоза и листовые подушки появляются, когда стебли дошли до перекладины.
+  if (climb >= 1) {
+    const leafK = g >= 1 ? 1 : clamp01((g - 0.45) / 0.25);
+    const vine = woodCurve(
+      { x: d.x - w * 0.8, y: d.y - h },
+      { x: d.x + w * 0.8, y: d.y - h },
+      1.6 * scale,
+      0.85 * scale,
+      0,
+      4 * scale,
     );
-    if (state.bud > 0.003) {
-      ctx.fillStyle = css(litc({ r: 135, g: 158, b: 92 }, atm), state.bud);
-      ctx.beginPath();
-      ctx.ellipse(px, py, 1.6 * scale, 2 * scale, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    if (leaf.growth * leaf.retained > 0.003)
-      washBlob(
+    paintWood(ctx, vine, litc({ r: 105, g: 86, b: 66 }, atm), obj.seed, true);
+    const state = plantYear(obj.type, obj.seed, atm.time.now);
+    const green = mix({ r: 145, g: 177, b: 115 }, { r: 104, g: 146, b: 92 }, state.maturity);
+    const leafColor = (index: number) => mix(green, { r: 186, g: 168, b: 96 }, leafGroup(state, obj.seed, index).color);
+    const puffs = 6;
+    for (let i = 0; i < puffs; i++) {
+      const r = hash2(i, obj.seed, 13),
+        px = d.x + (i / (puffs - 1) - 0.5) * w * 1.7,
+        py = d.y - h + (2 + r * 5) * scale;
+      const leaf = leafGroup(state, obj.seed, i);
+      // Woody vine and attachment twigs stay in place under the leaves all year.
+      paintWood(
         ctx,
-        px,
-        py,
-        w * (0.26 + r * 0.16) * leaf.size,
-        (9 + r * 5) * scale * leaf.size,
-        litc(leafColor(i), atm),
-        obj.seed + i * 5,
-        { layers: 2, alpha: 0.46 * leaf.growth * leaf.retained, edge: 0.14 * leaf.growth * leaf.retained, wobble: 0.3 },
+        woodCurve(
+          woodPoint(vine, i / (puffs - 1)),
+          { x: px, y: py },
+          0.75 * scale,
+          0.25 * scale,
+          (r - 0.5) * 4 * scale,
+          0,
+        ),
+        post,
+        obj.seed,
       );
-  }
-  const bunches = Math.round(6 + scale * 4),
-    cluster = litc({ r: 158, g: 130, b: 202 }, atm, 0.04);
-  for (let i = 0; i < bunches; i++) {
-    const r = hash2(i, obj.seed, 19),
-      px = d.x + (i / (bunches - 1) - 0.5) * w * 1.6 + (r - 0.5) * 5;
-    const len = 13 * scale * (0.65 + r * 0.7),
-      sway = Math.sin(d.time * 0.0011 + i * 0.9 + obj.seed) * 2.4 * d.wind;
-    ctx.strokeStyle = css(litc({ r: 116, g: 98, b: 84 }, atm), 0.7);
-    ctx.lineWidth = 1.1 * scale;
-    ctx.beginPath();
-    const attachment = woodPoint(vine, i / (bunches - 1));
-    ctx.moveTo(attachment.x, attachment.y);
-    ctx.quadraticCurveTo(px + sway, d.y - h + len * 0.6, px + sway * 1.6, d.y - h + len);
-    ctx.stroke();
-    const leaf = leafGroup(state, obj.seed, i + 6);
-    if (leaf.growth * leaf.retained > 0.003) {
-      ctx.fillStyle = css(litc(leafColor(i + 6), atm), 0.5 * leaf.growth * leaf.retained);
-      blobPath(
-        ctx,
-        px + sway,
-        d.y - h + 8 * scale + len * 0.4,
-        5 * scale * leaf.size,
-        len * 0.42 * leaf.size,
-        obj.seed + i,
-        0.3,
-        7,
-      );
-      ctx.fill();
-    }
-    if (state.bloom > 0.003) {
-      const flowerLen = 40 * scale * (0.65 + r * 0.7) * Math.sqrt(state.bloom);
-      // Fixed flower sites, expanding down the same pendant stem; no changing random sequence.
-      const steps = 12;
-      for (let k = 0; k < steps; k++) {
-        const t = k / steps,
-          rr = (4 - t * 2.5) * scale * Math.sqrt(state.bloom);
-        ctx.fillStyle = css(mix(cluster, WHITE, t * 0.35), (0.72 - t * 0.18) * state.bloom);
-        flowerHeadPath(
+      if (state.bud > 0.003 && leafK > 0.01) {
+        ctx.fillStyle = css(litc({ r: 135, g: 158, b: 92 }, atm), state.bud * leafK);
+        ctx.beginPath();
+        ctx.ellipse(px, py, 1.6 * scale, 2 * scale, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (leaf.growth * leaf.retained > 0.003)
+        washBlob(
           ctx,
-          px + sway * t * 1.4,
-          d.y - h + 6 * scale + t * flowerLen,
-          rr,
-          rr * 0.82,
-          obj.seed + i * 7 + k,
-          flowerOpenness(atm),
+          px,
+          py,
+          w * (0.26 + r * 0.16) * leaf.size,
+          (9 + r * 5) * scale * leaf.size,
+          litc(leafColor(i), atm),
+          obj.seed + i * 5,
+          {
+            layers: 2,
+            alpha: 0.46 * leaf.growth * leaf.retained * leafK,
+            edge: 0.14 * leaf.growth * leaf.retained * leafK,
+            wobble: 0.3,
+          },
+        );
+    }
+    // Цветочные кисти — вторая половина роста; длина набирается постепенно.
+    const bunchK = g >= 1 ? 1 : clamp01((g - 0.6) / 0.35);
+    const bunches = Math.round(6 + scale * 4),
+      cluster = litc({ r: 158, g: 130, b: 202 }, atm, 0.04);
+    for (let i = 0; bunchK > 0 && i < bunches; i++) {
+      const r = hash2(i, obj.seed, 19),
+        px = d.x + (i / (bunches - 1) - 0.5) * w * 1.6 + (r - 0.5) * 5;
+      const len = 13 * scale * (0.65 + r * 0.7) * bunchK,
+        sway = Math.sin(d.time * 0.0011 + i * 0.9 + obj.seed) * 2.4 * d.wind;
+      ctx.strokeStyle = css(litc({ r: 116, g: 98, b: 84 }, atm), 0.7);
+      ctx.lineWidth = 1.1 * scale;
+      ctx.beginPath();
+      const attachment = woodPoint(vine, i / (bunches - 1));
+      ctx.moveTo(attachment.x, attachment.y);
+      ctx.quadraticCurveTo(px + sway, d.y - h + len * 0.6, px + sway * 1.6, d.y - h + len);
+      ctx.stroke();
+      const leaf = leafGroup(state, obj.seed, i + 6);
+      if (leaf.growth * leaf.retained > 0.003) {
+        ctx.fillStyle = css(litc(leafColor(i + 6), atm), 0.5 * leaf.growth * leaf.retained * bunchK);
+        blobPath(
+          ctx,
+          px + sway,
+          d.y - h + 8 * scale + len * 0.4,
+          5 * scale * leaf.size * bunchK,
+          len * 0.42 * leaf.size,
+          obj.seed + i,
+          0.3,
+          7,
         );
         ctx.fill();
+      }
+      if (state.bloom > 0.003) {
+        const flowerLen = 40 * scale * (0.65 + r * 0.7) * Math.sqrt(state.bloom) * bunchK;
+        // Fixed flower sites, expanding down the same pendant stem; no changing random sequence.
+        const steps = 12;
+        for (let k = 0; k < steps; k++) {
+          const t = k / steps,
+            rr = (4 - t * 2.5) * scale * Math.sqrt(state.bloom);
+          ctx.fillStyle = css(mix(cluster, WHITE, t * 0.35), (0.72 - t * 0.18) * state.bloom);
+          flowerHeadPath(
+            ctx,
+            px + sway * t * 1.4,
+            d.y - h + 6 * scale + t * flowerLen,
+            rr,
+            rr * 0.82,
+            obj.seed + i * 7 + k,
+            flowerOpenness(atm),
+          );
+          ctx.fill();
+        }
       }
     }
   }
