@@ -4,6 +4,7 @@ import { CALM, makeWindSampler, windFronts, type WindSampler } from './wind';
 import type { Gust } from './wind';
 export type { Gust } from './wind';
 import { Lizards } from './lizards';
+import { MIRAGE_MS, MirageKind } from './mirages';
 import { ecologyYear, wildlifeActivity, treeFallActivity } from './ecology';
 /**
  * Живность сада: коты, птицы, бабочки, карпы — и приглашённые жители воды.
@@ -92,6 +93,8 @@ export interface Cat extends Agent {
 }
 
 export interface Bird extends Agent {
+  /** Мираж: стена реального времени, когда растает. */
+  mirage?: number;
   /** Brief wing-shake on the rim after a real bath; no new persisted state. */
   bathDry?: number;
   state: BirdState;
@@ -109,6 +112,8 @@ export interface Bird extends Agent {
 }
 
 export interface Flutter {
+  /** Мираж: стена реального времени, когда растает. */
+  mirage?: number;
   tx: number;
   ty: number;
   alt: number;
@@ -364,8 +369,363 @@ export class Life {
     };
   }
 
+  // ---------------- Миражи ----------------
+  //
+  // Особая кнопка зовёт живность прямо в сад, даже зимой. Мираж живёт
+  // десять минут реального времени: метка на агенте — стена часов.
+
+  private mirageSeq = 1;
+
+  /** Позвать мираж в точку сада. Возвращает правду, если кто-то откликнулся. */
+  spawnMirage(kind: MirageKind, x: number, y: number): boolean {
+    const until = Date.now() + MIRAGE_MS;
+    const seed = Math.floor(rnd() * 10000);
+    const id = this.mirageSeq++;
+    switch (kind) {
+      case 'butterfly':
+        this.flutters.push({
+          tx: x,
+          ty: y,
+          alt: 16 + rnd() * 10,
+          vx: 0,
+          vy: 0,
+          valt: 0,
+          target: { x, y },
+          timer: 1600,
+          seed: rnd() * 1000,
+          phase: rnd() * 10,
+          resting: 0,
+          mirage: until,
+        });
+        return true;
+      case 'firefly':
+        this.wildlife.fireflies.push({
+          tx: x,
+          ty: y,
+          ax: x,
+          ay: y,
+          dir: rnd() * Math.PI * 2,
+          seed: rnd() * 1000,
+          period: 1500 + rnd() * 1200,
+          phase: rnd(),
+          state: 'fly',
+          timer: 4000 + rnd() * 4000,
+          alpha: 1,
+          mirage: until,
+        });
+        return true;
+      case 'moth':
+        this.wildlife.moths.push({
+          tx: x,
+          ty: y,
+          ax: x,
+          ay: y,
+          dir: rnd() * Math.PI * 2,
+          seed: rnd() * 1000,
+          phase: rnd() * 6,
+          timer: 4000 + rnd() * 4000,
+          alpha: 1,
+          state: 'fly',
+          flutter: 0.6 + rnd() * 0.5,
+          mirage: until,
+        });
+        return true;
+      case 'bee':
+        this.wildlife.bees.push({
+          tx: x,
+          ty: y,
+          ax: x,
+          ay: y,
+          alt: 8 + rnd() * 8,
+          dir: rnd() * Math.PI * 2,
+          vx: 0,
+          vy: 0,
+          seed: rnd() * 1000,
+          timer: 3000 + rnd() * 3000,
+          phase: rnd() * 6,
+          state: 'fly',
+          target: null,
+          carrying: false,
+          alpha: 1,
+          mirage: until,
+        });
+        return true;
+      case 'dragonfly': {
+        const h = this.habitat;
+        let pond = -1;
+        if (h) {
+          let best = Infinity;
+          for (let i = 0; i < h.ponds.length; i++) {
+            const p = h.ponds[i];
+            const d = Math.hypot(p.cx - x, p.cy - y);
+            if (d < best) {
+              best = d;
+              pond = i;
+            }
+          }
+        }
+        this.residents.dragonflies.push({
+          id,
+          kind: rnd() < 0.5 ? 'hawker' : 'damselfly',
+          tx: x,
+          ty: y,
+          alt: 9 + rnd() * 5,
+          vx: 0,
+          vy: 0,
+          facing: rnd() < 0.5 ? 1 : -1,
+          seed: rnd() * 1000,
+          state: 'hover',
+          timer: 2600,
+          phase: rnd() * 6,
+          pond,
+          target: null,
+          perch: null,
+          mirage: until,
+        });
+        return true;
+      }
+      case 'frog': {
+        const h = this.habitat;
+        let pond = -1;
+        if (h && h.ponds.length) {
+          let best = Infinity;
+          for (let i = 0; i < h.ponds.length; i++) {
+            const p = h.ponds[i];
+            const d = Math.hypot(p.cx - x, p.cy - y);
+            if (d < best) {
+              best = d;
+              pond = i;
+            }
+          }
+        }
+        this.residents.frogs.push({
+          id,
+          tx: x,
+          ty: y,
+          facing: rnd() < 0.5 ? 1 : -1,
+          seed: rnd() * 1000,
+          state: 'sit',
+          timer: 2000 + rnd() * 3000,
+          phase: 0,
+          from: null,
+          target: null,
+          pond,
+          species: rnd() < 0.5 ? 'green' : 'brown',
+          size: 0.9 + rnd() * 0.3,
+          throat: 0,
+          hidden: 0,
+          gone: false,
+          answer: 0,
+          mirage: until,
+        });
+        return true;
+      }
+      case 'bird':
+        this.birds.push({
+          tx: x - 5,
+          ty: y - 5,
+          facing: 1,
+          seed,
+          state: 'fly-in',
+          timer: 2000,
+          target: { x, y },
+          alt: 60,
+          hop: 0,
+          scale: 1,
+          species: 'tit',
+          place: 'ground',
+          slot: 0,
+          mirage: until,
+        });
+        return true;
+      case 'owl':
+        if (this.wildlife.owls.some((o) => o.mirage)) return false;
+        this.wildlife.owls.push({
+          tx: x,
+          ty: y,
+          from: null,
+          target: null,
+          state: 'perch',
+          timer: 3000 + rnd() * 4000,
+          facing: rnd() < 0.5 ? 1 : -1,
+          phase: 0,
+          seed,
+          born: Date.now(),
+          stay: MIRAGE_MS,
+          huntX: x,
+          huntY: y,
+          hoot: 0,
+          mirage: until,
+        });
+        return true;
+      case 'squirrel':
+        this.wildlife.squirrels.push({
+          tx: x,
+          ty: y,
+          from: null,
+          target: null,
+          state: 'look',
+          timer: 2600 + rnd() * 2000,
+          facing: rnd() < 0.5 ? 1 : -1,
+          phase: 0,
+          seed,
+          born: Date.now(),
+          stay: MIRAGE_MS,
+          hasNut: false,
+          panic: 0,
+          mirage: until,
+        });
+        return true;
+      case 'hedgehog':
+        this.wildlife.hedgehogs.push({
+          tx: x,
+          ty: y,
+          from: null,
+          target: null,
+          state: 'sniff',
+          timer: 2400 + rnd() * 2000,
+          facing: rnd() < 0.5 ? 1 : -1,
+          phase: 0,
+          seed,
+          born: Date.now(),
+          stay: MIRAGE_MS,
+          curl: 0,
+          mirage: until,
+        });
+        return true;
+      case 'mouse':
+        this.wildlife.mice.push({
+          tx: x,
+          ty: y,
+          from: null,
+          target: null,
+          state: 'forage',
+          timer: 2600 + rnd() * 2400,
+          facing: rnd() < 0.5 ? 1 : -1,
+          phase: 0,
+          seed,
+          born: Date.now(),
+          stay: MIRAGE_MS,
+          panicX: x,
+          panicY: y,
+          panic: 0,
+          mirage: until,
+        });
+        return true;
+      case 'lizard':
+        return this.lizards.spawnMirage(x, y, until);
+      case 'turtle':
+        this.wildlife.turtles.push({
+          tx: x,
+          ty: y,
+          from: null,
+          target: null,
+          state: 'bask',
+          timer: 4000 + rnd() * 3000,
+          facing: rnd() < 0.5 ? 1 : -1,
+          phase: 0,
+          seed,
+          born: Date.now(),
+          stay: MIRAGE_MS,
+          hide: 0,
+          mirage: until,
+        });
+        return true;
+      case 'heron':
+        if (this.wildlife.heron) return false;
+        this.wildlife.heron = {
+          tx: x,
+          ty: y,
+          from: null,
+          target: null,
+          state: 'stand',
+          timer: 4000 + rnd() * 3000,
+          facing: rnd() < 0.5 ? 1 : -1,
+          phase: 0,
+          fish: 0,
+          struck: false,
+          born: Date.now(),
+          stay: MIRAGE_MS,
+          seed,
+          mirage: until,
+        };
+        return true;
+      case 'deer':
+        this.wildlife.deer.push({
+          tx: x,
+          ty: y,
+          from: null,
+          target: null,
+          state: 'graze',
+          timer: 4000 + rnd() * 3000,
+          facing: rnd() < 0.5 ? 1 : -1,
+          phase: 0,
+          seed,
+          coat: { spots: rnd() < 0.4, antlers: rnd() < 0.5, winter: false },
+          born: Date.now(),
+          stay: MIRAGE_MS,
+          mirage: until,
+        });
+        return true;
+      case 'cat': {
+        const g = this.makeCat(-1, x, y, Math.floor(rnd() * 100000), true);
+        g.state = 'sleep';
+        g.stayAt = until;
+        g.leaveAt = until;
+        if (!this.guests.length) this.guests = [g];
+        else if (this.guests.length < 2) this.guests.push(g);
+        else return false;
+        return true;
+      }
+    }
+  }
+
+  /** Миражи тают по часам реальной жизни — проверка в начале каждого шага. */
+  private pruneMirages(wall: number): void {
+    // Обычная живность без метки миража остаётся всегда
+    const ok = (m: number | undefined) => m === undefined || m > wall;
+    this.flutters = this.flutters.filter((f) => ok(f.mirage));
+    for (const b of this.birds) {
+      if (b.mirage !== undefined && !ok(b.mirage)) {
+        // Мираж-птица не исчезает на месте: просто решает улететь
+        b.mirage = undefined;
+        if (b.state !== 'fly-out') {
+          b.state = 'fly-out';
+          b.timer = 4000;
+          b.target = null;
+        }
+      }
+    }
+    const r = this.residents;
+    r.frogs = r.frogs.filter((f) => ok(f.mirage));
+    r.dragonflies = r.dragonflies.filter((d) => ok(d.mirage));
+    const w = this.wildlife;
+    w.fireflies = w.fireflies.filter((f) => ok(f.mirage));
+    w.moths = w.moths.filter((m) => ok(m.mirage));
+    w.bees = w.bees.filter((b) => ok(b.mirage));
+    w.deer = w.deer.filter((d) => ok(d.mirage));
+    w.hedgehogs = w.hedgehogs.filter((a) => ok(a.mirage));
+    w.mice = w.mice.filter((m) => ok(m.mirage));
+    w.owls = w.owls.filter((o) => ok(o.mirage));
+    w.squirrels = w.squirrels.filter((s) => ok(s.mirage));
+    w.turtles = w.turtles.filter((t) => ok(t.mirage));
+    if (w.heron && w.heron.mirage !== undefined && !ok(w.heron.mirage)) {
+      w.heron.mirage = undefined;
+      if (w.heron.state !== 'fly-out' && w.heron.state !== 'fly-in') {
+        w.heron.state = 'fly-out';
+        w.heron.timer = 4000;
+        w.heron.target = null;
+        w.heron.from = null;
+      }
+    }
+    this.lizards.pruneMirages(wall);
+    // Кот-мираж уходит сам: у гостя уже стоит leaveAt на час его рождения
+  }
+
   update(world: World, t: TimeState, dt: number, now: number, wx?: WeatherState | null): void {
     this.sync(world);
+    // Миражи живут по часам реальной жизни и тают сами
+    this.pruneMirages(Date.now());
     this.updateWind(dt, t, wx);
 
     // Среда обитания пересчитывается редко: постройки не двигаются сами,
@@ -1148,9 +1508,11 @@ export class Life {
         resting: 0,
       });
     }
-    // лишних убираем плавно
+    // лишних убираем плавно; миражи не в счёт: их время решает особая кнопка
     while (this.flutters.length > wantButterflies) {
-      this.flutters.splice(0, 1);
+      const idx = this.flutters.findIndex((f) => !f.mirage);
+      if (idx < 0) break;
+      this.flutters.splice(idx, 1);
     }
 
     for (const f of this.flutters) {

@@ -8,6 +8,8 @@ import type { Flutter } from './life';
 import { easePose } from './animalMotion';
 export type LizardState = 'emerge' | 'bask' | 'look' | 'walk' | 'hunt' | 'strike' | 'flee' | 'hide' | 'leave';
 export interface Lizard {
+  /** Мираж: стена реального времени, когда растает. */
+  mirage?: number;
   tx: number;
   ty: number;
   seed: number;
@@ -124,6 +126,24 @@ export class Lizards {
     if (state !== 'bask') a.basking = 0;
     if (state !== 'hunt' && state !== 'strike') a.prey = null;
   }
+
+  /** Мираж-ящерица: выходит прямо на месте и живёт по реальным часам. */
+  spawnMirage(x: number, y: number, until: number): boolean {
+    const a = makeLizard(Math.floor(this.rnd() * 100000), { x, y });
+    a.mirage = until;
+    a.alpha = 1;
+    a.state = 'bask';
+    a.timer = a.duration = 4000;
+    a.stay = Number.MAX_SAFE_INTEGER;
+    this.agents.push(a);
+    return true;
+  }
+
+  /** Миражи тают по стене реального времени. */
+  pruneMirages(wall: number): void {
+    if (!this.agents.some((a) => a.mirage !== undefined)) return;
+    this.agents = this.agents.filter((a) => a.mirage === undefined || a.mirage > wall);
+  }
   private reachable(a: Lizard, sites: Vec[], world: World): Vec[] {
     return sites.filter((p) => Math.hypot(p.x - a.tx, p.y - a.ty) < 4 && lizardRoute(world, { x: a.tx, y: a.ty }, p));
   }
@@ -160,7 +180,8 @@ export class Lizards {
         continue;
       }
       // Sunset, winter, rain and surplus population all have a strict retirement bound.
-      a.inactive = i >= want || a.age > a.stay ? a.inactive + dt : 0;
+      // Миражи не уходят по счётчику: их время — особая кнопка, не сезон
+      a.inactive = !a.mirage && (i >= want || a.age > a.stay) ? a.inactive + dt : 0;
       if (a.inactive >= 5000) {
         this.agents.splice(i, 1);
         continue;

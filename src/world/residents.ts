@@ -34,6 +34,8 @@ export function frogHopDuration(from: Vec | null, target: Vec | null): number {
 }
 
 export interface Frog {
+  /** Мираж: стена реального времени, когда растает. */
+  mirage?: number;
   id: number;
   tx: number;
   ty: number;
@@ -64,6 +66,8 @@ export interface Frog {
 export type FlyState = 'arrive' | 'patrol' | 'hover' | 'perch' | 'chase' | 'leave';
 
 export interface PondDragonfly {
+  /** Мираж: стена реального времени, когда растает. */
+  mirage?: number;
   id: number;
   kind: 'hawker' | 'damselfly';
   tx: number;
@@ -169,7 +173,9 @@ export class Residents {
 
     // Лишние уходят под воду по-тихому
     if (alive.length > want) {
-      const extra = alive.find((f) => f.state !== 'dive' && f.hidden <= 0) ?? alive.find((f) => f.state !== 'dive');
+      const extra =
+        alive.find((f) => !f.mirage && f.state !== 'dive' && f.hidden <= 0) ??
+        alive.find((f) => !f.mirage && f.state !== 'dive');
       if (extra) {
         extra.state = 'dive';
         extra.gone = true;
@@ -445,7 +451,7 @@ export class Residents {
     const rain = wx ? Math.max(wx.rain, wx.snow) : 0;
 
     if (this.dragonflies.length > want) {
-      const extra = this.dragonflies.find((d) => d.state !== 'leave');
+      const extra = this.dragonflies.find((d) => !d.mirage && d.state !== 'leave');
       if (extra) {
         extra.state = 'leave';
         extra.timer = 2600;

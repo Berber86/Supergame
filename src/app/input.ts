@@ -481,6 +481,8 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
 
     if (k === 'b') {
       ui.toggleBuild();
+    } else if (k === 'n') {
+      ui.toggleMirage();
     } else if (k === 'h' || k === '?') {
       ui.toggleHelp();
     } else if (k === 'r') {

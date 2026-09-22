@@ -3,11 +3,12 @@ import { ecologyDescription } from '../world/ecology';
 /** Исчезающий интерфейс: каталог, часы, вехи, свиток помощи. */
 
 import { CatalogItem, ITEMS, MILESTONES, TABS, TERRAIN_BRUSHES, TerrainBrush } from '../world/catalog';
+import { MIRAGES, MirageDef } from '../world/mirages';
 import { MONTH_NAMES, TimeState, partOfDay } from '../core/clock';
 import { Atmosphere } from '../world/palette';
 import { GroundId } from '../world/types';
 import { World } from '../world/world';
-import { itemIcon, svgIcon } from './icons';
+import { itemIcon, mirageIcon, svgIcon } from './icons';
 import './grow.css';
 
 const SEASON_KANJI: Record<string, string> = { spring: '春', summer: '夏', autumn: '秋', winter: '冬' };
@@ -24,7 +25,9 @@ export type Selection =
   /** Заливка области материалом. */
   | { kind: 'fill'; ground: GroundId; name: string }
   /** Тропа: два клика — начало и конец, дорога прокладывается сама. */
-  | { kind: 'path' };
+  | { kind: 'path' }
+  /** Мираж: особая кнопка зовёт живность на десять минут. */
+  | { kind: 'mirage'; mirage: MirageDef };
 
 export interface UIHooks {
   onSelect(sel: Selection): void;
@@ -65,6 +68,8 @@ export class UI {
   private atm!: Atmosphere;
   selection: Selection = { kind: 'none' };
   buildOpen = false;
+  /** Особая кнопка: та же полка, но зовёт живность-миражей. */
+  mirageOpen = false;
   private activeTab = 'trees';
   private els: Record<string, HTMLElement> = {};
   private toastTimer = 0;
@@ -128,6 +133,8 @@ export class UI {
       return b;
     };
     this.els.btnBuild = mk('hand', 'Строить (B)');
+    this.els.btnMirage = mk('mirage', 'Живность (N)');
+    this.els.btnMirage.title = 'Позвать живность: миражи живут по десять минут';
     // Крыша появляется только с домом: пока крыть нечего, кнопка спит
     this.els.btnRoof = mk('roof', 'Крыша');
     this.els.btnRoof.style.display = 'none';
@@ -174,6 +181,7 @@ export class UI {
     this.els.rotate = rotate;
 
     this.els.btnBuild.addEventListener('click', () => this.toggleBuild());
+    this.els.btnMirage.addEventListener('click', () => this.toggleMirage());
     this.els.btnRoof.addEventListener('click', () => this.hooks.onRoof());
     this.els.btnSettings.addEventListener('click', () => this.hooks.onSettings());
     this.els.btnGardens.addEventListener('click', () => this.hooks.onGardens());
@@ -247,7 +255,10 @@ export class UI {
       </div>`;
     layer.appendChild(cat);
     this.els.catalog = cat;
-    cat.querySelector('.catalog-close')!.addEventListener('click', () => this.toggleBuild(false));
+    cat.querySelector('.catalog-close')!.addEventListener('click', () => {
+      this.toggleBuild(false);
+      this.toggleMirage(false);
+    });
     this.els.tabs = cat.querySelector('.tabs')!;
     this.els.items = cat.querySelector('.items')!;
     cat.querySelector('.catalog-handle')!.addEventListener('click', () => this.toggleBuild());
@@ -285,6 +296,7 @@ export class UI {
     const build = touch
       ? `
         <dt>Рука</dt><dd>Открыть или закрыть каталог</dd>
+        <dt>Живность</dt><dd>Позвать миражей: бабочек, лягушек и других, на десять минут</dd>
         <dt>Касание</dt><dd>Поставить выбранное</dd>
         <dt>Провести</dt><dd>Рисовать землёй и мелочами</dd>
         <dt>Держать</dt><dd>Убрать то, что под пальцем</dd>
@@ -297,6 +309,7 @@ export class UI {
         <dt>Крыша</dt><dd>Убрать кровлю — заглянуть в комнаты</dd>`
       : `
         <dt>B</dt><dd>Открыть или закрыть каталог</dd>
+        <dt>N</dt><dd>Живность: позвать мираж, он проживёт десять минут</dd>
         <dt>Клик</dt><dd>Поставить выбранное</dd>
         <dt>Зажать</dt><dd>Рисовать землёй и мелочами</dd>
         <dt>X / ПКМ</dt><dd>Убрать предмет</dd>
@@ -616,7 +629,8 @@ export class UI {
 
   select(sel: Selection): void {
     this.selection = sel;
-    this.renderItems();
+    if (this.mirageOpen) this.renderMirages();
+    else this.renderItems();
     this.syncBuildbar();
     // Поворот есть не у каждого предмета: кнопка гаснет, когда нечего вертеть
     this.setRotateEnabled(sel.kind === 'item' && !!sel.item.rotatable);
@@ -647,6 +661,8 @@ export class UI {
       );
     } else if (sel.kind === 'path') {
       this.setHint('Тропа — отметьте начало, потом конец; дорога ляжет сама');
+    } else if (sel.kind === 'mirage') {
+      this.setHint(`${sel.mirage.name} — ${tap}, чтобы позвать мираж в сад`);
     }
   }
 
@@ -656,16 +672,61 @@ export class UI {
   }
 
   toggleBuild(force?: boolean): void {
+    // Стройка и миражи делят один свиток: любое переключение закрывает миражей
+    if (this.mirageOpen) this.toggleMirage(false);
     this.buildOpen = force ?? !this.buildOpen;
     this.els.catalog.classList.toggle('open', this.buildOpen);
     this.els.buildbar.classList.toggle('show', this.buildOpen);
     this.els.btnBuild.classList.toggle('active', this.buildOpen);
+    this.els.btnMirage?.classList.toggle('active', false);
     // Режим стройки виден и в CSS: на телефоне по нему прячется подсказка,
     // которую иначе закрывает боковой каталог.
     document.body.classList.toggle('building', this.buildOpen);
     if (!this.buildOpen) this.select({ kind: 'none' });
     else this.setHint('Выберите, чему появиться в саду');
     this.hooks.onToggleBuild(this.buildOpen);
+  }
+
+  /** Особая кнопка: тот же свиток, но вместо построек — живность-миражи. */
+  toggleMirage(force?: boolean): void {
+    const open = force ?? !this.mirageOpen;
+    if (open === this.mirageOpen) return;
+    if (open) {
+      // Стройка и миражи одну полку не делят: стройка закрывается первой,
+      // пока флаг миражей ещё старый, и рекурсия не путает состояния
+      if (this.buildOpen) this.toggleBuild(false);
+      this.mirageOpen = true;
+      this.els.catalog.classList.add('open');
+      this.els.btnMirage.classList.add('active');
+      document.body.classList.add('building');
+      this.renderMirages();
+      this.setHint('Мираж живёт десять минут — выберите, кого позвать');
+    } else {
+      this.mirageOpen = false;
+      this.els.catalog.classList.remove('open');
+      this.els.btnMirage.classList.remove('active');
+      document.body.classList.remove('building');
+      this.select({ kind: 'none' });
+      this.renderTabs();
+      this.renderItems();
+    }
+  }
+
+  /** Полка миражей: список живности с её настоящими портретами. */
+  renderMirages(): void {
+    this.els.tabs.innerHTML = `<div class="tab active">${svgIcon('mirage', 17)}<span>Миражи</span></div>`;
+    const box = this.els.items;
+    box.innerHTML = '';
+    for (const m of MIRAGES) {
+      const e = this.el('div', 'item paper');
+      const sel = this.selection.kind === 'mirage' && this.selection.mirage.id === m.id;
+      if (sel) e.classList.add('selected');
+      const src = this.atm ? mirageIcon(m.id, this.atm, 56) : '';
+      e.innerHTML = `<div class="thumb">${src ? `<img src="${src}" alt="">` : svgIcon('mirage', 30)}</div>
+        <div class="name">${m.name}</div><div class="hint">${m.hint} · 10 минут</div>`;
+      e.addEventListener('click', () => this.select({ kind: 'mirage', mirage: m }));
+      box.appendChild(e);
+    }
   }
 
   toggleHelp(force?: boolean): void {
@@ -718,7 +779,7 @@ export class UI {
     if (prevSeason !== t.season || this.iconYear !== iconYear) {
       this.iconYear = iconYear;
       this.iconSeason = t.season;
-      if (prevSeason) this.renderItems();
+      if (this.mirageOpen) this.renderMirages();
       else this.renderItems();
     }
   }
