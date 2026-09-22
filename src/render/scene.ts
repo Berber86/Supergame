@@ -15,6 +15,9 @@ import { TerrainLayer, TileRect, drawWaterAnimation, renderTerrain } from './ter
 import { drawHouseRoof, drawHouseWalls, drawHouseShade } from './building';
 import { Life } from '../world/life';
 import { drawFish } from './creatures';
+import { drawDuck } from './pondAnimals';
+import { drawFootprints } from './footprints';
+import { shootingStar } from '../world/shootingStar';
 import { drawRipple } from './residents';
 import { spriteFrame } from './spriteCache';
 import { Weather, drawMist, drawSunShafts } from './weather';
@@ -323,7 +326,7 @@ export class Scene {
     ctx.scale(this.dpr, this.dpr);
 
     // --- Небо / фон ---
-    drawSky(ctx, W, H, atm, time);
+    drawSky(ctx, W, H, atm, time, shootingStar(atm.time));
 
     // --- Ландшафт (кэшируется) ---
     const key = this.atmKey(atm);
@@ -355,6 +358,9 @@ export class Scene {
       ctx.drawImage(this.terrain.canvas, this.terrain.ox, this.terrain.oy);
     }
 
+    // Лапки котов в снегу — поверх земли, под всем живым
+    if (this.life) drawFootprints(ctx, world, this.life.footprints, atm);
+
     drawGroundLife(ctx, world, atm, {
       x: this.camera.x,
       y: this.camera.y,
@@ -377,6 +383,8 @@ export class Scene {
     spriteFrame();
     this.flow.ensure(world);
     if (this.life) for (const f of this.life.fish) drawFish(ctx, f, world, atm, time);
+    // Утки — поверх воды, под отражениями; на дальнем плане их не разглядеть
+    if (this.life && this.camera.zoom >= 0.42) for (const d of this.life.ducks) drawDuck(ctx, d, world, atm, time);
     const rings: WaterRing[] = (this.life?.residents.ripples ?? []).map((r) => ({
       tx: r.x,
       ty: r.y,

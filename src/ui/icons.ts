@@ -6,14 +6,14 @@ import { buildAtmosphere, Atmosphere } from '../world/palette';
 import { drawObject, hasDrawer } from '../render/sprites';
 import { PlacedObject } from '../world/types';
 import type { MirageKind } from '../world/mirages';
-import type { Bird, Cat, Flutter } from '../world/life';
+import type { Bird, Cat, Duck, Flutter } from '../world/life';
 import type { Frog, PondDragonfly } from '../world/residents';
 import type { Lizard } from '../world/lizards';
 import type { Bee, Deer, Firefly, Hedgehog, Heron, Moth, Mouse, Owl, Squirrel, Turtle } from '../world/wildlife';
 import { drawBird } from '../render/smallBirds';
 import { drawCat } from '../render/cats';
 import { drawBee, drawButterfly, drawDragonfly, drawFirefly, drawMoth } from '../render/insects';
-import { drawFrog } from '../render/pondAnimals';
+import { drawDuckBody, drawFrog } from '../render/pondAnimals';
 import { drawLizard } from '../render/lizard';
 import { drawDeer, drawTurtle } from '../render/deerTurtle';
 import { drawHeron } from '../render/heron';
@@ -440,6 +440,29 @@ function mirageDraw(kind: MirageKind, ctx: CanvasRenderingContext2D, atm: Atmosp
         stay: Number.MAX_SAFE_INTEGER,
       };
       drawDeer(ctx, d, 0, 0, atm, t);
+      break;
+    }
+    case 'duck': {
+      const du: Duck = {
+        id: 1,
+        tx: 0,
+        ty: 0,
+        dir: 0.5,
+        speed: 0.8,
+        seed: 1,
+        homeX: 0,
+        homeY: 0,
+        state: 'swim',
+        timer: 0,
+        phase: 0,
+        headUp: 0.2,
+        alpha: 1,
+        kind: 'drake',
+        rippleT: 0,
+        calmT: 0,
+        lead: true,
+      };
+      drawDuckBody(ctx, du, 0, 3, atm, t);
       break;
     }
     case 'cat': {

@@ -22,6 +22,7 @@ export type MirageKind =
   | 'lizard'
   | 'turtle'
   | 'heron'
+  | 'duck'
   | 'deer'
   | 'cat';
 
@@ -48,6 +49,7 @@ export const MIRAGES: MirageDef[] = [
   { id: 'turtle', name: 'Черепаха', hint: 'никуда не спешит' },
   { id: 'heron', name: 'Цапля', hint: 'терпение на длинных ногах' },
   { id: 'deer', name: 'Олень', hint: 'гость из-за тумана' },
+  { id: 'duck', name: 'Утки', hint: 'пара на воде, даже в стужу' },
   { id: 'cat', name: 'Кот', hint: 'пришёл, увидел, задремал' },
 ];
 
