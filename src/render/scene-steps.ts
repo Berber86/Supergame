@@ -28,7 +28,6 @@ import { drawCost, drawObject, drawObjectShadow } from './sprites';
 import { cacheable, cachedGrowth, drawCached } from './spriteCache';
 import { drawBird, drawButterfly, drawCat } from './creatures';
 import { drawDragonfly, drawFrog } from './residents';
-import { drawDuckBody } from './pondAnimals';
 import {
   drawBee,
   drawDeer,
@@ -43,7 +42,7 @@ import {
 } from './wildlife';
 import type { GhostPreview } from './scene';
 import type { WaterMotion } from './waterMotion';
-import { waterSurfaces, waterSurfacePath, waterSurfaceBounds } from './waterSurface';
+import { waterSurfaces, waterSurfacePath, waterSurfaceBounds, nearWaterPlane } from './waterSurface';
 
 /** Наборка состояния сцены, нужная одному кадру сортированных объектов. */
 export interface ObjectsOpts {
@@ -669,6 +668,8 @@ interface AnimalEntry {
   ty: number;
   level: number;
   depth: number;
+  /** false — мелочь, чьё отражение не видно под водой (мухи, мыши, ящеры) */
+  reflect?: boolean;
   draw: () => void;
 }
 
@@ -837,6 +838,7 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
           ty: m.ty,
           level: lvl,
           depth: (m.tx + m.ty) * 100 + lvl * 20 + 12,
+          reflect: false,
           draw: () => drawMouse(ctx, m, p.x, p.y, atm, time),
         });
       }
@@ -891,6 +893,7 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
           ty: f.ty,
           level: lvl,
           depth: (f.tx + f.ty) * 100 + lvl * 20 + 200,
+          reflect: false,
           draw: () => seasonalDraw(f.mirage ? 1 : activity.fireflies, () => drawFirefly(ctx, f, p.x, p.y, atm, time)),
         });
       }
@@ -904,6 +907,7 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
           ty: m.ty,
           level: lvl,
           depth: (m.tx + m.ty) * 100 + lvl * 20 + 210,
+          reflect: false,
           draw: () => seasonalDraw(m.mirage ? 1 : activity.moths, () => drawMoth(ctx, m, p.x, p.y, atm, time)),
         });
       }
@@ -918,50 +922,44 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
           level: lvl,
           depth: (b.tx + b.ty) * 100 + lvl * 20 + 220,
           alt: b.alt,
+          reflect: false,
           draw: () => seasonalDraw(b.mirage ? 1 : activity.bees, () => drawBee(ctx, b, p.x, p.y, atm, time)),
         });
       }
     }
   }
 
-  return list;
+  // За кадром — не рисуем: список питает и проход объектов, и проход
+  // отражений, так что экономия идёт на оба.
+  const margin = Math.max(160, 200 * opts.zoom);
+  return list.filter((e) => {
+    const p = isoToScreen(e.tx, e.ty, 0);
+    const sx = (p.x - opts.camX) * opts.zoom + opts.viewW / 2;
+    const sy = (p.y - opts.camY) * opts.zoom + opts.viewH / 2 - (e.alt ?? 0) * opts.zoom;
+    return sx > -margin && sx < opts.viewW + margin && sy > -margin && sy < opts.viewH + margin;
+  });
 }
 
 /** Reflect the actual animated pose, not a second agent or a frozen icon. */
 export function drawAnimalReflections(ctx: Ctx, world: World, atm: Atmosphere, time: number, opts: ObjectsOpts): void {
   if (!opts.life) return;
+  // На общем плане отражения — меньше пикселя, а перерисовка всего зверья
+  // под клипом стоит полкадра.
+  if (opts.zoom < 0.42) return;
   // Shadows are lighting on the shore, not part of an animal's reflected body.
   const dim = { ...atm, shadowAmount: 0, exposure: atm.exposure * 0.55 };
+  // Утки отражаются в собственном проходе — вместе с телом, в глубинном
+  // порядке, чтобы чужое тело могло перекрывать их отражение.
   const entries = animalEntries(ctx, world, dim, time, opts);
-  // Утки идут в собственном проходе (поверх воды, под бликами), поэтому в
-  // общем списке животных их нет — отражение собираем отдельно.
-  const duckEntries: AnimalEntry[] = [];
-  // На общем плане сама утка не рисуется (см. проход объектов) —
-  // отражение без тела было бы призраком.
-  if (opts.zoom >= 0.42) {
-    for (const d of opts.life.ducks) {
-      const tile = world.at(Math.floor(d.tx), Math.floor(d.ty));
-      if (!tile?.water) continue;
-      const lvl = tile.level - 0.04;
-      const p = isoToScreen(d.tx, d.ty, lvl);
-      duckEntries.push({
-        tx: d.tx,
-        ty: d.ty,
-        level: lvl,
-        depth: (d.tx + d.ty) * 100 + lvl * 20 + 7,
-        draw: () => drawDuckBody(ctx, d, p.x, p.y, dim, time),
-      });
-    }
-  }
-  const all = duckEntries.length ? entries.concat(duckEntries) : entries;
-  if (!all.length) return;
-  all.sort((a, b) => a.depth - b.depth);
+  if (!entries.length) return;
+  entries.sort((a, b) => a.depth - b.depth);
   for (const surface of waterSurfaces(world)) {
     const { minX, maxX, minY, maxY } = waterSurfaceBounds(surface);
     ctx.save();
     waterSurfacePath(ctx, surface);
     ctx.clip('evenodd');
-    for (const entry of all) {
+    for (const entry of entries) {
+      if (entry.reflect === false) continue;
       if (surface.level > entry.level + 0.3) continue;
       const plane = isoToScreen(entry.tx, entry.ty, surface.level - 0.26);
       const base = isoToScreen(entry.tx, entry.ty, entry.level);
@@ -969,6 +967,9 @@ export function drawAnimalReflections(ctx: Ctx, world: World, atm: Atmosphere, t
       // Generous local bounds include flight/perching height; the exact shore
       // mask clips dry land and islands. No per-agent offscreen canvases/cache.
       if (plane.x + 80 < minX || plane.x - 80 > maxX || reflectedY - 35 > maxY || reflectedY + 220 < minY) continue;
+      // Перевёрнутый силуэт должен доставать до воды: на суше вдали от
+      // кромки отражение всё равно не появится — не тратим кадры.
+      if (!nearWaterPlane(surface, plane.x, plane.y, 70 + (entry.alt ?? 0) * 0.5)) continue;
       const sx = (plane.x - opts.camX) * opts.zoom + opts.viewW / 2;
       const sy = (reflectedY - opts.camY) * opts.zoom + opts.viewH / 2;
       if (sx < -120 || sx > opts.viewW + 120 || sy < -240 || sy > opts.viewH + 80) continue;

@@ -176,6 +176,42 @@ export function waterSurfaceBounds(surface: WaterSurface) {
   return bounds;
 }
 
+/**
+ * Точка внутри внешнего контура воды или в `margin` от него.
+ *
+ * Отражение животного видно, только если его перевёрнутый силуэт достаёт
+ * до воды. Раньше кулллинг по прямоугольным границам пруда прощал всё
+ * живое вокруг большого водоёма, и каждый кадр перерисовывался почти
+ * весь звериный состав сада под непрозрачной сушей.
+ */
+export function nearWaterPlane(surface: WaterSurface, x: number, y: number, margin: number): boolean {
+  let outer = surface.loops[0];
+  for (const l of surface.loops) if (l.length > outer.length) outer = l;
+  const b = waterSurfaceBounds(surface);
+  if (x < b.minX - margin || x > b.maxX + margin || y < b.minY - margin || y > b.maxY + margin) return false;
+  // Хордовый тест: точка внутри внешнего контура
+  let inside = false;
+  for (let i = 0, j = outer.length - 1; i < outer.length; j = i++) {
+    const a = outer[i],
+      c = outer[j];
+    if (a.y > y !== c.y > y && x < ((c.x - a.x) * (y - a.y)) / (c.y - a.y) + a.x) inside = !inside;
+  }
+  if (inside) return true;
+  // Иначе — в пределах кромки
+  const m2 = margin * margin;
+  for (let i = 0, j = outer.length - 1; i < outer.length; j = i++) {
+    const a = outer[i],
+      c = outer[j];
+    const dx = c.x - a.x,
+      dy = c.y - a.y;
+    const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+    const px = a.x + dx * t - x,
+      py = a.y + dy * t - y;
+    if (px * px + py * py <= m2) return true;
+  }
+  return false;
+}
+
 /** A single rounded shoreline, including dry islands (even-odd winding). */
 export function waterSurfacePath(ctx: Ctx, surface: WaterSurface): void {
   ctx.beginPath();

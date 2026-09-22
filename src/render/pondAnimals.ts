@@ -363,6 +363,26 @@ export function drawDuck(ctx: Ctx, d: Duck, world: World, atm: Atmosphere, time:
   ctx.save();
   waterSurfacePath(ctx, surface);
   ctx.clip('evenodd');
+  // Отражение: зеркало по самой нижней точке тела — без прослойки, как в
+  // жизни, и со сжатием по высоте (настоящее отражение чуть теряет рост).
+  // Нижняя точка зависит от крена: плывя к зрителю, утка наклоняется, и
+  // брюхо уходит ниже — линия воды следует за самым нижним пунктом.
+  const sx = Math.cos(d.dir);
+  const sy = Math.sin(d.dir);
+  const tilt = Math.atan2((sx + sy) * 0.5, Math.abs(sx - sy)) * 0.45;
+  const at = Math.abs(tilt);
+  const lowY =
+    Math.sqrt(10.4 * Math.sin(at) * (10.4 * Math.sin(at)) + 6.1 * Math.cos(at) * (6.1 * Math.cos(at))) -
+    2.6 * Math.cos(at);
+  const bob = Math.sin(time * 0.0021 + d.seed) * 0.55;
+  const lineY = p.y + lowY + bob * 0.5; // вода у самого брюха
+  const comp = 0.85;
+  const drift = Math.sin(time * 0.0013 + p.y * 0.07) * 0.65;
+  ctx.save();
+  ctx.globalAlpha *= 0.45;
+  ctx.transform(1, 0, 0, -comp, drift, lineY * (1 + comp));
+  drawDuckBody(ctx, d, p.x, p.y, { ...atm, shadowAmount: 0, exposure: atm.exposure * 0.55 }, time);
+  ctx.restore();
   drawDuckBody(ctx, d, p.x, p.y, atm, time);
   ctx.restore();
 }
