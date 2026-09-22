@@ -261,9 +261,16 @@ export function drawDuckBody(ctx: Ctx, d: Duck, x: number, y: number, atm: Atmos
 
   ctx.save();
   ctx.translate(x, y);
+  // Направление хода в экранных осях: (sx−sy) — вправо/влево, (sx+sy) —
+  // к зрителю/от него. Профильный спрайт не разворачивается на полный
+  // угол (при >90° он плавать кверху брюхом) — как коты, он только
+  // поворачивается влево/вправо и слегка наклоняется по курсу.
   const sx = Math.cos(d.dir);
   const sy = Math.sin(d.dir);
-  ctx.rotate(Math.atan2((sx + sy) * 0.5, sx - sy));
+  const facing = sx - sy >= 0 ? 1 : -1;
+  const tilt = Math.atan2((sx + sy) * 0.5, Math.abs(sx - sy)) * 0.45;
+  ctx.scale(facing, 1);
+  ctx.rotate(tilt);
   ctx.globalAlpha *= d.alpha;
 
   // Тень на воде и лёгкая качка
