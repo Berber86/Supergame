@@ -11,6 +11,8 @@ practice-*.png
 
 # артефакты прогонов
 item-sheet.png
+decor-sheet.png
+shots/
 *.log
 
 .frames-baseline.json

@@ -29,6 +29,20 @@ import { css } from '../world/palette';
 import { ITEM_BY_ID, SMALL_HOUSE_IDS } from '../world/catalog';
 import { roofSnowKey } from './roofSnow';
 
+/** Предметы двора, которые теперь идут через кэш спрайтов (см. drawCost). */
+const DECOR_IDS = new Set([
+  'moss_log',
+  'stump',
+  'mushrooms',
+  'fence_wood',
+  'fence_stone',
+  'jizo',
+  'well',
+  'garden_bench',
+  'woodpile',
+  'hammock',
+]);
+
 interface Entry {
   canvas: HTMLCanvasElement;
   /** Где внутри холста находится точка опоры объекта. */
@@ -58,6 +72,7 @@ const LIVE = new Set([
   'wind_chime',
   'tsukubai',
   'table',
+  'nestbox',
 ]);
 
 /** Огрубление вниз: значение никогда не становится больше исходного. */
@@ -130,7 +145,11 @@ function getCachedSprite(d: DrawCtx, relit = false): Entry | null {
   // перебация случается считаные разы за сутки, а не каждый кадр.
   const sunq = quantDown(atm.sunDir.x, 0.4);
   const goldq = quantDown(atm.golden, 0.34);
-  const snowKey = SMALL_HOUSE_IDS.has(obj.type) ? roofSnowKey(atm, obj.seed) : '';
+  const snowKey = SMALL_HOUSE_IDS.has(obj.type)
+    ? roofSnowKey(atm, obj.seed)
+    : DECOR_IDS.has(obj.type)
+      ? `droot${Math.round(winterYear(atm.time.now).snow * 12)}`
+      : '';
   const mineralKey = STONE_TYPES.has(obj.type)
     ? `${Math.round((atm.stoneHabitat ?? 0.25) * 6)}:${Math.round(winterYear(atm.time.now).snow * 12)}`
     : '';
@@ -304,7 +323,11 @@ function measureBox(
   gq: number,
 ): { w: number; h: number; ax: number; ay: number } | null {
   // Размер зависит от сида из-за scaleJitter и зеркала, поэтому включаем seed
-  const snowKey = SMALL_HOUSE_IDS.has(obj.type) ? roofSnowKey(atm, obj.seed) : '';
+  const snowKey = SMALL_HOUSE_IDS.has(obj.type)
+    ? roofSnowKey(atm, obj.seed)
+    : DECOR_IDS.has(obj.type)
+      ? `droot${Math.round(winterYear(atm.time.now).snow * 12)}`
+      : '';
   const key = `${crownCacheKey(obj.type, obj.seed, atm.time.now)}|${flowerCycleKey(obj.type, atm)}|${snowKey}|${obj.type}|${atm.season}|${gq}|${obj.rot}|${obj.seed}`;
   const hit = boxes.get(key);
   if (hit !== undefined) return hit;

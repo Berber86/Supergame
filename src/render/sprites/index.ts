@@ -278,10 +278,17 @@ export function drawCost(type: string): number {
       return 116;
     case 'flower':
       return 91;
-    default:
-      // чайный домик и сарай дороже мелочи — у них крыша и столбы
+    default: {
+      // Предметы двора рисуются дороже прочей мелочи: у них срубы, крыши
+      // и стойки из connected wood — вблизи это заметно, и потому их кэшируют.
+      if (type === 'well') return 430;
+      if (type === 'moss_log' || type === 'fence_wood' || type === 'fence_stone') return 280;
+      if (type === 'hammock' || type === 'garden_bench' || type === 'woodpile') return 200;
+      if (type === 'stump') return 170;
+      if (type === 'jizo') return 150;
       if (type === 'tea_house' || type === 'tiny_house' || type === 'shed') return 135;
       return 60;
+    }
   }
 }
 
