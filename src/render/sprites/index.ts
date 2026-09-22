@@ -262,7 +262,7 @@ export function drawObject(d: DrawCtx): void {
  */
 export function drawCost(type: string): number {
   if (type === 'step_stone') return 180;
-  if (FURNITURE_IDS.has(type)) return 150;
+  if (FURNITURE_IDS.has(type) || CACHED_DECOR.has(type)) return 150;
   const item = ITEM_BY_ID.get(type);
   if (!item) return 0;
   switch (item.kind) {
@@ -288,6 +288,24 @@ export function drawCost(type: string): number {
 export function hasDrawer(type: string): boolean {
   return !!DRAWERS[type];
 }
+
+/**
+ * Статичные предметы обустройства: их новые рисовки объёмнее старых,
+ * поэтому рендер идёт через кэш спрайтов, как у деревьев и построек.
+ * Живые вещи (опята у дождя, скворечник с синицей) остаются дешёвыми и рисуются напрямую.
+ */
+const CACHED_DECOR = new Set([
+  'moss_log',
+  'stump',
+  'jizo',
+  'fence_wood',
+  'fence_stone',
+  'well',
+  'garden_bench',
+  'woodpile',
+  'hammock',
+  'matatabi',
+]);
 
 /** Приблизительная высота объекта — для сортировки и превью. */
 export function objectHeight(type: string): number {
@@ -319,6 +337,27 @@ export function objectHeight(type: string): number {
       return 96;
     case 'shed':
       return 94;
+    case 'nestbox':
+      return 58;
+    case 'well':
+      return 64;
+    case 'woodpile':
+      return 28;
+    case 'hammock':
+      return 29;
+    case 'fence_wood':
+    case 'fence_stone':
+    case 'jizo':
+      return 26;
+    case 'garden_bench':
+      return 20;
+    case 'stump':
+    case 'matatabi':
+      return 16;
+    case 'mushrooms':
+      return 13;
+    case 'moss_log':
+      return 12;
     default:
       return 40;
   }
