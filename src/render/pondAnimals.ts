@@ -1,6 +1,9 @@
 /** Лягушки и кои: работа суставов и плавников вместо движения цельного овала. */
 import type { Frog } from '../world/residents';
-import type { Fish } from '../world/life';
+import type { Duck, Fish } from '../world/life';
+import type { World } from '../world/world';
+import { isoToScreen } from '../core/iso';
+import { waterSurfaces, waterSurfacePath } from './waterSurface';
 import { mix, type RGB, type Atmosphere } from '../world/palette';
 import { clamp01, smoothstep } from '../core/rng';
 import { Ctx, softShadow } from './paint';
@@ -236,5 +239,150 @@ export function drawFishAt(
         ctx.ellipse(9 + i * 0.5, -p * 4 - i * 0.6, 0.4 + p * 0.65, 0.4 + p * 0.65, 0, 0, TAU),
       );
     }
+  ctx.restore();
+}
+
+// ---------------- Утки ----------------
+
+/**
+ * Утка: туловище на воде, шея и голова — отдельная история.
+ * headUp: >0 — голова поднята (насторожилась, чистится), <0 — клюёт в воду.
+ */
+export function drawDuckBody(ctx: Ctx, d: Duck, x: number, y: number, atm: Atmosphere, time: number): void {
+  const drake = d.kind === 'drake';
+  const body = drake ? pigment({ r: 186, g: 190, b: 178 }, atm) : pigment({ r: 172, g: 142, b: 108 }, atm);
+  const bodyDark = drake ? pigment({ r: 138, g: 142, b: 132 }, atm) : pigment({ r: 124, g: 98, b: 72 }, atm);
+  const head = drake ? pigment({ r: 62, g: 108, b: 76 }, atm) : pigment({ r: 140, g: 110, b: 78 }, atm);
+  const breast = drake ? pigment({ r: 128, g: 82, b: 46 }, atm) : pigment({ r: 206, g: 178, b: 136 }, atm);
+  const bill = pigment({ r: 210, g: 140, b: 58 }, atm);
+  const ink = pigment({ r: 44, g: 52, b: 48 }, atm);
+  const waterShade = (c: RGB, a: number) => pigment(mix(c, atm.palette.water, 0.35), atm, a);
+  const bob = Math.sin(time * 0.0021 + d.seed) * 0.55;
+
+  ctx.save();
+  ctx.translate(x, y);
+  // Направление хода в экранных осях: (sx−sy) — вправо/влево, (sx+sy) —
+  // к зрителю/от него. Профильный спрайт не разворачивается на полный
+  // угол (при >90° он плавать кверху брюхом) — как коты, он только
+  // поворачивается влево/вправо и слегка наклоняется по курсу.
+  const sx = Math.cos(d.dir);
+  const sy = Math.sin(d.dir);
+  const facing = sx - sy >= 0 ? 1 : -1;
+  const tilt = Math.atan2((sx + sy) * 0.5, Math.abs(sx - sy)) * 0.45;
+  ctx.scale(facing, 1);
+  ctx.rotate(tilt);
+  ctx.globalAlpha *= d.alpha;
+
+  // Тень на воде и лёгкая качка
+  oval(ctx, 0, 2.8, 10.8, 3.2, waterShade({ r: 62, g: 98, b: 102 }, 0.2));
+  ctx.translate(0, bob * 0.5);
+
+  // Кильватер: две дуги за хвостом, пока идёт гребля
+  if (d.speed > 0.25) {
+    stroke(ctx, waterShade({ r: 244, g: 250, b: 250 }, 0.34 * d.speed), 0.5, () => {
+      ctx.moveTo(-8.5, -2.8);
+      ctx.quadraticCurveTo(-13.5, -2.4, -17, -3.8);
+    });
+    stroke(ctx, waterShade({ r: 244, g: 250, b: 250 }, 0.26 * d.speed), 0.45, () => {
+      ctx.moveTo(-8.5, 2.6);
+      ctx.quadraticCurveTo(-13.5, 3.2, -17.5, 1.9);
+    });
+  }
+
+  const up = d.headUp;
+
+  // Туловище: грудка вперёд, спина скруглена, хвост поднят
+  shape(ctx, body, () => {
+    ctx.moveTo(9.2, -1.6);
+    ctx.bezierCurveTo(9.8, -6.4, 4, -8.8, -2, -8.2);
+    ctx.bezierCurveTo(-8.2, -7.4, -11.6, -3.2, -10, 0.4);
+    ctx.quadraticCurveTo(-6, 3.6, 1, 3.4);
+    ctx.quadraticCurveTo(7.6, 2.8, 9.2, -1.6);
+  });
+  // Хвост: короткий, с задранным концом
+  shape(ctx, bodyDark, () => {
+    ctx.moveTo(-8.6, -6.6);
+    ctx.quadraticCurveTo(-12.8, -9.8, -14, -7.4);
+    ctx.quadraticCurveTo(-12.2, -4, -8.2, -3);
+  });
+  // Грудка
+  shape(ctx, breast, () => {
+    ctx.moveTo(9.2, -1.6);
+    ctx.bezierCurveTo(9.8, -5.4, 6.6, -8.2, 3, -8.2);
+    ctx.quadraticCurveTo(5.6, -4.6, 4.6, -1);
+    ctx.quadraticCurveTo(7.2, 0.2, 9.2, -1.6);
+  });
+  // Белое брюхо вдоль линии воды
+  stroke(ctx, pigment({ r: 247, g: 244, b: 230 }, atm, 0.8), 1.15, () => {
+    ctx.moveTo(-8, 1.8);
+    ctx.quadraticCurveTo(-2, 3.9, 5.4, 1.7);
+  });
+  // Оперение: у самки тёплые пятна, у самца чистый боковой шов
+  if (!drake) {
+    for (let i = 0; i < 5; i++) oval(ctx, -6.4 + i * 2.7, -4.6 + (i % 2) * 1.9, 1.55, 0.85, bodyDark, 0.4 + i * 0.3);
+  } else {
+    stroke(ctx, pigment({ r: 238, g: 240, b: 228 }, atm, 0.85), 1.3, () => {
+      ctx.moveTo(-7.4, -2.4);
+      ctx.quadraticCurveTo(-1, -1.2, 4.6, -2.8);
+    });
+  }
+
+  // Шея и голова: поднимаются при настороженности, ныряют в воду
+  const headX = 10.6 + up * 0.8;
+  const headY = up >= 0 ? -9.8 - up * 2.9 : -9.8 + up * 8.9;
+  stroke(ctx, head, 3.5, () => {
+    ctx.moveTo(5.4, -4.6);
+    ctx.quadraticCurveTo(8.4, -5.8, headX - 1.1, headY + 1.5);
+  });
+  oval(ctx, headX, headY, 3.5, 3.15, head, -0.08);
+  // Клюв: чуть вниз у спокойной, вверх у настороженной
+  const by = headY + 1 - up * 1.1;
+  shape(ctx, bill, () => {
+    ctx.moveTo(headX + 2.2, by - 1);
+    ctx.lineTo(headX + 6.4, by + 0.35);
+    ctx.quadraticCurveTo(headX + 3.6, by + 1.9, headX + 1.9, by + 1.4);
+  });
+  // Глаз
+  oval(ctx, headX + 1.2, headY - 0.7, 0.66, 0.6, ink);
+  oval(ctx, headX + 1.4, headY - 0.9, 0.21, 0.19, '#fff7df');
+  ctx.restore();
+}
+
+/** Утка в пруду: обрезана силуэтом воды, как кои. */
+export function drawDuck(ctx: Ctx, d: Duck, world: World, atm: Atmosphere, time: number): void {
+  const t = world.at(Math.floor(d.tx), Math.floor(d.ty));
+  if (!t?.water) return;
+  const p = isoToScreen(d.tx, d.ty, t.level - 0.04);
+  const surface = waterSurfaces(world).find(
+    (s) => s.level === t.level && s.cells.some((c) => c.x === Math.floor(d.tx) && c.y === Math.floor(d.ty)),
+  );
+  if (!surface) {
+    drawDuckBody(ctx, d, p.x, p.y, atm, time);
+    return;
+  }
+  ctx.save();
+  waterSurfacePath(ctx, surface);
+  ctx.clip('evenodd');
+  // Отражение: зеркало по самой нижней точке тела — без прослойки, как в
+  // жизни, и со сжатием по высоте (настоящее отражение чуть теряет рост).
+  // Нижняя точка зависит от крена: плывя к зрителю, утка наклоняется, и
+  // брюхо уходит ниже — линия воды следует за самым нижним пунктом.
+  const sx = Math.cos(d.dir);
+  const sy = Math.sin(d.dir);
+  const tilt = Math.atan2((sx + sy) * 0.5, Math.abs(sx - sy)) * 0.45;
+  const at = Math.abs(tilt);
+  const lowY =
+    Math.sqrt(10.4 * Math.sin(at) * (10.4 * Math.sin(at)) + 6.1 * Math.cos(at) * (6.1 * Math.cos(at))) -
+    2.6 * Math.cos(at);
+  const bob = Math.sin(time * 0.0021 + d.seed) * 0.55;
+  const lineY = p.y + lowY + bob * 0.5; // вода у самого брюха
+  const comp = 0.85;
+  const drift = Math.sin(time * 0.0013 + p.y * 0.07) * 0.65;
+  ctx.save();
+  ctx.globalAlpha *= 0.45;
+  ctx.transform(1, 0, 0, -comp, drift, lineY * (1 + comp));
+  drawDuckBody(ctx, d, p.x, p.y, { ...atm, shadowAmount: 0, exposure: atm.exposure * 0.55 }, time);
+  ctx.restore();
+  drawDuckBody(ctx, d, p.x, p.y, atm, time);
   ctx.restore();
 }

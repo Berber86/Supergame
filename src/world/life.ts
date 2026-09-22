@@ -21,13 +21,15 @@ import { easePose } from './animalMotion';
 import { GRID } from '../core/iso';
 import { clamp, hash1, hash2, lerp, makeRng } from '../core/rng';
 import { ITEM_BY_ID } from './catalog';
-import { TimeState } from '../core/clock';
-import { Habitat, Invitation, invitations, scanHabitat, floweringHabitat } from './habitat';
+import { DAY_MS, TimeState } from '../core/clock';
+import { Habitat, Invitation, invitations, scanHabitat, floweringHabitat, type Pond } from './habitat';
 import { Residents, Threat } from './residents';
 import { Wildlife } from './wildlife';
 import { WeatherState } from './weatherState';
 import { ChronicleToastNote, World } from './world';
 import { inGrowRect } from './grow';
+import { winterYear } from './annualEnvironment';
+import { shootingStar, starApproaching } from './shootingStar';
 
 export type CatState = 'sleep' | 'sit' | 'walk' | 'wash' | 'stretch' | 'loaf';
 export type BirdState = 'fly-in' | 'hop' | 'peck' | 'perch' | 'feed' | 'drink' | 'bathe' | 'fly-out';
@@ -90,6 +92,8 @@ export interface Cat extends Agent {
   /** Когда гостю пора уходить и когда он готов остаться. */
   leaveAt: number;
   stayAt: number;
+  /** 0..1 — голова поднята к небу: падающая звезда. */
+  starGaze?: number;
 }
 
 export interface Bird extends Agent {
@@ -147,6 +151,47 @@ export interface Fish {
   boldness: number;
   lastFed: number;
   memoryStrength: number;
+}
+
+/** Утка из пары, что приходит на пруд к кои. */
+export interface Duck {
+  /** Мираж: стена реального времени, когда растает. */
+  mirage?: number;
+  id: number;
+  tx: number;
+  ty: number;
+  dir: number;
+  /** 0..1 — разгон гребли. */
+  speed: number;
+  seed: number;
+  homeX: number;
+  homeY: number;
+  state: 'swim' | 'rest' | 'dip' | 'startle' | 'leave';
+  timer: number;
+  /** 0..1 — прогресс нырка. */
+  phase: number;
+  /** -1 (голова в воде)..1 (голова поднята). */
+  headUp: number;
+  /** 0..1 — пара растворяется, когда уходит. */
+  alpha: number;
+  kind: 'drake' | 'hen';
+  /** Пауза между кругами от гребли. */
+  rippleT: number;
+  /** Пока не отзвенит — утка не вздрагивает: насторожилась, осмотрелась, забыла. */
+  calmT: number;
+  /** Ведущая утка: вторая плывёт за ней. */
+  lead: boolean;
+}
+
+/** Лапка кота в снегу: остаётся, пока снег не сойдёт. */
+export interface Footprint {
+  x: number;
+  y: number;
+  /** Направление шага в момент отпечатка. */
+  dir: number;
+  /** Абсолютное время (t.now) отпечатка. */
+  born: number;
+  seed: number;
 }
 
 const rnd = makeRng(20240320);
@@ -221,6 +266,10 @@ export class Life {
   birds: Bird[] = [];
   flutters: Flutter[] = [];
   fish: Fish[] = [];
+  /** Утки: пара, что приходит на пруд к кои. */
+  ducks: Duck[] = [];
+  /** Лапки котов в снегу: остаются, пока снег не сойдёт. */
+  footprints: Footprint[] = [];
   gusts: Gust[] = [];
   /** Жители воды: лягушки и стрекозы, приглашённые прудом. */
   residents = new Residents();
@@ -262,6 +311,12 @@ export class Life {
   emitted: { x: number; y: number; kind: 'petal' | 'leaf'; seed: number }[] = [];
   /** Сид состава кои — чтобы рыбы переселялись за своими предметами. */
   private koiKey = '';
+  /** До следующего прихода уток. */
+  private duckTimer = 90_000;
+  /** По котам: где стояла предыдущая лапка и какой бок впереди. */
+  private fpAcc = new Map<number, { lx: number; ly: number; rem: number; parity: number }>();
+  /** Календарный день, за который звезда уже записана в летопись. */
+  private starNight = -1;
   private dormantSince = new WeakMap<object, number>();
   /**
    * Потолок очереди опадающего. Когда сцена не рисуется (дзен-лист),
@@ -279,6 +334,11 @@ export class Life {
     this.birds = [];
     this.flutters = [];
     this.fish = [];
+    this.ducks = [];
+    this.footprints = [];
+    this.fpAcc.clear();
+    this.duckTimer = 90_000;
+    this.starNight = -1;
     this.gusts = [];
     this.windTime = 0;
     this.windBase = 0;
@@ -321,6 +381,8 @@ export class Life {
     if (koiKey !== this.koiKey) {
       this.koiKey = koiKey;
       this.fish = [];
+      // Утки плавают с кои: кои убрали — и гости решают уйти
+      for (const d of this.ducks) if (d.mirage === undefined && d.state !== 'leave') d.state = 'leave';
       for (const o of koiObjs) {
         for (let k = 0; k < 2; k++) {
           this.fish.push({
@@ -667,6 +729,43 @@ export class Life {
           mirage: until,
         });
         return true;
+      case 'duck': {
+        const h = this.habitat;
+        if (!h || !h.ponds.length) return false;
+        let pond = h.ponds[0];
+        let best = Infinity;
+        for (const p of h.ponds) {
+          const d = Math.hypot(p.cx - x, p.cy - y);
+          if (d < best) {
+            best = d;
+            pond = p;
+          }
+        }
+        for (const k of [0, 1]) {
+          const spot = { x: pond.cx + (rnd() - 0.5) * 1.4, y: pond.cy + (rnd() - 0.5) * 1.4 };
+          this.ducks.push({
+            mirage: until,
+            id: id * 10 + k,
+            tx: spot.x,
+            ty: spot.y,
+            dir: rnd() * Math.PI * 2,
+            speed: 0,
+            seed: seed + k * 53,
+            homeX: pond.cx,
+            homeY: pond.cy,
+            state: 'swim',
+            timer: 4000 + rnd() * 5000,
+            phase: 0,
+            headUp: 0.15,
+            alpha: 1,
+            kind: k === 0 ? 'drake' : 'hen',
+            rippleT: 2200 + rnd() * 2200,
+            calmT: 0,
+            lead: k === 0,
+          });
+        }
+        return true;
+      }
       case 'cat': {
         const g = this.makeCat(-1, x, y, Math.floor(rnd() * 100000), true);
         g.state = 'sleep';
@@ -699,6 +798,7 @@ export class Life {
     const r = this.residents;
     r.frogs = r.frogs.filter((f) => ok(f.mirage));
     r.dragonflies = r.dragonflies.filter((d) => ok(d.mirage));
+    this.ducks = this.ducks.filter((d) => ok(d.mirage));
     const w = this.wildlife;
     w.fireflies = w.fireflies.filter((f) => ok(f.mirage));
     w.moths = w.moths.filter((m) => ok(m.mirage));
@@ -761,6 +861,17 @@ export class Life {
     this.updateBirds(world, t, dt, h, inv, wx ?? null);
     this.updateFlutters(world, t, dt, now, wx);
     this.updateFish(world, dt);
+    this.updateDucks(world, t, dt, wx ?? null);
+    this.updateFootprints(world, t);
+
+    // Падающая звезда: летопись помнит ночь, когда её заметили
+    if (shootingStar(t)) {
+      const day = Math.floor(t.now / DAY_MS);
+      if (this.starNight !== day) {
+        this.starNight = day;
+        this.note(world, 'star_fall');
+      }
+    }
     this.updateFalling(world, t, dt);
     const lizardThreats = [...threats];
     const heron = this.wildlife.heron;
@@ -849,6 +960,7 @@ export class Life {
   private updateCats(world: World, t: TimeState, dt: number, now: number, wx: WeatherState | null): void {
     const cushions = findObjects(world, ['cushion', 'hammock', 'matatabi']);
     const all = this.cats.concat(this.guests);
+    const starUp = t.daylight < 0.4 && starApproaching(t);
     this.catCompany.update(
       world,
       all,
@@ -980,6 +1092,8 @@ export class Life {
           c.timer = Math.max(c.timer, 1800);
         }
       }
+      // Падающая звезда: сидит и глядит в небо, пока она не погасла
+      c.starGaze = easePose(c.starGaze ?? 0, starUp && (c.state === 'sit' || c.state === 'loaf') ? 1 : 0, dt, 260);
       // Черепаха: кот подходит, трогает лапой
       if ((c.state === 'sit' || c.state === 'loaf' || c.state === 'walk') && c.greet <= 0) {
         const tu = this.nearestTurtle(c, 3.0);
@@ -1666,6 +1780,231 @@ export class Life {
         f.tx = nx;
         f.ty = ny;
       } else f.dir += 0.9;
+    }
+  }
+
+  // ---------------- Утки ----------------
+
+  /** Точка воды на пруду: пара выходит к тихой кромке. */
+  private duckSpot(world: World, pond: Pond): { x: number; y: number } {
+    for (let i = 0; i < 24; i++) {
+      const a = rnd() * Math.PI * 2;
+      const r = 0.5 + rnd() * 1.6;
+      const px = pond.cx + Math.cos(a) * r;
+      const py = pond.cy + Math.sin(a) * r;
+      if (world.at(Math.floor(px), Math.floor(py))?.water) return { x: px, y: py };
+    }
+    return { x: pond.cx, y: pond.cy };
+  }
+
+  private updateDucks(world: World, t: TimeState, dt: number, wx: WeatherState | null): void {
+    const frozen = winterYear(t.now).ice > 0.4;
+    const calmDay = t.dayT > 0.26 && t.dayT < 0.82 && (wx?.rain ?? 0) < 0.4 && !frozen;
+    const koi = world.objects.filter((o) => o.type === 'koi');
+    let pond: Pond | null = null;
+    if (this.habitat && koi.length) {
+      const k = koi[0];
+      let best = Infinity;
+      for (const p of this.habitat.ponds) {
+        const d = Math.hypot(p.cx - (k.tx + 0.5), p.cy - (k.ty + 0.5));
+        if (d < best) {
+          best = d;
+          pond = p;
+        }
+      }
+    }
+    const normal = this.ducks.filter((d) => d.mirage === undefined);
+
+    // Пара приходит по собственному расписанию: тихий день, тёплая вода, кои в пруду
+    if (normal.length === 0 && pond) {
+      this.duckTimer -= dt;
+      if (this.duckTimer <= 0) {
+        if (calmDay && (t.season !== 'winter' || rnd() < 0.3)) {
+          for (const k of [0, 1]) {
+            const spot = this.duckSpot(world, pond);
+            this.ducks.push({
+              id: 9000 + k,
+              tx: spot.x,
+              ty: spot.y,
+              dir: rnd() * Math.PI * 2,
+              speed: 0,
+              seed: (koi[0].seed ?? 0) + k * 53,
+              homeX: pond.cx,
+              homeY: pond.cy,
+              state: 'swim',
+              timer: 5000 + rnd() * 7000,
+              phase: 0,
+              headUp: 0.15,
+              alpha: 1,
+              kind: k === 0 ? 'drake' : 'hen',
+              rippleT: 2600 + rnd() * 2600,
+              calmT: 0,
+              lead: k === 0,
+            });
+          }
+          this.note(world, 'meet_duck', pond.cx, pond.cy);
+        }
+        this.duckTimer = 70_000 + rnd() * 160_000;
+      }
+    }
+
+    // День кончился, дождь или лёд: пара уходит к кромке и растворяется
+    for (const d of normal) if (!calmDay || !pond) d.state = 'leave';
+
+    const lead = normal.find((d) => d.lead) ?? this.ducks.find((d) => d.lead);
+
+    for (let i = this.ducks.length - 1; i >= 0; i--) {
+      const d = this.ducks[i];
+      d.timer -= dt;
+      const targetHead =
+        d.state === 'dip' ? -1 : d.state === 'rest' || d.state === 'startle' ? 1 : d.state === 'leave' ? 0.5 : 0.15;
+      d.headUp = easePose(d.headUp, targetHead, dt, 220);
+
+      if (d.state === 'leave') {
+        d.alpha -= dt / 5000;
+        const toHome = Math.atan2(d.homeY - d.ty, d.homeX - d.tx);
+        let diff = toHome - d.dir;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        d.dir += clamp(diff, -0.02, 0.02) * (dt * 0.02);
+        const v = 0.00014 * dt;
+        d.tx += Math.cos(d.dir) * v;
+        d.ty += Math.sin(d.dir) * v;
+        if (d.alpha <= 0) this.ducks.splice(i, 1);
+        continue;
+      }
+
+      // Кои кормятся у поверхности или паникуют — утка вздрагивает и следит.
+      // После вздрагивания она успокаивается: не каждый круг карпа — событие.
+      if (d.state === 'swim' && d.calmT <= 0) {
+        for (const f of this.fish) {
+          if (f.state === 'hide') continue;
+          const alert = f.panic > 0 || (f.state === 'feed' && f.speed > 0.00005);
+          if (alert && Math.hypot(f.tx - d.tx, f.ty - d.ty) < 1.7) {
+            d.state = 'startle';
+            d.timer = 1400 + rnd() * 1600;
+            d.calmT = 25_000 + rnd() * 20_000;
+            break;
+          }
+        }
+      }
+      d.calmT -= dt;
+
+      // Смена состояний по таймеру
+      if (d.timer <= 0) {
+        if (d.state === 'swim') {
+          const r = rnd();
+          d.state = r < 0.4 ? 'rest' : r < 0.75 ? 'dip' : 'swim';
+          d.timer =
+            d.state === 'rest' ? 3500 + rnd() * 5000 : d.state === 'dip' ? 1800 + rnd() * 1500 : 6000 + rnd() * 9000;
+        } else if (d.state === 'dip') {
+          d.state = rnd() < 0.5 ? 'rest' : 'swim';
+          d.timer = d.state === 'rest' ? 3000 + rnd() * 4000 : 6000 + rnd() * 9000;
+        } else {
+          // rest / startle — снова в воду
+          d.state = 'swim';
+          d.timer = 6000 + rnd() * 9000;
+        }
+        d.phase = 0;
+      }
+
+      if (d.state === 'swim') {
+        d.speed = easePose(d.speed, 1, dt, 700);
+        d.dir += (hash2(Math.floor(performance.now() * 0.0003), d.seed, 7) - 0.5) * 0.05;
+        // Вторая утка держит парное расстояние
+        if (!d.lead && lead && lead !== d) {
+          const dx = lead.tx - d.tx;
+          const dy = lead.ty - d.ty;
+          if (Math.hypot(dx, dy) > 0.55) {
+            const want = Math.atan2(dy, dx);
+            let diff = want - d.dir;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            d.dir += clamp(diff, -0.03, 0.03);
+          }
+        }
+      } else {
+        d.speed = easePose(d.speed, 0, dt, 240);
+      }
+
+      if (d.state === 'dip') {
+        d.phase = Math.min(1, d.phase + dt / 1500);
+        if (d.phase > 0.45 && d.phase - dt / 1500 <= 0.45) this.residents.ripple(d.tx, d.ty, false);
+      }
+
+      const v = 0.000085 * d.speed * dt;
+      const nx = d.tx + Math.cos(d.dir) * v;
+      const ny = d.ty + Math.sin(d.dir) * v;
+      const nt = world.at(Math.floor(nx), Math.floor(ny));
+      if (nt?.water) {
+        d.tx = nx;
+        d.ty = ny;
+      } else {
+        // У кромки поворачивает к сердцу пруда
+        const toHome = Math.atan2(d.homeY - d.ty, d.homeX - d.tx);
+        let diff = toHome - d.dir;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        d.dir += clamp(diff, -0.08, 0.08);
+      }
+
+      // Круги от гребли
+      d.rippleT -= dt;
+      if (d.rippleT <= 0 && d.speed > 0.4) {
+        this.residents.ripple(d.tx, d.ty, false);
+        d.rippleT = 2600 + rnd() * 2600;
+      }
+    }
+  }
+
+  // ---------------- Следы в снегу ----------------
+
+  private updateFootprints(world: World, t: TimeState): void {
+    const snow = winterYear(t.now).snow;
+    if (snow < 0.18) {
+      if (this.footprints.length || this.fpAcc.size) {
+        // Снег сошёл — следы ушли с ним
+        this.footprints = [];
+        this.fpAcc.clear();
+      }
+      return;
+    }
+    const LIFE = 3 * 3600_000;
+    for (let i = this.footprints.length - 1; i >= 0; i--) {
+      if (t.now - this.footprints[i].born > LIFE) this.footprints.splice(i, 1);
+    }
+    const all = this.cats.concat(this.guests);
+    for (const c of all) {
+      let acc = this.fpAcc.get(c.id);
+      if (!acc) {
+        acc = { lx: c.tx, ly: c.ty, rem: 0, parity: 1 };
+        this.fpAcc.set(c.id, acc);
+        continue;
+      }
+      const dx = c.tx - acc.lx;
+      const dy = c.ty - acc.ly;
+      const trav = Math.hypot(dx, dy);
+      acc.lx = c.tx;
+      acc.ly = c.ty;
+      if (c.state !== 'walk' || trav < 0.004) continue;
+      const tile = world.at(Math.floor(c.tx), Math.floor(c.ty));
+      if (!tile || tile.water) continue;
+      acc.rem += trav;
+      const dir = Math.atan2(dy, dx);
+      const stride = 0.3;
+      while (acc.rem >= stride) {
+        acc.rem -= stride;
+        const off = 0.09 * acc.parity;
+        this.footprints.push({
+          x: c.tx + Math.cos(dir + Math.PI / 2) * off,
+          y: c.ty + Math.sin(dir + Math.PI / 2) * off,
+          dir,
+          born: t.now,
+          seed: Math.floor(rnd() * 10000),
+        });
+        acc.parity = -acc.parity;
+      }
+      if (this.footprints.length > 140) this.footprints.splice(0, this.footprints.length - 140);
     }
   }
 

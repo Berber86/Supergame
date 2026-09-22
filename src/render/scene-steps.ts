@@ -19,6 +19,7 @@ import { sampleLocalLight, receivesObjectLight, type LocalLightField } from './l
 import { GRID, TILE_H, TILE_W, isoToScreen } from '../core/iso';
 import { clamp01, hash2, lerp } from '../core/rng';
 import { ITEM_BY_ID } from '../world/catalog';
+import type { StarView } from '../world/shootingStar';
 import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
 import { PlacedObject } from '../world/types';
 import { World } from '../world/world';
@@ -41,7 +42,7 @@ import {
 } from './wildlife';
 import type { GhostPreview } from './scene';
 import type { WaterMotion } from './waterMotion';
-import { waterSurfaces, waterSurfacePath, waterSurfaceBounds } from './waterSurface';
+import { waterSurfaces, waterSurfacePath, waterSurfaceBounds, nearWaterPlane } from './waterSurface';
 
 /** Наборка состояния сцены, нужная одному кадру сортированных объектов. */
 export interface ObjectsOpts {
@@ -83,7 +84,7 @@ export function sunScreenPos(W: number, H: number, dayT: number): { x: number; y
   return { x: W * (0.06 + sunT * 0.88), y: H * (0.34 - elev * 0.26), elev };
 }
 
-export function drawSky(ctx: Ctx, W: number, H: number, atm: Atmosphere, time: number): void {
+export function drawSky(ctx: Ctx, W: number, H: number, atm: Atmosphere, time: number, star?: StarView | null): void {
   const g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, css(atm.skyTop, 1));
   g.addColorStop(0.5, css(mix(atm.skyTop, atm.skyBottom, 0.7), 1));
@@ -154,6 +155,42 @@ export function drawSky(ctx: Ctx, W: number, H: number, atm: Atmosphere, time: n
       ctx.beginPath();
       ctx.arc(sx, sy, 0.6 + hash2(i, 13, 17) * 1.1, 0, Math.PI * 2);
       ctx.fill();
+    }
+
+    // Падающая звезда: медленно, с длинным хвостом, тает к концу пути
+    if (star && t.daylight < 0.4) {
+      const fade = Math.sin(Math.PI * Math.min(1, star.p * 1.06));
+      const e = 1 - Math.pow(1 - star.p, 2.4); // голова замедляется
+      const x0 = star.x0 * W;
+      const y0 = star.y0 * H;
+      const x1 = x0 + Math.cos(star.ang) * star.len * H;
+      const y1 = y0 + Math.sin(star.ang) * star.len * H;
+      const hx = x0 + (x1 - x0) * e;
+      const hy = y0 + (y1 - y0) * e;
+      const ang = star.ang;
+      const len = W * (0.06 + 0.17 * fade);
+      const tx = hx - Math.cos(ang) * len;
+      const ty = hy - Math.sin(ang) * len;
+      const g2 = ctx.createLinearGradient(tx, ty, hx, hy);
+      g2.addColorStop(0, css({ r: 255, g: 250, b: 232 }, 0));
+      g2.addColorStop(0.75, css({ r: 255, g: 248, b: 224 }, 0.35 * fade));
+      g2.addColorStop(1, css({ r: 255, g: 250, b: 232 }, 0.9 * fade));
+      ctx.strokeStyle = g2;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(hx, hy);
+      ctx.stroke();
+      glow(ctx, hx, hy, 16, { r: 255, g: 250, b: 232 }, 0.55 * fade);
+      // Короткие лучи у головы
+      ctx.strokeStyle = css({ r: 255, g: 252, b: 240 }, 0.5 * fade);
+      ctx.lineWidth = 0.7;
+      for (const k of [0.5, -0.5]) {
+        ctx.beginPath();
+        ctx.moveTo(hx - Math.cos(ang + k) * 4, hy - Math.sin(ang + k) * 4);
+        ctx.lineTo(hx + Math.cos(ang + k) * 4, hy + Math.sin(ang + k) * 4);
+        ctx.stroke();
+      }
     }
   }
 
@@ -631,6 +668,8 @@ interface AnimalEntry {
   ty: number;
   level: number;
   depth: number;
+  /** false — мелочь, чьё отражение не видно под водой (мухи, мыши, ящеры) */
+  reflect?: boolean;
   draw: () => void;
 }
 
@@ -799,6 +838,7 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
           ty: m.ty,
           level: lvl,
           depth: (m.tx + m.ty) * 100 + lvl * 20 + 12,
+          reflect: false,
           draw: () => drawMouse(ctx, m, p.x, p.y, atm, time),
         });
       }
@@ -853,6 +893,7 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
           ty: f.ty,
           level: lvl,
           depth: (f.tx + f.ty) * 100 + lvl * 20 + 200,
+          reflect: false,
           draw: () => seasonalDraw(f.mirage ? 1 : activity.fireflies, () => drawFirefly(ctx, f, p.x, p.y, atm, time)),
         });
       }
@@ -866,6 +907,7 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
           ty: m.ty,
           level: lvl,
           depth: (m.tx + m.ty) * 100 + lvl * 20 + 210,
+          reflect: false,
           draw: () => seasonalDraw(m.mirage ? 1 : activity.moths, () => drawMoth(ctx, m, p.x, p.y, atm, time)),
         });
       }
@@ -880,20 +922,35 @@ function animalEntries(ctx: Ctx, world: World, atm: Atmosphere, time: number, op
           level: lvl,
           depth: (b.tx + b.ty) * 100 + lvl * 20 + 220,
           alt: b.alt,
+          reflect: false,
           draw: () => seasonalDraw(b.mirage ? 1 : activity.bees, () => drawBee(ctx, b, p.x, p.y, atm, time)),
         });
       }
     }
   }
 
-  return list;
+  // За кадром — не рисуем: список питает и проход объектов, и проход
+  // отражений, так что экономия идёт на оба.
+  const margin = Math.max(160, 200 * opts.zoom);
+  return list.filter((e) => {
+    const p = isoToScreen(e.tx, e.ty, 0);
+    const sx = (p.x - opts.camX) * opts.zoom + opts.viewW / 2;
+    const sy = (p.y - opts.camY) * opts.zoom + opts.viewH / 2 - (e.alt ?? 0) * opts.zoom;
+    return sx > -margin && sx < opts.viewW + margin && sy > -margin && sy < opts.viewH + margin;
+  });
 }
 
 /** Reflect the actual animated pose, not a second agent or a frozen icon. */
 export function drawAnimalReflections(ctx: Ctx, world: World, atm: Atmosphere, time: number, opts: ObjectsOpts): void {
   if (!opts.life) return;
+  // На общем плане отражения — меньше пикселя, а перерисовка всего зверья
+  // под клипом стоит полкадра.
+  if (opts.zoom < 0.42) return;
   // Shadows are lighting on the shore, not part of an animal's reflected body.
-  const entries = animalEntries(ctx, world, { ...atm, shadowAmount: 0, exposure: atm.exposure * 0.55 }, time, opts);
+  const dim = { ...atm, shadowAmount: 0, exposure: atm.exposure * 0.55 };
+  // Утки отражаются в собственном проходе — вместе с телом, в глубинном
+  // порядке, чтобы чужое тело могло перекрывать их отражение.
+  const entries = animalEntries(ctx, world, dim, time, opts);
   if (!entries.length) return;
   entries.sort((a, b) => a.depth - b.depth);
   for (const surface of waterSurfaces(world)) {
@@ -902,6 +959,7 @@ export function drawAnimalReflections(ctx: Ctx, world: World, atm: Atmosphere, t
     waterSurfacePath(ctx, surface);
     ctx.clip('evenodd');
     for (const entry of entries) {
+      if (entry.reflect === false) continue;
       if (surface.level > entry.level + 0.3) continue;
       const plane = isoToScreen(entry.tx, entry.ty, surface.level - 0.26);
       const base = isoToScreen(entry.tx, entry.ty, entry.level);
@@ -909,6 +967,9 @@ export function drawAnimalReflections(ctx: Ctx, world: World, atm: Atmosphere, t
       // Generous local bounds include flight/perching height; the exact shore
       // mask clips dry land and islands. No per-agent offscreen canvases/cache.
       if (plane.x + 80 < minX || plane.x - 80 > maxX || reflectedY - 35 > maxY || reflectedY + 220 < minY) continue;
+      // Перевёрнутый силуэт должен доставать до воды: на суше вдали от
+      // кромки отражение всё равно не появится — не тратим кадры.
+      if (!nearWaterPlane(surface, plane.x, plane.y, 70 + (entry.alt ?? 0) * 0.5)) continue;
       const sx = (plane.x - opts.camX) * opts.zoom + opts.viewW / 2;
       const sy = (reflectedY - opts.camY) * opts.zoom + opts.viewH / 2;
       if (sx < -120 || sx > opts.viewW + 120 || sy < -240 || sy > opts.viewH + 80) continue;

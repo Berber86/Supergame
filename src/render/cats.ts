@@ -151,9 +151,13 @@ export function drawCat(ctx: Ctx, c: Cat, x: number, y: number, atm: Atmosphere,
   }
 
   // Голова: скулы, отдельные уши, миндалевидные глаза и белые подусники.
+  // Падающая звезда: голова отклоняется к небу и чуть поднимается.
+  const gaze = c.starGaze ?? 0;
   ctx.save();
-  ctx.translate(hx, hy + bob);
-  ctx.rotate(greeting * 0.12 + p.sleep * 0.42 + p.stretch * 0.15 + p.wash * (0.18 + Math.sin(time * 0.006) * 0.06));
+  ctx.translate(hx, hy + bob - gaze * 1.8);
+  ctx.rotate(
+    greeting * 0.12 + p.sleep * 0.42 + p.stretch * 0.15 + p.wash * (0.18 + Math.sin(time * 0.006) * 0.06) - gaze * 0.42,
+  );
   for (const side of [-1, 1]) {
     const ear = Math.sin(time * 0.0018 + side * 2 + c.seed) * 0.1;
     shape(ctx, fur, () => {

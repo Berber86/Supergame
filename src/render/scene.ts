@@ -15,6 +15,9 @@ import { TerrainLayer, TileRect, drawWaterAnimation, renderTerrain } from './ter
 import { drawHouseRoof, drawHouseWalls, drawHouseShade } from './building';
 import { Life } from '../world/life';
 import { drawFish } from './creatures';
+import { drawDuck } from './pondAnimals';
+import { drawFootprints } from './footprints';
+import { shootingStar } from '../world/shootingStar';
 import { drawRipple } from './residents';
 import { spriteFrame } from './spriteCache';
 import { Weather, drawMist, drawSunShafts } from './weather';
@@ -323,7 +326,7 @@ export class Scene {
     ctx.scale(this.dpr, this.dpr);
 
     // --- Небо / фон ---
-    drawSky(ctx, W, H, atm, time);
+    drawSky(ctx, W, H, atm, time, shootingStar(atm.time));
 
     // --- Ландшафт (кэшируется) ---
     const key = this.atmKey(atm);
@@ -355,6 +358,9 @@ export class Scene {
       ctx.drawImage(this.terrain.canvas, this.terrain.ox, this.terrain.oy);
     }
 
+    // Лапки котов в снегу — поверх земли, под всем живым
+    if (this.life) drawFootprints(ctx, world, this.life.footprints, atm);
+
     drawGroundLife(ctx, world, atm, {
       x: this.camera.x,
       y: this.camera.y,
@@ -376,7 +382,32 @@ export class Scene {
     // Pond bed is in terrain. Fish must be BELOW reflections, glare and ripples.
     spriteFrame();
     this.flow.ensure(world);
-    if (this.life) for (const f of this.life.fish) drawFish(ctx, f, world, atm, time);
+    if (this.life) {
+      // Кои за кадром не стоят: клип по контуру пруда дороже рыбы
+      const m = 140;
+      for (const f of this.life.fish) {
+        const t = world.at(Math.floor(f.tx), Math.floor(f.ty));
+        const p = isoToScreen(f.tx, f.ty, (t?.level ?? 0) - 0.26);
+        const sx = (p.x - this.camera.x) * this.camera.zoom + W / 2;
+        const sy = (p.y - this.camera.y) * this.camera.zoom + H / 2;
+        if (sx < -m || sx > W + m || sy < -m || sy > H + m) continue;
+        drawFish(ctx, f, world, atm, time);
+      }
+    }
+    // Утки — поверх воды, под бликами и кувшинками; на дальнем плане их
+    // не разглядеть. Глубинный порядок: ближняя утка рисуется последней —
+    // её тело закрывает отражение дальней, а не наоборот.
+    if (this.life && this.camera.zoom >= 0.42) {
+      const ducks = [...this.life.ducks].sort((a, b) => a.tx + a.ty - (b.tx + b.ty));
+      const m = 140;
+      for (const d of ducks) {
+        const p = isoToScreen(d.tx, d.ty, 0);
+        const sx = (p.x - this.camera.x) * this.camera.zoom + W / 2;
+        const sy = (p.y - this.camera.y) * this.camera.zoom + H / 2;
+        if (sx < -m || sx > W + m || sy < -m || sy > H + m) continue;
+        drawDuck(ctx, d, world, atm, time);
+      }
+    }
     const rings: WaterRing[] = (this.life?.residents.ripples ?? []).map((r) => ({
       tx: r.x,
       ty: r.y,
