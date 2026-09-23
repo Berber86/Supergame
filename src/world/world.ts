@@ -209,11 +209,18 @@ export class World {
   unlockRandomItem(prefer?: readonly string[]): string | null {
     const pool: (CatalogItem | TerrainBrush)[] = [...ITEMS, ...TERRAIN_BRUSHES];
     const all = pool.filter((e) => !this.unlocked.has(e.id) && this.itemAvailable(e));
-    // Сначала то, что осмысленно здесь и сейчас (не мох на мху, не мост без воды)
-    const useful = all.filter((e) => this.entryUseful(e));
+    if (!all.length) return null;
+    const isRelief = (e: CatalogItem | TerrainBrush) => e.tab === 'relief';
+    // В растущем саду рельеф — самая последняя очередь: пока остался хоть один
+    // не-рельефный предмет/кисть, рельеф не предлагаем вовсе.
+    const effectiveAll = (() => {
+      if (!this.grow) return all;
+      const nonRelief = all.filter((e) => !isRelief(e));
+      return nonRelief.length ? nonRelief : all;
+    })();
+    const useful = effectiveAll.filter((e) => this.entryUseful(e));
     const preferred = prefer ? useful.filter((e) => prefer.includes(e.id)) : [];
-    const closed = preferred.length ? preferred : useful.length ? useful : all;
-    if (!closed.length) return null;
+    const closed = preferred.length ? preferred : useful.length ? useful : effectiveAll;
     const pick = closed[Math.floor(Math.random() * closed.length)];
     this.unlocked.add(pick.id);
     this.fresh.add(pick.id);
@@ -951,6 +958,11 @@ export class World {
     return true;
   }
 
+  /** Саженцем растёт дерево и кустарник: всё, что имеет древесную крону. */
+  private isSaplingKind(item: CatalogItem): boolean {
+    return item.kind === 'tree' || item.kind === 'shrub';
+  }
+
   place(type: string, tx: number, ty: number, rot = 0, planted?: number): PlacedObject | null {
     const item = ITEM_BY_ID.get(type);
     if (!item) return null;
@@ -967,9 +979,10 @@ export class World {
       planted,
       rot,
       seed: Math.floor(Math.random() * 100000),
-      // Дерево сажается саженцем и растёт три игровых дня. Деревья из
-      // старых сохранений и пресетов высажены давно и потому сразу взрослые.
-      ...(item.kind === 'tree' ? { young: 1 as const } : {}),
+      // Дерево и кустарник сажаются саженцем и растут три игровых дня.
+      // Старые сохранения и пресеты высажены давно и потому сразу взрослые,
+      // но новые посадки — всегда саженцы.
+      ...(this.isSaplingKind(item) ? { young: 1 as const } : {}),
     };
     this.objects.push(obj);
     this.noteObjectsChanged();
@@ -1105,9 +1118,26 @@ export class World {
     return ok;
   }
 
+  /** Очевидную мелочь (фонарь, цветок, подушка, мелкий камень) можно переносить руками — без затрат. */
+  private isFreeMoveItem(item: CatalogItem): boolean {
+    if (item.kind === 'tree' || item.kind === 'shrub' || item.kind === 'pavilion' || item.kind === 'bridge') return false;
+    if (item.w > 1 || item.h > 1) return false;
+    // Гравий и мох — не делаем бесплатными, чтобы не было бесконечного перекладывания земли
+    if (item.id === 'moss_clump' || item.id === 'pebbles') return false;
+    return true;
+  }
+
+  /** Можно ли перенести этот тип объекта бесплатно (в растущем саду). */
+  canMoveWithoutCost(type: string): boolean {
+    const item = ITEM_BY_ID.get(type);
+    return !!item && this.isFreeMoveItem(item);
+  }
+
   moveObject(obj: PlacedObject, tx: number, ty: number, rot = obj.rot): boolean {
     if (this.grow && !inGrowRect(this.grow.rect, Math.floor(tx), Math.floor(ty))) return false;
-    if (!this.growPay()) return false;
+    const item = ITEM_BY_ID.get(obj.type);
+    const free = !!item && this.isFreeMoveItem(item);
+    if (!free && !this.growPay()) return false;
     return this.moveObjectRaw(obj, tx, ty, rot);
   }
 
@@ -1443,9 +1473,9 @@ export class World {
         seenIndoor.add(o.type);
         indoorKinds++;
       }
-      // Дерево выросло полностью. Сосна, посаженная саженцем, взрослеет
-      // три игровых дня; остальные деревья готовы сразу.
-      if (!grown && item && item.kind === 'tree' && this.growth(o, now) >= 1) grown = true;
+      // Дерево и куст выросли полностью. Саженец взрослеет три игровых дня;
+      // остальные предметы готовы сразу.
+      if (!grown && item && (item.kind === 'tree' || item.kind === 'shrub') && this.growth(o, now) >= 1) grown = true;
     }
     if (lanterns >= 5) this.checkMilestone('lantern_path');
     if (koi >= 3) this.checkMilestone('koi_pond');

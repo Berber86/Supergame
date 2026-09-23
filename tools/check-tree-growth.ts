@@ -88,10 +88,10 @@ assert.ok(world.growth(fresh.get('sakura')!, now + 61 * 60_000) > snap, 'спу�
 // Без флага «саженец» дерево навсегда взрослое — так выглядят старые сохранения.
 for (const type of TREES) fresh.get(type)!.young = undefined;
 for (const type of TREES) assert.equal(world.growth(fresh.get(type)!, now), 1, `${type}: старое дерево взрослое`);
-// Кусты саженцами не сажаются.
+// Кусты тоже сажаются саженцами, как деревья — растут три игровых дня.
 const shrub = world.place('azalea', 4, 16)!;
-assert.equal(shrub.young, undefined);
-assert.equal(world.growth(shrub, now), 1);
+assert.equal(shrub.young, 1, 'куст помечен саженцем');
+assert.ok(world.growth(shrub, now) < 1, 'саженец куста ещё не взрослый');
 
 // Растущий сад: те же посадки взрослеют за 15 часов.
 world.grow = {
