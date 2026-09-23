@@ -137,7 +137,8 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       const p = scene.pickTile(e.clientX, e.clientY, world);
       const obj = world.pickObject(p.tx, p.ty);
       if (obj) {
-        if (world.grow && world.grow.bank <= 0) {
+        const free = world.canMoveWithoutCost(obj.type);
+        if (world.grow && world.grow.bank <= 0 && !free) {
           world.growRefused = true;
           ui.toast('Нет действий роста');
           dragging = true;
@@ -216,8 +217,9 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       if (m.obj.tx === m.fromX && m.obj.ty === m.fromY) {
         history.abort();
       } else {
-        // Стоимость переноса — одно действие, списываем при завершении жеста
-        if (!world.growPay()) {
+        // Стоимость переноса — одно действие, кроме очевидной мелочи (фонарь, цветок, подушка)
+        const free = world.canMoveWithoutCost(m.obj.type);
+        if (!free && !world.growPay()) {
           // нет действий — возвращаем на исходное место
           world.moveObjectFree(m.obj, m.fromX, m.fromY);
           history.abort();
@@ -405,7 +407,8 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
         ui.toast('Здесь нечего переносить');
         return;
       }
-      if (world.grow && world.grow.bank <= 0) {
+      const free = world.canMoveWithoutCost(obj.type);
+      if (world.grow && world.grow.bank <= 0 && !free) {
         world.growRefused = true;
         ui.toast('Нет действий роста');
         return;
@@ -436,7 +439,8 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       if (!movedOk) ui.toast('Сюда нельзя поставить');
       return;
     }
-    if (!world.growPay()) {
+    const free = world.canMoveWithoutCost(m.obj.type);
+    if (!free && !world.growPay()) {
       world.moveObjectFree(m.obj, m.fromX, m.fromY);
       history.abort();
       ui.toast('Нет действий роста');
