@@ -1378,6 +1378,27 @@ export const MILESTONES: Record<string, Milestone> = {
 };
 
 /** Architecture/furniture must retain scale and orientation, independent of seed. */
+/**
+ * Первое открытие растущего сада: то, что сразу меняет голый клочок мха.
+ * Кисть мха, «Осушить», мосты и лотосы на старте бессмысленны.
+ */
+export const GROW_STARTER_IDS = [
+  'sakura',
+  'maple',
+  'pine',
+  'ginkgo',
+  'bamboo',
+  'azalea',
+  'camellia',
+  'rock_big',
+  'rock_mid',
+  'rock_trio',
+  'w_pond2',
+  'h_hill2',
+  'g_gravel',
+  'g_sand',
+] as const;
+
 export const FURNITURE_IDS = new Set([
   'table',
   'cushion',

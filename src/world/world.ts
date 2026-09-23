@@ -15,6 +15,7 @@ import {
   TERRAIN_BRUSHES,
   TerrainBrush,
   WILD_INVITATION_IDS,
+  GROW_STARTER_IDS,
   footprintCells,
 } from './catalog';
 import { ChronicleEntry, chronicleText, noteChronicle } from './chronicle';
@@ -153,7 +154,7 @@ export class World {
       // Всегда открыты базовые приглашения дикой жизни
       for (const id of WILD_INVITATION_IDS) this.unlocked.add(id);
     }
-    this.unlockRandomItem();
+    this.unlockRandomItem(lenient ? undefined : GROW_STARTER_IDS);
   }
 
   /** Free established gardens should not hide the house tab behind painting one more floor tile. */
@@ -205,9 +206,13 @@ export class World {
   }
 
   /** Открыть одну случайную доступную запись: предмет или кисть. */
-  unlockRandomItem(): string | null {
+  unlockRandomItem(prefer?: readonly string[]): string | null {
     const pool: (CatalogItem | TerrainBrush)[] = [...ITEMS, ...TERRAIN_BRUSHES];
-    const closed = pool.filter((e) => !this.unlocked.has(e.id) && this.itemAvailable(e));
+    const all = pool.filter((e) => !this.unlocked.has(e.id) && this.itemAvailable(e));
+    // Сначала то, что осмысленно здесь и сейчас (не мох на мху, не мост без воды)
+    const useful = all.filter((e) => this.entryUseful(e));
+    const preferred = prefer ? useful.filter((e) => prefer.includes(e.id)) : [];
+    const closed = preferred.length ? preferred : useful.length ? useful : all;
     if (!closed.length) return null;
     const pick = closed[Math.floor(Math.random() * closed.length)];
     this.unlocked.add(pick.id);
@@ -215,11 +220,44 @@ export class World {
     return pick.id;
   }
 
-  /** Кисть или заливка впервые тронули сад: точка открытия гаснет. */
-  useEntry(id: string): boolean {
-    if (!this.fresh.has(id)) return false;
-    this.fresh.delete(id);
+  /**
+   * Открытие имеет смысл в текущем саду: кисть земли того же цвета, что
+   * вся земля, «Осушить» без воды, водные предметы без воды — бесполезны.
+   */
+  private entryUseful(e: CatalogItem | TerrainBrush): boolean {
+    const r = this.grow?.rect ?? { x: 0, y: 0, w: GRID, h: GRID };
+    let water = false;
+    const grounds = new Set<string>();
+    for (let y = r.y; y < r.y + r.h; y++) {
+      for (let x = r.x; x < r.x + r.w; x++) {
+        const t = this.at(x, y);
+        if (!t) continue;
+        if (t.water) water = true;
+        else grounds.add(t.ground);
+      }
+    }
+    if ('step' in e) {
+      if ((e.needsWater || e.spansWater) && !water) return false;
+      return true;
+    }
+    if (e.tab === 'water' && e.kind === 'ground') return water;
+    if (e.kind === 'ground' && e.ground) return !(grounds.size === 1 && grounds.has(e.ground));
     return true;
+  }
+
+  /** Мазок кисти уже принёс открытие: длинный мазок — одно открытие. */
+  private strokeRewarded = false;
+
+  /**
+   * Кисть, заливка или тропа изменили сад: точка открытия гаснет и,
+   * как после любой постройки, открывается что-то новое. Возвращает true,
+   * если каталог изменился.
+   */
+  useEntry(id: string | null, perStroke = false): boolean {
+    const wasFresh = id !== null && this.fresh.delete(id);
+    if (perStroke && this.strokeRewarded) return wasFresh;
+    if (perStroke) this.strokeRewarded = true;
+    return this.unlockRandomItem() !== null || wasFresh;
   }
 
   /** Строительство случилось: точка предмета гаснет, открывается что-то новое. */
@@ -1178,6 +1216,7 @@ export class World {
   /** Новая кисть — новый мазок: счётчик мазка сбрасывается. */
   beginStroke(): void {
     this.strokeCharged = false;
+    this.strokeRewarded = false;
   }
 
   /** Зоны-кандидаты расширения, когда порог действий достигнут. */

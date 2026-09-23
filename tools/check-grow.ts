@@ -231,6 +231,40 @@ async function main(): Promise<void> {
     check('новый мазок — новое действие', w.grow.bank === 0 && w.grow.progress === 2);
   }
 
+  console.log('открытия растущего сада');
+  {
+    const { GROW_STARTER_IDS } = await import('../src/world/catalog');
+    let bad = 0;
+    for (let i = 0; i < 200; i++) {
+      const w = new World();
+      w.reset();
+      seedGrowWorld(w, i);
+      w.grow = newGrowState(i, Date.now());
+      w.initUnlocks(false);
+      const first = [...w.unlocked][0];
+      if (!(GROW_STARTER_IDS as readonly string[]).includes(first)) bad++;
+    }
+    check('старт — всегда осмысленное открытие (не мох)', bad === 0, `плохих ${bad}`);
+
+    const w = new World();
+    w.reset();
+    seedGrowWorld(w, 5);
+    w.grow = newGrowState(5, Date.now());
+    w.initUnlocks(false);
+    const n0 = w.unlocked.size;
+    w.useEntry('g_sand', true);
+    w.useEntry('g_sand', true);
+    check('мазок кисти открывает одно новое', w.unlocked.size === n0 + 1);
+    w.beginStroke();
+    w.useEntry('g_sand', true);
+    check('новый мазок — ещё одно открытие', w.unlocked.size === n0 + 2);
+    w.useEntry(null);
+    check('тропа тоже открывает новое', w.unlocked.size === n0 + 3);
+    w.onBuiltItem('sakura');
+    w.onBuiltItem('sakura');
+    check('повторная постройка тоже открывает', w.unlocked.size === n0 + 5);
+  }
+
   console.log('границы тумана');
   {
     const w = new World();

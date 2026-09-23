@@ -707,7 +707,7 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
       repaintTouched();
       if (history.commit()) syncHistoryUI();
       const gb = TERRAIN_BRUSHES.find((b) => b.ground === ground);
-      if (gb && world.useEntry(gb.id)) {
+      if (world.useEntry(gb?.id ?? null)) {
         ui.renderTabs();
         ui.renderItems();
       }
@@ -742,7 +742,7 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
     repaintTouched();
     if (history.commit()) {
       syncHistoryUI();
-      if (world.useEntry(b.id)) {
+      if (world.useEntry(b.id, true)) {
         ui.renderTabs();
         ui.renderItems();
       }
@@ -823,6 +823,10 @@ function layPathStep(tx: number, ty: number): void {
     flushMilestones();
     world.checkMilestone('first_path');
     flushMilestones();
+    if (world.useEntry(null)) {
+      ui.renderTabs();
+      ui.renderItems();
+    }
     ui.toast(`Тропа легла: ${laid} шагов`);
   } else {
     history.abort();
