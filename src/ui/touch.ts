@@ -15,8 +15,6 @@
 
 /** За сколько пикселей движение перестаёт считаться нажатием. */
 const TAP_SLOP = 12;
-/** Сколько держать палец, чтобы сработало «убрать». */
-const HOLD_MS = 420;
 
 export interface TouchHandlers {
   /** Короткое касание: поставить, выбрать, отметить точку тропы. */
@@ -115,14 +113,6 @@ export class TouchInput {
     this.moved = false;
     this.dragging = false;
     this.suppress = false;
-
-    // Долгое нажатие вместо правой кнопки мыши
-    this.holdTimer = window.setTimeout(() => {
-      this.holdTimer = null;
-      if (this.moved) return;
-      this.moved = true; // чтобы отпускание не сработало ещё и как касание
-      this.h.onHold(this.startX, this.startY);
-    }, HOLD_MS);
   };
 
   private onMove = (e: TouchEvent): void => {

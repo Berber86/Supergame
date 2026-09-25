@@ -23,7 +23,7 @@ import { GrowRect, GrowState, growOfferReady, growTick, growZones, inGrowRect } 
 import { treeGrowthAt } from './treeGrowth';
 import { computeTime } from '../core/clock';
 import { SAVE_VERSION, parseSave, serializeSave } from './saveFormat';
-import { GroundId, PlacedObject, SaveData, Tile } from './types';
+import { GravelStyle, GroundId, PlacedObject, SaveData, Tile } from './types';
 
 const SAVE_KEY = 'usadba.save.v3';
 
@@ -64,6 +64,14 @@ export class World {
   pendingNotes: ChronicleToastNote[] = [];
   /** Границы последней правки земли — для частичной перерисовки. */
   lastTouched: { x0: number; y0: number; x1: number; y1: number } | null = null;
+  /** Узор расчёсывания гравия: волны, круги у камней, прямые борозды или вихри. */
+  gravelStyle: GravelStyle = 'waves';
+  /** Индивидуальные узоры и направления расчёсанных клеток гравия. */
+  tileRake = new Map<number, number>();
+  /** Свободные непрерывные борозды граблей сада камней. */
+  gravelStrokes: Array<Array<{ x: number; y: number }>> = [];
+  /** Текущий рисуемый мазок (для мгновенного отображения под пальцем/курсором). */
+  activeGravelStroke: Array<{ x: number; y: number }> | null = null;
   /**
    * Кэш стадии роста саженцев: кадр дёргает рост каждого дерева, но сама
    * модель пересчитывается не чаще раза в час — глазу час незаметен,
@@ -80,7 +88,7 @@ export class World {
   }
 
   /** Отметить клетку как изменённую. */
-  private touch(x: number, y: number): void {
+  touch(x: number, y: number): void {
     const r = this.lastTouched;
     if (!r) this.lastTouched = { x0: x, y0: y, x1: x, y1: y };
     else {
@@ -117,6 +125,10 @@ export class World {
     // Вольный сад: режима роста нет
     this.grow = null;
     this.growRefused = false;
+    this.tileRake.clear();
+    this.gravelStrokes = [];
+    this.activeGravelStroke = null;
+    this.gravelStyle = 'waves';
     this.milestones = new Set();
     this.seasonsSeen = new Set();
     // Летопись нового сада пуста: встречи ещё впереди
@@ -164,16 +176,22 @@ export class World {
     for (const id of FURNITURE_IDS) this.unlocked.add(id);
   }
 
+  /**
+   * Доступность предмета или кисти:
+   * В вольном (не растущем) саду все здания, постройки и кисти доступны сразу.
+   * В растущем саду действует система постепенных открытий.
+   */
+  isUnlocked(id: string): boolean {
+    if (!this.grow) return true;
+    return this.unlocked.has(id);
+  }
+
   /** A furnished free-garden preset can have a house without a recorded construction milestone. */
   tabAvailable(id: string): boolean {
+    if (!this.grow) return true;
     const tab = TAB_BY_ID.get(id);
     if (!tab) return false;
-    if (!tab.requires || this.milestones.has(tab.requires)) return true;
-    return (
-      id === 'house' &&
-      !this.grow &&
-      (this.tiles.some((t) => t.indoor) || this.objects.some((o) => SMALL_HOUSE_IDS.has(o.type)))
-    );
+    return !tab.requires || this.milestones.has(tab.requires);
   }
 
   /** Запись каталога технически доступна: веха вкладки открыта, размер влезает. */
@@ -602,6 +620,64 @@ export class World {
     }
   }
 
+  /** Сменить узор расчёсывания гравия и обновить холст земли. */
+  setGravelStyle(style: GravelStyle): void {
+    if (this.gravelStyle === style) return;
+    this.gravelStyle = style;
+    for (let y = 0; y < GRID; y++) {
+      for (let x = 0; x < GRID; x++) {
+        if (this.tiles[this.idx(x, y)]?.ground === 'gravel') {
+          this.touch(x, y);
+        }
+      }
+    }
+  }
+
+  /** Переключить на следующий узор гравия по кругу. */
+  cycleGravelStyle(): GravelStyle {
+    const styles: GravelStyle[] = ['waves', 'ripples', 'straight', 'swirl'];
+    const curIdx = styles.indexOf(this.gravelStyle);
+    const next = styles[(curIdx + 1) % styles.length];
+    this.setGravelStyle(next);
+    return next;
+  }
+
+  /**
+   * Расчесать клетку гравия: задать узор или направление бороздок.
+   * 1: волны вдоль X, 2: волны вдоль Y, 3: круговая рябь, 4: прямые вдоль X, 5: прямые вдоль Y, 6: вихрь
+   */
+  rakeTile(x: number, y: number, mode: number): void {
+    if (!inBounds(x, y)) return;
+    const t = this.at(x, y);
+    if (!t) return;
+    if (t.ground !== 'gravel') {
+      this.setGround(x, y, 'gravel');
+    }
+    const idx = this.idx(x, y);
+    this.tileRake.set(idx, mode);
+    this.touch(x, y);
+  }
+
+  /** Добавить непрерывный след граблей на песке сада камней. */
+  addGravelStroke(points: Array<{ x: number; y: number }>): void {
+    if (points.length < 2) return;
+    this.gravelStrokes.push(points);
+    for (const p of points) {
+      this.touch(Math.floor(p.x), Math.floor(p.y));
+    }
+  }
+
+  /** Разровнять песок: стереть все нарисованные борозды. */
+  clearGravelStrokes(): void {
+    if (!this.gravelStrokes.length) return;
+    this.gravelStrokes = [];
+    for (let y = 0; y < GRID; y++) {
+      for (let x = 0; x < GRID; x++) {
+        if (this.at(x, y)?.ground === 'gravel') this.touch(x, y);
+      }
+    }
+  }
+
   /** Плавно сшивает перепады высот, чтобы не было резких ступеней. */
   smoothTerrain(): void {
     for (let pass = 0; pass < 2; pass++) {
@@ -985,6 +1061,16 @@ export class World {
       ...(this.isSaplingKind(item) ? { young: 1 as const } : {}),
     };
     this.objects.push(obj);
+    if (type === 'rock_garden') {
+      const rx = Math.floor(tx);
+      const ry = Math.floor(ty);
+      for (let dy = 0; dy < 5; dy++) {
+        for (let dx = 0; dx < 5; dx++) {
+          this.setGround(rx + dx, ry + dy, 'gravel');
+          this.touch(rx + dx, ry + dy);
+        }
+      }
+    }
     this.noteObjectsChanged();
     if (type === 'cat') this.checkMilestone('first_cat');
     if (item.kind === 'tree') {
@@ -1120,7 +1206,8 @@ export class World {
 
   /** Очевидную мелочь (фонарь, цветок, подушка, мелкий камень) можно переносить руками — без затрат. */
   private isFreeMoveItem(item: CatalogItem): boolean {
-    if (item.kind === 'tree' || item.kind === 'shrub' || item.kind === 'pavilion' || item.kind === 'bridge') return false;
+    if (item.kind === 'tree' || item.kind === 'shrub' || item.kind === 'pavilion' || item.kind === 'bridge')
+      return false;
     if (item.w > 1 || item.h > 1) return false;
     // Гравий и мох — не делаем бесплатными, чтобы не было бесконечного перекладывания земли
     if (item.id === 'moss_clump' || item.id === 'pebbles') return false;
@@ -1290,6 +1377,13 @@ export class World {
       grow: this.grow
         ? { ...this.grow, rect: { ...this.grow.rect }, ...(this.grow.clock ? { clock: { ...this.grow.clock } } : {}) }
         : null,
+      gravelStyle: this.gravelStyle,
+      tileRake: this.tileRake.size ? Object.fromEntries(this.tileRake) : undefined,
+      gravelStrokes: this.gravelStrokes.length
+        ? this.gravelStrokes.map((s) =>
+            s.map((p) => [Math.round(p.x * 100) / 100, Math.round(p.y * 100) / 100] as [number, number]),
+          )
+        : undefined,
       born: this.born,
       timeShift: this.timeShift,
       unlocked: [...this.unlocked],
@@ -1341,6 +1435,14 @@ export class World {
       if (milestone && MILESTONES[milestone]) this.milestones.add(milestone);
     }
     this.grow = p.grow ?? null;
+    this.gravelStyle = p.gravelStyle ?? 'waves';
+    this.tileRake.clear();
+    if (p.tileRake) {
+      for (const [k, v] of Object.entries(p.tileRake)) {
+        this.tileRake.set(Number(k), Number(v));
+      }
+    }
+    this.gravelStrokes = (p.gravelStrokes ?? []).map((s) => s.map(([x, y]) => ({ x, y })));
     this.born = p.born ?? this.born;
     this.timeShift = Number.isFinite(p.timeShift) ? (p.timeShift as number) : 0;
     // Лягушки из тумана: если в открытом саду нет воды, случайные строки

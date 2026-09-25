@@ -171,9 +171,13 @@ function loadPaintPref(): 'tap' | 'stroke' {
 let paintMode: 'tap' | 'stroke' = loadPaintPref();
 let ghostRot = 0;
 let zenMode = false;
+let zenExplicit = false;
 let lastInteraction = performance.now();
 /** Масштаб, к которому камера возвращается после входа: 0 — входа не было. */
 let entryZoom = 0;
+
+let lastRakeSound = 0;
+let activeRakeStroke: Array<{ x: number; y: number }> | null = null;
 
 const ui = new UI(app, world, {
   onSelect(sel) {
@@ -193,6 +197,10 @@ const ui = new UI(app, world, {
     if (sel.kind === 'none') {
       scene.ghost = null;
       scene.highlightId = -1;
+    }
+    if (sel.kind === 'brush' && sel.brush.kind === 'rake') {
+      ui.setRotateLabel('разровнять', 'Разровнять песок (R)');
+      ui.setHint('Грабли: ведите пальцем или мышью по песку для рисования борозд · R разравнивает песок');
     }
     updateGhost();
   },
@@ -246,6 +254,9 @@ const ui = new UI(app, world, {
     if (!g || !growOfferReady(g)) return;
     g.choosing = true;
     saveWorld();
+  },
+  onToggleZen() {
+    toggleZen();
   },
   onRotate() {
     rotateGhost();
@@ -450,23 +461,41 @@ function doRedo(): void {
 
 // ---------------- Режим созерцания ----------------
 
-/** Интерфейс растворяется без движения: без режима, просто тишина экрана. */
-function setZen(on: boolean): void {
+/** Интерфейс растворяется без движения или по явной кнопке/Z: тишина экрана и сада. */
+function setZen(on: boolean, explicit = false): void {
   zenMode = on;
+  if (explicit) zenExplicit = on;
+  else if (!on) zenExplicit = false;
+
   document.body.classList.toggle('zen', on);
+  ui.setZenNote(
+    on,
+    explicit ? 'Созерцание · кликните кота, воду или колокольчик · <span>Z</span> для возврата' : undefined,
+  );
   if (on) {
+    selection = { kind: 'none' };
+    ui.select({ kind: 'none' });
     ui.toggleBuild(false);
+    ui.toggleMirage(false);
     ui.toggleHelp(false);
     settingsPanel.setOpen(false);
     gardensPanel.setOpen(false);
+    scene.ghost = null;
+    canvas.classList.remove('building');
   } else {
     ui.setGrowVisible(growLineShown);
   }
 }
 
+function toggleZen(): void {
+  setZen(!zenMode, !zenMode);
+}
+
 /** Интерфейс исчезает сам, когда игрок ничего не делает. */
 function wake(): void {
   lastInteraction = performance.now();
+  // Если созерцание включено явно — движение мыши не должно сбрасывать покой
+  if (zenExplicit) return;
   if (zenMode) setZen(false);
 }
 
@@ -506,13 +535,105 @@ const input = setupInput({
     toggleSound,
     rotateGhost,
     cancelPlace,
+    handleContemplationTap,
+    toggleZen,
+    isZen: () => zenMode,
+    exitZen: () => {
+      if (zenMode) setZen(false);
+    },
+    activateGravelRake,
+    resetStroke: () => {
+      if (activeRakeStroke && activeRakeStroke.length >= 2) {
+        world.addGravelStroke(activeRakeStroke);
+        repaintTouched();
+        if (history.commit()) syncHistoryUI();
+        saveWorld();
+      }
+      activeRakeStroke = null;
+      world.activeGravelStroke = null;
+    },
   },
 });
 
 // ---------------- Действия ----------------
 
-/** Поворот на 90°: ждущий призрак крутится на месте, обычный — до постановки. */
+function activateGravelRake(): void {
+  if (zenMode) setZen(false);
+  const rakeBrush = TERRAIN_BRUSHES.find((b) => b.id === 'g_rake');
+  if (rakeBrush) {
+    ui.select({ kind: 'brush', brush: rakeBrush });
+    ui.setPaintMode('stroke');
+    ui.toast('Грабли в руке: ведите пальцем или мышью по песку для рисования');
+    audio.rake(0.8);
+  }
+}
+
+/** Тактильный отклик в созерцании: погладить кота, круги на воде, колокольчик. */
+function handleContemplationTap(sx: number, sy: number): boolean {
+  const p = scene.pickTile(sx, sy, world);
+  const tx = p.tx;
+  const ty = p.ty;
+
+  // 1. Погладить кота
+  if (life.petCatAt(tx, ty)) {
+    audio.purr();
+    world.noteEvent('cat_purr', world.now(), tx, ty);
+    ui.toast('Кот мурлычет');
+    return true;
+  }
+
+  // 2. Предметы сада: колокольчик, сиси-одоси, цукубай, сад камней и грабли
+  const obj = world.pickObject(tx, ty);
+  if (obj) {
+    if (obj.type === 'wind_chime') {
+      audio.chime(0.9);
+      ui.toast('Колокольчик звенит на ветру');
+      return true;
+    }
+    if (obj.type === 'shishi_odoshi') {
+      audio.knock();
+      life.residents.ripple(obj.tx + 0.5, obj.ty + 0.5, true);
+      ui.toast('Сиси-одоси');
+      return true;
+    }
+    if (obj.type === 'tsukubai') {
+      audio.splash();
+      life.residents.ripple(obj.tx + 0.5, obj.ty + 0.5, false);
+      return true;
+    }
+    if (obj.type === 'zen_rake' || obj.type === 'rock_garden') {
+      activateGravelRake();
+      return true;
+    }
+  }
+
+  // 3. Касание воды — круги на воде и карпы
+  const t = world.at(Math.floor(tx), Math.floor(ty));
+  if (t?.water) {
+    life.residents.ripple(tx, ty, true);
+    life.panicFish(tx, ty);
+    audio.splash();
+    return true;
+  }
+
+  // 4. Касание гравия — мягкий шелест мелких камешков
+  if (t?.ground === 'gravel') {
+    audio.rake(0.4);
+    return true;
+  }
+
+  return false;
+}
+
+/** Поворот на 90° или разравнивание песка граблями (R). */
 function rotateGhost(): void {
+  if (selection.kind === 'brush' && selection.brush.kind === 'rake') {
+    world.clearGravelStrokes();
+    repaintTouched();
+    ui.toast('Песок разровнен: чистая гладкая поверхность');
+    audio.rake(0.8);
+    return;
+  }
   if (pendingPlace) {
     pendingPlace.rot = (pendingPlace.rot + 1) % 4;
     syncPendingGhost();
@@ -563,6 +684,7 @@ function confirmPlace(): void {
   if (!item) return;
   history.begin(item.name.toLowerCase(), null);
   const placed = world.place(p.itemId, p.tx, p.ty, p.rot);
+  repaintTouched();
   if (placed) {
     if (history.commit()) syncHistoryUI();
     if (item.needsWater || item.onWater) audio.splash();
@@ -684,6 +806,15 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
   const p = scene.pickTile(sx, sy, world);
   if (!inBounds(Math.floor(p.tx), Math.floor(p.ty))) return;
 
+  // Клик по саду камней или граблям в саду — сразу берёт грабли в руку!
+  if (isClick && selection.kind === 'none') {
+    const obj = world.pickObject(p.tx, p.ty);
+    if (obj && (obj.type === 'zen_rake' || obj.type === 'rock_garden')) {
+      activateGravelRake();
+      return;
+    }
+  }
+
   // Любое действие мимо подтверждения снимает призрак бесплатно
   if (pendingPlace && selection.kind !== 'item') cancelPlace();
 
@@ -735,6 +866,49 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
 
   if (selection.kind === 'brush') {
     const b = selection.brush;
+    if (b.kind === 'rake') {
+      const itx = Math.floor(p.tx);
+      const ity = Math.floor(p.ty);
+      const t = world.at(itx, ity);
+
+      // Рисование разрешено ТОЛЬКО по песку и гравию сада камней!
+      // Вне гравия ландшафт не меняется и следов не остаётся.
+      if (!t || t.ground !== 'gravel' || t.water) {
+        if (activeRakeStroke && activeRakeStroke.length >= 2) {
+          world.addGravelStroke(activeRakeStroke);
+          repaintTouched();
+          if (history.commit()) syncHistoryUI();
+        }
+        activeRakeStroke = null;
+        world.activeGravelStroke = null;
+        return;
+      }
+
+      const curPt = { x: p.tx, y: p.ty };
+      if (!activeRakeStroke) {
+        activeRakeStroke = [curPt];
+        world.activeGravelStroke = activeRakeStroke;
+        history.begin('грабли', 'brush:rake');
+      } else {
+        const lastPt = activeRakeStroke[activeRakeStroke.length - 1];
+        const dist = Math.hypot(curPt.x - lastPt.x, curPt.y - lastPt.y);
+        if (dist >= 0.05) {
+          activeRakeStroke.push(curPt);
+        }
+      }
+
+      world.touch(itx, ity);
+      repaintTouched();
+
+      const now = performance.now();
+      if (now - lastRakeSound > 110) {
+        audio.rake(0.6);
+        lastRakeSound = now;
+      }
+      flushMilestones();
+      return;
+    }
+
     // Один мазок = один шаг отмены: ведение кистью склеивается по ключу
     history.begin(b.name.toLowerCase(), `brush:${b.id}`);
     world.clearTouched();
@@ -775,6 +949,7 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
     }
     history.begin(item.name.toLowerCase(), isClick ? null : `scatter:${item.id}`);
     const placed = world.place(item.id, s.tx, s.ty, ghostRot);
+    repaintTouched();
     if (history.commit()) syncHistoryUI();
     if (item.needsWater || item.onWater) audio.splash();
     else audio.place();

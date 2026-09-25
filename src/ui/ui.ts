@@ -55,7 +55,9 @@ export interface UIHooks {
   onAnimalGuide(): void;
   /** Растущий сад: открыть выбор, куда расти. */
   onGrowLine(): void;
-  /** Повернуть призрак предмета (R). */
+  /** Включить или выключить режим созерцания (Z). */
+  onToggleZen(): void;
+  /** Повернуть призрак предмета или сменить узор граблей (R). */
   onRotate(): void;
   /** Одиночное касание или мазок кистью. */
   onPaintMode(mode: 'tap' | 'stroke'): void;
@@ -135,6 +137,9 @@ export class UI {
     this.els.btnBuild = mk('hand', 'Строить (B)');
     this.els.btnMirage = mk('mirage', 'Живность (N)');
     this.els.btnMirage.title = 'Позвать живность: миражи живут по десять минут';
+    this.els.btnZen = mk('eye', 'Созерцание (Z)');
+    this.els.btnZen.title = 'Режим созерцания: растворить интерфейс и побыть в саду (Z)';
+    this.els.btnZen.addEventListener('click', () => this.hooks.onToggleZen());
     // Крыша появляется только с домом: пока крыть нечего, кнопка спит
     this.els.btnRoof = mk('roof', 'Крыша');
     this.els.btnRoof.style.display = 'none';
@@ -273,6 +278,22 @@ export class UI {
     const toast = this.el('div', 'toast paper');
     layer.appendChild(toast);
     this.els.toast = toast;
+
+    // --- Созерцание: тихая подпись в углу ---
+    const zenNote = this.el('div', 'zen-note');
+    zenNote.innerHTML = `Созерцание · кликните кота, воду или колокольчик · <span>Z</span> для возврата`;
+    zenNote.addEventListener('click', () => this.hooks.onToggleZen());
+    layer.appendChild(zenNote);
+    this.els.zenNote = zenNote;
+
+    // --- Созерцание: явная кнопка выхода (для мобильных и мыши) ---
+    const zenExit = this.el<HTMLButtonElement>('button', 'zen-exit wood');
+    zenExit.type = 'button';
+    zenExit.innerHTML = `${svgIcon('close', 18)}<span>Выйти из созерцания</span>`;
+    zenExit.title = 'Выйти из режима созерцания (Z или Esc)';
+    zenExit.addEventListener('click', () => this.hooks.onToggleZen());
+    layer.appendChild(zenExit);
+    this.els.zenExit = zenExit;
 
     // --- Свиток помощи ---
     const help = this.el('div', 'scroll-panel paper');
@@ -439,8 +460,8 @@ export class UI {
   private tabHasContent(id: string): boolean {
     return (
       ITEMS.some(
-        (i) => i.tab === id && this.world.unlocked.has(i.id) && (this.fitsGrow(i.w, i.h) || this.fitsGrow(i.h, i.w)),
-      ) || TERRAIN_BRUSHES.some((b) => b.tab === id && this.world.unlocked.has(b.id) && this.fitsGrow(b.w, b.h))
+        (i) => i.tab === id && this.world.isUnlocked(i.id) && (this.fitsGrow(i.w, i.h) || this.fitsGrow(i.h, i.w)),
+      ) || TERRAIN_BRUSHES.some((b) => b.tab === id && this.world.isUnlocked(b.id) && this.fitsGrow(b.w, b.h))
     );
   }
 
@@ -485,12 +506,12 @@ export class UI {
     box.innerHTML = '';
 
     const brushes = TERRAIN_BRUSHES.filter(
-      (b) => b.tab === this.activeTab && this.world.unlocked.has(b.id) && this.fitsGrow(b.w, b.h),
+      (b) => b.tab === this.activeTab && this.world.isUnlocked(b.id) && this.fitsGrow(b.w, b.h),
     );
     const items = ITEMS.filter(
       (i) =>
         i.tab === this.activeTab &&
-        this.world.unlocked.has(i.id) &&
+        this.world.isUnlocked(i.id) &&
         (this.fitsGrow(i.w, i.h) || this.fitsGrow(i.h, i.w)),
     );
     if (!brushes.length && !items.length) {
@@ -511,7 +532,9 @@ export class UI {
               ? 'hill'
               : b.kind === 'floor'
                 ? 'house'
-                : 'ground';
+                : b.kind === 'rake'
+                  ? 'stroke'
+                  : 'ground';
       const size = b.w > 1 || b.h > 1 ? ` ${b.w}×${b.h}` : '';
       e.innerHTML = `<div class="thumb">${svgIcon(icon, 34)}</div><div class="name">${b.name}${size}</div><div class="hint">${b.hint}</div>`;
       e.addEventListener('click', () => this.select({ kind: 'brush', brush: b }));
@@ -594,10 +617,25 @@ export class UI {
     bb.querySelector('[data-act="path"]')!.classList.toggle('active', k === 'path');
   }
 
-  /** Кнопка поворота: живая только у поворачиваемых предметов. */
+  /** Кнопка поворота: живая только у поворачиваемых предметов или граблей. */
   setRotateEnabled(v: boolean): void {
     const b = this.els.buildbar.querySelector<HTMLElement>('[data-act="rotate"]');
     b?.classList.toggle('off', !v);
+  }
+
+  setRotateLabel(label = 'поворот', title = 'Повернуть (R)'): void {
+    const b = this.els.buildbar.querySelector<HTMLElement>('[data-act="rotate"]');
+    if (!b) return;
+    const cap = b.querySelector('.bb-cap');
+    if (cap) cap.textContent = label;
+    b.title = title;
+  }
+
+  setZenNote(on: boolean, text?: string): void {
+    if (this.els.zenNote) {
+      if (text) this.els.zenNote.innerHTML = text;
+      this.els.zenNote.classList.toggle('on', on);
+    }
   }
 
   /** Как ставит инструмент: одиночное касание или мазок движением. */
@@ -633,7 +671,18 @@ export class UI {
     else this.renderItems();
     this.syncBuildbar();
     // Поворот есть не у каждого предмета: кнопка гаснет, когда нечего вертеть
-    this.setRotateEnabled(sel.kind === 'item' && !!sel.item.rotatable);
+    const isRake = sel.kind === 'brush' && sel.brush.kind === 'rake';
+    const bRot = this.els.buildbar?.querySelector<HTMLElement>('[data-act="rotate"]');
+    if (bRot) {
+      bRot.innerHTML = isRake
+        ? `${svgIcon('erase', 18)}<span class="bb-cap">разровнять</span>`
+        : `${svgIcon('rotate', 18)}<span class="bb-cap">поворот</span>`;
+      bRot.title = isRake ? 'Разровнять песок: стереть все борозды (R)' : 'Повернуть (R)';
+      bRot.classList.toggle('off', !((sel.kind === 'item' && !!sel.item.rotatable) || isRake));
+    }
+
+    // При выборе любого инструмента панель действий СРАЗУ появляется и доступна игроку
+    this.els.buildbar.classList.toggle('show', this.buildOpen || sel.kind !== 'none');
     this.hooks.onSelect(sel);
     // Подсказки называют то действие, которое у игрока под рукой:
     // на телефоне «коснитесь», на мыши «кликните».
@@ -646,9 +695,17 @@ export class UI {
           : `${sel.item.name} — клик, чтобы поставить · R — поворот`,
       );
     } else if (sel.kind === 'brush') {
-      const sz =
-        sel.brush.kind === 'ground' && this.brushSize > 1 ? ` · кисть ${this.brushSize}×${this.brushSize}` : '';
-      this.setHint(touch ? `${sel.brush.name} — ведите пальцем${sz}` : `${sel.brush.name} — зажмите и ведите${sz}`);
+      if (sel.brush.kind === 'rake') {
+        this.setHint(
+          touch
+            ? 'Грабли — ведите пальцем по песку сада камней для рисования · кнопка «разровнять» очищает песок'
+            : 'Грабли — ведите по песку сада камней для рисования борозд · R или кнопка «разровнять» очищает песок',
+        );
+      } else {
+        const sz =
+          sel.brush.kind === 'ground' && this.brushSize > 1 ? ` · кисть ${this.brushSize}×${this.brushSize}` : '';
+        this.setHint(touch ? `${sel.brush.name} — ведите пальцем${sz}` : `${sel.brush.name} — зажмите и ведите${sz}`);
+      }
     } else if (sel.kind === 'erase') {
       this.setHint(`${tap[0].toUpperCase()}${tap.slice(1)} по предмету, чтобы убрать`);
     } else if (sel.kind === 'pick') {
@@ -676,7 +733,7 @@ export class UI {
     if (this.mirageOpen) this.toggleMirage(false);
     this.buildOpen = force ?? !this.buildOpen;
     this.els.catalog.classList.toggle('open', this.buildOpen);
-    this.els.buildbar.classList.toggle('show', this.buildOpen);
+    this.els.buildbar.classList.toggle('show', this.buildOpen || this.selection.kind !== 'none');
     this.els.btnBuild.classList.toggle('active', this.buildOpen);
     this.els.btnMirage?.classList.toggle('active', false);
     // Режим стройки виден и в CSS: на телефоне по нему прячется подсказка,

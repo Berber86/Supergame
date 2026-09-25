@@ -593,4 +593,89 @@ export class GardenAudio {
     src.stop(ctx.currentTime + 0.5);
     setTimeout(() => g.disconnect(), 700);
   }
+
+  /**
+   * Кошачье мурлыканье: тёплая низкая вибрация (28–32 Гц) с ритмичной модуляцией дыхания.
+   */
+  purr(amount = 0.8): void {
+    if (!this.ctx || !this.enabled) return;
+    const ctx = this.ctx;
+    const dur = 2.2;
+    const t0 = ctx.currentTime;
+
+    // Несущий тон гортани
+    const carrier = ctx.createOscillator();
+    carrier.type = 'triangle';
+    carrier.frequency.setValueAtTime(32, t0);
+    carrier.frequency.linearRampToValueAtTime(27, t0 + dur * 0.5);
+    carrier.frequency.linearRampToValueAtTime(30, t0 + dur);
+
+    // Модуляция гортани
+    const mod = ctx.createOscillator();
+    mod.type = 'sine';
+    mod.frequency.setValueAtTime(23, t0);
+    const modGain = ctx.createGain();
+    modGain.gain.setValueAtTime(0.75, t0);
+    mod.connect(modGain.gain);
+
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.setValueAtTime(110, t0);
+    f.Q.value = 1.4;
+
+    carrier.connect(modGain);
+    modGain.connect(f);
+
+    const g = this.env(f, 0.12 * amount, 0.35, dur * 0.7);
+    carrier.start(t0);
+    mod.start(t0);
+    carrier.stop(t0 + dur + 0.1);
+    mod.stop(t0 + dur + 0.1);
+
+    setTimeout(
+      () => {
+        carrier.disconnect();
+        mod.disconnect();
+        modGain.disconnect();
+        f.disconnect();
+        g.disconnect();
+      },
+      (dur + 0.4) * 1000,
+    );
+  }
+
+  /**
+   * Грабли в саду камней: деревянные зубья тянутся по гравию.
+   */
+  rake(amount = 0.7): void {
+    if (!this.ctx || !this.enabled || !this.noiseBuf) return;
+    const ctx = this.ctx;
+    const dur = 0.55;
+    const t0 = ctx.currentTime;
+
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.loop = true;
+
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.setValueAtTime(950 + rnd() * 180, t0);
+    f.frequency.linearRampToValueAtTime(720 + rnd() * 120, t0 + dur);
+    f.Q.value = 3.4;
+
+    src.connect(f);
+    const g = this.env(f, 0.065 * amount, 0.04, dur * 0.75);
+
+    src.start(t0);
+    src.stop(t0 + dur + 0.05);
+
+    setTimeout(
+      () => {
+        src.disconnect();
+        f.disconnect();
+        g.disconnect();
+      },
+      (dur + 0.3) * 1000,
+    );
+  }
 }

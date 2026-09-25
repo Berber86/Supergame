@@ -56,6 +56,15 @@ export interface InputActions {
   cancelPlace(): boolean;
   /** Поворот призрака на 90° — состояние ghostRot живёт в main. */
   rotateGhost(): void;
+  /** Тактильный отклик в созерцании: погладить кота, круги на воде, колокольчик. */
+  handleContemplationTap(sx: number, sy: number): boolean;
+  /** Включить/выключить режим созерцания (Z). */
+  toggleZen(): void;
+  isZen(): boolean;
+  exitZen(): void;
+  activateGravelRake(): void;
+  /** Сбросить начальную точку мазка (при отпускании мыши/пальца). */
+  resetStroke(): void;
 }
 
 export interface InputDeps {
@@ -91,6 +100,8 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
   let tapPlace: { x: number; y: number; moved: boolean } | null = null;
   let lastX = 0;
   let lastY = 0;
+  let downX = 0;
+  let downY = 0;
 
   /**
    * Сбросить незавершённое действие — при смене усадьбы на середине
@@ -116,6 +127,8 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
     // каждое касание срабатывало бы дважды.
     if (e.pointerType === 'touch') return;
     canvas.setPointerCapture(e.pointerId);
+    downX = e.clientX;
+    downY = e.clientY;
     lastX = e.clientX;
     lastY = e.clientY;
     actions.wake();
@@ -155,6 +168,13 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
         canvas.classList.add('dragging');
       }
       return;
+    }
+    if (selection().kind === 'none' && e.button === 0) {
+      const p = scene.pickTile(e.clientX, e.clientY, world);
+      const obj = world.pickObject(p.tx, p.ty);
+      if (obj && (obj.type === 'zen_rake' || obj.type === 'rock_garden')) {
+        actions.activateGravelRake();
+      }
     }
     if (selection().kind !== 'none' && e.button === 0) {
       if (paintMode() === 'stroke') {
@@ -242,10 +262,16 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
         if (history.commit()) actions.syncHistoryUI();
         history.breakMerge();
       }
+    } else if (selection().kind === 'none' && !moving.current && !painting) {
+      // Созерцание: короткое касание без сдвига камеры — тактильный отклик мира
+      if (Math.hypot(lastX - downX, lastY - downY) < 6) {
+        actions.handleContemplationTap(lastX, lastY);
+      }
     }
     dragging = false;
     painting = false;
     tapPlace = null;
+    actions.resetStroke();
     canvas.classList.remove('dragging');
     actions.saveWorld();
   };
@@ -311,7 +337,10 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
           const p = scene.pickTile(x, y, world);
           if (actions.growPick(p.tx, p.ty)) return;
         }
-        if (selection().kind === 'none') return;
+        if (selection().kind === 'none') {
+          actions.handleContemplationTap(x, y);
+          return;
+        }
         pointer.x = x;
         pointer.y = y;
         pointer.has = true;
@@ -327,11 +356,8 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
         actions.saveWorld();
       },
 
-      onHold(x, y) {
-        // Долгое нажатие заменяет правую кнопку мыши
-        actions.wake();
-        actions.applyErase(x, y);
-        actions.saveWorld();
+      onHold(_x, _y) {
+        // Долгое удержание намеренно не удаляет предметы: удаление только через инструмент «Убрать»
       },
 
       onDragStart(x, y) {
@@ -342,8 +368,17 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
           return;
         }
         // Кистью и мелочью рисуем, всем остальным — возим камеру.
+        // Если коснулись сада камней — сразу берём грабли в руку и рисуем!
+        let sel2 = selection();
+        if (sel2.kind === 'none') {
+          const p = scene.pickTile(x, y, world);
+          const obj = world.pickObject(p.tx, p.ty);
+          if (obj && (obj.type === 'zen_rake' || obj.type === 'rock_garden')) {
+            actions.activateGravelRake();
+            sel2 = selection();
+          }
+        }
         // В режиме касания движение всегда ведёт камеру: предмет ставит тап.
-        const sel2 = selection();
         const paintable =
           paintMode() === 'stroke' && (sel2.kind === 'brush' || (sel2.kind === 'item' && sel2.item.step < 1));
         if (paintable) {
@@ -378,6 +413,7 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
         }
         painting = false;
         dragging = false;
+        actions.resetStroke();
         // Призрак под пальцем больше не нужен — палец убран
         scene.ghost = null;
         pointer.has = false;
@@ -483,7 +519,13 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
     }
     if (e.ctrlKey || e.metaKey) return;
 
+    if (k === 'z' || k === 'я') {
+      actions.toggleZen();
+      return;
+    }
+
     if (k === 'b') {
+      actions.exitZen();
       ui.toggleBuild();
     } else if (k === 'n') {
       ui.toggleMirage();
@@ -495,6 +537,10 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       ui.select({ kind: 'erase' });
       ui.toggleBuild(true);
     } else if (k === 'escape') {
+      if (actions.isZen()) {
+        actions.exitZen();
+        return;
+      }
       // Ждущий призрак убирается первым: Esc — тоже «другое действие»
       if (actions.cancelPlace()) return;
       // Выбор «куда расти» откладывается: туман снова укроет зоны

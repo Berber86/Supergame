@@ -1682,6 +1682,36 @@ export class Life {
     }
   }
 
+  /** Всплеск или касание воды: рыбы осторожно уходят в глубину. */
+  panicFish(x: number, y: number): void {
+    this.scareFish(x, y);
+  }
+
+  /** Погладить кота: кот жмурится, мурлычет и сладко потягивается. */
+  petCatAt(tx: number, ty: number): boolean {
+    const allCats = [...this.cats, ...this.guests];
+    let bestCat: Cat | null = null;
+    let minDist = 1.75;
+    for (const c of allCats) {
+      const d = Math.hypot(c.tx - tx, c.ty - ty);
+      if (d < minDist) {
+        minDist = d;
+        bestCat = c;
+      }
+    }
+    if (!bestCat) return false;
+
+    bestCat.facing = tx < bestCat.tx ? -1 : 1;
+    bestCat.state = bestCat.state === 'stretch' ? 'wash' : 'stretch';
+    bestCat.timer = 3800;
+    bestCat.phase = 0;
+    bestCat.actionTime = 0;
+    bestCat.actionDuration = 3800;
+    bestCat.actionState = bestCat.state;
+    bestCat.speed = 0;
+    return true;
+  }
+
   private updateFish(world: World, dt: number): void {
     const feedSpots: Vec[] = [];
     for (const o of world.objects) {
