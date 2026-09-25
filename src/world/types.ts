@@ -63,6 +63,8 @@ export interface SaveData {
   gravelStyle?: GravelStyle;
   /** Индивидуальные узоры расчёсанных клеток гравия (индекс клетки -> номер узора). */
   tileRake?: Record<number, number>;
+  /** Свободные непрерывные борозды граблей по песку и гравию (массив мазков [x, y]). */
+  gravelStrokes?: Array<Array<[number, number]>>;
   /** Режим растущего сада: null или отсутствие — вольный сад. */
   grow?: {
     clock?: GrowClockState;

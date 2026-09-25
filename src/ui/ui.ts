@@ -286,6 +286,15 @@ export class UI {
     layer.appendChild(zenNote);
     this.els.zenNote = zenNote;
 
+    // --- Созерцание: явная кнопка выхода (для мобильных и мыши) ---
+    const zenExit = this.el<HTMLButtonElement>('button', 'zen-exit wood');
+    zenExit.type = 'button';
+    zenExit.innerHTML = `${svgIcon('close', 18)}<span>Выйти из созерцания</span>`;
+    zenExit.title = 'Выйти из режима созерцания (Z или Esc)';
+    zenExit.addEventListener('click', () => this.hooks.onToggleZen());
+    layer.appendChild(zenExit);
+    this.els.zenExit = zenExit;
+
     // --- Свиток помощи ---
     const help = this.el('div', 'scroll-panel paper');
     // На телефоне свиток рассказывает про жесты, а не про клавиши:

@@ -68,6 +68,10 @@ export class World {
   gravelStyle: GravelStyle = 'waves';
   /** Индивидуальные узоры и направления расчёсанных клеток гравия. */
   tileRake = new Map<number, number>();
+  /** Свободные непрерывные борозды граблей сада камней. */
+  gravelStrokes: Array<Array<{ x: number; y: number }>> = [];
+  /** Текущий рисуемый мазок (для мгновенного отображения под пальцем/курсором). */
+  activeGravelStroke: Array<{ x: number; y: number }> | null = null;
   /**
    * Кэш стадии роста саженцев: кадр дёргает рост каждого дерева, но сама
    * модель пересчитывается не чаще раза в час — глазу час незаметен,
@@ -84,7 +88,7 @@ export class World {
   }
 
   /** Отметить клетку как изменённую. */
-  private touch(x: number, y: number): void {
+  touch(x: number, y: number): void {
     const r = this.lastTouched;
     if (!r) this.lastTouched = { x0: x, y0: y, x1: x, y1: y };
     else {
@@ -122,6 +126,8 @@ export class World {
     this.grow = null;
     this.growRefused = false;
     this.tileRake.clear();
+    this.gravelStrokes = [];
+    this.activeGravelStroke = null;
     this.gravelStyle = 'waves';
     this.milestones = new Set();
     this.seasonsSeen = new Set();
@@ -646,6 +652,26 @@ export class World {
     this.touch(x, y);
   }
 
+  /** Добавить непрерывный след граблей на песке сада камней. */
+  addGravelStroke(points: Array<{ x: number; y: number }>): void {
+    if (points.length < 2) return;
+    this.gravelStrokes.push(points);
+    for (const p of points) {
+      this.touch(Math.floor(p.x), Math.floor(p.y));
+    }
+  }
+
+  /** Разровнять песок: стереть все нарисованные борозды. */
+  clearGravelStrokes(): void {
+    if (!this.gravelStrokes.length) return;
+    this.gravelStrokes = [];
+    for (let y = 0; y < GRID; y++) {
+      for (let x = 0; x < GRID; x++) {
+        if (this.at(x, y)?.ground === 'gravel') this.touch(x, y);
+      }
+    }
+  }
+
   /** Плавно сшивает перепады высот, чтобы не было резких ступеней. */
   smoothTerrain(): void {
     for (let pass = 0; pass < 2; pass++) {
@@ -1029,6 +1055,15 @@ export class World {
       ...(this.isSaplingKind(item) ? { young: 1 as const } : {}),
     };
     this.objects.push(obj);
+    if (type === 'rock_garden') {
+      const rx = Math.floor(tx);
+      const ry = Math.floor(ty);
+      for (let dy = 0; dy < 5; dy++) {
+        for (let dx = 0; dx < 5; dx++) {
+          this.setGround(rx + dx, ry + dy, 'gravel');
+        }
+      }
+    }
     this.noteObjectsChanged();
     if (type === 'cat') this.checkMilestone('first_cat');
     if (item.kind === 'tree') {
@@ -1337,6 +1372,11 @@ export class World {
         : null,
       gravelStyle: this.gravelStyle,
       tileRake: this.tileRake.size ? Object.fromEntries(this.tileRake) : undefined,
+      gravelStrokes: this.gravelStrokes.length
+        ? this.gravelStrokes.map((s) =>
+            s.map((p) => [Math.round(p.x * 100) / 100, Math.round(p.y * 100) / 100] as [number, number]),
+          )
+        : undefined,
       born: this.born,
       timeShift: this.timeShift,
       unlocked: [...this.unlocked],
@@ -1395,6 +1435,7 @@ export class World {
         this.tileRake.set(Number(k), Number(v));
       }
     }
+    this.gravelStrokes = (p.gravelStrokes ?? []).map((s) => s.map(([x, y]) => ({ x, y })));
     this.born = p.born ?? this.born;
     this.timeShift = Number.isFinite(p.timeShift) ? (p.timeShift as number) : 0;
     // Лягушки из тумана: если в открытом саду нет воды, случайные строки

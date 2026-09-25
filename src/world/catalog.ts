@@ -1017,6 +1017,18 @@ export const ITEMS: CatalogItem[] = [
     tab: 'stones',
   },
   {
+    id: 'rock_garden',
+    name: 'Сад камней 5×5',
+    hint: 'карэсансуй: гравийная площадка, камни и грабли для свободного рисования',
+    kind: 'rock',
+    w: 5,
+    h: 5,
+    step: 1,
+    growDays: 0,
+    rotatable: false,
+    tab: 'stones',
+  },
+  {
     id: 'mushrooms',
     name: 'Семья опят',
     hint: 'выглядывают после дождя',
@@ -1419,6 +1431,7 @@ export const GROW_STARTER_IDS = [
   'h_hill2',
   'g_gravel',
   'g_rake',
+  'rock_garden',
   'g_sand',
 ] as const;
 

@@ -192,6 +192,9 @@ export function renderTerrain(
   // 6) Фактура материалов
   for (const { x, y } of order) drawTileDetail(ctx, world, x, y, world.at(x, y)!, atm);
 
+  // 6.5) Непрерывные борозды граблей сада камней (Karesansui continuous furrows)
+  drawGravelStrokes(ctx, world, atm, bounds);
+
   // Snow lies above ground washes/details; otherwise green material edges punch through every drift.
   const snowAmount = winterYear(atm.time.now).snow;
   if (snowAmount > 0.001) {
@@ -1367,6 +1370,99 @@ function drawGravel(
       ctx.beginPath();
       ctx.moveTo(cx - TILE_W * 0.44, cy + cyOffset - sunY);
       ctx.quadraticCurveTo(cx, cy + cyOffset + 2.4 + wave - sunY, cx + TILE_W * 0.44, cy + cyOffset - sunY);
+      ctx.stroke();
+    }
+  }
+}
+
+/**
+ * Отрисовка непрерывных борозд, прочерченных граблями по гравию и песку.
+ * Рисует 4 параллельных зубца с теневым желобком и освещённым солнцем гребнем.
+ */
+function drawGravelStrokes(ctx: Ctx, world: World, atm: Atmosphere, bounds: Bounds): void {
+  const strokes =
+    world.activeGravelStroke && world.activeGravelStroke.length >= 2
+      ? [...world.gravelStrokes, world.activeGravelStroke]
+      : world.gravelStrokes;
+  if (!strokes || !strokes.length) return;
+
+  const col = atm.palette.stone ?? { r: 195, g: 190, b: 178 };
+  const grooveCol = css(shade(col, 0.65), 0.55);
+  const ridgeCol = css(shade(col, 1.25), 0.45);
+  const sunY = (atm.sunDir?.y ?? 1) * 0.9;
+  const sunX = (atm.sunDir?.x ?? 0.5) * 0.9;
+  const tines = [-6.5, -2.2, 2.2, 6.5];
+
+  for (const pts of strokes) {
+    if (pts.length < 2) continue;
+
+    // Быстрый отсев по границам перерисовки
+    let inside = false;
+    for (const p of pts) {
+      if (p.x >= bounds.bx0 - 1 && p.x <= bounds.bx1 + 1 && p.y >= bounds.by0 - 1 && p.y <= bounds.by1 + 1) {
+        inside = true;
+        break;
+      }
+    }
+    if (!inside) continue;
+
+    const screenPts: { x: number; y: number }[] = [];
+    for (const p of pts) {
+      const t = world.at(Math.floor(p.x), Math.floor(p.y));
+      screenPts.push(isoToScreen(p.x, p.y, t?.level ?? 0));
+    }
+
+    const normals: { nx: number; ny: number }[] = [];
+    for (let i = 0; i < screenPts.length; i++) {
+      let dx: number;
+      let dy: number;
+      if (i === 0) {
+        dx = screenPts[1].x - screenPts[0].x;
+        dy = screenPts[1].y - screenPts[0].y;
+      } else if (i === screenPts.length - 1) {
+        dx = screenPts[i].x - screenPts[i - 1].x;
+        dy = screenPts[i].y - screenPts[i - 1].y;
+      } else {
+        dx = screenPts[i + 1].x - screenPts[i - 1].x;
+        dy = screenPts[i + 1].y - screenPts[i - 1].y;
+      }
+      const len = Math.hypot(dx, dy) || 1;
+      normals.push({ nx: -dy / len, ny: dx / len });
+    }
+
+    for (const off of tines) {
+      const line: { x: number; y: number }[] = [];
+      for (let i = 0; i < screenPts.length; i++) {
+        line.push({
+          x: screenPts[i].x + normals[i].nx * off,
+          y: screenPts[i].y + normals[i].ny * off,
+        });
+      }
+
+      // Теневая бороздка
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = grooveCol;
+      ctx.beginPath();
+      ctx.moveTo(line[0].x, line[0].y);
+      for (let j = 1; j < line.length; j++) {
+        const mx = (line[j - 1].x + line[j].x) / 2;
+        const my = (line[j - 1].y + line[j].y) / 2;
+        ctx.quadraticCurveTo(line[j - 1].x, line[j - 1].y, mx, my);
+      }
+      ctx.lineTo(line[line.length - 1].x, line[line.length - 1].y);
+      ctx.stroke();
+
+      // Освещённый солнцем гребень
+      ctx.lineWidth = 1.0;
+      ctx.strokeStyle = ridgeCol;
+      ctx.beginPath();
+      ctx.moveTo(line[0].x - sunX, line[0].y - sunY);
+      for (let j = 1; j < line.length; j++) {
+        const mx = (line[j - 1].x + line[j].x) / 2;
+        const my = (line[j - 1].y + line[j].y) / 2;
+        ctx.quadraticCurveTo(line[j - 1].x - sunX, line[j - 1].y - sunY, mx - sunX, my - sunY);
+      }
+      ctx.lineTo(line[line.length - 1].x - sunX, line[line.length - 1].y - sunY);
       ctx.stroke();
     }
   }

@@ -176,17 +176,8 @@ let lastInteraction = performance.now();
 /** Масштаб, к которому камера возвращается после входа: 0 — входа не было. */
 let entryZoom = 0;
 
-const RAKE_PATTERNS = [
-  { mode: 0, name: 'По мазку', desc: 'направление бороздок следует за кистью' },
-  { mode: 1, name: 'Волны', desc: 'плавные волны (рэнмон)' },
-  { mode: 3, name: 'Круги', desc: 'концентрическая рябь (суймон)' },
-  { mode: 4, name: 'Прямые', desc: 'строгие параллельные борозды' },
-  { mode: 6, name: 'Вихри', desc: 'спиральные завихрения (камон)' },
-] as const;
-
-let rakePatternIdx = 0;
-let lastRakeTile: { x: number; y: number } | null = null;
 let lastRakeSound = 0;
+let activeRakeStroke: Array<{ x: number; y: number }> | null = null;
 
 const ui = new UI(app, world, {
   onSelect(sel) {
@@ -208,8 +199,8 @@ const ui = new UI(app, world, {
       scene.highlightId = -1;
     }
     if (sel.kind === 'brush' && sel.brush.kind === 'rake') {
-      const pat = RAKE_PATTERNS[rakePatternIdx];
-      ui.setRotateLabel(pat.name, `Сменить узор граблей (R): ${pat.name}`);
+      ui.setRotateLabel('разровнять', 'Разровнять песок (R)');
+      ui.setHint('Грабли: ведите пальцем или мышью по песку для рисования борозд · R разравнивает песок');
     }
     updateGhost();
   },
@@ -551,12 +542,30 @@ const input = setupInput({
       if (zenMode) setZen(false);
     },
     resetStroke: () => {
-      lastRakeTile = null;
+      if (activeRakeStroke && activeRakeStroke.length >= 2) {
+        world.addGravelStroke(activeRakeStroke);
+        repaintTouched();
+        if (history.commit()) syncHistoryUI();
+        saveWorld();
+      }
+      activeRakeStroke = null;
+      world.activeGravelStroke = null;
     },
   },
 });
 
 // ---------------- Действия ----------------
+
+function activateGravelRake(): void {
+  if (zenMode) setZen(false);
+  const rakeBrush = TERRAIN_BRUSHES.find((b) => b.id === 'g_rake');
+  if (rakeBrush) {
+    ui.select({ kind: 'brush', brush: rakeBrush });
+    ui.setPaintMode('stroke');
+    ui.toast('Грабли в руке: ведите пальцем или мышью по песку для рисования');
+    audio.rake(0.8);
+  }
+}
 
 /** Тактильный отклик в созерцании: погладить кота, круги на воде, колокольчик. */
 function handleContemplationTap(sx: number, sy: number): boolean {
@@ -572,7 +581,7 @@ function handleContemplationTap(sx: number, sy: number): boolean {
     return true;
   }
 
-  // 2. Предметы сада: колокольчик, сиси-одоси, цукубай, грабли
+  // 2. Предметы сада: колокольчик, сиси-одоси, цукубай, сад камней и грабли
   const obj = world.pickObject(tx, ty);
   if (obj) {
     if (obj.type === 'wind_chime') {
@@ -591,17 +600,8 @@ function handleContemplationTap(sx: number, sy: number): boolean {
       life.residents.ripple(obj.tx + 0.5, obj.ty + 0.5, false);
       return true;
     }
-    if (obj.type === 'zen_rake') {
-      const next = world.cycleGravelStyle();
-      audio.rake(0.8);
-      const names: Record<string, string> = {
-        waves: 'Волны и рябь у камней',
-        ripples: 'Концентрические круги',
-        straight: 'Прямые борозды',
-        swirl: 'Дзенские вихри',
-      };
-      ui.toast(`Узор гравия: ${names[next] ?? next}`);
-      world.noteEvent('rake_gravel', world.now(), tx, ty);
+    if (obj.type === 'zen_rake' || obj.type === 'rock_garden') {
+      activateGravelRake();
       return true;
     }
   }
@@ -624,15 +624,13 @@ function handleContemplationTap(sx: number, sy: number): boolean {
   return false;
 }
 
-/** Поворот на 90° или переключение узора граблей (R). */
+/** Поворот на 90° или разравнивание песка граблями (R). */
 function rotateGhost(): void {
   if (selection.kind === 'brush' && selection.brush.kind === 'rake') {
-    rakePatternIdx = (rakePatternIdx + 1) % RAKE_PATTERNS.length;
-    const pat = RAKE_PATTERNS[rakePatternIdx];
-    ui.setRotateLabel(pat.name, `Сменить узор граблей (R): ${pat.name}`);
-    ui.toast(`Грабли: «${pat.name}» (${pat.desc})`);
-    ui.setHint(`Грабли: «${pat.name}» — ведите по саду для рисования (R — сменить узор)`);
-    audio.rake(0.5);
+    world.clearGravelStrokes();
+    repaintTouched();
+    ui.toast('Песок разровнен: чистая гладкая поверхность');
+    audio.rake(0.8);
     return;
   }
   if (pendingPlace) {
@@ -806,6 +804,15 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
   const p = scene.pickTile(sx, sy, world);
   if (!inBounds(Math.floor(p.tx), Math.floor(p.ty))) return;
 
+  // Клик по саду камней или граблям в саду — сразу берёт грабли в руку!
+  if (isClick && selection.kind === 'none') {
+    const obj = world.pickObject(p.tx, p.ty);
+    if (obj && (obj.type === 'zen_rake' || obj.type === 'rock_garden')) {
+      activateGravelRake();
+      return;
+    }
+  }
+
   // Любое действие мимо подтверждения снимает призрак бесплатно
   if (pendingPlace && selection.kind !== 'item') cancelPlace();
 
@@ -858,50 +865,32 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
   if (selection.kind === 'brush') {
     const b = selection.brush;
     if (b.kind === 'rake') {
-      const tx = Math.floor(p.tx);
-      const ty = Math.floor(p.ty);
-      let mode: number = RAKE_PATTERNS[rakePatternIdx].mode;
-      if (mode === 0) {
-        // По мазку: адаптация направления бороздок к движению кисти
-        if (lastRakeTile) {
-          const dx = tx - lastRakeTile.x;
-          const dy = ty - lastRakeTile.y;
-          const screenDx = dx - dy;
-          const screenDy = dx + dy;
-          if (Math.abs(screenDy) > Math.abs(screenDx) * 1.1) {
-            mode = 2; // волны вдоль Y
-          } else {
-            mode = 1; // волны вдоль X
-          }
-        } else {
-          mode = 1;
-        }
-      }
-      lastRakeTile = { x: tx, y: ty };
+      const curPt = { x: p.tx, y: p.ty };
+      const itx = Math.floor(p.tx);
+      const ity = Math.floor(p.ty);
 
-      history.begin('грабли', 'brush:rake');
-      world.clearTouched();
-
-      const sz = world.brushSize || 1;
-      const radius = Math.floor(sz / 2);
-      for (let dy = -radius; dy <= radius; dy++) {
-        for (let dx = -radius; dx <= radius; dx++) {
-          if (Math.hypot(dx, dy) <= radius + 0.3) {
-            world.rakeTile(tx + dx, ty + dy, mode);
-          }
+      if (!activeRakeStroke) {
+        activeRakeStroke = [curPt];
+        world.activeGravelStroke = activeRakeStroke;
+        history.begin('грабли', 'brush:rake');
+      } else {
+        const lastPt = activeRakeStroke[activeRakeStroke.length - 1];
+        const dist = Math.hypot(curPt.x - lastPt.x, curPt.y - lastPt.y);
+        if (dist >= 0.1) {
+          activeRakeStroke.push(curPt);
         }
       }
 
+      // Если тайл не гравий — превращаем его в гравий
+      const t = world.at(itx, ity);
+      if (t && t.ground !== 'gravel' && !t.water) {
+        world.setGround(itx, ity, 'gravel');
+      }
+      world.touch(itx, ity);
       repaintTouched();
-      if (history.commit()) {
-        syncHistoryUI();
-        if (world.useEntry(b.id, true)) {
-          ui.renderTabs();
-          ui.renderItems();
-        }
-      }
+
       const now = performance.now();
-      if (now - lastRakeSound > 140) {
+      if (now - lastRakeSound > 110) {
         audio.rake(0.6);
         lastRakeSound = now;
       }

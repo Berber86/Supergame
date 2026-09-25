@@ -61,6 +61,24 @@ async function main() {
   assert.equal(rakeItem.rotatable, true, 'Грабли поворачиваются');
   ok('грабли доступны в каталоге в разделе камней');
 
+  // Полноценный объект «Сад камней 5×5» в каталоге
+  assert.ok(ITEM_BY_ID.has('rock_garden'), 'rock_garden зарегистрирован в каталоге');
+  const rockGardenItem = ITEM_BY_ID.get('rock_garden')!;
+  assert.equal(rockGardenItem.w, 5, 'Сад камней занимает 5×5 тайлов');
+  assert.equal(rockGardenItem.h, 5);
+  assert.ok(hasDrawer('rock_garden'), 'rock_garden имеет функцию отрисовки');
+  assert.ok(objectHeight('rock_garden') > 0, 'rock_garden имеет высоту для сортировки');
+  ok('объект «Сад камней 5×5» зарегистрирован в каталоге и имеет рисовальщик');
+
+  // Установка сада камней 5×5 покрывает площадку гравием
+  w.place('rock_garden', 14, 14, 0);
+  for (let dy = 0; dy < 5; dy++) {
+    for (let dx = 0; dx < 5; dx++) {
+      assert.equal(w.at(14 + dx, 14 + dy)?.ground, 'gravel', `Клетка (${14 + dx}, ${14 + dy}) стала гравием`);
+    }
+  }
+  ok('установка сада камней 5×5 автоматически готовит гравийное ложе');
+
   // Инструмент «Грабли» в кистях земли
   const rakeBrush = TERRAIN_BRUSHES.find((b) => b.id === 'g_rake');
   assert.ok(rakeBrush, 'Кисть g_rake найдена в TERRAIN_BRUSHES');
@@ -99,16 +117,32 @@ async function main() {
   // Сохранение и загрузка стиля гравия и индивидуальных бороздок
   w.setGravelStyle('swirl');
   w.rakeTile(10, 10, 6); // вихрь на клетке (10, 10)
+  w.addGravelStroke([
+    { x: 14.2, y: 14.2 },
+    { x: 15.0, y: 15.1 },
+    { x: 16.5, y: 16.0 },
+  ]);
+  assert.equal(w.gravelStrokes.length, 1, 'Мазок граблей добавлен');
+
   const jsonStr = serializeSave(w.toJSON());
   const parsed = parseSave(JSON.parse(jsonStr));
   assert.ok(parsed, 'Сохранение парсится');
   assert.equal(parsed.gravelStyle, 'swirl', 'Стиль гравия сохранён в данных');
   assert.equal(parsed.tileRake?.[w.idx(10, 10)], 6, 'Узор клетки сохранён в данных');
+  assert.ok(parsed.gravelStrokes && parsed.gravelStrokes.length === 1, 'Мазки граблей сохранены в данных');
+  assert.equal(parsed.gravelStrokes[0].length, 3);
+
   const w2 = new World();
   w2.applySave(parsed);
   assert.equal(w2.gravelStyle, 'swirl', 'Мир восстановил стиль гравия swirl');
   assert.equal(w2.tileRake.get(w2.idx(10, 10)), 6, 'Мир восстановил узор клетки');
-  ok('стиль расчёсывания гравия и узоры клеток надёжно сохраняются и загружаются');
+  assert.equal(w2.gravelStrokes.length, 1, 'Мир восстановил свободные борозды граблей');
+  ok('свободные борозды граблей надёжно сохраняются и восстанавливаются');
+
+  // Разравнивание песка
+  w2.clearGravelStrokes();
+  assert.equal(w2.gravelStrokes.length, 0, 'Борозды очищены после разравнивания');
+  ok('разравнивание песка очищает борозды');
 
   console.log('тактильный отклик и жесты созерцания:');
   const life = new Life();

@@ -248,6 +248,7 @@ export function serializeSave(d: SaveData): string {
     f: d.fresh ?? null,
     gs: d.gravelStyle ?? null,
     tr: d.tileRake ?? null,
+    gk: d.gravelStrokes ?? null,
   });
 }
 
@@ -360,6 +361,23 @@ export function parseSave(raw: unknown): SaveData | null {
     }
   }
 
+  const rawGk = d.gk ?? d.gravelStrokes;
+  let gravelStrokes: Array<Array<[number, number]>> | undefined;
+  if (Array.isArray(rawGk)) {
+    gravelStrokes = [];
+    for (const stroke of rawGk) {
+      if (Array.isArray(stroke)) {
+        const pts: Array<[number, number]> = [];
+        for (const pt of stroke) {
+          if (Array.isArray(pt) && pt.length >= 2 && Number.isFinite(pt[0]) && Number.isFinite(pt[1])) {
+            pts.push([Math.round(pt[0] * 100) / 100, Math.round(pt[1] * 100) / 100]);
+          }
+        }
+        if (pts.length >= 2) gravelStrokes.push(pts);
+      }
+    }
+  }
+
   // Открытия каталога: отсутствие списка — старое сохранение (мигрирует мир)
   const hasUnlocks = d.u !== undefined || d.unlocked !== undefined;
   const unlocked = parseStringList(d.u ?? d.unlocked, 400);
@@ -378,6 +396,7 @@ export function parseSave(raw: unknown): SaveData | null {
     grow,
     gravelStyle,
     tileRake,
+    gravelStrokes,
     unlocked: hasUnlocks ? unlocked : undefined,
     fresh: hasUnlocks ? fresh : undefined,
     born: typeof d.b === 'number' ? d.b : undefined,

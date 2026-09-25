@@ -348,11 +348,8 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
         actions.saveWorld();
       },
 
-      onHold(x, y) {
-        // Долгое нажатие заменяет правую кнопку мыши
-        actions.wake();
-        actions.applyErase(x, y);
-        actions.saveWorld();
+      onHold(_x, _y) {
+        // Долгое удержание намеренно не удаляет предметы: удаление только через инструмент «Убрать»
       },
 
       onDragStart(x, y) {

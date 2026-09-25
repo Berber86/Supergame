@@ -67,6 +67,7 @@ body.touch .tool-btn .label {
   .tools {
     right: calc(8px + var(--safe-r));
     top: 50%;
+    transform: translateY(-50%);
     display: grid;
     grid-template-columns: repeat(2, var(--touch-min));
     gap: 7px;
@@ -74,6 +75,7 @@ body.touch .tool-btn .label {
   .tool-btn {
     width: var(--touch-min);
     height: var(--touch-min);
+    flex-shrink: 0;
   }
   /* Наведения нет — гасим анимации, они только дёргают картинку */
   .tool-btn:hover {
@@ -323,26 +325,26 @@ body.touch.portrait .rotate-note.dismissed {
    ===================================================================== */
 
 @media (hover: none) and (orientation: portrait) {
-  /* Четыре кнопки — строкой внизу справа: под большим пальцем и не
-     перекрывают ни сад, ни каталог. С открытым каталогом ряд садится
-     над панелью инструментов. */
+  /* Кнопки — аккуратной сеткой в 4 колонки и 2 ряда внизу справа:
+     кнопки сохраняют полноценный размер (44px), не наезжают и не жмутся друг к другу. */
   .tools {
-    right: calc(8px + var(--safe-r));
+    right: calc(10px + var(--safe-r));
     top: auto;
-    bottom: calc(10px + var(--safe-b));
+    bottom: calc(12px + var(--safe-b));
     transform: none;
-    display: flex;
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: repeat(4, var(--touch-min));
     gap: 8px;
   }
 
   body.building .tools {
-    bottom: calc(34vh + 128px);
+    bottom: calc(34vh + 134px);
   }
   .tools > *,
   .tool-btn {
     width: var(--touch-min);
     height: var(--touch-min);
+    flex-shrink: 0;
   }
   .tool-btn:hover {
     transform: none;
