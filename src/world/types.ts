@@ -61,6 +61,8 @@ export interface SaveData {
   fresh?: string[];
   /** Узор расчёсывания гравия: волны, круги у камней, прямые борозды или вихри. */
   gravelStyle?: GravelStyle;
+  /** Индивидуальные узоры расчёсанных клеток гравия (индекс клетки -> номер узора). */
+  tileRake?: Record<number, number>;
   /** Режим растущего сада: null или отсутствие — вольный сад. */
   grow?: {
     clock?: GrowClockState;

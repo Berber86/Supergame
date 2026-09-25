@@ -1152,6 +1152,134 @@ function drawGravel(
 ): void {
   granulate(ctx, cx, cy, TILE_W * 0.44, TILE_H * 0.44, shade(col, 0.86), seed, 22, 0.12);
 
+  const grooveCol = css(shade(col, 0.78), 0.32);
+  const ridgeCol = css(shade(col, 1.15), 0.24);
+  const sunY = (atm.sunDir?.y ?? 1) * 1.1;
+
+  const tileMode = world.tileRake.get(y * GRID + x);
+
+  // Если для этой клетки задан индивидуальный узор расчёсывания граблями
+  if (tileMode !== undefined && tileMode > 0) {
+    if (tileMode === 1) {
+      // Волны вдоль X (горизонтальные)
+      const lines = [-1.5, -0.75, 0, 0.75, 1.5];
+      for (const offset of lines) {
+        const cyOffset = offset * 7.5;
+        const wave = Math.sin((x - y) * 1.6 + offset * 0.7) * 3.4;
+        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = grooveCol;
+        ctx.beginPath();
+        ctx.moveTo(cx - TILE_W * 0.44, cy + cyOffset);
+        ctx.quadraticCurveTo(cx, cy + cyOffset + 2.4 + wave, cx + TILE_W * 0.44, cy + cyOffset);
+        ctx.stroke();
+
+        ctx.lineWidth = 1.0;
+        ctx.strokeStyle = ridgeCol;
+        ctx.beginPath();
+        ctx.moveTo(cx - TILE_W * 0.44, cy + cyOffset - sunY);
+        ctx.quadraticCurveTo(cx, cy + cyOffset + 2.4 + wave - sunY, cx + TILE_W * 0.44, cy + cyOffset - sunY);
+        ctx.stroke();
+      }
+      return;
+    } else if (tileMode === 2) {
+      // Волны вдоль Y (вертикальные/продольные по мазку)
+      const lines = [-1.5, -0.75, 0, 0.75, 1.5];
+      for (const offset of lines) {
+        const cxOffset = offset * 15;
+        const wave = Math.sin((x + y) * 1.6 + offset * 0.7) * 3.4;
+        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = grooveCol;
+        ctx.beginPath();
+        ctx.moveTo(cx + cxOffset, cy - TILE_H * 0.44);
+        ctx.quadraticCurveTo(cx + cxOffset + 2.4 + wave, cy, cx + cxOffset, cy + TILE_H * 0.44);
+        ctx.stroke();
+
+        ctx.lineWidth = 1.0;
+        ctx.strokeStyle = ridgeCol;
+        ctx.beginPath();
+        ctx.moveTo(cx + cxOffset - sunY * 0.5, cy - TILE_H * 0.44);
+        ctx.quadraticCurveTo(
+          cx + cxOffset + 2.4 + wave - sunY * 0.5,
+          cy,
+          cx + cxOffset - sunY * 0.5,
+          cy + TILE_H * 0.44,
+        );
+        ctx.stroke();
+      }
+      return;
+    } else if (tileMode === 3) {
+      // Концентрическая рябь (Суймон)
+      for (let r = 10; r <= 38; r += 10) {
+        ctx.lineWidth = 1.3;
+        ctx.strokeStyle = grooveCol;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, r * 1.414, r * 0.707, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.lineWidth = 0.9;
+        ctx.strokeStyle = ridgeCol;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy - sunY, r * 1.414, r * 0.707, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      return;
+    } else if (tileMode === 4) {
+      // Прямые борозды вдоль X
+      const lines = [-1.5, -0.75, 0, 0.75, 1.5];
+      for (const offset of lines) {
+        const cyOffset = offset * 7.5;
+        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = grooveCol;
+        ctx.beginPath();
+        ctx.moveTo(cx - TILE_W * 0.44, cy + cyOffset);
+        ctx.lineTo(cx + TILE_W * 0.44, cy + cyOffset);
+        ctx.stroke();
+
+        ctx.lineWidth = 1.0;
+        ctx.strokeStyle = ridgeCol;
+        ctx.beginPath();
+        ctx.moveTo(cx - TILE_W * 0.44, cy + cyOffset - sunY);
+        ctx.lineTo(cx + TILE_W * 0.44, cy + cyOffset - sunY);
+        ctx.stroke();
+      }
+      return;
+    } else if (tileMode === 5) {
+      // Прямые борозды вдоль Y
+      const lines = [-1.5, -0.75, 0, 0.75, 1.5];
+      for (const offset of lines) {
+        const cxOffset = offset * 15;
+        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = grooveCol;
+        ctx.beginPath();
+        ctx.moveTo(cx + cxOffset, cy - TILE_H * 0.44);
+        ctx.lineTo(cx + cxOffset, cy + TILE_H * 0.44);
+        ctx.stroke();
+
+        ctx.lineWidth = 1.0;
+        ctx.strokeStyle = ridgeCol;
+        ctx.beginPath();
+        ctx.moveTo(cx + cxOffset - sunY * 0.5, cy - TILE_H * 0.44);
+        ctx.lineTo(cx + cxOffset - sunY * 0.5, cy + TILE_H * 0.44);
+        ctx.stroke();
+      }
+      return;
+    } else if (tileMode === 6) {
+      // Вихри / спирали
+      ctx.lineWidth = 1.3;
+      ctx.strokeStyle = grooveCol;
+      ctx.beginPath();
+      for (let a = 0; a < Math.PI * 4; a += 0.22) {
+        const r = 2.5 + a * 2.8;
+        const sx = cx + Math.cos(a) * r * 1.414;
+        const sy = cy + Math.sin(a) * r * 0.707;
+        if (a === 0) ctx.moveTo(sx, sy);
+        else ctx.lineTo(sx, sy);
+      }
+      ctx.stroke();
+      return;
+    }
+  }
+
   const style = world.gravelStyle ?? 'waves';
 
   // Ищем ближайший камень для концентрической ряби (Суймон)
@@ -1165,10 +1293,6 @@ function drawGravel(
       nearObj = o;
     }
   }
-
-  const grooveCol = css(shade(col, 0.78), 0.32);
-  const ridgeCol = css(shade(col, 1.15), 0.24);
-  const sunY = (atm.sunDir?.y ?? 1) * 1.1;
 
   if (style === 'waves' && nearObj && minD < 1.75) {
     // ---- Узор «Суймон» (水纹): концентрическая рябь вокруг камня ----

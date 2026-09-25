@@ -66,6 +66,8 @@ export class World {
   lastTouched: { x0: number; y0: number; x1: number; y1: number } | null = null;
   /** Узор расчёсывания гравия: волны, круги у камней, прямые борозды или вихри. */
   gravelStyle: GravelStyle = 'waves';
+  /** Индивидуальные узоры и направления расчёсанных клеток гравия. */
+  tileRake = new Map<number, number>();
   /**
    * Кэш стадии роста саженцев: кадр дёргает рост каждого дерева, но сама
    * модель пересчитывается не чаще раза в час — глазу час незаметен,
@@ -119,6 +121,7 @@ export class World {
     // Вольный сад: режима роста нет
     this.grow = null;
     this.growRefused = false;
+    this.tileRake.clear();
     this.gravelStyle = 'waves';
     this.milestones = new Set();
     this.seasonsSeen = new Set();
@@ -625,6 +628,22 @@ export class World {
     const next = styles[(curIdx + 1) % styles.length];
     this.setGravelStyle(next);
     return next;
+  }
+
+  /**
+   * Расчесать клетку гравия: задать узор или направление бороздок.
+   * 1: волны вдоль X, 2: волны вдоль Y, 3: круговая рябь, 4: прямые вдоль X, 5: прямые вдоль Y, 6: вихрь
+   */
+  rakeTile(x: number, y: number, mode: number): void {
+    if (!inBounds(x, y)) return;
+    const t = this.at(x, y);
+    if (!t) return;
+    if (t.ground !== 'gravel') {
+      this.setGround(x, y, 'gravel');
+    }
+    const idx = this.idx(x, y);
+    this.tileRake.set(idx, mode);
+    this.touch(x, y);
   }
 
   /** Плавно сшивает перепады высот, чтобы не было резких ступеней. */
@@ -1317,6 +1336,7 @@ export class World {
         ? { ...this.grow, rect: { ...this.grow.rect }, ...(this.grow.clock ? { clock: { ...this.grow.clock } } : {}) }
         : null,
       gravelStyle: this.gravelStyle,
+      tileRake: this.tileRake.size ? Object.fromEntries(this.tileRake) : undefined,
       born: this.born,
       timeShift: this.timeShift,
       unlocked: [...this.unlocked],
@@ -1369,6 +1389,12 @@ export class World {
     }
     this.grow = p.grow ?? null;
     this.gravelStyle = p.gravelStyle ?? 'waves';
+    this.tileRake.clear();
+    if (p.tileRake) {
+      for (const [k, v] of Object.entries(p.tileRake)) {
+        this.tileRake.set(Number(k), Number(v));
+      }
+    }
     this.born = p.born ?? this.born;
     this.timeShift = Number.isFinite(p.timeShift) ? (p.timeShift as number) : 0;
     // Лягушки из тумана: если в открытом саду нет воды, случайные строки

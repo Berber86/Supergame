@@ -6,16 +6,34 @@
   right: 26px;
   font-size: 13px;
   font-style: italic;
-  color: rgba(255, 248, 232, 0.4);
+  color: rgba(255, 248, 232, 0.7);
   letter-spacing: 0.06em;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.9s var(--ease) 0.55s;
+  cursor: pointer;
+  user-select: none;
 }
 
 /* Надпись приходит позже, чем исчезает интерфейс, и не спорит с плашкой */
 .zen-note.on {
+  opacity: 0.85;
+  pointer-events: auto;
+}
+
+.zen-note.on:hover {
   opacity: 1;
+}
+
+.zen-note span {
+  display: inline-block;
+  padding: 1px 6px;
+  margin: 0 2px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 248, 232, 0.45);
+  font-style: normal;
+  font-size: 11.5px;
 }
 
 @media (pointer: coarse) {

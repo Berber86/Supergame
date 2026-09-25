@@ -58,6 +58,12 @@ export interface InputActions {
   rotateGhost(): void;
   /** Тактильный отклик в созерцании: погладить кота, круги на воде, колокольчик. */
   handleContemplationTap(sx: number, sy: number): boolean;
+  /** Включить/выключить режим созерцания (Z). */
+  toggleZen(): void;
+  isZen(): boolean;
+  exitZen(): void;
+  /** Сбросить начальную точку мазка (при отпускании мыши/пальца). */
+  resetStroke(): void;
 }
 
 export interface InputDeps {
@@ -257,6 +263,7 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
     dragging = false;
     painting = false;
     tapPlace = null;
+    actions.resetStroke();
     canvas.classList.remove('dragging');
     actions.saveWorld();
   };
@@ -392,6 +399,7 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
         }
         painting = false;
         dragging = false;
+        actions.resetStroke();
         // Призрак под пальцем больше не нужен — палец убран
         scene.ghost = null;
         pointer.has = false;
@@ -497,7 +505,13 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
     }
     if (e.ctrlKey || e.metaKey) return;
 
+    if (k === 'z' || k === 'я') {
+      actions.toggleZen();
+      return;
+    }
+
     if (k === 'b') {
+      actions.exitZen();
       ui.toggleBuild();
     } else if (k === 'n') {
       ui.toggleMirage();
@@ -509,6 +523,10 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
       ui.select({ kind: 'erase' });
       ui.toggleBuild(true);
     } else if (k === 'escape') {
+      if (actions.isZen()) {
+        actions.exitZen();
+        return;
+      }
       // Ждущий призрак убирается первым: Esc — тоже «другое действие»
       if (actions.cancelPlace()) return;
       // Выбор «куда расти» откладывается: туман снова укроет зоны

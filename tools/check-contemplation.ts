@@ -16,7 +16,7 @@ g.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} 
 async function main() {
   const { World } = await import('../src/world/world');
   const { Life } = await import('../src/world/life');
-  const { ITEM_BY_ID } = await import('../src/world/catalog');
+  const { ITEM_BY_ID, TERRAIN_BRUSHES } = await import('../src/world/catalog');
   const { hasDrawer, drawObject, objectHeight } = await import('../src/render/sprites');
   const { buildAtmosphere } = await import('../src/world/palette');
   const { computeTime } = await import('../src/core/clock');
@@ -61,6 +61,19 @@ async function main() {
   assert.equal(rakeItem.rotatable, true, 'Грабли поворачиваются');
   ok('грабли доступны в каталоге в разделе камней');
 
+  // Инструмент «Грабли» в кистях земли
+  const rakeBrush = TERRAIN_BRUSHES.find((b) => b.id === 'g_rake');
+  assert.ok(rakeBrush, 'Кисть g_rake найдена в TERRAIN_BRUSHES');
+  assert.equal(rakeBrush.kind, 'rake');
+  assert.equal(rakeBrush.ground, 'gravel');
+  ok('инструмент «Дзен-грабли» доступен в кистях для прямого рисования узоров');
+
+  // Прямое расчёсывание клетки с узором / направлением мазка
+  w.rakeTile(7, 7, 2); // режим 2: волны вдоль Y
+  assert.equal(w.at(7, 7)?.ground, 'gravel', 'Клетка стала гравием');
+  assert.equal(w.tileRake.get(w.idx(7, 7)), 2, 'Узор клетки равен 2');
+  ok('rakeTile расчёсывает клетку гравия с выбранным направлением/узором');
+
   // Рисовальщик граблей
   assert.ok(hasDrawer('zen_rake'), 'zen_rake имеет функцию отрисовки');
   assert.ok(objectHeight('zen_rake') > 0, 'zen_rake имеет высоту для сортировки');
@@ -83,16 +96,19 @@ async function main() {
   }
   ok('грабли рисуются во всех четырёх поворотах');
 
-  // Сохранение и загрузка стиля гравия
+  // Сохранение и загрузка стиля гравия и индивидуальных бороздок
   w.setGravelStyle('swirl');
+  w.rakeTile(10, 10, 6); // вихрь на клетке (10, 10)
   const jsonStr = serializeSave(w.toJSON());
   const parsed = parseSave(JSON.parse(jsonStr));
   assert.ok(parsed, 'Сохранение парсится');
   assert.equal(parsed.gravelStyle, 'swirl', 'Стиль гравия сохранён в данных');
+  assert.equal(parsed.tileRake?.[w.idx(10, 10)], 6, 'Узор клетки сохранён в данных');
   const w2 = new World();
   w2.applySave(parsed);
   assert.equal(w2.gravelStyle, 'swirl', 'Мир восстановил стиль гравия swirl');
-  ok('стиль расчёсывания гравия надёжно сохраняется и загружается');
+  assert.equal(w2.tileRake.get(w2.idx(10, 10)), 6, 'Мир восстановил узор клетки');
+  ok('стиль расчёсывания гравия и узоры клеток надёжно сохраняются и загружаются');
 
   console.log('тактильный отклик и жесты созерцания:');
   const life = new Life();

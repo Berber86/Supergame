@@ -171,9 +171,22 @@ function loadPaintPref(): 'tap' | 'stroke' {
 let paintMode: 'tap' | 'stroke' = loadPaintPref();
 let ghostRot = 0;
 let zenMode = false;
+let zenExplicit = false;
 let lastInteraction = performance.now();
 /** Масштаб, к которому камера возвращается после входа: 0 — входа не было. */
 let entryZoom = 0;
+
+const RAKE_PATTERNS = [
+  { mode: 0, name: 'По мазку', desc: 'направление бороздок следует за кистью' },
+  { mode: 1, name: 'Волны', desc: 'плавные волны (рэнмон)' },
+  { mode: 3, name: 'Круги', desc: 'концентрическая рябь (суймон)' },
+  { mode: 4, name: 'Прямые', desc: 'строгие параллельные борозды' },
+  { mode: 6, name: 'Вихри', desc: 'спиральные завихрения (камон)' },
+] as const;
+
+let rakePatternIdx = 0;
+let lastRakeTile: { x: number; y: number } | null = null;
+let lastRakeSound = 0;
 
 const ui = new UI(app, world, {
   onSelect(sel) {
@@ -193,6 +206,10 @@ const ui = new UI(app, world, {
     if (sel.kind === 'none') {
       scene.ghost = null;
       scene.highlightId = -1;
+    }
+    if (sel.kind === 'brush' && sel.brush.kind === 'rake') {
+      const pat = RAKE_PATTERNS[rakePatternIdx];
+      ui.setRotateLabel(pat.name, `Сменить узор граблей (R): ${pat.name}`);
     }
     updateGhost();
   },
@@ -246,6 +263,9 @@ const ui = new UI(app, world, {
     if (!g || !growOfferReady(g)) return;
     g.choosing = true;
     saveWorld();
+  },
+  onToggleZen() {
+    toggleZen();
   },
   onRotate() {
     rotateGhost();
@@ -450,23 +470,41 @@ function doRedo(): void {
 
 // ---------------- Режим созерцания ----------------
 
-/** Интерфейс растворяется без движения: без режима, просто тишина экрана. */
-function setZen(on: boolean): void {
+/** Интерфейс растворяется без движения или по явной кнопке/Z: тишина экрана и сада. */
+function setZen(on: boolean, explicit = false): void {
   zenMode = on;
+  if (explicit) zenExplicit = on;
+  else if (!on) zenExplicit = false;
+
   document.body.classList.toggle('zen', on);
+  ui.setZenNote(
+    on,
+    explicit ? 'Созерцание · кликните кота, воду или колокольчик · <span>Z</span> для возврата' : undefined,
+  );
   if (on) {
+    selection = { kind: 'none' };
+    ui.select({ kind: 'none' });
     ui.toggleBuild(false);
+    ui.toggleMirage(false);
     ui.toggleHelp(false);
     settingsPanel.setOpen(false);
     gardensPanel.setOpen(false);
+    scene.ghost = null;
+    canvas.classList.remove('building');
   } else {
     ui.setGrowVisible(growLineShown);
   }
 }
 
+function toggleZen(): void {
+  setZen(!zenMode, !zenMode);
+}
+
 /** Интерфейс исчезает сам, когда игрок ничего не делает. */
 function wake(): void {
   lastInteraction = performance.now();
+  // Если созерцание включено явно — движение мыши не должно сбрасывать покой
+  if (zenExplicit) return;
   if (zenMode) setZen(false);
 }
 
@@ -507,6 +545,14 @@ const input = setupInput({
     rotateGhost,
     cancelPlace,
     handleContemplationTap,
+    toggleZen,
+    isZen: () => zenMode,
+    exitZen: () => {
+      if (zenMode) setZen(false);
+    },
+    resetStroke: () => {
+      lastRakeTile = null;
+    },
   },
 });
 
@@ -578,8 +624,17 @@ function handleContemplationTap(sx: number, sy: number): boolean {
   return false;
 }
 
-/** Поворот на 90°: ждущий призрак крутится на месте, обычный — до постановки. */
+/** Поворот на 90° или переключение узора граблей (R). */
 function rotateGhost(): void {
+  if (selection.kind === 'brush' && selection.brush.kind === 'rake') {
+    rakePatternIdx = (rakePatternIdx + 1) % RAKE_PATTERNS.length;
+    const pat = RAKE_PATTERNS[rakePatternIdx];
+    ui.setRotateLabel(pat.name, `Сменить узор граблей (R): ${pat.name}`);
+    ui.toast(`Грабли: «${pat.name}» (${pat.desc})`);
+    ui.setHint(`Грабли: «${pat.name}» — ведите по саду для рисования (R — сменить узор)`);
+    audio.rake(0.5);
+    return;
+  }
   if (pendingPlace) {
     pendingPlace.rot = (pendingPlace.rot + 1) % 4;
     syncPendingGhost();
@@ -802,6 +857,58 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
 
   if (selection.kind === 'brush') {
     const b = selection.brush;
+    if (b.kind === 'rake') {
+      const tx = Math.floor(p.tx);
+      const ty = Math.floor(p.ty);
+      let mode: number = RAKE_PATTERNS[rakePatternIdx].mode;
+      if (mode === 0) {
+        // По мазку: адаптация направления бороздок к движению кисти
+        if (lastRakeTile) {
+          const dx = tx - lastRakeTile.x;
+          const dy = ty - lastRakeTile.y;
+          const screenDx = dx - dy;
+          const screenDy = dx + dy;
+          if (Math.abs(screenDy) > Math.abs(screenDx) * 1.1) {
+            mode = 2; // волны вдоль Y
+          } else {
+            mode = 1; // волны вдоль X
+          }
+        } else {
+          mode = 1;
+        }
+      }
+      lastRakeTile = { x: tx, y: ty };
+
+      history.begin('грабли', 'brush:rake');
+      world.clearTouched();
+
+      const sz = world.brushSize || 1;
+      const radius = Math.floor(sz / 2);
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          if (Math.hypot(dx, dy) <= radius + 0.3) {
+            world.rakeTile(tx + dx, ty + dy, mode);
+          }
+        }
+      }
+
+      repaintTouched();
+      if (history.commit()) {
+        syncHistoryUI();
+        if (world.useEntry(b.id, true)) {
+          ui.renderTabs();
+          ui.renderItems();
+        }
+      }
+      const now = performance.now();
+      if (now - lastRakeSound > 140) {
+        audio.rake(0.6);
+        lastRakeSound = now;
+      }
+      flushMilestones();
+      return;
+    }
+
     // Один мазок = один шаг отмены: ведение кистью склеивается по ключу
     history.begin(b.name.toLowerCase(), `brush:${b.id}`);
     world.clearTouched();

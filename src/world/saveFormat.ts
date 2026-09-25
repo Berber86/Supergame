@@ -247,6 +247,7 @@ export function serializeSave(d: SaveData): string {
     u: d.unlocked ?? null,
     f: d.fresh ?? null,
     gs: d.gravelStyle ?? null,
+    tr: d.tileRake ?? null,
   });
 }
 
@@ -346,6 +347,19 @@ export function parseSave(raw: unknown): SaveData | null {
       ? (rawGs as GravelStyle)
       : undefined;
 
+  const rawTr = d.tr ?? d.tileRake;
+  let tileRake: Record<number, number> | undefined;
+  if (rawTr && typeof rawTr === 'object' && !Array.isArray(rawTr)) {
+    tileRake = {};
+    for (const [k, v] of Object.entries(rawTr as Record<string, unknown>)) {
+      const idx = Number(k);
+      const val = Number(v);
+      if (isInt(idx) && idx >= 0 && idx < GRID * GRID && isInt(val) && val >= 0 && val <= 8) {
+        tileRake[idx] = val;
+      }
+    }
+  }
+
   // Открытия каталога: отсутствие списка — старое сохранение (мигрирует мир)
   const hasUnlocks = d.u !== undefined || d.unlocked !== undefined;
   const unlocked = parseStringList(d.u ?? d.unlocked, 400);
@@ -363,6 +377,7 @@ export function parseSave(raw: unknown): SaveData | null {
     chronicle,
     grow,
     gravelStyle,
+    tileRake,
     unlocked: hasUnlocks ? unlocked : undefined,
     fresh: hasUnlocks ? fresh : undefined,
     born: typeof d.b === 'number' ? d.b : undefined,

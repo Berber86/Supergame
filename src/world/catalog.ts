@@ -33,7 +33,7 @@ export interface TerrainBrush {
   id: string;
   name: string;
   hint: string;
-  kind: 'ground' | 'water' | 'hill' | 'lower' | 'floor' | 'spring' | 'cascade' | 'steps' | 'terrace';
+  kind: 'ground' | 'water' | 'hill' | 'lower' | 'floor' | 'spring' | 'cascade' | 'steps' | 'terrace' | 'rake';
   ground?: GroundId;
   /** Размер модульного блока. */
   w: number;
@@ -95,6 +95,16 @@ export const TERRAIN_BRUSHES: TerrainBrush[] = [
     name: 'Гравий',
     hint: 'расчёсанный сад камней',
     kind: 'ground',
+    ground: 'gravel',
+    w: 1,
+    h: 1,
+    tab: 'ground',
+  },
+  {
+    id: 'g_rake',
+    name: 'Грабли',
+    hint: 'расчесать сад камней: узоры и направление борозд (R меняет узор)',
+    kind: 'rake',
     ground: 'gravel',
     w: 1,
     h: 1,
@@ -1408,6 +1418,7 @@ export const GROW_STARTER_IDS = [
   'w_pond2',
   'h_hill2',
   'g_gravel',
+  'g_rake',
   'g_sand',
 ] as const;
 
