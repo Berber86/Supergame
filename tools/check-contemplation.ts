@@ -114,6 +114,25 @@ async function main() {
   }
   ok('грабли рисуются во всех четырёх поворотах');
 
+  // Рисовальщик сада камней 5×5 во всех четырёх поворотах
+  const cvGarden = createCanvas(600, 400);
+  const ctxGarden = cvGarden.getContext('2d');
+  for (let rot = 0; rot < 4; rot++) {
+    const fakeGarden = { id: 11, type: 'rock_garden', tx: 10, ty: 10, planted: 0, rot, seed: 12345 };
+    drawObject({
+      ctx: ctxGarden as never,
+      x: 300,
+      y: 200,
+      atm,
+      g: 1,
+      obj: fakeGarden,
+      time: 1000,
+      wind: 0.3,
+      alpha: 1,
+    });
+  }
+  ok('сад камней 5×5 рисуется во всех четырёх поворотах');
+
   // Сохранение и загрузка стиля гравия и индивидуальных бороздок
   w.setGravelStyle('swirl');
   w.rakeTile(10, 10, 6); // вихрь на клетке (10, 10)

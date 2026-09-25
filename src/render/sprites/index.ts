@@ -303,7 +303,6 @@ const CACHED_DECOR = new Set([
   'stump',
   'jizo',
   'zen_rake',
-  'rock_garden',
   'fence_wood',
   'fence_stone',
   'well',

@@ -541,6 +541,7 @@ const input = setupInput({
     exitZen: () => {
       if (zenMode) setZen(false);
     },
+    activateGravelRake,
     resetStroke: () => {
       if (activeRakeStroke && activeRakeStroke.length >= 2) {
         world.addGravelStroke(activeRakeStroke);
@@ -891,7 +892,7 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
       } else {
         const lastPt = activeRakeStroke[activeRakeStroke.length - 1];
         const dist = Math.hypot(curPt.x - lastPt.x, curPt.y - lastPt.y);
-        if (dist >= 0.1) {
+        if (dist >= 0.05) {
           activeRakeStroke.push(curPt);
         }
       }

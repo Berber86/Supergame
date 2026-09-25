@@ -1393,7 +1393,8 @@ export const drawZenRake: Drawer = (d) => {
 
 /**
  * Полноценный сад камней 5×5 (Карэсансуй):
- * деревянный бордюр (кадоми), гравийное ложе с камнями и стоящие у края грабли.
+ * деревянный бордюр (кадоми) по периметру 5×5, композиция камней с мхом и прислонённые грабли.
+ * Внутреннее гравийное ложе и борозды рисуются интерактивным слоем земли (terrain) без перекрытия.
  */
 export const drawRockGarden: Drawer = (d) => {
   const { ctx, atm } = d;
@@ -1405,39 +1406,16 @@ export const drawRockGarden: Drawer = (d) => {
   const moss = litc(atm.palette.moss ?? { r: 120, g: 140, b: 90 }, atm);
   const snow = winterYear(atm.time.now).snow;
 
-  // 1. Деревянный бордюр (кадоми) по периметру 5×5
-  const c00 = at(d, 0, 0, 0);
-  const c50 = at(d, 5, 0, 0);
-  const c55 = at(d, 5, 5, 0);
-  const c05 = at(d, 0, 5, 0);
+  // 1. Деревянный бордюр (кадоми) строго по внешнему периметру 5×5:
+  // Центр объекта d.x, d.y — это точка (cx, cy) в центре тайловой области 5×5.
+  // Четыре угла ромба лежат на отступах -2.5 и +2.5 по изометрическим осям:
+  const c00 = at(d, -2.5, -2.5, 0); // верхний угол (северный)
+  const c50 = at(d, 2.5, -2.5, 0); // правый угол (восточный)
+  const c55 = at(d, 2.5, 2.5, 0); // нижний угол (южный)
+  const c05 = at(d, -2.5, 2.5, 0); // левый угол (западный)
 
-  // 0. Внутреннее ложе сада: ровный мелкий гравий и песок
-  const gravelBase = litc({ r: 218, g: 212, b: 200 }, atm);
-  const gravelShade = litc({ r: 188, g: 180, b: 168 }, atm);
-  ctx.fillStyle = css(gravelBase, 1.0);
-  ctx.beginPath();
-  ctx.moveTo(c00.x, c00.y);
-  ctx.lineTo(c50.x, c50.y);
-  ctx.lineTo(c55.x, c55.y);
-  ctx.lineTo(c05.x, c05.y);
-  ctx.closePath();
-  ctx.fill();
-
-  // Нежная текстура гравийных борозд внутри ложа
-  ctx.strokeStyle = css(gravelShade, 0.45);
-  ctx.lineWidth = 1.1;
-  for (let i = 1; i <= 8; i++) {
-    const t = i / 9;
-    const p1 = { x: c00.x + (c05.x - c00.x) * t, y: c00.y + (c05.y - c00.y) * t };
-    const p2 = { x: c50.x + (c55.x - c50.x) * t, y: c50.y + (c55.y - c50.y) * t };
-    ctx.beginPath();
-    ctx.moveTo(p1.x, p1.y);
-    ctx.lineTo(p2.x, p2.y);
-    ctx.stroke();
-  }
-
-  // Тень под бордюром
-  ctx.strokeStyle = css(atm.shadowTint, 0.22 * atm.shadowAmount);
+  // Внешняя мягкая тень от деревянного бордюра на окружающую траву
+  ctx.strokeStyle = css(atm.shadowTint, 0.28 * atm.shadowAmount);
   ctx.lineWidth = 6;
   ctx.lineJoin = 'miter';
   ctx.beginPath();
@@ -1448,7 +1426,7 @@ export const drawRockGarden: Drawer = (d) => {
   ctx.closePath();
   ctx.stroke();
 
-  // Основа деревянного бруса бордюра
+  // Основа деревянного бруса бордюра (тёмный морёный дуб)
   ctx.strokeStyle = css(woodDark, 0.96);
   ctx.lineWidth = 5.5;
   ctx.beginPath();
@@ -1459,11 +1437,12 @@ export const drawRockGarden: Drawer = (d) => {
   ctx.closePath();
   ctx.stroke();
 
-  // Светлое волокно дерева
+  // Волокно дерева (светлая сердцевина бруса)
   ctx.strokeStyle = css(wood, 0.85);
   ctx.lineWidth = 3.2;
   ctx.stroke();
 
+  // Тонкий солнечный блик по верхнему канту бруса
   ctx.strokeStyle = css(woodLight, 0.5);
   ctx.lineWidth = 1.2;
   ctx.stroke();
@@ -1480,17 +1459,17 @@ export const drawRockGarden: Drawer = (d) => {
     ctx.fill();
   }
 
-  // 2. Острова камней с мхом
+  // 2. Традиционная композиция камней (острова в океане гравия)
   // Главный вертикальный камень
-  const s1 = at(d, 2.2, 2.0, 0);
-  shadowUnder({ ...d, x: s1.x, y: s1.y }, 16, 7, 0.75);
+  const s1 = at(d, -0.4, -0.3, 0);
+  shadowUnder({ ...d, x: s1.x, y: s1.y }, 18, 8, 0.78);
 
   // Каменное тело
   ctx.fillStyle = css(stoneDark, 0.95);
   ctx.beginPath();
   ctx.moveTo(s1.x - 12, s1.y);
-  ctx.lineTo(s1.x - 6, s1.y - 22);
-  ctx.lineTo(s1.x + 3, s1.y - 25);
+  ctx.lineTo(s1.x - 6, s1.y - 24);
+  ctx.lineTo(s1.x + 3, s1.y - 27);
   ctx.lineTo(s1.x + 11, s1.y - 6);
   ctx.lineTo(s1.x + 8, s1.y + 3);
   ctx.closePath();
@@ -1498,8 +1477,8 @@ export const drawRockGarden: Drawer = (d) => {
 
   ctx.fillStyle = css(stone, 0.88);
   ctx.beginPath();
-  ctx.moveTo(s1.x - 6, s1.y - 22);
-  ctx.lineTo(s1.x + 3, s1.y - 25);
+  ctx.moveTo(s1.x - 6, s1.y - 24);
+  ctx.lineTo(s1.x + 3, s1.y - 27);
   ctx.lineTo(s1.x + 9, s1.y - 8);
   ctx.lineTo(s1.x - 2, s1.y - 2);
   ctx.closePath();
@@ -1508,26 +1487,38 @@ export const drawRockGarden: Drawer = (d) => {
   // Моховая шапка у основания
   ctx.fillStyle = css(moss, 0.85);
   ctx.beginPath();
-  ctx.ellipse(s1.x - 4, s1.y - 2, 7, 3.5, -0.2, 0, Math.PI * 2);
+  ctx.ellipse(s1.x - 4, s1.y - 2, 8, 4, -0.2, 0, Math.PI * 2);
   ctx.fill();
 
   // Второй плоский камень-спутник
-  const s2 = at(d, 3.2, 2.8, 0);
-  shadowUnder({ ...d, x: s2.x, y: s2.y }, 12, 5, 0.7);
+  const s2 = at(d, 0.7, 0.4, 0);
+  shadowUnder({ ...d, x: s2.x, y: s2.y }, 14, 6, 0.7);
   ctx.fillStyle = css(stoneDark, 0.95);
   ctx.beginPath();
-  ctx.ellipse(s2.x, s2.y - 4, 9, 5, 0.2, 0, Math.PI * 2);
+  ctx.ellipse(s2.x, s2.y - 4, 10, 5.5, 0.2, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = css(stone, 0.85);
   ctx.beginPath();
-  ctx.ellipse(s2.x - 1, s2.y - 5, 7, 3.8, 0.2, 0, Math.PI * 2);
+  ctx.ellipse(s2.x - 1, s2.y - 5, 8, 4.2, 0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Третий мелкий камень
+  const s3 = at(d, -1.0, 0.7, 0);
+  shadowUnder({ ...d, x: s3.x, y: s3.y }, 9, 4, 0.6);
+  ctx.fillStyle = css(stoneDark, 0.95);
+  ctx.beginPath();
+  ctx.ellipse(s3.x, s3.y - 2, 6, 3.5, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = css(stone, 0.85);
+  ctx.beginPath();
+  ctx.ellipse(s3.x - 0.5, s3.y - 2.5, 4.5, 2.5, -0.3, 0, Math.PI * 2);
   ctx.fill();
 
   // 3. Стоящие у кромки сада деревянные грабли (готовые к рисованию)
-  const rBase = at(d, 4.3, 0.8, 0);
-  const rTop = at(d, 3.9, 0.3, 30);
-  const rHeadL = at(d, 4.5, 0.6, 2);
-  const rHeadR = at(d, 4.1, 1.0, 2);
+  const rBase = at(d, 2.1, -1.2, 0);
+  const rTop = at(d, 1.7, -1.8, 28);
+  const rHeadL = at(d, 2.3, -1.4, 2);
+  const rHeadR = at(d, 1.9, -1.0, 2);
 
   // Тень от граблей на песке
   lineAt(
@@ -1569,9 +1560,13 @@ export const drawRockGarden: Drawer = (d) => {
   if (snow > 0.08) {
     lineAt(ctx, [c00, c50], css(SNOW, 0.85 * snow), 2.2);
     lineAt(ctx, [c00, c05], css(SNOW, 0.85 * snow), 2.2);
+    lineAt(ctx, [c50, c55], css(SNOW, 0.7 * snow), 1.8);
     ctx.fillStyle = css(SNOW, 0.9 * snow);
     ctx.beginPath();
-    ctx.ellipse(s1.x - 2, s1.y - 25, 6, 2.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(s1.x - 2, s1.y - 27, 6, 2.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(s2.x - 1, s2.y - 7, 5, 2, 0, 0, Math.PI * 2);
     ctx.fill();
     lineAt(ctx, [rHeadL, rHeadR], css(SNOW, 0.8 * snow), 1.6);
   }

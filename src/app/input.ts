@@ -62,6 +62,7 @@ export interface InputActions {
   toggleZen(): void;
   isZen(): boolean;
   exitZen(): void;
+  activateGravelRake(): void;
   /** Сбросить начальную точку мазка (при отпускании мыши/пальца). */
   resetStroke(): void;
 }
@@ -167,6 +168,13 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
         canvas.classList.add('dragging');
       }
       return;
+    }
+    if (selection().kind === 'none' && e.button === 0) {
+      const p = scene.pickTile(e.clientX, e.clientY, world);
+      const obj = world.pickObject(p.tx, p.ty);
+      if (obj && (obj.type === 'zen_rake' || obj.type === 'rock_garden')) {
+        actions.activateGravelRake();
+      }
     }
     if (selection().kind !== 'none' && e.button === 0) {
       if (paintMode() === 'stroke') {
@@ -360,8 +368,17 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
           return;
         }
         // Кистью и мелочью рисуем, всем остальным — возим камеру.
+        // Если коснулись сада камней — сразу берём грабли в руку и рисуем!
+        let sel2 = selection();
+        if (sel2.kind === 'none') {
+          const p = scene.pickTile(x, y, world);
+          const obj = world.pickObject(p.tx, p.ty);
+          if (obj && (obj.type === 'zen_rake' || obj.type === 'rock_garden')) {
+            actions.activateGravelRake();
+            sel2 = selection();
+          }
+        }
         // В режиме касания движение всегда ведёт камеру: предмет ставит тап.
-        const sel2 = selection();
         const paintable =
           paintMode() === 'stroke' && (sel2.kind === 'brush' || (sel2.kind === 'item' && sel2.item.step < 1));
         if (paintable) {
