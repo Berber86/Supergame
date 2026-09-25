@@ -56,6 +56,8 @@ export interface InputActions {
   cancelPlace(): boolean;
   /** Поворот призрака на 90° — состояние ghostRot живёт в main. */
   rotateGhost(): void;
+  /** Тактильный отклик в созерцании: погладить кота, круги на воде, колокольчик. */
+  handleContemplationTap(sx: number, sy: number): boolean;
 }
 
 export interface InputDeps {
@@ -91,6 +93,8 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
   let tapPlace: { x: number; y: number; moved: boolean } | null = null;
   let lastX = 0;
   let lastY = 0;
+  let downX = 0;
+  let downY = 0;
 
   /**
    * Сбросить незавершённое действие — при смене усадьбы на середине
@@ -116,6 +120,8 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
     // каждое касание срабатывало бы дважды.
     if (e.pointerType === 'touch') return;
     canvas.setPointerCapture(e.pointerId);
+    downX = e.clientX;
+    downY = e.clientY;
     lastX = e.clientX;
     lastY = e.clientY;
     actions.wake();
@@ -242,6 +248,11 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
         if (history.commit()) actions.syncHistoryUI();
         history.breakMerge();
       }
+    } else if (selection().kind === 'none' && !moving.current && !painting) {
+      // Созерцание: короткое касание без сдвига камеры — тактильный отклик мира
+      if (Math.hypot(lastX - downX, lastY - downY) < 6) {
+        actions.handleContemplationTap(lastX, lastY);
+      }
     }
     dragging = false;
     painting = false;
@@ -311,7 +322,10 @@ export function setupInput(deps: InputDeps): { cancelOngoingAction(): void } {
           const p = scene.pickTile(x, y, world);
           if (actions.growPick(p.tx, p.ty)) return;
         }
-        if (selection().kind === 'none') return;
+        if (selection().kind === 'none') {
+          actions.handleContemplationTap(x, y);
+          return;
+        }
         pointer.x = x;
         pointer.y = y;
         pointer.has = true;

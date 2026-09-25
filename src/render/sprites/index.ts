@@ -53,6 +53,7 @@ import {
   drawNestbox,
   drawHammock,
   drawMatatabi,
+  drawZenRake,
 } from './decor';
 import {
   drawTable,
@@ -144,6 +145,7 @@ const DRAWERS: Record<string, Drawer> = {
   fence_wood: drawFenceWood,
   fence_stone: drawFenceStone,
   jizo: drawJizo,
+  zen_rake: drawZenRake,
   well: drawWell,
   garden_bench: drawGardenBench,
   woodpile: drawWoodpile,
@@ -298,6 +300,7 @@ const CACHED_DECOR = new Set([
   'moss_log',
   'stump',
   'jizo',
+  'zen_rake',
   'fence_wood',
   'fence_stone',
   'well',
@@ -315,6 +318,8 @@ export function objectHeight(type: string): number {
     case 'fusuma':
     case 'tokonoma':
       return 76;
+    case 'zen_rake':
+      return 36;
     case 'byobu':
     case 'irori':
       return 64;

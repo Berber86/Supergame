@@ -506,10 +506,77 @@ const input = setupInput({
     toggleSound,
     rotateGhost,
     cancelPlace,
+    handleContemplationTap,
   },
 });
 
 // ---------------- Действия ----------------
+
+/** Тактильный отклик в созерцании: погладить кота, круги на воде, колокольчик. */
+function handleContemplationTap(sx: number, sy: number): boolean {
+  const p = scene.pickTile(sx, sy, world);
+  const tx = p.tx;
+  const ty = p.ty;
+
+  // 1. Погладить кота
+  if (life.petCatAt(tx, ty)) {
+    audio.purr();
+    world.noteEvent('cat_purr', world.now(), tx, ty);
+    ui.toast('Кот мурлычет');
+    return true;
+  }
+
+  // 2. Предметы сада: колокольчик, сиси-одоси, цукубай, грабли
+  const obj = world.pickObject(tx, ty);
+  if (obj) {
+    if (obj.type === 'wind_chime') {
+      audio.chime(0.9);
+      ui.toast('Колокольчик звенит на ветру');
+      return true;
+    }
+    if (obj.type === 'shishi_odoshi') {
+      audio.knock();
+      life.residents.ripple(obj.tx + 0.5, obj.ty + 0.5, true);
+      ui.toast('Сиси-одоси');
+      return true;
+    }
+    if (obj.type === 'tsukubai') {
+      audio.splash();
+      life.residents.ripple(obj.tx + 0.5, obj.ty + 0.5, false);
+      return true;
+    }
+    if (obj.type === 'zen_rake') {
+      const next = world.cycleGravelStyle();
+      audio.rake(0.8);
+      const names: Record<string, string> = {
+        waves: 'Волны и рябь у камней',
+        ripples: 'Концентрические круги',
+        straight: 'Прямые борозды',
+        swirl: 'Дзенские вихри',
+      };
+      ui.toast(`Узор гравия: ${names[next] ?? next}`);
+      world.noteEvent('rake_gravel', world.now(), tx, ty);
+      return true;
+    }
+  }
+
+  // 3. Касание воды — круги на воде и карпы
+  const t = world.at(Math.floor(tx), Math.floor(ty));
+  if (t?.water) {
+    life.residents.ripple(tx, ty, true);
+    life.panicFish(tx, ty);
+    audio.splash();
+    return true;
+  }
+
+  // 4. Касание гравия — мягкий шелест мелких камешков
+  if (t?.ground === 'gravel') {
+    audio.rake(0.4);
+    return true;
+  }
+
+  return false;
+}
 
 /** Поворот на 90°: ждущий призрак крутится на месте, обычный — до постановки. */
 function rotateGhost(): void {

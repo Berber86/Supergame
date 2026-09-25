@@ -5,7 +5,7 @@ import { winterYear } from '../world/annualEnvironment';
 import { GRID, LEVEL_H, TILE_H, TILE_W, isoToScreen, tileDiamond } from '../core/iso';
 import { clamp01, fbm, hash2, lerp, smoothstep } from '../core/rng';
 import { Atmosphere, RGB, css, mix, shade } from '../world/palette';
-import { GroundId, Tile } from '../world/types';
+import { GroundId, PlacedObject, Tile } from '../world/types';
 import { World } from '../world/world';
 import { Ctx, blobPath, granulate } from './paint';
 import { cascadeStone } from './cascadeStone';
@@ -912,7 +912,7 @@ function drawTileDetail(ctx: Ctx, world: World, x: number, y: number, t: Tile, a
   switch (t.ground) {
     case 'gravel':
       if (sk) drawRibbonGrain(ctx, sk, col, x * 17 + y * 31, 0.11);
-      else drawGravel(ctx, c.x, c.y, col, x * 17 + y * 31);
+      else drawGravel(ctx, world, x, y, t, c.x, c.y, col, x * 17 + y * 31, atm);
       break;
     case 'stone':
       if (isCascadeBank(world, x, y, t)) {
@@ -1125,15 +1125,126 @@ export function stoneFlags(world: World, x: number, y: number, t: Tile): { x: nu
   });
 }
 
-function drawGravel(ctx: Ctx, cx: number, cy: number, col: RGB, seed: number): void {
-  granulate(ctx, cx, cy, TILE_W * 0.42, TILE_H * 0.42, shade(col, 0.86), seed, 20, 0.11);
-  ctx.strokeStyle = css(shade(col, 0.8), 0.26);
-  ctx.lineWidth = 1.4;
-  for (let i = -1; i <= 1; i++) {
+const STONE_OBSTACLES = new Set([
+  'rock_big',
+  'rock_mid',
+  'rock_trio',
+  'step_stone',
+  'lantern_stone',
+  'tsukubai',
+  'jizo',
+  'zen_rake',
+  'stump',
+  'moss_clump',
+]);
+
+function drawGravel(
+  ctx: Ctx,
+  world: World,
+  x: number,
+  y: number,
+  t: Tile,
+  cx: number,
+  cy: number,
+  col: RGB,
+  seed: number,
+  atm: Atmosphere,
+): void {
+  granulate(ctx, cx, cy, TILE_W * 0.44, TILE_H * 0.44, shade(col, 0.86), seed, 22, 0.12);
+
+  const style = world.gravelStyle ?? 'waves';
+
+  // Ищем ближайший камень для концентрической ряби (Суймон)
+  let nearObj: PlacedObject | null = null;
+  let minD = 2.4;
+  for (const o of world.objects) {
+    if (!STONE_OBSTACLES.has(o.type)) continue;
+    const d = Math.hypot(o.tx - (x + 0.5), o.ty - (y + 0.5));
+    if (d < minD) {
+      minD = d;
+      nearObj = o;
+    }
+  }
+
+  const grooveCol = css(shade(col, 0.78), 0.32);
+  const ridgeCol = css(shade(col, 1.15), 0.24);
+  const sunY = (atm.sunDir?.y ?? 1) * 1.1;
+
+  if (style === 'waves' && nearObj && minD < 1.75) {
+    // ---- Узор «Суймон» (水纹): концентрическая рябь вокруг камня ----
+    const center = isoToScreen(nearObj.tx + 0.5, nearObj.ty + 0.5, t.level);
+    const ringRadii = [14, 25, 36, 48, 60, 72];
+    for (const r of ringRadii) {
+      const dToCenter = Math.hypot(cx - center.x, cy - center.y);
+      if (Math.abs(dToCenter - r) > TILE_W * 0.62) continue;
+      const angToTile = Math.atan2(cy - center.y, cx - center.x);
+      const span = 0.52;
+
+      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = grooveCol;
+      ctx.beginPath();
+      ctx.ellipse(center.x, center.y, r * 1.414, r * 0.707, 0, angToTile - span, angToTile + span);
+      ctx.stroke();
+
+      ctx.lineWidth = 1.0;
+      ctx.strokeStyle = ridgeCol;
+      ctx.beginPath();
+      ctx.ellipse(center.x, center.y - sunY, r * 1.414, r * 0.707, 0, angToTile - span, angToTile + span);
+      ctx.stroke();
+    }
+  } else if (style === 'ripples') {
+    // ---- Узор «Концентрические круги» ----
+    const rCenter = nearObj ? isoToScreen(nearObj.tx + 0.5, nearObj.ty + 0.5, t.level) : { x: cx, y: cy };
+    for (let r = 12; r <= 48; r += 12) {
+      ctx.lineWidth = 1.3;
+      ctx.strokeStyle = grooveCol;
+      ctx.beginPath();
+      ctx.ellipse(rCenter.x, rCenter.y, r * 1.414, r * 0.707, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.lineWidth = 0.9;
+      ctx.strokeStyle = ridgeCol;
+      ctx.beginPath();
+      ctx.ellipse(rCenter.x, rCenter.y - sunY, r * 1.414, r * 0.707, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  } else if (style === 'swirl') {
+    // ---- Узор «Дзенские спирали» (Камон, 涡纹) ----
+    ctx.lineWidth = 1.3;
+    ctx.strokeStyle = grooveCol;
     ctx.beginPath();
-    ctx.moveTo(cx - TILE_W * 0.44, cy + i * 8);
-    ctx.quadraticCurveTo(cx, cy + i * 8 + 3, cx + TILE_W * 0.44, cy + i * 8);
+    for (let a = 0; a < Math.PI * 4; a += 0.22) {
+      const r = 3 + a * 3.2;
+      const sx = cx + Math.cos(a) * r * 1.414;
+      const sy = cy + Math.sin(a) * r * 0.707;
+      if (a === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
+    }
     ctx.stroke();
+  } else {
+    // ---- Узор «Рэнмон» (Текущие изометрические волны) или «Тёкусэн» (Прямые) ----
+    const isWavy = style === 'waves';
+    const lines = [-1.5, -0.75, 0, 0.75, 1.5];
+    for (const offset of lines) {
+      const cyOffset = offset * 8.5;
+      const wave = isWavy ? Math.sin((x - y) * 1.6 + offset * 0.7) * 3.4 : 0;
+
+      // Теневая бороздка
+      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = grooveCol;
+      ctx.beginPath();
+      ctx.moveTo(cx - TILE_W * 0.44, cy + cyOffset);
+      ctx.quadraticCurveTo(cx, cy + cyOffset + 2.4 + wave, cx + TILE_W * 0.44, cy + cyOffset);
+      ctx.stroke();
+
+      // Солнечный гребень
+      ctx.lineWidth = 1.0;
+      ctx.strokeStyle = ridgeCol;
+      ctx.beginPath();
+      ctx.moveTo(cx - TILE_W * 0.44, cy + cyOffset - sunY);
+      ctx.quadraticCurveTo(cx, cy + cyOffset + 2.4 + wave - sunY, cx + TILE_W * 0.44, cy + cyOffset - sunY);
+      ctx.stroke();
+    }
   }
 }
 

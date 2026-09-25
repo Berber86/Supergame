@@ -23,7 +23,7 @@ import { GrowRect, GrowState, growOfferReady, growTick, growZones, inGrowRect } 
 import { treeGrowthAt } from './treeGrowth';
 import { computeTime } from '../core/clock';
 import { SAVE_VERSION, parseSave, serializeSave } from './saveFormat';
-import { GroundId, PlacedObject, SaveData, Tile } from './types';
+import { GravelStyle, GroundId, PlacedObject, SaveData, Tile } from './types';
 
 const SAVE_KEY = 'usadba.save.v3';
 
@@ -64,6 +64,8 @@ export class World {
   pendingNotes: ChronicleToastNote[] = [];
   /** Границы последней правки земли — для частичной перерисовки. */
   lastTouched: { x0: number; y0: number; x1: number; y1: number } | null = null;
+  /** Узор расчёсывания гравия: волны, круги у камней, прямые борозды или вихри. */
+  gravelStyle: GravelStyle = 'waves';
   /**
    * Кэш стадии роста саженцев: кадр дёргает рост каждого дерева, но сама
    * модель пересчитывается не чаще раза в час — глазу час незаметен,
@@ -117,6 +119,7 @@ export class World {
     // Вольный сад: режима роста нет
     this.grow = null;
     this.growRefused = false;
+    this.gravelStyle = 'waves';
     this.milestones = new Set();
     this.seasonsSeen = new Set();
     // Летопись нового сада пуста: встречи ещё впереди
@@ -600,6 +603,28 @@ export class World {
       t.level = Math.max(t.level, 1);
       this.checkMilestone('first_deck');
     }
+  }
+
+  /** Сменить узор расчёсывания гравия и обновить холст земли. */
+  setGravelStyle(style: GravelStyle): void {
+    if (this.gravelStyle === style) return;
+    this.gravelStyle = style;
+    for (let y = 0; y < GRID; y++) {
+      for (let x = 0; x < GRID; x++) {
+        if (this.tiles[this.idx(x, y)]?.ground === 'gravel') {
+          this.touch(x, y);
+        }
+      }
+    }
+  }
+
+  /** Переключить на следующий узор гравия по кругу. */
+  cycleGravelStyle(): GravelStyle {
+    const styles: GravelStyle[] = ['waves', 'ripples', 'straight', 'swirl'];
+    const curIdx = styles.indexOf(this.gravelStyle);
+    const next = styles[(curIdx + 1) % styles.length];
+    this.setGravelStyle(next);
+    return next;
   }
 
   /** Плавно сшивает перепады высот, чтобы не было резких ступеней. */
@@ -1120,7 +1145,8 @@ export class World {
 
   /** Очевидную мелочь (фонарь, цветок, подушка, мелкий камень) можно переносить руками — без затрат. */
   private isFreeMoveItem(item: CatalogItem): boolean {
-    if (item.kind === 'tree' || item.kind === 'shrub' || item.kind === 'pavilion' || item.kind === 'bridge') return false;
+    if (item.kind === 'tree' || item.kind === 'shrub' || item.kind === 'pavilion' || item.kind === 'bridge')
+      return false;
     if (item.w > 1 || item.h > 1) return false;
     // Гравий и мох — не делаем бесплатными, чтобы не было бесконечного перекладывания земли
     if (item.id === 'moss_clump' || item.id === 'pebbles') return false;
@@ -1290,6 +1316,7 @@ export class World {
       grow: this.grow
         ? { ...this.grow, rect: { ...this.grow.rect }, ...(this.grow.clock ? { clock: { ...this.grow.clock } } : {}) }
         : null,
+      gravelStyle: this.gravelStyle,
       born: this.born,
       timeShift: this.timeShift,
       unlocked: [...this.unlocked],
@@ -1341,6 +1368,7 @@ export class World {
       if (milestone && MILESTONES[milestone]) this.milestones.add(milestone);
     }
     this.grow = p.grow ?? null;
+    this.gravelStyle = p.gravelStyle ?? 'waves';
     this.born = p.born ?? this.born;
     this.timeShift = Number.isFinite(p.timeShift) ? (p.timeShift as number) : 0;
     // Лягушки из тумана: если в открытом саду нет воды, случайные строки

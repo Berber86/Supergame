@@ -1332,3 +1332,61 @@ export const drawMatatabi: Drawer = (d) => {
     }
   }
 };
+
+/** Дзен-грабли: деревянные грабли для сада камней. */
+export const drawZenRake: Drawer = (d) => {
+  const { ctx, atm } = d;
+  shadowUnder(d, 10, 4.5, 0.85);
+  const wood = litc({ r: 188, g: 148, b: 104 }, atm);
+  const woodDark = litc({ r: 132, g: 98, b: 64 }, atm);
+  const woodLight = litc({ r: 218, g: 184, b: 142 }, atm);
+  const snow = winterYear(atm.time.now).snow;
+
+  // Рукоять: наклонена вдоль изометрической диагонали
+  const top = at(d, -0.22, -0.24, 28);
+  const head = at(d, 0.16, 0.14, 3);
+
+  // Тень от рукояти
+  const shadowHead = at(d, 0.16, 0.14, 0);
+  const shadowTop = at(d, -0.22 + (atm.sunDir?.x ?? 0) * 0.12, -0.24 + (atm.sunDir?.y ?? 1) * 0.12, 0);
+  lineAt(ctx, [shadowHead, shadowTop], css(atm.shadowTint, 0.18 * atm.shadowAmount), 1.8);
+
+  // Поперечный брусок (гребёнка)
+  const bar0 = at(d, 0.32, -0.04, 3.5);
+  const bar1 = at(d, 0.0, 0.32, 2.5);
+
+  // Зубья гребёнки (5 деревянных зубьев в сторону земли)
+  ctx.strokeStyle = css(woodDark, 0.95);
+  ctx.lineWidth = 1.2;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 5; i++) {
+    const t = i / 4;
+    const bt = at(d, 0.32 * (1 - t), 0.32 * t + 0.02 * (1 - t) - 0.04 * (1 - t), 3);
+    const tip = at(d, 0.32 * (1 - t) + 0.03, 0.32 * t + 0.03, 0);
+    ctx.beginPath();
+    ctx.moveTo(bt.x, bt.y);
+    ctx.lineTo(tip.x, tip.y);
+    ctx.stroke();
+  }
+
+  // Сам поперечный брусок
+  lineAt(ctx, [bar0, bar1], css(woodDark, 0.95), 3.2);
+  lineAt(ctx, [bar0, bar1], css(woodLight, 0.75), 1.4);
+
+  // Длинная рукоять грабель
+  lineAt(ctx, [head, top], css(woodDark, 0.95), 2.8);
+  lineAt(ctx, [head, top], css(wood, 0.9), 2.0);
+  lineAt(ctx, [head, top], css(woodLight, 0.65), 0.8);
+
+  // Место крепления (шпагат)
+  ctx.fillStyle = css(woodDark, 0.95);
+  ctx.beginPath();
+  ctx.ellipse(head.x, head.y, 2.2, 1.8, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Снежная полоска зимой
+  if (snow > 0.08) {
+    lineAt(ctx, [bar0, bar1], css(SNOW, 0.85 * snow), 2.0);
+    lineAt(ctx, [head, top], css(SNOW, 0.7 * snow), 1.2);
+  }
+};

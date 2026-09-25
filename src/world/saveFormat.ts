@@ -19,7 +19,7 @@
 
 import { GRID } from '../core/iso';
 import { ITEM_BY_ID } from './catalog';
-import { GroundId, PlacedObject, SaveData, Tile } from './types';
+import { GravelStyle, GroundId, PlacedObject, SaveData, Tile } from './types';
 
 /** Версия формата, которую пишет текущая игра. */
 export const SAVE_VERSION = 8;
@@ -246,6 +246,7 @@ export function serializeSave(d: SaveData): string {
     ),
     u: d.unlocked ?? null,
     f: d.fresh ?? null,
+    gs: d.gravelStyle ?? null,
   });
 }
 
@@ -339,6 +340,12 @@ export function parseSave(raw: unknown): SaveData | null {
   const grow = parseGrow(rawGrow);
   if (rawGrow !== undefined && rawGrow !== null && !grow) return null;
 
+  const rawGs = d.gs ?? d.gravelStyle;
+  const gravelStyle =
+    typeof rawGs === 'string' && ['waves', 'ripples', 'straight', 'swirl'].includes(rawGs)
+      ? (rawGs as GravelStyle)
+      : undefined;
+
   // Открытия каталога: отсутствие списка — старое сохранение (мигрирует мир)
   const hasUnlocks = d.u !== undefined || d.unlocked !== undefined;
   const unlocked = parseStringList(d.u ?? d.unlocked, 400);
@@ -355,6 +362,7 @@ export function parseSave(raw: unknown): SaveData | null {
     seen,
     chronicle,
     grow,
+    gravelStyle,
     unlocked: hasUnlocks ? unlocked : undefined,
     fresh: hasUnlocks ? fresh : undefined,
     born: typeof d.b === 'number' ? d.b : undefined,

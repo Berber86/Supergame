@@ -3,6 +3,9 @@ import type { GrowClockState } from '../core/growClock';
 
 export type GroundId = 'moss' | 'grass' | 'gravel' | 'sand' | 'stone' | 'soil' | 'water' | 'tatami' | 'deck';
 
+/** Стили расчёсывания гравия в саду камней (карэсансуй). */
+export type GravelStyle = 'waves' | 'ripples' | 'straight' | 'swirl';
+
 export interface Tile {
   ground: GroundId;
   /** Уровень рельефа: 0 — земля, 1..2 — холмы, -1 — выемка под воду. */
@@ -56,6 +59,8 @@ export interface SaveData {
   unlocked?: string[];
   /** Свежие открытия: золотая точка горит до первой постройки предмета. */
   fresh?: string[];
+  /** Узор расчёсывания гравия: волны, круги у камней, прямые борозды или вихри. */
+  gravelStyle?: GravelStyle;
   /** Режим растущего сада: null или отсутствие — вольный сад. */
   grow?: {
     clock?: GrowClockState;

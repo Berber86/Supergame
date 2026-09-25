@@ -995,6 +995,18 @@ export const ITEMS: CatalogItem[] = [
     tab: 'stones',
   },
   {
+    id: 'zen_rake',
+    name: 'Грабли',
+    hint: 'деревянные грабли для сада камней: смена узора гравия',
+    kind: 'deco',
+    w: 1,
+    h: 1,
+    step: 0.5,
+    growDays: 0,
+    rotatable: true,
+    tab: 'stones',
+  },
+  {
     id: 'mushrooms',
     name: 'Семья опят',
     hint: 'выглядывают после дождя',
