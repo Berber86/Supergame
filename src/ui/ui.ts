@@ -460,8 +460,8 @@ export class UI {
   private tabHasContent(id: string): boolean {
     return (
       ITEMS.some(
-        (i) => i.tab === id && this.world.unlocked.has(i.id) && (this.fitsGrow(i.w, i.h) || this.fitsGrow(i.h, i.w)),
-      ) || TERRAIN_BRUSHES.some((b) => b.tab === id && this.world.unlocked.has(b.id) && this.fitsGrow(b.w, b.h))
+        (i) => i.tab === id && this.world.isUnlocked(i.id) && (this.fitsGrow(i.w, i.h) || this.fitsGrow(i.h, i.w)),
+      ) || TERRAIN_BRUSHES.some((b) => b.tab === id && this.world.isUnlocked(b.id) && this.fitsGrow(b.w, b.h))
     );
   }
 
@@ -506,12 +506,12 @@ export class UI {
     box.innerHTML = '';
 
     const brushes = TERRAIN_BRUSHES.filter(
-      (b) => b.tab === this.activeTab && this.world.unlocked.has(b.id) && this.fitsGrow(b.w, b.h),
+      (b) => b.tab === this.activeTab && this.world.isUnlocked(b.id) && this.fitsGrow(b.w, b.h),
     );
     const items = ITEMS.filter(
       (i) =>
         i.tab === this.activeTab &&
-        this.world.unlocked.has(i.id) &&
+        this.world.isUnlocked(i.id) &&
         (this.fitsGrow(i.w, i.h) || this.fitsGrow(i.h, i.w)),
     );
     if (!brushes.length && !items.length) {
@@ -672,12 +672,17 @@ export class UI {
     this.syncBuildbar();
     // Поворот есть не у каждого предмета: кнопка гаснет, когда нечего вертеть
     const isRake = sel.kind === 'brush' && sel.brush.kind === 'rake';
-    this.setRotateEnabled((sel.kind === 'item' && !!sel.item.rotatable) || isRake);
-    if (isRake) {
-      this.setRotateLabel('узор', 'Сменить узор граблей (R)');
-    } else {
-      this.setRotateLabel('поворот', 'Повернуть (R)');
+    const bRot = this.els.buildbar?.querySelector<HTMLElement>('[data-act="rotate"]');
+    if (bRot) {
+      bRot.innerHTML = isRake
+        ? `${svgIcon('erase', 18)}<span class="bb-cap">разровнять</span>`
+        : `${svgIcon('rotate', 18)}<span class="bb-cap">поворот</span>`;
+      bRot.title = isRake ? 'Разровнять песок: стереть все борозды (R)' : 'Повернуть (R)';
+      bRot.classList.toggle('off', !((sel.kind === 'item' && !!sel.item.rotatable) || isRake));
     }
+
+    // При выборе любого инструмента панель действий СРАЗУ появляется и доступна игроку
+    this.els.buildbar.classList.toggle('show', this.buildOpen || sel.kind !== 'none');
     this.hooks.onSelect(sel);
     // Подсказки называют то действие, которое у игрока под рукой:
     // на телефоне «коснитесь», на мыши «кликните».
@@ -693,8 +698,8 @@ export class UI {
       if (sel.brush.kind === 'rake') {
         this.setHint(
           touch
-            ? 'Грабли — ведите пальцем по гравию для рисования узоров · R меняет узор'
-            : 'Грабли — ведите по гравию для рисования узоров · R меняет узор (мазок, волны, круги, вихри)',
+            ? 'Грабли — ведите пальцем по песку сада камней для рисования · кнопка «разровнять» очищает песок'
+            : 'Грабли — ведите по песку сада камней для рисования борозд · R или кнопка «разровнять» очищает песок',
         );
       } else {
         const sz =
@@ -728,7 +733,7 @@ export class UI {
     if (this.mirageOpen) this.toggleMirage(false);
     this.buildOpen = force ?? !this.buildOpen;
     this.els.catalog.classList.toggle('open', this.buildOpen);
-    this.els.buildbar.classList.toggle('show', this.buildOpen);
+    this.els.buildbar.classList.toggle('show', this.buildOpen || this.selection.kind !== 'none');
     this.els.btnBuild.classList.toggle('active', this.buildOpen);
     this.els.btnMirage?.classList.toggle('active', false);
     // Режим стройки виден и в CSS: на телефоне по нему прячется подсказка,

@@ -16,7 +16,7 @@ g.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} 
 async function main() {
   const { World } = await import('../src/world/world');
   const { Life } = await import('../src/world/life');
-  const { ITEM_BY_ID, TERRAIN_BRUSHES } = await import('../src/world/catalog');
+  const { ITEMS, ITEM_BY_ID, TERRAIN_BRUSHES } = await import('../src/world/catalog');
   const { hasDrawer, drawObject, objectHeight } = await import('../src/render/sprites');
   const { buildAtmosphere } = await import('../src/world/palette');
   const { computeTime } = await import('../src/core/clock');
@@ -143,6 +143,18 @@ async function main() {
   w2.clearGravelStrokes();
   assert.equal(w2.gravelStrokes.length, 0, 'Борозды очищены после разравнивания');
   ok('разравнивание песка очищает борозды');
+
+  // Доступность всех предметов и построек в вольном (не растущем) саду
+  assert.equal(w.grow, null, 'w — вольный сад');
+  for (const item of ITEMS) {
+    assert.ok(w.isUnlocked(item.id), `Предмет ${item.id} доступен в вольном саду`);
+  }
+  for (const b of TERRAIN_BRUSHES) {
+    assert.ok(w.isUnlocked(b.id), `Кисть ${b.id} доступна в вольном саду`);
+  }
+  assert.ok(w.tabAvailable('stones'), 'Вкладка Камни доступна');
+  assert.ok(w.tabAvailable('house'), 'Вкладка Дом доступна');
+  ok('в нерастущем саду все здания, постройки и кисти доступны сразу');
 
   console.log('тактильный отклик и жесты созерцания:');
   const life = new Life();

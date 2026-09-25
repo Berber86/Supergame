@@ -1411,6 +1411,31 @@ export const drawRockGarden: Drawer = (d) => {
   const c55 = at(d, 5, 5, 0);
   const c05 = at(d, 0, 5, 0);
 
+  // 0. Внутреннее ложе сада: ровный мелкий гравий и песок
+  const gravelBase = litc({ r: 218, g: 212, b: 200 }, atm);
+  const gravelShade = litc({ r: 188, g: 180, b: 168 }, atm);
+  ctx.fillStyle = css(gravelBase, 1.0);
+  ctx.beginPath();
+  ctx.moveTo(c00.x, c00.y);
+  ctx.lineTo(c50.x, c50.y);
+  ctx.lineTo(c55.x, c55.y);
+  ctx.lineTo(c05.x, c05.y);
+  ctx.closePath();
+  ctx.fill();
+
+  // Нежная текстура гравийных борозд внутри ложа
+  ctx.strokeStyle = css(gravelShade, 0.45);
+  ctx.lineWidth = 1.1;
+  for (let i = 1; i <= 8; i++) {
+    const t = i / 9;
+    const p1 = { x: c00.x + (c05.x - c00.x) * t, y: c00.y + (c05.y - c00.y) * t };
+    const p2 = { x: c50.x + (c55.x - c50.x) * t, y: c50.y + (c55.y - c50.y) * t };
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+  }
+
   // Тень под бордюром
   ctx.strokeStyle = css(atm.shadowTint, 0.22 * atm.shadowAmount);
   ctx.lineWidth = 6;

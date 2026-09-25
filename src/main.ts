@@ -683,6 +683,7 @@ function confirmPlace(): void {
   if (!item) return;
   history.begin(item.name.toLowerCase(), null);
   const placed = world.place(p.itemId, p.tx, p.ty, p.rot);
+  repaintTouched();
   if (placed) {
     if (history.commit()) syncHistoryUI();
     if (item.needsWater || item.onWater) audio.splash();
@@ -865,10 +866,24 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
   if (selection.kind === 'brush') {
     const b = selection.brush;
     if (b.kind === 'rake') {
-      const curPt = { x: p.tx, y: p.ty };
       const itx = Math.floor(p.tx);
       const ity = Math.floor(p.ty);
+      const t = world.at(itx, ity);
 
+      // Рисование разрешено ТОЛЬКО по песку и гравию сада камней!
+      // Вне гравия ландшафт не меняется и следов не остаётся.
+      if (!t || t.ground !== 'gravel' || t.water) {
+        if (activeRakeStroke && activeRakeStroke.length >= 2) {
+          world.addGravelStroke(activeRakeStroke);
+          repaintTouched();
+          if (history.commit()) syncHistoryUI();
+        }
+        activeRakeStroke = null;
+        world.activeGravelStroke = null;
+        return;
+      }
+
+      const curPt = { x: p.tx, y: p.ty };
       if (!activeRakeStroke) {
         activeRakeStroke = [curPt];
         world.activeGravelStroke = activeRakeStroke;
@@ -881,11 +896,6 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
         }
       }
 
-      // Если тайл не гравий — превращаем его в гравий
-      const t = world.at(itx, ity);
-      if (t && t.ground !== 'gravel' && !t.water) {
-        world.setGround(itx, ity, 'gravel');
-      }
       world.touch(itx, ity);
       repaintTouched();
 
@@ -938,6 +948,7 @@ function applyAt(sx: number, sy: number, isClick: boolean): void {
     }
     history.begin(item.name.toLowerCase(), isClick ? null : `scatter:${item.id}`);
     const placed = world.place(item.id, s.tx, s.ty, ghostRot);
+    repaintTouched();
     if (history.commit()) syncHistoryUI();
     if (item.needsWater || item.onWater) audio.splash();
     else audio.place();

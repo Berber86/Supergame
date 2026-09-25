@@ -176,16 +176,22 @@ export class World {
     for (const id of FURNITURE_IDS) this.unlocked.add(id);
   }
 
+  /**
+   * Доступность предмета или кисти:
+   * В вольном (не растущем) саду все здания, постройки и кисти доступны сразу.
+   * В растущем саду действует система постепенных открытий.
+   */
+  isUnlocked(id: string): boolean {
+    if (!this.grow) return true;
+    return this.unlocked.has(id);
+  }
+
   /** A furnished free-garden preset can have a house without a recorded construction milestone. */
   tabAvailable(id: string): boolean {
+    if (!this.grow) return true;
     const tab = TAB_BY_ID.get(id);
     if (!tab) return false;
-    if (!tab.requires || this.milestones.has(tab.requires)) return true;
-    return (
-      id === 'house' &&
-      !this.grow &&
-      (this.tiles.some((t) => t.indoor) || this.objects.some((o) => SMALL_HOUSE_IDS.has(o.type)))
-    );
+    return !tab.requires || this.milestones.has(tab.requires);
   }
 
   /** Запись каталога технически доступна: веха вкладки открыта, размер влезает. */
@@ -1061,6 +1067,7 @@ export class World {
       for (let dy = 0; dy < 5; dy++) {
         for (let dx = 0; dx < 5; dx++) {
           this.setGround(rx + dx, ry + dy, 'gravel');
+          this.touch(rx + dx, ry + dy);
         }
       }
     }
